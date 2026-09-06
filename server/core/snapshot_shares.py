@@ -1,38 +1,43 @@
-"""toorow -- Partage tokenise des snapshots rendus (Story 13.5 volet b).
+"""toorow -- LEGACY snapshot sharing, reduced to revocation and history (Story 50.7).
 
-Modalite O1 (ratifiee AD-20) :
-  Un partage = un GRANT sur UN snapshot FIGE. URL tokenisee read-only publique.
-  Aucun re-run, aucun acces aux donnees live : le endpoint public ne touche que
-  app.render_snapshot_shares et app.render_snapshots -- jamais les marts ni le projet.
+RETIRED, NOT DELETED. This module used to be the whole public-sharing contract, and
+its own docstring stated the design defect out loud: *"le token EST l'autorisation"*
+-- the plaintext token in the URL path WAS the authorization. Three things followed
+from that, and all three are why it is gone:
 
-DESIGN (voir migration 054) :
-  - Table dediee app.render_snapshot_shares (id, snapshot_id FK, share_token UNIQUE,
-    shared_at, shared_by, revoked_at).
-  - Un snapshot peut avoir plusieurs partages (re-partage possible, historique).
-  - Révocation = revoked_at non-NULL (jamais de DELETE, historique conserve).
-  - Token : secrets.token_urlsafe(24) -> 192 bits, URL-safe (~32 chars).
-  - Lecture publique : get_shared_snapshot(token) filtre sur revoked_at IS NULL.
-    Ne touche QUE les deux tables render_snapshot_shares + render_snapshots (O1 strict).
+  * The token lived in the URL PATH, so every browser history entry, referrer,
+    proxy log and ASGI access log held a live bearer, before any application code
+    ran. No handler-level redaction can reach the request line.
+  * It was stored in the CLEAR (`app.render_snapshot_shares.share_token`), and
+    returned in the console listing on purpose -- the old docstring argued that was
+    acceptable because the caller is authenticated.
+  * `app.render_snapshot_shares` has no `project_id`, NO EXPIRY COLUMN AT ALL, and
+    CASCADE-deletes with a snapshot the retention purge removes. So a grant could
+    never expire, and the proof that it had been revoked could be deleted by a
+    background job.
 
-AD-5 : create_share / revoke_share / list_shares scopees projet (appelant verifie
-  l'acces avant d'appeler). get_shared_snapshot est intentionnellement non-scope :
-  le token EST l'autorisation (O1).
-AD-9 : shared_at honnete = horodatage de creation du partage (pas modifie).
-       stale_since = freshness gelee = envelope.meta.freshness tel que stocke.
+WHAT SURVIVES HERE, and only this: `revoke_share` and a token-free `list_shares`,
+so existing grants can still be closed and their history read. `_mint_token`,
+`create_share` and `get_shared_snapshot` are DELETED, and migration 162 adds a
+trigger refusing any INSERT into the table -- so a remounted route fails loudly at
+the database rather than quietly minting a new plaintext bearer.
 
-ASCII-only stdout (L-3). Copie FR accentuee dans les exceptions.
+The replacement is `core.render_shares`: one revocable, EXPIRING, audited grant to
+one immutable `app.renders` row, with a 256-bit bearer stored only as a peppered
+HMAC and delivered in a URL fragment that never reaches a server.
+
+Neither the table nor its rows are dropped. They are the only proof that the open
+grants were closed (CLAUDE.md anti-drift rule 3).
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import secrets
 
 logger = logging.getLogger(__name__)
 
-# Longueur de token en bytes -> 24 bytes = 192 bits -> ~32 chars URL-safe base64.
-_TOKEN_BYTES = 24
+# Story 50.7: `_TOKEN_BYTES` and `_mint_token` are removed. Nothing in this
+# module mints a bearer any more.
 
 
 def _mint_share_id() -> str:
@@ -42,71 +47,15 @@ def _mint_share_id() -> str:
     return f"rss_{ULID()}"
 
 
-def _mint_token() -> str:
-    """Generer un token URL-safe 192 bits (pattern identique Story 6.6)."""
-    return secrets.token_urlsafe(_TOKEN_BYTES)
-
-
 # ---------------------------------------------------------------------------
-# create_share
+# `create_share` is DELETED by Story 50.7. It INSERTed a plaintext 192-bit
+# token. Its replacement is `core.render_shares.create_share`: a 256-bit
+# bearer, stored only as hmac(pepper, "render-share-bearer:" || bearer), a
+# mandatory expiry, and creation governed through `execute_operation` so the
+# grant and its audit row commit together.
 # ---------------------------------------------------------------------------
 
 
-def create_share(
-    snapshot_id: str,
-    project_id: str,
-    identity: str | None,
-    conn,
-) -> tuple[str, str] | None:
-    """Creer un partage tokenise pour un snapshot (O1).
-
-    Verifie que le snapshot appartient bien a project_id (AD-5 -- l'appelant
-    doit egalement avoir passe la verification d'acces au projet, mais on
-    double-check ici via la jointure).
-
-    Retourne (share_id, share_token) en cas de succes, None si le snapshot
-    n'existe pas ou n'appartient pas au projet.
-
-    Args:
-        snapshot_id: Identifiant du snapshot a partager.
-        project_id:  Projet proprietaire du snapshot (scope AD-5).
-        identity:    Sujet OAuth de l'auteur du partage.
-        conn:        Connexion psycopg ouverte.
-    """
-    # Verifier que le snapshot existe et appartient au projet.
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT id FROM app.render_snapshots WHERE id = %s AND project_id = %s",
-            (snapshot_id, project_id),
-        )
-        if cur.fetchone() is None:
-            return None
-
-    share_id = _mint_share_id()
-    token = _mint_token()
-
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO app.render_snapshot_shares
-                (id, snapshot_id, share_token, shared_at, shared_by)
-            VALUES (%s, %s, %s, NOW(), %s)
-            """,
-            (share_id, snapshot_id, token, identity),
-        )
-    conn.commit()
-
-    logger.debug(
-        "snapshot_shares: created share_id=%s snapshot=%s project=%s",
-        share_id,
-        snapshot_id,
-        project_id,
-    )
-    return share_id, token
-
-
-# ---------------------------------------------------------------------------
-# revoke_share
 # ---------------------------------------------------------------------------
 
 
@@ -162,11 +111,13 @@ def list_shares(
     *,
     active_only: bool = False,
 ) -> list[dict]:
-    """Lister les partages d'un snapshot (console, scope projet AD-5).
+    """List a snapshot's LEGACY shares -- for revocation and history only.
 
-    Retourne une liste de dicts {id, snapshot_id, share_token, shared_at,
-    shared_by, revoked_at}. Les tokens sont INCLUS dans la liste console
-    (l'identite a deja ete verifiee par l'appelant).
+    Returns {id, snapshot_id, shared_at, shared_by, revoked_at}. The token is NOT
+    returned and is no longer selected at all. The previous version of this
+    docstring argued the opposite -- that including it was fine because the caller
+    is authenticated -- which is how a live public grant ended up in every console
+    screenshot, browser cache entry and support-ticket paste.
 
     Args:
         snapshot_id: Identifiant du snapshot.
@@ -178,7 +129,7 @@ def list_shares(
         if active_only:
             cur.execute(
                 """
-                SELECT s.id, s.snapshot_id, s.share_token,
+                SELECT s.id, s.snapshot_id,
                        s.shared_at, s.shared_by, s.revoked_at
                 FROM app.render_snapshot_shares s
                 JOIN app.render_snapshots r ON r.id = s.snapshot_id
@@ -192,7 +143,7 @@ def list_shares(
         else:
             cur.execute(
                 """
-                SELECT s.id, s.snapshot_id, s.share_token,
+                SELECT s.id, s.snapshot_id,
                        s.shared_at, s.shared_by, s.revoked_at
                 FROM app.render_snapshot_shares s
                 JOIN app.render_snapshots r ON r.id = s.snapshot_id
@@ -217,80 +168,11 @@ def list_shares(
 
 
 # ---------------------------------------------------------------------------
-# get_shared_snapshot (endpoint public O1 -- intentionnellement non-scope projet)
+# `get_shared_snapshot` is DELETED by Story 50.7.
+#
+# It looked a snapshot up by PLAINTEXT token equality, filtered only on
+# `revoked_at IS NULL` -- there was no expiry check because there was no
+# expiry column. Replaced by the AD-30 exchange: the bearer is consumed once
+# in a POST body, and the resulting session is revalidated against the
+# Share's live state on EVERY call, not only at exchange.
 # ---------------------------------------------------------------------------
-
-
-def get_shared_snapshot(token: str, conn) -> dict | None:
-    """Lire un snapshot partage via son token (endpoint public, O1 strict).
-
-    Retourne le snapshot fige + metadonnees de partage, ou None si :
-      - Le token est inconnu.
-      - Le partage est revoque (revoked_at IS NOT NULL).
-
-    GARANTIE O1 : cette fonction ne touche QUE les tables
-      app.render_snapshot_shares et app.render_snapshots.
-      Elle n'accede JAMAIS aux marts, aux connexions, aux projets, ni a
-      aucune autre table du schema app. Aucun re-run n'est effectue.
-
-    Le resultat contient :
-      - envelope       : l'envelope AD-1 gelee au moment du rendu (jamais
-                         re-executee, AD-9).
-      - widget_uri     : URI du widget au moment du rendu.
-      - shared_at      : horodatage du partage (AD-9, "partage le").
-      - stale_since    : freshness gelee = envelope.meta.freshness tel que
-                         stocke (honnete, AD-9).
-      - tool_name      : 'get_card' ou 'get_report'.
-      - question       : question ou rapport (informatif).
-      - summary_snippet: extrait LLM (informatif).
-
-    Args:
-        token: Token URL-safe du partage.
-        conn:  Connexion psycopg ouverte.
-    """
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT s.id           AS share_id,
-                   s.shared_at,
-                   s.shared_by,
-                   r.id           AS snapshot_id,
-                   r.tool_name,
-                   r.envelope,
-                   r.widget_uri,
-                   r.summary_snippet,
-                   r.question,
-                   r.created_at   AS rendered_at
-            FROM app.render_snapshot_shares s
-            JOIN app.render_snapshots r ON r.id = s.snapshot_id
-            WHERE s.share_token = %s
-              AND s.revoked_at IS NULL
-            """,
-            (token,),
-        )
-        row = cur.fetchone()
-        if row is None:
-            return None
-
-        cols = [d[0] for d in cur.description]
-        record: dict = {}
-        for col, val in zip(cols, row):
-            if col in ("shared_at", "rendered_at") and val is not None:
-                record[col] = val.isoformat()
-            elif col == "envelope":
-                if isinstance(val, str):
-                    try:
-                        record[col] = json.loads(val)
-                    except Exception:
-                        record[col] = val
-                else:
-                    record[col] = val
-            else:
-                record[col] = val
-
-    # Extraire stale_since depuis l'envelope gelee (AD-9 : freshness figee).
-    envelope = record.get("envelope") or {}
-    meta = envelope.get("meta") or {}
-    record["stale_since"] = meta.get("freshness")
-
-    return record

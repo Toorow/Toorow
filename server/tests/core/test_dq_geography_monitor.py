@@ -28,9 +28,19 @@ def _local_posture() -> GeographicPosture:
 
 
 def _patch_posture(monkeypatch, posture) -> None:
-    import core.geographic_reporting as geo
+    """Story 37.9: the stub follows the reader.
 
-    monkeypatch.setattr(geo, "fetch_project_geographic_posture", lambda *_a, **_k: posture)
+    This monitor read `project_preferences` through `geographic_reporting`, and its
+    `mode != local_markets` early return is what made that dangerous: a Project governed
+    through the ratified Country capability has an EMPTY preference row, so the monitor
+    NEVER RAN for it -- no evidence at all for unmapped provider spellings, for exactly
+    the Projects that published a Country meaning to compare them against. Leaving the
+    stub on the old symbol would have kept these five tests green against a function
+    production no longer calls.
+    """
+    import core.country_activation as activation
+
+    monkeypatch.setattr(activation, "governed_posture", lambda *_a, **_k: posture)
 
 
 def _patch_warehouse(monkeypatch, rows) -> None:

@@ -217,16 +217,22 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("KnowledgeGraphPage — target_field pure logic", () => {
-  it("registers the dictionary as a fourth, English-labelled node type", () => {
-    expect(NODE_TYPE_ORDER).toEqual(["topic", "procedure", "schema_doc", "target_field"]);
+  it("registers the dictionary as an English-labelled node type, enabled by default", () => {
+    // Story 45.3 added the three Context Hub types the server had been projecting
+    // since 45.1, so the order is no longer four long. What this test is for
+    // stands: the dictionary is registered, labelled in English, and on by
+    // default. The full order is asserted in ContextHubWiring.test.tsx.
+    expect(NODE_TYPE_ORDER).toContain("target_field");
     expect(NODE_TYPE_LABELS.target_field).toBe("Dictionary field");
     expect(DEFAULT_FILTERS.types.target_field).toBe(true);
+    expect(new Set(NODE_TYPE_ORDER).size).toBe(NODE_TYPE_ORDER.length);
+    expect(NODE_TYPE_ORDER.every((key) => typeof NODE_TYPE_LABELS[key] === "string")).toBe(true);
   });
 
   it("hiding the dictionary drops its nodes AND the edges that touched them", () => {
     const out = applyGraphFilters(BUNDLE.nodes, BUNDLE.edges, {
       ...DEFAULT_FILTERS,
-      types: { topic: true, procedure: true, schema_doc: true, target_field: false },
+      types: { ...DEFAULT_FILTERS.types, target_field: false },
     });
     expect(out.nodes.map((n) => n.id)).toEqual(["top_1"]);
     expect(out.edges).toEqual([]);
@@ -266,8 +272,8 @@ describe("KnowledgeGraphPage — dictionary field nodes on the canvas", () => {
       expect(card.className).toContain("kg-node--target_field");
       expect(within(card).getByText("Dictionary field")).toBeInTheDocument();
       // metric / dimension badge carried from the server payload's field_kind.
-      expect(screen.getByTestId("kg-field-kind-clicks")).toHaveTextContent("metric");
-      expect(screen.getByTestId("kg-field-kind-country")).toHaveTextContent("dimension");
+      expect(screen.getByTestId("kg-field-kind-clicks")).toHaveTextContent("Metric");
+      expect(screen.getByTestId("kg-field-kind-country")).toHaveTextContent("Dimension");
       expect(screen.getByTestId("kg-count")).toHaveTextContent("3/3 nodes · 1 links");
 
       await user.click(screen.getByTestId("kg-toggle-target_field"));
@@ -306,7 +312,7 @@ describe("KnowledgeGraphPage — dictionary field drawer", () => {
       const drawer = await screen.findByTestId("kg-drawer");
       expect(within(drawer).getByTestId("kg-field-readonly-banner")).toBeInTheDocument();
       expect(within(drawer).getByTestId("kg-field-name")).toHaveTextContent("clicks");
-      expect(within(drawer).getByTestId("kg-field-kind-meta")).toHaveTextContent("metric");
+      expect(within(drawer).getByTestId("kg-field-kind-meta")).toHaveTextContent("Metric");
       // Verbatim description, no invented summary; v5 from the versions table.
       expect(within(drawer).getByTestId("kg-drawer-body")).toHaveTextContent(
         "Ad clicks, deduplicated across networks.",
@@ -396,7 +402,7 @@ describe("KnowledgeGraphPage — linking a field through the 44.5 modal", () => 
     "POSTs to_type: 'target_field' when a topic is connected to a dictionary field",
     async () => {
       const calls = stubFetch((url) => {
-        if (url === "/api/context/graph/edges") {
+        if (url.split("?")[0] === "/api/context/graph/edges") {
           return resp(201, {
             id: "edge_new",
             from_id: "top_1",
@@ -428,7 +434,7 @@ describe("KnowledgeGraphPage — linking a field through the 44.5 modal", () => 
         expect(screen.queryByText("Link these two nodes")).not.toBeInTheDocument();
       });
 
-      const edgeCall = calls.find((c) => c.url === "/api/context/graph/edges");
+      const edgeCall = calls.find((c) => c.url.split("?")[0] === "/api/context/graph/edges");
       expect(edgeCall).toBeDefined();
       expect(JSON.parse(String(edgeCall!.init!.body))).toEqual({
         project_id: "p1",

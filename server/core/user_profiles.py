@@ -103,6 +103,7 @@ def upsert_user_profile(
     email: str | None = None,
     avatar_url: str | None = None,
     avatar_source: str | None = None,
+    clear_fields: frozenset[str] = frozenset(),
 ) -> dict:
     """Insert or update the profile for *identity*, touching only provided fields.
 
@@ -121,7 +122,7 @@ def upsert_user_profile(
         ("avatar_url", avatar_url),
         ("avatar_source", avatar_source),
     ):
-        if val is not None:
+        if val is not None or col in clear_fields:
             provided[col] = val
 
     with conn.cursor() as cur:

@@ -1,0 +1,220 @@
+{
+  "_README": "Les metiers projetes dans le Context Hub. AJOUTER UN METIER NE DEMANDE PAS DE TOUCHER AU CODE : une entree ici suffit. Chaque metier declare la racine SEMEE sous laquelle il vit (les six de la migration 130), les documents ratifies dont il est proprietaire, les operations produit qu'il doit savoir mener, et les familles de matiere qu'il recoit. Tout le contenu projete est en ANGLAIS : c'est du contenu produit.",
+  "_CONNECTORS": "Les cartes de connecteur NE sont PAS projetees ici. `server/core/context_seed.py` (story 44.2) les seme deja, en process, a la creation du projet et apres chaque atterrissage : une carte PLATEFORME par module BRANCHE au projet, composee des memes fichiers verbatim, idempotente par index unique (migration 113), et qui REFUSE d'ecraser une edition humaine. Projeter les 39 en portee projet fabriquerait une seconde copie qui diverge -- ce que governance.md interdit : << A classification organizes objects; it does not create a second copy of them. >>",
+  "_ROOTS": "Racines semees disponibles : sales, marketing, product, engineering, finance, legal. En creer une nouvelle mettrait deux vocabulaires sans relation cote a cote.",
+  "operations": {
+    "add-a-skill": {
+      "label": "How to add a Skill",
+      "module": "context_api",
+      "endpoints": [
+        "_create_procedure",
+        "_update_procedure",
+        "_archive_procedure"
+      ],
+      "note": "A Skill is a versioned procedure. `glossary.md` files *Procedure* among the delivered tokens: the product noun is Skill. The name must be unique per project — a second one returns 409."
+    },
+    "add-a-knowledge-item": {
+      "label": "How to add a Knowledge item",
+      "module": "context_api",
+      "endpoints": [
+        "_create_topic",
+        "_update_topic",
+        "_archive_topic"
+      ],
+      "note": "The body field is `body_md`, not `body`. Sending `body` stores an empty item and returns 201 — nothing warns you."
+    },
+    "add-a-glossary-value": {
+      "label": "How to add a value to the glossary",
+      "module": "datamodel_api",
+      "endpoints": [
+        "_create_field",
+        "_approve_field",
+        "_get_field_history",
+        "_upsert_mapping"
+      ],
+      "note": "The glossary is the canonical target-field catalog. A new value is created, then APPROVED — creation alone does not make it usable, and the history is queryable per field."
+    },
+    "write-governance": {
+      "label": "How to write governance",
+      "module": "business_taxonomy_api",
+      "endpoints": [
+        "_create_domain",
+        "_create_classification",
+        "_create_link",
+        "_preview_path"
+      ],
+      "note": "Three layers in this order: a Business Domain is the organization-owned root, a Classification groups objects under it, and a Link attaches a governed object. No object carries a `domain` field — the attachment is always a separate call."
+    },
+    "connect-knowledge-to-a-skill": {
+      "label": "How to connect a Knowledge item to a Skill",
+      "module": "context_api",
+      "endpoints": [
+        "_create_graph_edge",
+        "_list_graph_edges",
+        "_get_graph"
+      ],
+      "note": "This is a DIFFERENT link system from business-links: it joins two Context Hub nodes to each other. `search_context` walks it for its `neighbor` tier, so without these edges a search never reaches a neighbouring item."
+    },
+    "set-up-a-datastream": {
+      "label": "How to set up a Datastream",
+      "module": "datastream_preconfiguration_api",
+      "endpoints": [
+        "_create",
+        "_compile",
+        "_create_preview",
+        "_prepare_draft_confirmation",
+        "_confirm_create_draft"
+      ],
+      "note": "The ratified nine-step path is a separate Skill. These are the routes it walks."
+    }
+  },
+  "trades": {
+    "data-analyst": {
+      "root": "marketing",
+      "name": "Data Analyst — connect, reconcile, answer",
+      "description": "Connect a source, make it speak the project vocabulary, and answer a question without taking anyone's word for it.",
+      "documents": [
+        "data",
+        "data-path",
+        "datastream-workbench-and-wizard",
+        "file-source-ingestion",
+        "analyze-and-test"
+      ],
+      "capabilities": [
+        "tax-fees",
+        "country",
+        "currency-fx",
+        "reporting-timezone",
+        "competitors"
+      ],
+      "operations": [
+        "add-a-glossary-value",
+        "set-up-a-datastream"
+      ],
+      "families": [],
+      "references": []
+    },
+    "developer": {
+      "root": "engineering",
+      "name": "Developer — change a screen without breaking the chain",
+      "description": "What a screen is for, what it is missing, and the database structure underneath it.",
+      "documents": [
+        "visualization-and-rendering",
+        "user-bridge",
+        "proactive-assertions"
+      ],
+      "capabilities": [],
+      "operations": [
+        "add-a-knowledge-item",
+        "connect-knowledge-to-a-skill"
+      ],
+      "families": [
+        "screens"
+      ],
+      "references": [
+        "SCHEMA"
+      ]
+    },
+    "tester": {
+      "root": "engineering",
+      "name": "Tester — prove that it works",
+      "description": "Which tool proves what, what a green result actually establishes, and where a gate does not exist at all.",
+      "documents": [
+        "element-control-loop"
+      ],
+      "capabilities": [],
+      "operations": [],
+      "families": [],
+      "references": [
+        "TOOLBOX"
+      ]
+    },
+    "reviewer": {
+      "root": "engineering",
+      "name": "Reviewer — reconcile four lenses, never produce a fifth opinion",
+      "description": "One digest, four read-only lenses in parallel, one cross-check, one issue.",
+      "documents": [],
+      "capabilities": [],
+      "operations": [],
+      "families": [],
+      "references": []
+    },
+    "devops": {
+      "root": "engineering",
+      "name": "DevOps — run it, schedule it, migrate it",
+      "description": "The execution substrate, the schedule, and the migration ledger the schema depends on.",
+      "documents": [
+        "execution-substrate"
+      ],
+      "capabilities": [],
+      "operations": [],
+      "families": [],
+      "references": [
+        "SCHEMA",
+        "TOOLBOX"
+      ]
+    },
+    "manager": {
+      "root": "product",
+      "name": "Manager — know where things stand without taking it on trust",
+      "description": "Wanted against delivered, where a journey stops, and which documents are no longer the intent.",
+      "documents": [
+        "overview",
+        "alignment-register",
+        "caveats-register"
+      ],
+      "capabilities": [],
+      "operations": [],
+      "families": [],
+      "references": [
+        "SURFACE-STATE",
+        "INDEX"
+      ]
+    },
+    "help-center": {
+      "root": "product",
+      "name": "Help Center — explain a surface to the person using it",
+      "description": "What each page is for and how it is laid out, in the words the product itself uses.",
+      "documents": [
+        "page-structure",
+        "project-settings",
+        "governance"
+      ],
+      "capabilities": [],
+      "operations": [],
+      "families": [],
+      "references": []
+    },
+    "business-writer": {
+      "root": "product",
+      "name": "Business Writer — decompose a trade into Skills and Knowledge",
+      "description": "The trade that builds the others: what a correct decomposition looks like, what a Skill is, what a Knowledge item is, and what links them.",
+      "documents": [
+        "context-hub",
+        "glossary",
+        "product-sheet"
+      ],
+      "capabilities": [],
+      "operations": [
+        "add-a-skill",
+        "write-governance"
+      ],
+      "families": [],
+      "references": [
+        "INDEX"
+      ]
+    },
+    "skill-editor": {
+      "root": "product",
+      "name": "Skill Editor — write a Skill the console can render",
+      "description": "Every rule a Skill must satisfy, read from the validator that enforces them.",
+      "documents": [],
+      "capabilities": [],
+      "operations": [
+        "add-a-skill"
+      ],
+      "families": [],
+      "references": []
+    }
+  }
+}

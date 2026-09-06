@@ -3,7 +3,7 @@ version: 2
 sources:
   - name: raw_ga4
     description: "Immutable raw landing zone for GA4 daily standard reports (AD-7: append-only)."
-    schema: main  # DuckDB default schema; BigQuery: override via profiles.yml dataset
+    schema: "{{ var('raw_schema', 'main') }}"  # 24.4 AC2: org_<wslug>_raw injected by orchestrator, 'main' without var (bit-identique)
     tables:
       - name: raw_ga4_standard_daily
         description: >

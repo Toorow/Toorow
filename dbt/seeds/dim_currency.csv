@@ -1,0 +1,174 @@
+code,numeric_code,minor_unit,display_name,kind,status,aliases
+AED,784,2,UAE Dirham,tender,active,AED|DIRHAM
+AFN,971,2,Afghani,tender,active,AFN
+ALL,008,2,Lek,tender,active,ALL
+AMD,051,2,Armenian Dram,tender,active,AMD
+ANG,532,2,Netherlands Antillean Guilder,tender,withdrawn,ANG
+AOA,973,2,Kwanza,tender,active,AOA
+ARS,032,2,Argentine Peso,tender,active,ARS
+AUD,036,2,Australian Dollar,tender,active,AU$|AUD
+AWG,533,2,Aruban Florin,tender,active,AWG
+AZN,944,2,Azerbaijan Manat,tender,active,AZN
+BAM,977,2,Convertible Mark,tender,active,BAM
+BBD,052,2,Barbados Dollar,tender,active,BBD
+BDT,050,2,Taka,tender,active,BDT
+BGN,975,2,Bulgarian Lev,tender,active,BGN
+BHD,048,3,Bahraini Dinar,tender,active,BHD
+BIF,108,0,Burundi Franc,tender,active,BIF
+BMD,060,2,Bermudian Dollar,tender,active,BMD
+BND,096,2,Brunei Dollar,tender,active,BND
+BOB,068,2,Boliviano,tender,active,BOB
+BOV,984,2,Mvdol,fund,active,BOV
+BRL,986,2,Brazilian Real,tender,active,BRL|R$
+BSD,044,2,Bahamian Dollar,tender,active,BSD
+BTN,064,2,Ngultrum,tender,active,BTN
+BWP,072,2,Pula,tender,active,BWP
+BYN,933,2,Belarusian Ruble,tender,active,BYN
+BZD,084,2,Belize Dollar,tender,active,BZD
+CAD,124,2,Canadian Dollar,tender,active,CA$|CAD
+CDF,976,2,Congolese Franc,tender,active,CDF
+CHE,947,2,WIR Euro,fund,active,CHE
+CHF,756,2,Swiss Franc,tender,active,CHF
+CHW,948,2,WIR Franc,fund,active,CHW
+CLF,990,4,Unidad de Fomento,fund,active,CLF
+CLP,152,0,Chilean Peso,tender,active,CLP
+CNY,156,2,Yuan Renminbi,tender,active,CNY|RMB
+COP,170,2,Colombian Peso,tender,active,COP
+COU,970,2,Unidad de Valor Real,fund,active,COU
+CRC,188,2,Costa Rican Colon,tender,active,CRC
+CUP,192,2,Cuban Peso,tender,active,CUP
+CVE,132,2,Cabo Verde Escudo,tender,active,CVE
+CZK,203,2,Czech Koruna,tender,active,CZK
+DJF,262,0,Djibouti Franc,tender,active,DJF
+DKK,208,2,Danish Krone,tender,active,DKK
+DOP,214,2,Dominican Peso,tender,active,DOP
+DZD,012,2,Algerian Dinar,tender,active,DZD
+EGP,818,2,Egyptian Pound,tender,active,EGP
+ERN,232,2,Nakfa,tender,active,ERN
+ETB,230,2,Ethiopian Birr,tender,active,ETB
+EUR,978,2,Euro,tender,active,EUR|EURO|€
+FJD,242,2,Fiji Dollar,tender,active,FJD
+FKP,238,2,Falkland Islands Pound,tender,active,FKP
+GBP,826,2,Pound Sterling,tender,active,GBP|STERLING|£
+GEL,981,2,Lari,tender,active,GEL
+GHS,936,2,Ghana Cedi,tender,active,GHS
+GIP,292,2,Gibraltar Pound,tender,active,GIP
+GMD,270,2,Dalasi,tender,active,GMD
+GNF,324,0,Guinean Franc,tender,active,GNF
+GTQ,320,2,Quetzal,tender,active,GTQ
+GYD,328,2,Guyana Dollar,tender,active,GYD
+HKD,344,2,Hong Kong Dollar,tender,active,HKD
+HNL,340,2,Lempira,tender,active,HNL
+HTG,332,2,Gourde,tender,active,HTG
+HUF,348,2,Forint,tender,active,HUF
+IDR,360,2,Rupiah,tender,active,IDR
+ILS,376,2,New Israeli Sheqel,tender,active,ILS
+INR,356,2,Indian Rupee,tender,active,INR|₹
+IQD,368,3,Iraqi Dinar,tender,active,IQD
+IRR,364,2,Iranian Rial,tender,active,IRR
+ISK,352,0,Iceland Krona,tender,active,ISK
+JMD,388,2,Jamaican Dollar,tender,active,JMD
+JOD,400,3,Jordanian Dinar,tender,active,JOD
+JPY,392,0,Yen,tender,active,JPY|YEN|¥
+KES,404,2,Kenyan Shilling,tender,active,KES
+KGS,417,2,Som,tender,active,KGS
+KHR,116,2,Riel,tender,active,KHR
+KMF,174,0,Comorian Franc,tender,active,KMF
+KPW,408,2,North Korean Won,tender,active,KPW
+KRW,410,0,Won,tender,active,KRW|₩
+KWD,414,3,Kuwaiti Dinar,tender,active,KWD
+KYD,136,2,Cayman Islands Dollar,tender,active,KYD
+KZT,398,2,Tenge,tender,active,KZT
+LAK,418,2,Lao Kip,tender,active,LAK
+LBP,422,2,Lebanese Pound,tender,active,LBP
+LKR,144,2,Sri Lanka Rupee,tender,active,LKR
+LRD,430,2,Liberian Dollar,tender,active,LRD
+LSL,426,2,Loti,tender,active,LSL
+LYD,434,3,Libyan Dinar,tender,active,LYD
+MAD,504,2,Moroccan Dirham,tender,active,MAD
+MDL,498,2,Moldovan Leu,tender,active,MDL
+MGA,969,2,Malagasy Ariary,tender,active,MGA
+MKD,807,2,Denar,tender,active,MKD
+MMK,104,2,Kyat,tender,active,MMK
+MNT,496,2,Tugrik,tender,active,MNT
+MOP,446,2,Pataca,tender,active,MOP
+MRU,929,2,Ouguiya,tender,active,MRU
+MUR,480,2,Mauritius Rupee,tender,active,MUR
+MVR,462,2,Rufiyaa,tender,active,MVR
+MWK,454,2,Malawi Kwacha,tender,active,MWK
+MXN,484,2,Mexican Peso,tender,active,MXN
+MXV,979,2,Mexican Unidad de Inversion,fund,active,MXV
+MYR,458,2,Malaysian Ringgit,tender,active,MYR
+MZN,943,2,Mozambique Metical,tender,active,MZN
+NAD,516,2,Namibia Dollar,tender,active,NAD
+NGN,566,2,Naira,tender,active,NGN
+NIO,558,2,Cordoba Oro,tender,active,NIO
+NOK,578,2,Norwegian Krone,tender,active,NOK
+NPR,524,2,Nepalese Rupee,tender,active,NPR
+NZD,554,2,New Zealand Dollar,tender,active,NZD
+OMR,512,3,Rial Omani,tender,active,OMR
+PAB,590,2,Balboa,tender,active,PAB
+PEN,604,2,Sol,tender,active,PEN
+PGK,598,2,Kina,tender,active,PGK
+PHP,608,2,Philippine Peso,tender,active,PHP
+PKR,586,2,Pakistan Rupee,tender,active,PKR
+PLN,985,2,Zloty,tender,active,PLN
+PYG,600,0,Guarani,tender,active,PYG
+QAR,634,2,Qatari Rial,tender,active,QAR
+RON,946,2,Romanian Leu,tender,active,RON
+RSD,941,2,Serbian Dinar,tender,active,RSD
+RUB,643,2,Russian Ruble,tender,active,RUB
+RWF,646,0,Rwanda Franc,tender,active,RWF
+SAR,682,2,Saudi Riyal,tender,active,SAR
+SBD,090,2,Solomon Islands Dollar,tender,active,SBD
+SCR,690,2,Seychelles Rupee,tender,active,SCR
+SDG,938,2,Sudanese Pound,tender,active,SDG
+SEK,752,2,Swedish Krona,tender,active,SEK
+SGD,702,2,Singapore Dollar,tender,active,SGD
+SHP,654,2,Saint Helena Pound,tender,active,SHP
+SLE,925,2,Leone,tender,active,SLE
+SOS,706,2,Somali Shilling,tender,active,SOS
+SRD,968,2,Surinam Dollar,tender,active,SRD
+SSP,728,2,South Sudanese Pound,tender,active,SSP
+STN,930,2,Dobra,tender,active,STN
+SVC,222,2,El Salvador Colon,tender,active,SVC
+SYP,760,2,Syrian Pound,tender,active,SYP
+SZL,748,2,Lilangeni,tender,active,SZL
+THB,764,2,Baht,tender,active,THB
+TJS,972,2,Somoni,tender,active,TJS
+TMT,934,2,Turkmenistan New Manat,tender,active,TMT
+TND,788,3,Tunisian Dinar,tender,active,TND
+TOP,776,2,Pa anga,tender,active,TOP
+TRY,949,2,Turkish Lira,tender,active,TRY
+TTD,780,2,Trinidad and Tobago Dollar,tender,active,TTD
+TWD,901,2,New Taiwan Dollar,tender,active,TWD
+TZS,834,2,Tanzanian Shilling,tender,active,TZS
+UAH,980,2,Hryvnia,tender,active,UAH
+UGX,800,0,Uganda Shilling,tender,active,UGX
+USD,840,2,US Dollar,tender,active,$|DOLLAR|US$|USD
+USN,997,2,US Dollar Next Day,fund,active,USN
+UYI,940,0,Uruguay Peso en Unidades Indexadas,fund,active,UYI
+UYU,858,2,Peso Uruguayo,tender,active,UYU
+UYW,927,4,Unidad Previsional,fund,active,UYW
+UZS,860,2,Uzbekistan Sum,tender,active,UZS
+VED,926,2,Bolivar Soberano,tender,active,VED
+VES,928,2,Bolivar Soberano,tender,active,VES
+VND,704,0,Dong,tender,active,VND
+VUV,548,0,Vatu,tender,active,VUV
+WST,882,2,Tala,tender,active,WST
+XAF,950,0,CFA Franc BEAC,tender,active,XAF
+XAG,961,,Silver,metal,active,XAG
+XAU,959,,Gold,metal,active,XAU
+XCD,951,2,East Caribbean Dollar,tender,active,XCD
+XCG,532,2,Caribbean Guilder,tender,active,XCG
+XDR,960,,Special Drawing Right,fund,active,SDR|XDR
+XOF,952,0,CFA Franc BCEAO,tender,active,XOF
+XPD,964,,Palladium,metal,active,XPD
+XPF,953,0,CFP Franc,tender,active,XPF
+XPT,962,,Platinum,metal,active,XPT
+XTS,963,,Code Reserved For Testing,test,active,XTS
+XXX,999,,No Currency,no_currency,active,XXX
+YER,886,2,Yemeni Rial,tender,active,YER
+ZAR,710,2,Rand,tender,active,ZAR
+ZMW,967,2,Zambian Kwacha,tender,active,ZMW
+ZWG,924,2,Zimbabwe Gold,tender,active,ZWG

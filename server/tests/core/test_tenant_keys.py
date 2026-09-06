@@ -125,7 +125,7 @@ def test_get_tenant_key_backend_returns_local_when_set(monkeypatch, tmp_path):
     assert isinstance(result, LocalFileKeyBackend)
 
 
-def test_get_tenant_key_backend_returns_secret_manager_stub(monkeypatch):
+def test_get_tenant_key_backend_returns_secret_manager(monkeypatch):
     """get_tenant_key_backend returns SecretManagerKeyBackend when requested."""
     monkeypatch.setenv("TENANT_KEY_BACKEND", "secret_manager")
 
@@ -134,15 +134,37 @@ def test_get_tenant_key_backend_returns_secret_manager_stub(monkeypatch):
     result = get_tenant_key_backend()
     assert isinstance(result, SecretManagerKeyBackend)
 
-    # The stub must raise NotImplementedError with HG-A message
-    with pytest.raises(NotImplementedError, match="HG-A"):
-        result.get_or_create_key("proj_test")
 
-    with pytest.raises(NotImplementedError, match="HG-A"):
-        result.delete_key("proj_test")
+def test_secret_manager_without_project_id_refuses_instead_of_falling_back(monkeypatch):
+    """No GCP project -> unavailable, NOT a silent local key.
 
-    with pytest.raises(NotImplementedError, match="HG-A"):
-        result.rotate_key("proj_test")
+    The failure mode this guards is the one that cost a live credential: a key
+    store that answers "no key" when it is merely unreachable lets the caller
+    mint a replacement over a credential that was never lost (AI-278).
+    """
+    monkeypatch.delenv("GCP_PROJECT", raising=False)
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+
+    from core.tenant_keys import SecretManagerKeyBackend, TenantKeyBackendUnavailable
+
+    with pytest.raises(TenantKeyBackendUnavailable):
+        SecretManagerKeyBackend().get_key("proj_test")
+
+
+def test_local_get_key_never_creates(backend):
+    """get_key on an unknown project answers None and writes no file."""
+    import pathlib
+
+    assert backend.get_key("proj_never_seen") is None
+    assert list(pathlib.Path(backend._key_dir).glob("*.key")) == []
+
+
+def test_local_decryption_keys_is_empty_when_no_key(backend):
+    """decryption_keys says 'nothing to try' rather than inventing a key."""
+    assert backend.decryption_keys("proj_never_seen") == []
+
+    created = backend.get_or_create_key("proj_now_exists")
+    assert backend.decryption_keys("proj_now_exists") == [created]
 
 
 def test_local_backend_delete_nonexistent_returns_false(backend):

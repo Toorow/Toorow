@@ -1,0 +1,484 @@
+{
+  "_note": "CAPTURED, NEVER TYPED (AI-303). Regenerate with server/tests/integration/capture_entity_spine_fixture.py against a disposable Postgres; the rows are what the chain of epics 68-69 actually produced, read back through the same views core.mirror_sync exports to the warehouse.",
+  "facts": {
+    "columns": [
+      [
+        "date",
+        "VARCHAR"
+      ],
+      [
+        "video_id",
+        "VARCHAR"
+      ],
+      [
+        "views",
+        "BIGINT"
+      ],
+      [
+        "grain_key",
+        "VARCHAR"
+      ],
+      [
+        "execution_id",
+        "VARCHAR"
+      ],
+      [
+        "plan_version_id",
+        "VARCHAR"
+      ],
+      [
+        "mapping_version_id",
+        "VARCHAR"
+      ],
+      [
+        "project_id",
+        "VARCHAR"
+      ]
+    ],
+    "relation": "managed_feed_ds_bdd85e59dcce",
+    "rows": [
+      {
+        "date": "2026-08-01",
+        "execution_id": "dse_01M0QBPPEEQYXQYCWCP5570WQF",
+        "grain_key": "e1d18e183bc545ddc1c848115fbc3b131d6fd813abb328b7433353f260b555e5",
+        "mapping_version_id": "dmap_17a741e8d2ce",
+        "plan_version_id": "dsp_cb3300d44189",
+        "project_id": "proj_01M0QBPMY3H44N9DMB0FKZKX19",
+        "video_id": "v-1",
+        "views": 120
+      },
+      {
+        "date": "2026-08-01",
+        "execution_id": "dse_01M0QBPPEEQYXQYCWCP5570WQF",
+        "grain_key": "63160de584b7db6dde35ff3023982910a1155130de9a12b866ca0ebfff53830c",
+        "mapping_version_id": "dmap_17a741e8d2ce",
+        "plan_version_id": "dsp_cb3300d44189",
+        "project_id": "proj_01M0QBPMY3H44N9DMB0FKZKX19",
+        "video_id": "v-2",
+        "views": 45
+      },
+      {
+        "date": "2026-08-02",
+        "execution_id": "dse_01M0QBPPEEQYXQYCWCP5570WQF",
+        "grain_key": "38c868660a5f5f75f712ad20f5bd86fd6a2ab10a3b77dda576b6b291e97dfc4a",
+        "mapping_version_id": "dmap_17a741e8d2ce",
+        "plan_version_id": "dsp_cb3300d44189",
+        "project_id": "proj_01M0QBPMY3H44N9DMB0FKZKX19",
+        "video_id": "v-1",
+        "views": 90
+      },
+      {
+        "date": "2026-08-02",
+        "execution_id": "dse_01M0QBPPEEQYXQYCWCP5570WQF",
+        "grain_key": "e86521e2598533ff5acf532b666ebacb387a960b1146ee19ef3b7729fc7effa8",
+        "mapping_version_id": "dmap_17a741e8d2ce",
+        "plan_version_id": "dsp_cb3300d44189",
+        "project_id": "proj_01M0QBPMY3H44N9DMB0FKZKX19",
+        "video_id": "v-2",
+        "views": 60
+      }
+    ]
+  },
+  "mirror": {
+    "entity_key_match_verdicts_dim": {
+      "columns": [
+        [
+          "org_id",
+          "VARCHAR"
+        ],
+        [
+          "project_id",
+          "VARCHAR"
+        ],
+        [
+          "datastream_id",
+          "VARCHAR"
+        ],
+        [
+          "object_kind",
+          "VARCHAR"
+        ],
+        [
+          "field_id",
+          "VARCHAR"
+        ],
+        [
+          "normalized_value",
+          "VARCHAR"
+        ],
+        [
+          "node_id",
+          "VARCHAR"
+        ],
+        [
+          "verdict",
+          "VARCHAR"
+        ],
+        [
+          "reason_code",
+          "VARCHAR"
+        ],
+        [
+          "observed_from",
+          "DATE"
+        ],
+        [
+          "observed_to",
+          "DATE"
+        ]
+      ],
+      "rows": [
+        {
+          "datastream_id": "ds_bdd85e59dcce",
+          "field_id": "video_id",
+          "node_id": "mdnode_01M0QBPN7WBFJMMJJHQ669GQ4K",
+          "normalized_value": "v-1",
+          "object_kind": "video",
+          "observed_from": "2026-08-01",
+          "observed_to": "2026-08-07",
+          "org_id": "org_01M0QBPMY35CZE39BJC7V8ZJYY",
+          "project_id": "proj_01M0QBPMY3H44N9DMB0FKZKX19",
+          "reason_code": "exact_lookup",
+          "verdict": "resolved"
+        },
+        {
+          "datastream_id": "ds_bdd85e59dcce",
+          "field_id": "video_id",
+          "node_id": "mdnode_01M0QBPN83A3WN4K7S1DNWWZTB",
+          "normalized_value": "v-2",
+          "object_kind": "video",
+          "observed_from": "2026-08-01",
+          "observed_to": "2026-08-07",
+          "org_id": "org_01M0QBPMY35CZE39BJC7V8ZJYY",
+          "project_id": "proj_01M0QBPMY3H44N9DMB0FKZKX19",
+          "reason_code": "exact_lookup",
+          "verdict": "resolved"
+        }
+      ]
+    },
+    "managed_feed_execution": {
+      "columns": [
+        [
+          "project_id",
+          "VARCHAR"
+        ],
+        [
+          "org_id",
+          "VARCHAR"
+        ],
+        [
+          "datastream_id",
+          "VARCHAR"
+        ],
+        [
+          "execution_id",
+          "VARCHAR"
+        ],
+        [
+          "loaded_at",
+          "TIMESTAMP WITH TIME ZONE"
+        ]
+      ],
+      "rows": [
+        {
+          "datastream_id": "ds_6f7cd8bcc717",
+          "execution_id": "dse_01M0QBPN29EPXBMZC1Q5K7ACRW",
+          "loaded_at": "2026-08-23 15:07:03.748615+02:00",
+          "org_id": "org_01M0QBPMY35CZE39BJC7V8ZJYY",
+          "project_id": "proj_01M0QBPMY3H44N9DMB0FKZKX19"
+        },
+        {
+          "datastream_id": "ds_bd8df0b6312c",
+          "execution_id": "dse_01M0QBPN9ABCZV70PGPFZRTKM4",
+          "loaded_at": "2026-08-23 15:07:03.748615+02:00",
+          "org_id": "org_01M0QBPMY35CZE39BJC7V8ZJYY",
+          "project_id": "proj_01M0QBPMY3H44N9DMB0FKZKX19"
+        },
+        {
+          "datastream_id": "ds_bdd85e59dcce",
+          "execution_id": "dse_01M0QBPPEEQYXQYCWCP5570WQF",
+          "loaded_at": "2026-08-23 15:07:03.748615+02:00",
+          "org_id": "org_01M0QBPMY35CZE39BJC7V8ZJYY",
+          "project_id": "proj_01M0QBPMY3H44N9DMB0FKZKX19"
+        }
+      ]
+    },
+    "managed_feed_grain": {
+      "columns": [
+        [
+          "project_id",
+          "VARCHAR"
+        ],
+        [
+          "org_id",
+          "VARCHAR"
+        ],
+        [
+          "datastream_id",
+          "VARCHAR"
+        ],
+        [
+          "landing_table",
+          "VARCHAR"
+        ],
+        [
+          "mapping_version_id",
+          "VARCHAR"
+        ],
+        [
+          "grain_columns",
+          "JSON"
+        ],
+        [
+          "has_grain",
+          "BOOLEAN"
+        ],
+        [
+          "date_column",
+          "VARCHAR"
+        ],
+        [
+          "dimension_columns",
+          "JSON"
+        ],
+        [
+          "measure_columns",
+          "JSON"
+        ],
+        [
+          "non_additive_columns",
+          "JSON"
+        ],
+        [
+          "grain_field_ids",
+          "JSON"
+        ]
+      ],
+      "rows": [
+        {
+          "datastream_id": "ds_6f7cd8bcc717",
+          "date_column": null,
+          "dimension_columns": "[]",
+          "grain_columns": "[\"video_id\"]",
+          "grain_field_ids": "[\"video_id\"]",
+          "has_grain": true,
+          "landing_table": "managed_feed_ds_6f7cd8bcc717",
+          "mapping_version_id": "dmap_d5daa347fa17",
+          "measure_columns": "[]",
+          "non_additive_columns": "[]",
+          "org_id": "org_01M0QBPMY35CZE39BJC7V8ZJYY",
+          "project_id": "proj_01M0QBPMY3H44N9DMB0FKZKX19"
+        },
+        {
+          "datastream_id": "ds_bd8df0b6312c",
+          "date_column": null,
+          "dimension_columns": "[]",
+          "grain_columns": "[\"day\",\"headline\"]",
+          "grain_field_ids": "[\"day\",\"headline\"]",
+          "has_grain": true,
+          "landing_table": "managed_feed_ds_bd8df0b6312c",
+          "mapping_version_id": "dmap_f18f5cb43ecb",
+          "measure_columns": "[]",
+          "non_additive_columns": "[]",
+          "org_id": "org_01M0QBPMY35CZE39BJC7V8ZJYY",
+          "project_id": "proj_01M0QBPMY3H44N9DMB0FKZKX19"
+        },
+        {
+          "datastream_id": "ds_bdd85e59dcce",
+          "date_column": "date",
+          "dimension_columns": "[\"video_id\"]",
+          "grain_columns": "[\"date\",\"video_id\"]",
+          "grain_field_ids": "[\"day\",\"video_id\"]",
+          "has_grain": true,
+          "landing_table": "managed_feed_ds_bdd85e59dcce",
+          "mapping_version_id": "dmap_17a741e8d2ce",
+          "measure_columns": "[\"views\"]",
+          "non_additive_columns": "[]",
+          "org_id": "org_01M0QBPMY35CZE39BJC7V8ZJYY",
+          "project_id": "proj_01M0QBPMY3H44N9DMB0FKZKX19"
+        }
+      ]
+    },
+    "master_data_derived_attributes_dim": {
+      "columns": [
+        [
+          "org_id",
+          "VARCHAR"
+        ],
+        [
+          "project_id",
+          "VARCHAR"
+        ],
+        [
+          "registry_id",
+          "VARCHAR"
+        ],
+        [
+          "node_id",
+          "VARCHAR"
+        ],
+        [
+          "object_kind",
+          "VARCHAR"
+        ],
+        [
+          "attribute",
+          "VARCHAR"
+        ],
+        [
+          "value_text",
+          "VARCHAR"
+        ],
+        [
+          "value_number",
+          "DECIMAL(38,9)"
+        ],
+        [
+          "rule_set_id",
+          "VARCHAR"
+        ],
+        [
+          "rule_set_version_id",
+          "VARCHAR"
+        ],
+        [
+          "is_current_rule_version",
+          "BOOLEAN"
+        ]
+      ],
+      "rows": [
+        {
+          "attribute": "content_type",
+          "is_current_rule_version": true,
+          "node_id": "mdnode_01M0QBPN83A3WN4K7S1DNWWZTB",
+          "object_kind": "video",
+          "org_id": "org_01M0QBPMY35CZE39BJC7V8ZJYY",
+          "project_id": "proj_01M0QBPMY3H44N9DMB0FKZKX19",
+          "registry_id": "mdreg_01M0QBPN07PYEC0N1MJJJ9WSXP",
+          "rule_set_id": "grs_01M0QBPPDSSA8XSD1KBVB2TV5J",
+          "rule_set_version_id": "grsv_01M0QBPPDXGE5GG2AC5ZG1V0P1",
+          "value_number": null,
+          "value_text": "long"
+        },
+        {
+          "attribute": "content_type",
+          "is_current_rule_version": true,
+          "node_id": "mdnode_01M0QBPN7WBFJMMJJHQ669GQ4K",
+          "object_kind": "video",
+          "org_id": "org_01M0QBPMY35CZE39BJC7V8ZJYY",
+          "project_id": "proj_01M0QBPMY3H44N9DMB0FKZKX19",
+          "registry_id": "mdreg_01M0QBPN07PYEC0N1MJJJ9WSXP",
+          "rule_set_id": "grs_01M0QBPPDSSA8XSD1KBVB2TV5J",
+          "rule_set_version_id": "grsv_01M0QBPPDXGE5GG2AC5ZG1V0P1",
+          "value_number": null,
+          "value_text": "short"
+        }
+      ]
+    },
+    "master_data_node_attributes_asof": {
+      "columns": [
+        [
+          "org_id",
+          "VARCHAR"
+        ],
+        [
+          "project_id",
+          "VARCHAR"
+        ],
+        [
+          "registry_id",
+          "VARCHAR"
+        ],
+        [
+          "node_id",
+          "VARCHAR"
+        ],
+        [
+          "version_id",
+          "VARCHAR"
+        ],
+        [
+          "effective_from",
+          "DATE"
+        ],
+        [
+          "effective_to",
+          "DATE"
+        ],
+        [
+          "object_kind",
+          "VARCHAR"
+        ],
+        [
+          "attribute",
+          "VARCHAR"
+        ],
+        [
+          "value_text",
+          "VARCHAR"
+        ],
+        [
+          "value_number",
+          "DECIMAL(38,9)"
+        ]
+      ],
+      "rows": [
+        {
+          "attribute": "video_id",
+          "effective_from": "2026-08-23",
+          "effective_to": null,
+          "node_id": "mdnode_01M0QBPN7WBFJMMJJHQ669GQ4K",
+          "object_kind": "video",
+          "org_id": "org_01M0QBPMY35CZE39BJC7V8ZJYY",
+          "project_id": "proj_01M0QBPMY3H44N9DMB0FKZKX19",
+          "registry_id": "mdreg_01M0QBPN07PYEC0N1MJJJ9WSXP",
+          "value_number": null,
+          "value_text": "v-1",
+          "version_id": "mdver_01M0QBPN7YR6030MGJKYRR78NG"
+        },
+        {
+          "attribute": "duration_seconds",
+          "effective_from": "2026-08-23",
+          "effective_to": null,
+          "node_id": "mdnode_01M0QBPN7WBFJMMJJHQ669GQ4K",
+          "object_kind": "video",
+          "org_id": "org_01M0QBPMY35CZE39BJC7V8ZJYY",
+          "project_id": "proj_01M0QBPMY3H44N9DMB0FKZKX19",
+          "registry_id": "mdreg_01M0QBPN07PYEC0N1MJJJ9WSXP",
+          "value_number": "42",
+          "value_text": "42",
+          "version_id": "mdver_01M0QBPN7YR6030MGJKYRR78NG"
+        },
+        {
+          "attribute": "video_id",
+          "effective_from": "2026-08-23",
+          "effective_to": null,
+          "node_id": "mdnode_01M0QBPN83A3WN4K7S1DNWWZTB",
+          "object_kind": "video",
+          "org_id": "org_01M0QBPMY35CZE39BJC7V8ZJYY",
+          "project_id": "proj_01M0QBPMY3H44N9DMB0FKZKX19",
+          "registry_id": "mdreg_01M0QBPN07PYEC0N1MJJJ9WSXP",
+          "value_number": null,
+          "value_text": "v-2",
+          "version_id": "mdver_01M0QBPN84QM0TVAA89TBVH74F"
+        },
+        {
+          "attribute": "duration_seconds",
+          "effective_from": "2026-08-23",
+          "effective_to": null,
+          "node_id": "mdnode_01M0QBPN83A3WN4K7S1DNWWZTB",
+          "object_kind": "video",
+          "org_id": "org_01M0QBPMY35CZE39BJC7V8ZJYY",
+          "project_id": "proj_01M0QBPMY3H44N9DMB0FKZKX19",
+          "registry_id": "mdreg_01M0QBPN07PYEC0N1MJJJ9WSXP",
+          "value_number": "3600",
+          "value_text": "3600",
+          "version_id": "mdver_01M0QBPN84QM0TVAA89TBVH74F"
+        }
+      ]
+    }
+  },
+  "object_kind": "video",
+  "org_id": "org_01M0QBPMY35CZE39BJC7V8ZJYY",
+  "project_id": "proj_01M0QBPMY3H44N9DMB0FKZKX19"
+}

@@ -19,15 +19,16 @@ from core.daily_insights_card_contract import (
     build_card_keys,
     recommend_card,
 )
-from core.daily_insights_schema import validate_published_insight
+from core.daily_insights_schema import evidence_universe, validate_published_insight
 
 _METRICS = {"clicks", "impressions", "conversions", "cost"}
 _DIMS = {"page", "country", "device"}
 
 # Given _METRICS/_DIMS: satisfiable = kpi, keywords, conversions, attribution;
-# not satisfiable = usertypes (needs active_users/sessions/device_category); journey (needs sessions).  # noqa: E501
+# not satisfiable = usertypes (needs active_users/sessions/device_category);
+# journey (needs sessions); videos (needs `views`, added 2026-08-19 by 6f0ec96a).  # noqa: E501
 _SATISFIABLE = {"kpi", "keywords", "conversions", "attribution"}
-_NOT_SATISFIABLE = {"usertypes", "journey"}
+_NOT_SATISFIABLE = {"usertypes", "journey", "videos"}
 _CONTEXT = {"dedup", "mediaplan_pacing", "connectors"}
 
 
@@ -111,13 +112,19 @@ def test_build_card_keys_produces_schema_valid_card():
             "comparison": "previous_7_days",
         },
         "card": result.card,
+        # Story 53.4 : la publication cite une METRIQUE que le serveur a mesuree.
+        # Elle citait le gabarit dont sa propre carte est batie -- une preuve que
+        # la gate 4 exigeait deja, donc une obligation qui ne demandait rien.
+        "evidenceRefs": ["metric:conversions"],
     }
     v = validate_published_insight(
         payload,
         available_metrics=_METRICS,
         available_dimensions=_DIMS,
         available_templates=_SATISFIABLE | _NOT_SATISFIABLE,
-        resolvable_evidence=set(),
+        resolvable_evidence=evidence_universe(
+            available_metrics=_METRICS, available_dimensions=_DIMS
+        ),
         freshness_date="2026-07-21",
         has_project_access=True,
         existing_slots=set(),

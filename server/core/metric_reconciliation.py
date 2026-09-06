@@ -263,17 +263,32 @@ def _emitters_from_modules(modules) -> dict[str, set[str]]:
 
 
 def _emitters_from_db_members(members_reader=None) -> dict[str, set[str]]:
-    """Build {canonical_metric -> {connectors}} from the 27.1 DB membership (fail-soft).
+    """Build {canonical_metric -> {connectors}} from an INJECTED membership reader.
 
-    Story A.4 requires the emitter enumeration to UNION the declared
-    ``overlap_group_members`` (JOIN ``overlap_groups`` for the group's canonical_name) so a
-    member declared in the topology but WITHOUT a loaded module still counts as an emitter.
-    Fail-soft: a DB error / unavailable connection yields {} -> the caller keeps the
-    manifest-only view, never an exception. ``members_reader`` is injectable (a fake
-    returning (canonical_name, connector) pairs) so the gate is testable offline.
+    Story A.4 read ``app.overlap_group_members`` here, so a member declared in the
+    reconciliation topology but WITHOUT a loaded module still counted as an
+    emitter. AI-295 retired that topology: nothing writes those tables any more,
+    so the default source is gone and ``members_reader is None`` yields ``{}``.
+
+    WHY REMOVING IT DOES NOT WIDEN THE GATE, measured rather than argued. The
+    membership came from ``metric_source_priority.csv`` (9 pairs) plus the
+    cost-verification pilot (2 pairs). Of those 11, NINE are already declared by
+    the emitting connector's own manifest, so the union added nothing. The two
+    that were not are both the ``cost`` metric claimed for the two verification
+    modules of that pilot -- and neither manifest declares ``cost``, because
+    neither of them emits one: the topology was making an emitter claim on its
+    members' behalf. ``cost`` is declared by 14 manifests, so it stays a detected
+    overlap without them. No metric loses an emitter that a connector declares.
+
+    The seam stays injectable: a caller that CAN name declared emitters from
+    somewhere else passes them in. What is gone is the default that read a store
+    nobody fills -- a query that returns [] forever reads as "no overlap declared"
+    and is indistinguishable from a correct empty answer.
     """
+    if members_reader is None:
+        return {}
     try:
-        pairs = members_reader() if members_reader is not None else _read_db_overlap_members()
+        pairs = members_reader()
     except Exception as exc:  # noqa: BLE001 -- fail-soft: degrade to manifests only.
         logger.warning("metric_reconciliation: injected member reader failed: %s", exc)
         return {}
@@ -282,27 +297,6 @@ def _emitters_from_db_members(members_reader=None) -> dict[str, set[str]]:
         if canonical_name and connector:
             index.setdefault(canonical_name, set()).add(connector)
     return index
-
-
-def _read_db_overlap_members() -> list[tuple[str, str]]:
-    """Read (canonical_name, connector) from overlap_group_members JOIN overlap_groups.
-
-    Fail-soft: any failure (DB down, schema absent in a unit context) returns [] so the
-    emitter enumeration silently degrades to the manifests, never crashing the gate."""
-    from core.db import get_connection  # noqa: PLC0415
-
-    try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT g.canonical_name, m.connector "
-                    "FROM app.overlap_group_members m "
-                    "JOIN app.overlap_groups g ON g.id = m.overlap_group_id"
-                )
-                return [(r[0], r[1]) for r in cur.fetchall()]
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("metric_reconciliation: overlap-member enumeration failed: %s", exc)
-        return []
 
 
 def _merge_emitter_indexes(*indexes) -> dict[str, set[str]]:
@@ -354,30 +348,6 @@ def _series_from_connectors(connectors, metric: str) -> tuple[SourceSeries, ...]
     )
 
 
-def _group_members(overlap_group_id: str | None) -> list[str]:
-    """Read the connectors that are members of *overlap_group_id* (fail-soft -> [])."""
-    if not overlap_group_id:
-        return []
-    from core.db import get_connection  # noqa: PLC0415
-
-    try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT connector FROM app.overlap_group_members "
-                    "WHERE overlap_group_id = %s ORDER BY connector",
-                    (overlap_group_id,),
-                )
-                return [r[0] for r in cur.fetchall()]
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "metric_reconciliation: member lookup failed group=%s: %s",
-            overlap_group_id,
-            exc,
-        )
-        return []
-
-
 def _keep_separate_decision(metric: str, rule: dict, members) -> RouteDecision:
     """Build a KEEP_SEPARATE decision: one series per member, sorted, NO total.
 
@@ -395,7 +365,7 @@ def _keep_separate_decision(metric: str, rule: dict, members) -> RouteDecision:
         reason=ReconciliationReason(
             code=CODE_KEEP_SEPARATE,
             message=(
-                f"series par source pour '{metric}' ; ne JAMAIS les additionner "
+                f"series per source for '{metric}'; NEVER add them together "
                 "(regle KEEP_SEPARATE)"
             ),
             emitters=tuple(_series_connectors(members)),
@@ -480,7 +450,15 @@ def _no_rule_decision(
     >=2 emitters -> UNRULED_OVERLAP (the conditional gate, invariant 5). Otherwise an
     additive metric (or an unknown one, fail-soft as additive) -> DIRECT_SUM (nothing to
     signal: one source or disjoint groups). A non-additive metric with >=1 emitter ->
-    NOT_COMBINABLE (ratio / average_position without a rule)."""
+    NOT_COMBINABLE (ratio / average_position without a rule).
+
+    Story 53.2 -- ``emitters`` is now the DECLARED emitters UNIONed with the ones the
+    caller OBSERVED contributing rows (see ``resolve_route(observed_emitters=...)``).
+    Before that union this function could answer DIRECT_SUM by vacuity: the manifest
+    registry is fail-soft and yields ``()`` whenever it is unreachable, ``len(()) >= 2``
+    is false, and the gate said "go ahead and sum" to a caller that had just counted two
+    connectors in the rows. A permission derived from an unreadable registry is not a
+    permission."""
     if len(emitters) >= 2:
         return RouteDecision(
             metric=metric,
@@ -526,6 +504,7 @@ def resolve_route(
     definition_resolver=None,
     emitters_source=None,
     members_source=None,
+    observed_emitters: tuple[str, ...] | list[str] = (),
 ) -> RouteDecision:
     """Route *metric* for *project_id* into a typed RouteDecision (PASSIVE, no I/O writes).
 
@@ -537,9 +516,20 @@ def resolve_route(
          OVERRIDE_NOT_MATERIALIZED (the mart is frozen on the PLATFORM priority, so an
          override cannot be honoured by it) -- per-source series + reason, never a wrong
          number.
-      3. ELSE (definition = resolve_metric_definitions(...).get(metric), layer 1):
+      3. ELSE (definition = the DECLARED additivity, Semantic Model first then
+         `app.metric_definitions` -- see `_resolve_definition`, retargeted 49.3):
          emitters = emitters_of(metric); >=2 -> UNRULED_OVERLAP (gate);
          additive -> DIRECT_SUM; non-additive -> NOT_COMBINABLE.
+
+    ``observed_emitters`` (story 53.2) -- the connectors the CALLER actually saw
+    contributing rows for this metric, UNIONed into the declared emitters before step 3
+    decides. It exists because the declared enumeration is fail-soft on both of its halves
+    (``_loaded_modules`` and ``_read_db_overlap_members`` swallow every exception and
+    return empty), so an unreachable registry made the gate answer ``DIRECT_SUM`` -- a
+    permission -- to a caller that had just counted two connectors in its rows. Row
+    evidence is the strongest emitter evidence there is: a connector that PRODUCED the
+    metric emits it, whatever a manifest says. Empty (the default) keeps the previous
+    behaviour byte for byte for callers that observe nothing.
 
     The layer-1 definition is resolved LAZILY (only on the no-rule path, F-5) so a routed
     or override decision never triggers a definition lookup. Every collaborator is
@@ -589,7 +579,38 @@ def resolve_route(
 
     definition = _resolve_definition(project_id, metric, definition_resolver)
     emitters = _resolve_emitters(metric, emitters_source)
+    if observed_emitters:
+        emitters = tuple(sorted(set(emitters) | {str(c) for c in observed_emitters if c}))
     return _no_rule_decision(metric, definition, emitters)
+
+
+def route_status_resolver(project_id: str):
+    """THE factory that binds the gate to a project -- or None when it cannot bind.
+
+    One factory, every call site. It used to live in ``cards.py`` under
+    ``_route_resolver_for``, which meant the four other producers of a cross-source
+    total (``get_daily_report``, the two notebook renders, the scheduler briefing) and
+    the report renderer had no way to ask short of importing the card module. They did
+    not ask, so five of the six paths that publish a combined number published it
+    unchecked while the register recorded the gate as wired.
+
+    The returned callable takes ``(metric, observed_sources)`` -- the connectors the
+    caller counted in its own rows -- and yields the route STATUS string
+    ``rollup._combination_refusal`` compares against ``_COMBINATION_REFUSED``.
+
+    ``None`` when there is no project: a stub answering "allowed" would read as
+    "checked", which is the lie this whole story exists to remove. ``compute_rollup``
+    records that difference as ``combination_check == "not_requested"``.
+    """
+    if not project_id:
+        return None
+
+    def _resolve(metric: str, observed_sources: tuple[str, ...] = ()):
+        return resolve_route(
+            project_id, metric, observed_emitters=tuple(observed_sources)
+        ).status
+
+    return _resolve
 
 
 # ---------------------------------------------------------------------------
@@ -598,28 +619,94 @@ def resolve_route(
 
 
 def _resolve_rule(project_id: str, metric: str, rule_resolver):
+    """The effective reconciliation rule, from the GOVERNED Rule Set (Story 49.4).
+
+    This read ``metric_semantics.resolve_reconciliation``, a PROJECT > ORG >
+    PLATFORM cascade over mutable ``overlap_groups`` rows whose members were
+    CONNECTOR LABELS. Two defects, and neither was visible from here:
+
+    * the cascade meant "no rule in this Project" quietly became "a rule at some
+      other scope". It answered for a project that does not exist at all --
+      ``resolve_route("no_such_project", "conversions")`` returned
+      ``ROUTED_TO_MART cross_source_conversions``, which is a routing decision for
+      nobody;
+    * a connector label names a provider, not a thing a Project publishes, so a
+      rule could not distinguish two Datastreams from the same provider and
+      silently followed the second one when it appeared.
+
+    A published Rule Set version pins exact Concept and Datastream versions, and a
+    Project reaches one through
+    :func:`core.controls_quality.materialize_reconciliation_template` -- the
+    template made editable, which is what AC3 requires instead of the cascade.
+
+    ``None`` means what it always meant: no rule governs this metric, so the
+    sources are kept separate and never summed. The pure decision logic below is
+    unchanged; only where the rule comes from has moved.
+    """
     if rule_resolver is not None:
         return rule_resolver(project_id, metric)
-    from core import metric_semantics  # noqa: PLC0415
+    from core.controls_quality import governed_runtime_rule  # noqa: PLC0415
 
-    return metric_semantics.resolve_reconciliation(project_id, metric)
+    return governed_runtime_rule(project_id, metric)
 
 
 def _resolve_definition(project_id: str, metric: str, definition_resolver):
+    """The layer-1 declaration this gate reads -- SEMANTIC MODEL FIRST since 49.3.
+
+    THE DEFECT THIS CLOSES, and it is the one story 60.2 already found once in
+    ``rollup.py``. This function read ``resolve_metric_definitions`` alone: the
+    PROJECT > ORG > PLATFORM cascade over ``app.metric_definitions``. So a metric
+    a person had declared ``non_additive`` in the Concept workbench -- the store
+    ``governance.md`` gives the last word to -- was invisible here, and step 5 of
+    ``resolve_route`` answered ``DIRECT_SUM`` on it: a PERMISSION to add two
+    sources together, derived from a store that did not carry the declaration.
+    ``governance.md`` names it in its *Incomplete if*: "a render reads
+    ``app.metric_definitions`` without going through the reader that puts the
+    Semantic Model first".
+
+    The order is the one that document settles, and the reader is the SAME one
+    every render already goes through
+    (:func:`core.metric_semantics.resolve_declared_additivity`), so what this gate
+    applies and what a roll-up applies cannot disagree:
+
+      1. a PUBLISHED Concept version's ``additivity_class``, mapped through
+         :func:`core.metric_semantics.declared_non_additive` -- ``semi_additive``
+         counts as non-additive here for its reason, "summable across SOME
+         dimensions" is not an answer a cross-source sum can use;
+      2. otherwise ``app.metric_definitions`` through its cascade -- the SECOND
+         layer of that same reader, so the lower store still answers for a metric
+         no published Concept carries. It is not consulted here any more; it is
+         consulted THERE, once, for every render in the product.
+
+    A metric NEITHER store declares is absent from the result, this returns
+    ``None``, and ``_no_rule_decision`` keeps its fail-soft ``additive=True``:
+    the move never widens a permission, it only lets a declaration take one away.
+    """
     if definition_resolver is not None:
         return definition_resolver(project_id, metric)
     from core import metric_semantics  # noqa: PLC0415
 
     try:
-        return metric_semantics.resolve_metric_definitions(project_id).get(metric)
-    except Exception as exc:  # noqa: BLE001
+        declared = metric_semantics.resolve_declared_additivity(project_id)
+    except Exception as exc:  # noqa: BLE001 -- fail-soft, same posture as before
         logger.warning(
-            "metric_reconciliation: definition lookup failed project=%s metric=%s: %s",
+            "metric_reconciliation: declared additivity unreadable project=%s "
+            "metric=%s: %s",
             project_id,
             metric,
             exc,
         )
         return None
+    if metric not in declared:
+        return None
+    # The class is the whole answer this gate needs, and `declared_non_additive`
+    # is the mapping that owns it -- `semi_additive` is on the non-summable side
+    # because "summable across SOME dimensions" is not an answer a cross-source
+    # sum can use. `additivity_class` travels so a caller can name what decided.
+    return {
+        "additive": metric not in metric_semantics.declared_non_additive(declared),
+        "additivity_class": declared[metric],
+    }
 
 
 def _resolve_emitters(metric: str, emitters_source) -> tuple[str, ...]:
@@ -629,14 +716,35 @@ def _resolve_emitters(metric: str, emitters_source) -> tuple[str, ...]:
 
 
 def _resolve_members(rule: dict, members_source, metric: str) -> list[str]:
+    """The members of the rule, from the store that OWNS them and no other.
+
+    A GOVERNED rule carries its own membership and must not touch
+    ``app.overlap_group_members`` at all -- that table is the pre-governance
+    store, and `governance.md`'s `Incomplete if` forbids a reconciliation rule
+    reaching into a parallel one.
+
+    Measured 2026-08-16: it was reaching into it on every single resolution, and
+    the only reason nothing was wrong is that the read could never succeed.
+    `controls_quality.py:422` sets ``overlap_group_id`` to the
+    ``rule_set_version_id`` -- deliberately, "it now names the governed version
+    rather than a mutable group row" -- but this function was never told, and
+    kept passing it to `_group_members` as if it were a group id. The two
+    namespaces cannot collide: a governed version is minted `grsv_`
+    (`governance_rule_sets.py:524`) and a group `ovg_`
+    (`metric_semantics.py:266`), so the query matched nothing, every time, and
+    fell through to the `priority_order` the governed rule already carried.
+
+    A read that works only because it always fails is not a working read. The
+    governed branch below skips it, and the answer is unchanged -- which is the
+    point: this removes a query, not a behaviour.
+    """
     if members_source is not None:
         return list(members_source(rule.get("overlap_group_id")))
-    members = _group_members(rule.get("overlap_group_id"))
-    if members:
-        return members
-    # Fail-soft: a KEEP_SEPARATE rule whose members did not load falls back to the
-    # priority_order (if any) so the series contract is never empty when the group has
-    # a declared membership carried on the rule.
+    # The published version IS the membership. The legacy branch that read
+    # `app.overlap_group_members` is gone with the store (AI-295): its own
+    # docstring had already measured that it could never match -- a governed
+    # version is minted `grsv_` and a group `ovg_` -- so it fell through to the
+    # `priority_order` below on every single call. Same answer, one less query.
     return list(rule.get("priority_order") or [])
 
 

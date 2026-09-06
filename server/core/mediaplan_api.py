@@ -19,9 +19,23 @@ Routes:
   GET    /api/mediaplans/{plan_id}/mappings               -> list mappings by line (22.3)
   GET    /api/mediaplans/{plan_id}/unmapped-actuals       -> unmapped perimeter spend (22.3)
   GET    /api/mediaplans/{plan_id}/pacing                  -> plan-vs-actual pacing (22.4)
-  PUT    /api/mediaplans/{plan_id}/import-contracts/{sheet_name} -> upsert import contract (22.2)
-  GET    /api/mediaplans/{plan_id}/import-contracts         -> list import contracts (22.2)
-  POST   /api/mediaplans/{plan_id}/import                   -> import xlsx into a candidate (22.2)
+
+RETIRED 2026-08-24 -- the three Story 22.2 import addresses are gone with the
+second xlsx engine they were the only door to:
+
+  PUT    /api/mediaplans/{plan_id}/import-contracts/{sheet_name}
+  GET    /api/mediaplans/{plan_id}/import-contracts
+  POST   /api/mediaplans/{plan_id}/import
+
+`file-source-ingestion.md` ratified ONE ingestion engine on 2026-08-17 and
+`mediaplan_import` was the second one. A media plan now reaches
+`app.media_plan_lines` through `import_runner.run_import()` with a Template
+declaring `landing_target: "plan_store"`, on the plan's own carrier Datastream
+(amendment of 2026-08-24). The retirement, its measurement and the two
+capabilities the one engine does not yet express are written in
+`docs/product-architecture/file-source-ingestion.md`, amendment « the second
+xlsx engine is retired »; the addresses are held shut by
+`server/tests/conformance/test_retired_mediaplan_import.py`.
 """
 
 from __future__ import annotations
@@ -36,13 +50,20 @@ from starlette.routing import Route
 
 from core.audit import ACTION_CROSS_SCOPE_ATTEMPT, write_audit_row
 
-logger = logging.getLogger(__name__)
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12) : declarees ICI, a cote du code qui les ecrit, et non
+# dans `core/audit.py`. `write_audit_row` refuse une action que personne n'a
+# declaree.
+#
+# `media_plan.import_contract.set` et `media_plan.imported` ne sont plus
+# declarees ici : leurs deux ecrivains sont partis avec le second moteur xlsx le
+# 2026-08-24. Une action declaree que rien n'ecrit est une porte qui parait
+# ouverte. Les lignes d'audit deja ecrites sous ces deux noms restent lisibles --
+# la declaration ne gouverne que l'ECRITURE.
 
-# DoS guard (F-5): cap the uploaded xlsx. 15 Mo of decoded bytes; base64 inflates
-# the payload ~4/3, so ~20 Mo of text -- guarded BEFORE decoding to avoid
-# materialising a huge byte buffer from a crafted body.
-MAX_IMPORT_FILE_BYTES = 15 * 1024 * 1024
-MAX_IMPORT_FILE_BASE64 = (MAX_IMPORT_FILE_BYTES * 4) // 3 + 4
+
+logger = logging.getLogger(__name__)
 
 
 async def _check_auth(request: Request) -> tuple[bool, str]:
@@ -93,6 +114,17 @@ def _is_uuid(value: str) -> bool:
     except (TypeError, ValueError, AttributeError):
         return False
     return True
+
+
+def _datastream_belongs_to_project(conn: Any, datastream_id: str, project_id: str) -> bool:
+    """Is this Datastream a live one of this project? (never disclose otherwise)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT 1 FROM app.datastreams "
+            "WHERE id = %s AND project_id = %s AND archived_at IS NULL",
+            (datastream_id, project_id),
+        )
+        return cur.fetchone() is not None
 
 
 def _plan_project_id(conn: Any, plan_id: str) -> str | None:
@@ -159,7 +191,19 @@ async def _create_plan(request: Request) -> Response:
         with get_connection() as conn:
             if not _check_project_role(conn, project_id, identity, "member"):
                 _audit_cross_scope(identity, "mediaplan_create", project_id)
-                return _not_found("Projet introuvable")
+                return _not_found("Project not found")
+
+            # WHICH DATASTREAM CARRIES IT (ratified 2026-08-24). The console
+            # always sends one -- creation is a gesture of the carrier's
+            # Workbench and of no other screen -- and the composite foreign key
+            # `(carrier_datastream_id, project_id)` keeps a carrier of another
+            # project out. It is checked HERE all the same, so the answer is a
+            # 404 that discloses nothing rather than a constraint violation
+            # surfacing as an opaque 500.
+            carrier = str(body.get("carrier_datastream_id") or "").strip()
+            if carrier and not _datastream_belongs_to_project(conn, carrier, project_id):
+                _audit_cross_scope(identity, carrier, project_id)
+                return _not_found("Datastream not found")
 
             plan = create_plan(
                 conn,
@@ -167,6 +211,7 @@ async def _create_plan(request: Request) -> Response:
                 name=body.get("name", ""),
                 currency=body.get("currency", "EUR"),
                 created_by=identity,
+                carrier_datastream_id=carrier or None,
             )
             conn.commit()
             return JSONResponse(plan, status_code=201)
@@ -176,7 +221,7 @@ async def _create_plan(request: Request) -> Response:
             return mapped
         logger.warning("mediaplan_api: create_plan error: %s", exc)
         return JSONResponse(
-            {"code": "db_error", "message": "Erreur lors de la création du plan"},
+            {"code": "db_error", "message": "Error while creating the plan"},
             status_code=500,
         )
 
@@ -189,20 +234,35 @@ async def _list_plans(request: Request) -> Response:
     project_id = request.path_params.get("project_id", "")
 
     from core.db import get_connection  # noqa: PLC0415
-    from core.mediaplan_store import list_plans  # noqa: PLC0415
+    from core.mediaplan_store import (  # noqa: PLC0415
+        list_carrier_datastreams,
+        list_plans,
+    )
 
     try:
         with get_connection() as conn:
             if not _check_project_role(conn, project_id, identity, "viewer"):
                 _audit_cross_scope(identity, "mediaplans_list", project_id)
-                return _not_found("Projet introuvable")
+                return _not_found("Project not found")
 
             plans = list_plans(conn, project_id=project_id)
-            return JSONResponse({"plans": plans})
+            # THE ADDRESS OF THE GESTURE, BESIDE THE COLLECTION IT FILLS
+            # (ratified 2026-08-24, `analyze-and-test.md`). A reader of this list
+            # with nothing in it needs the Workbench that creates the first plan,
+            # and until now no response said where that was -- which is why the
+            # Pacing lens could only name a gesture with no address.
+            #
+            # SENT ON EVERY READ AND NOT ONLY ON THE EMPTY ONE: a project that
+            # already has one plan and a second empty carrier is exactly the case
+            # the decision opens ("one or several plans, each on its own
+            # carrier"), and a payload that hid the carriers as soon as one plan
+            # existed would close it again.
+            carriers = list_carrier_datastreams(conn, project_id=project_id)
+            return JSONResponse({"plans": plans, "carriers": carriers})
     except Exception as exc:
         logger.warning("mediaplan_api: list_plans error: %s", exc)
         return JSONResponse(
-            {"code": "db_error", "message": "Erreur lors de la récupération des plans"},
+            {"code": "db_error", "message": "Error while fetching the plans"},
             status_code=500,
         )
 
@@ -235,7 +295,7 @@ async def _get_plan(request: Request) -> Response:
     except Exception as exc:
         logger.warning("mediaplan_api: get_plan error: %s", exc)
         return JSONResponse(
-            {"code": "db_error", "message": "Erreur lors de la récupération du plan"},
+            {"code": "db_error", "message": "Error while fetching the plan"},
             status_code=500,
         )
 
@@ -245,7 +305,31 @@ async def _get_plan(request: Request) -> Response:
 # ---------------------------------------------------------------------------
 
 
+#: Body keys that would be asking this door to publish. A version arrives as a
+#: CANDIDATE and by no other status, so these are refused rather than ignored:
+#: silently dropping `"publish": true` returns a 201 to a caller who believes the
+#: plan is live, which is the same silent direct write in a politer costume.
+_PUBLICATION_INTENT_KEYS = ("publish", "published", "publish_candidate", "status", "is_active")
+
+
 async def _create_version(request: Request) -> Response:
+    """POST a new CANDIDATE version of a plan (Member+).
+
+    THE GOVERNED TWO-STEP, THROUGH THIS DOOR TOO (AI-331, Jean 2026-08-31).
+    The one-engine clause of `file-source-ingestion.md` is scoped to FILES: a
+    mediaplan FILE reaches `app.media_plan_lines` only through `run_import()`.
+    This door is not a file import -- it is the plan's own editing gesture -- and
+    what Jean ratified is that it takes the SAME governed two-step the plan
+    object already owns: a candidate, then an explicit publish, never a silent
+    direct write.
+
+    Concretely: every rule about the shape and the money of a version lives in
+    `mediaplan_store.create_version_with_lines`, the ONE seam the file door goes
+    through as well (`import_landing.land_plan_store_rows`), so this handler adds
+    no validation of its own -- it would be a second rule. What it owns is the
+    wire contract, and the wire contract is where publication intent has to be
+    refused, because a JSON body can carry it and a landed row cannot.
+    """
     authorized, identity = await _check_auth(request)
     if not authorized:
         return _unauthorized()
@@ -257,6 +341,21 @@ async def _create_version(request: Request) -> Response:
         body = await request.json()
     except Exception:
         body = {}
+
+    if isinstance(body, dict):
+        asked = [key for key in _PUBLICATION_INTENT_KEYS if key in body]
+        if asked:
+            return JSONResponse(
+                {
+                    "code": "publication_is_a_separate_act",
+                    "message": (
+                        "A version is created as a candidate. Publish it with "
+                        "POST /api/mediaplans/versions/{version_id}/publish."
+                    ),
+                    "refused_keys": asked,
+                },
+                status_code=422,
+            )
 
     from core.db import get_connection  # noqa: PLC0415
     from core.mediaplan_store import create_version_with_lines  # noqa: PLC0415
@@ -285,7 +384,7 @@ async def _create_version(request: Request) -> Response:
             return mapped
         logger.warning("mediaplan_api: create_version error: %s", exc)
         return JSONResponse(
-            {"code": "db_error", "message": "Erreur lors de la création de la version"},
+            {"code": "db_error", "message": "Error while creating the version"},
             status_code=500,
         )
 
@@ -316,7 +415,7 @@ async def _list_versions(request: Request) -> Response:
     except Exception as exc:
         logger.warning("mediaplan_api: list_versions error: %s", exc)
         return JSONResponse(
-            {"code": "db_error", "message": "Erreur lors de la récupération des versions"},
+            {"code": "db_error", "message": "Error while fetching the versions"},
             status_code=500,
         )
 
@@ -375,7 +474,7 @@ async def _diff_versions(request: Request) -> Response:
         return JSONResponse(
             {
                 "code": "invalid_param",
-                "message": "Les paramètres « from » et « to » sont requis.",
+                "message": "The 'from' and 'to' parameters are required.",
             },
             status_code=422,
         )
@@ -498,7 +597,7 @@ async def _list_mappings(request: Request) -> Response:
             return mapped
         logger.warning("mediaplan_api: list_mappings error: %s", exc)
         return JSONResponse(
-            {"code": "db_error", "message": "Erreur lors de la récupération des mappings"},
+            {"code": "db_error", "message": "Error while fetching the mappings"},
             status_code=500,
         )
 
@@ -539,7 +638,7 @@ async def _list_unmapped_actuals(request: Request) -> Response:
         return JSONResponse(
             {
                 "code": "warehouse_unavailable",
-                "message": "Dépenses réelles indisponibles pour le moment",
+                "message": "Actual spend unavailable for now",
             },
             status_code=503,
         )
@@ -611,211 +710,23 @@ async def _get_pacing(request: Request) -> Response:
 
 
 # ---------------------------------------------------------------------------
-# Import contracts & Excel import (Story 22.2, FR38 / CAP-26)
+# RETIRED 2026-08-24 -- the Story 22.2 import surface lived here: three
+# handlers, `_set_import_contract`, `_list_import_contracts` and
+# `_import_workbook`. They were the only door onto `core/mediaplan_import.py`,
+# the SECOND xlsx engine, and they went with it.
+#
+# `file-source-ingestion.md` ratified ONE ingestion engine on 2026-08-17. A plan
+# now lands through `import_runner.run_import()` against a Template declaring
+# `landing_target: "plan_store"`, on the plan's own carrier Datastream. The
+# measurement that authorised the removal -- no console caller, no server caller
+# but the routes, and zero plans ever imported in production -- and the two
+# capabilities the one engine does NOT yet express are written in the amendment
+# « the second xlsx engine is retired ».
+#
+# The trace is kept HERE, beside the route table, because that is where the next
+# reader looks before re-adding an address. The addresses are held shut by
+# `server/tests/conformance/test_retired_mediaplan_import.py`.
 # ---------------------------------------------------------------------------
-
-
-async def _set_import_contract(request: Request) -> Response:
-    """PUT a reusable per-sheet import contract (Member+). Upsert on (plan, sheet)."""
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return _unauthorized()
-
-    plan_id = request.path_params.get("plan_id", "")
-    sheet_name = request.path_params.get("sheet_name", "")
-    if not _is_uuid(plan_id):
-        return _not_found("Plan introuvable")
-    if not sheet_name.strip():
-        return JSONResponse(
-            {"code": "invalid_param", "message": "Le nom d'onglet est requis."},
-            status_code=422,
-        )
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-
-    from core.audit import (  # noqa: PLC0415
-        ACTION_MEDIA_PLAN_IMPORT_CONTRACT_SET,
-        insert_audit_row,
-    )
-    from core.db import get_connection  # noqa: PLC0415
-    from core.mediaplan_import import validate_contract  # noqa: PLC0415
-
-    try:
-        contract = validate_contract(body.get("contract", body))
-    except Exception as exc:
-        mapped = _store_error_response(exc)
-        if mapped is not None:
-            return mapped
-        return JSONResponse(
-            {"code": "invalid_param", "message": "Contrat d'import invalide."},
-            status_code=422,
-        )
-
-    try:
-        import json  # noqa: PLC0415
-
-        with get_connection() as conn:
-            project_id = _plan_project_id(conn, plan_id)
-            if project_id is None:
-                return _not_found("Plan introuvable")
-            if not _check_project_role(conn, project_id, identity, "member"):
-                _audit_cross_scope(identity, plan_id, project_id)
-                return _not_found("Plan introuvable")
-
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO app.media_plan_import_contracts
-                        (plan_id, sheet_name, contract, created_by, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, now(), now())
-                    ON CONFLICT (plan_id, sheet_name) DO UPDATE
-                        SET contract = EXCLUDED.contract, updated_at = now()
-                    RETURNING id, plan_id, sheet_name, contract, created_by,
-                              created_at, updated_at
-                    """,
-                    (plan_id, sheet_name.strip(), json.dumps(contract), identity),
-                )
-                row = cur.fetchone()
-            insert_audit_row(
-                conn,
-                identity=identity,
-                action=ACTION_MEDIA_PLAN_IMPORT_CONTRACT_SET,
-                provider_account="platform",
-                connection_ref="",
-                metadata={"plan_id": plan_id, "sheet_name": sheet_name.strip()},
-            )
-            conn.commit()
-            return JSONResponse(
-                {
-                    "id": str(row[0]),
-                    "plan_id": str(row[1]),
-                    "sheet_name": row[2],
-                    "contract": row[3],
-                    "created_by": row[4],
-                    "created_at": row[5].isoformat(),
-                    "updated_at": row[6].isoformat(),
-                },
-                status_code=200,
-            )
-    except Exception as exc:
-        mapped = _store_error_response(exc)
-        if mapped is not None:
-            return mapped
-        logger.warning("mediaplan_api: set_import_contract error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": "Erreur lors de l'enregistrement du contrat"},
-            status_code=500,
-        )
-
-
-async def _list_import_contracts(request: Request) -> Response:
-    """GET the reusable import contracts of a plan (Viewer+)."""
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return _unauthorized()
-
-    plan_id = request.path_params.get("plan_id", "")
-    if not _is_uuid(plan_id):
-        return _not_found("Plan introuvable")
-
-    from core.db import get_connection  # noqa: PLC0415
-    from core.mediaplan_import import load_contracts  # noqa: PLC0415
-
-    try:
-        with get_connection() as conn:
-            project_id = _plan_project_id(conn, plan_id)
-            if project_id is None:
-                return _not_found("Plan introuvable")
-            if not _check_project_role(conn, project_id, identity, "viewer"):
-                _audit_cross_scope(identity, plan_id, project_id)
-                return _not_found("Plan introuvable")
-
-            contracts = load_contracts(conn, plan_id=plan_id)
-            return JSONResponse({"contracts": contracts})
-    except Exception as exc:
-        logger.warning("mediaplan_api: list_import_contracts error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": "Erreur lors de la récupération des contrats"},
-            status_code=500,
-        )
-
-
-async def _import_workbook(request: Request) -> Response:
-    """POST an xlsx to import into a CANDIDATE version (Member+).
-
-    Upload format: JSON body {"file_base64": "<base64 of the .xlsx bytes>"}. The
-    repo has no existing multipart/upload helper in server/core, so a base64 JSON
-    body is used (documented). The import is NEVER destructive: publication stays
-    an explicit second step (POST /mediaplans/versions/{id}/publish).
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return _unauthorized()
-
-    plan_id = request.path_params.get("plan_id", "")
-    if not _is_uuid(plan_id):
-        return _not_found("Plan introuvable")
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-
-    import base64  # noqa: PLC0415
-
-    raw = body.get("file_base64")
-    if not isinstance(raw, str) or not raw.strip():
-        return JSONResponse(
-            {"code": "invalid_param", "message": "Le champ « file_base64 » est requis."},
-            status_code=422,
-        )
-    # F-5: cap the base64 length BEFORE decoding (never materialise a bomb buffer).
-    if len(raw) > MAX_IMPORT_FILE_BASE64:
-        return JSONResponse(
-            {"code": "invalid_param", "message": "Fichier trop volumineux (max 15 Mo)."},
-            status_code=422,
-        )
-    try:
-        file_bytes = base64.b64decode(raw, validate=True)
-    except Exception:
-        return JSONResponse(
-            {"code": "invalid_param", "message": "« file_base64 » n'est pas du base64 valide."},
-            status_code=422,
-        )
-    # F-5: re-check the decoded size (base64 padding/whitespace could sneak past).
-    if len(file_bytes) > MAX_IMPORT_FILE_BYTES:
-        return JSONResponse(
-            {"code": "invalid_param", "message": "Fichier trop volumineux (max 15 Mo)."},
-            status_code=422,
-        )
-
-    from core.db import get_connection  # noqa: PLC0415
-    from core.mediaplan_import import import_workbook  # noqa: PLC0415
-
-    try:
-        with get_connection() as conn:
-            project_id = _plan_project_id(conn, plan_id)
-            if project_id is None:
-                return _not_found("Plan introuvable")
-            if not _check_project_role(conn, project_id, identity, "member"):
-                _audit_cross_scope(identity, plan_id, project_id)
-                return _not_found("Plan introuvable")
-
-            report = import_workbook(
-                conn, plan_id=plan_id, file_bytes=file_bytes, actor=identity
-            )
-            conn.commit()
-            return JSONResponse(report, status_code=201)
-    except Exception as exc:
-        mapped = _store_error_response(exc)
-        if mapped is not None:
-            return mapped
-        logger.warning("mediaplan_api: import_workbook error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": "Erreur lors de l'import du fichier"},
-            status_code=500,
-        )
 
 
 # NOTE: static path segments precede parametrised ones so Starlette matches the
@@ -849,19 +760,5 @@ MEDIAPLAN_ROUTES: list[Route] = [
         methods=["GET"],
     ),
     Route("/api/mediaplans/{plan_id}/pacing", endpoint=_get_pacing, methods=["GET"]),
-    # Story 22.2: Excel import contracts + import. Static suffixes keep these
-    # disjoint from the {plan_id} catch-all below. sheet_name may contain spaces
-    # or '/', hence :path.
-    Route(
-        "/api/mediaplans/{plan_id}/import-contracts/{sheet_name:path}",
-        endpoint=_set_import_contract,
-        methods=["PUT"],
-    ),
-    Route(
-        "/api/mediaplans/{plan_id}/import-contracts",
-        endpoint=_list_import_contracts,
-        methods=["GET"],
-    ),
-    Route("/api/mediaplans/{plan_id}/import", endpoint=_import_workbook, methods=["POST"]),
     Route("/api/mediaplans/{plan_id}", endpoint=_get_plan, methods=["GET"]),
 ]

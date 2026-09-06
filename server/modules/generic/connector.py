@@ -44,7 +44,9 @@ from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-# Module-level FastMCP instance (AD-2: loader mounts under 'generic' namespace).
+# Module-level FastMCP instance, kept as the conformance surface (AD-1 envelope,
+# validated by server/tests/conformance/test_envelope.py). Since AD-42 the core
+# no longer mounts it: execution uses the Datastream-parameterized core tools.
 mcp_app = FastMCP("generic")
 
 # Raw DuckDB table name (registered at import time for verification.py / dq_monitors).
@@ -377,9 +379,9 @@ def _validate_url_ssrf(url: str) -> None:
         for net in _PRIVATE_NETWORKS:
             if ip in net:
                 raise ValueError(
-                    f"Acces refuse: l'URL {url!r} pointe vers une adresse privee/locale "
-                    f"({ip_str} dans {net}). Les adresses RFC-1918, loopback et "
-                    "link-local (dont metadonnees cloud 169.254.169.254) sont interdites."
+                    f"Access refused: URL {url!r} points at a private/local address "
+                    f"({ip_str} in {net}). RFC-1918, loopback and link-local "
+                    "addresses (including cloud metadata 169.254.169.254) are forbidden."
                 )
 
 
@@ -400,8 +402,8 @@ def _read_url(url: str) -> list[dict]:
     resp = httpx.get(url, timeout=30.0, follow_redirects=False)
     if resp.is_redirect or resp.status_code in (301, 302, 303, 307, 308):
         raise ValueError(
-            f"Redirection refusee depuis {url!r} vers {resp.headers.get('location', '?')!r}. "
-            "Les redirections ne sont pas suivies pour des raisons de securite."
+            f"Redirect refused from {url!r} to {resp.headers.get('location', '?')!r}. "
+            "Redirects are not followed, for security reasons."
         )
     if resp.status_code != 200:
         raise RuntimeError(
@@ -421,8 +423,8 @@ def _read_url(url: str) -> list[dict]:
                 if isinstance(data.get(key), list):
                     return data[key]
         raise ValueError(
-            f"Format JSON non reconnu depuis {url!r}: "
-            "attendu une liste ou un objet avec une cle 'rows'/'data'/'records'"
+            f"Unrecognized JSON shape from {url!r}: "
+            "expected a list, or an object with a 'rows'/'data'/'records' key"
         )
     # Default: CSV
     reader = csv.DictReader(io.StringIO(text))
@@ -553,8 +555,11 @@ def pull(
     return {
         "profile_id": profile_id,
         "rows_written": rows_written,
+        "row_count": rows_written,
         "rejected_rows": rejected_rows,
         "pull_id": pull_id,
+        "date_from": date_from,
+        "date_to": date_to,
     }
 
 

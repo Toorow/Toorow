@@ -108,11 +108,6 @@ export interface GraphEdgesResponse {
   edges: GraphEdge[];
 }
 
-export interface CreateGraphEdgePayload {
-  project_id: string | null;
-  from_id: string;
-  from_type: GraphNodeType;
-  to_id: string;
-  to_type: GraphNodeType;
-  edge_type: string;
-}
+/* `CreateGraphEdgePayload` left with the edge writers it described: the mindmap
+ * declares the POST body it sends in `KnowledgeGraphPage.tsx`, beside the call
+ * that sends it. */

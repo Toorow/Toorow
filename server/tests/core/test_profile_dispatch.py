@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 from core.loader import dispatch_pull
-from core.main import _public_profile_summaries, get_module_pull_fn, list_modules
+from core.main import _public_profile_summaries, get_module_pull_fn, list_connectors
 from core.queue import _resolve_datastream_profile
 
 
@@ -184,7 +184,7 @@ def test_public_profile_summary_preserves_public_shape_and_availability():
     }
     assert "_private_note" not in summary
 
-def test_list_modules_points_to_detailed_capability_catalog():
+def test_list_connectors_points_to_detailed_capability_catalog():
     loaded = _loaded_module()
     loaded.manifest["report_profiles"] = [
         {
@@ -205,7 +205,7 @@ def test_list_modules_points_to_detailed_capability_catalog():
         patch("core.db.get_connection"),
         patch("core.module_enablement.is_module_enabled", return_value=True),
     ):
-        result = list_modules("project-a")
+        result = list_connectors("project-a")
 
     assert result["data"]["capability_catalog"] == {
         "tool": "get_source_capabilities",

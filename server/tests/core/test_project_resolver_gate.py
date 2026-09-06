@@ -33,16 +33,40 @@ _RESOLVED_TOOLS = [
 
 
 def test_project_scoped_tools_call_resolver():
-    """Each project-scoped tool body calls _resolve_project."""
-    source = (_CORE_DIR / "main.py").read_text(encoding="utf-8")
+    """Each project-scoped tool body calls _resolve_project.
+
+    THE SCAN FOLLOWS THE TOOL, NOT A FILE. These five bodies used to live in
+    `core/main.py` and three of them now live in the surface module that owns
+    them (`core.context_hub_mcp`, `core.feedback_mcp`, `core.notebook_mcp`). A
+    gate that kept reading one path would have gone quiet on the day the code
+    moved -- which is the failure mode it exists to prevent.
+    """
+    # Only the modules that HOST MCP tools: the entrypoint and the `*_mcp`
+    # surfaces. `core.analyze_artifacts` defines a `get_report(conn, *, org_id,
+    # project_id, report_id)` that is a database helper, not the MCP tool of the
+    # same name -- scanning every module by name alone would ask a query
+    # function to call a request-scope resolver.
+    #
+    # The rule is the SUFFIX, not the presence of a `mcp.tool(` call: a surface
+    # may be registered by a sibling (`core.report_mcp` is bound from
+    # `core.reporting_mcp.register`, so both tools of the reporting surface keep
+    # one registration site), and a filter on the call would have skipped it.
+    sources = {
+        path.name: path.read_text(encoding="utf-8")
+        for path in sorted(_CORE_DIR.glob("*.py"))
+        if path.name == "main.py" or path.name.endswith("_mcp.py")
+    }
     for marker in _RESOLVED_TOOLS:
-        idx = source.index(marker)
-        # Look at the ~120 lines following the def for a _resolve_project call.
-        body = source[idx : idx + 6000]
-        assert "_resolve_project(" in body, (
-            f"{marker} does not route project_id through _resolve_project "
-            "(Story 7.1 AC5 resolver gate)."
-        )
+        homes = [name for name, text in sources.items() if marker in text]
+        assert homes, f"{marker} is defined in no module of server/core"
+        for name in homes:
+            idx = sources[name].index(marker)
+            # Look at the ~120 lines following the def for a _resolve_project call.
+            body = sources[name][idx : idx + 6000]
+            assert "_resolve_project(" in body, (
+                f"{name}: {marker} does not route project_id through _resolve_project "
+                "(Story 7.1 AC5 resolver gate)."
+            )
 
 
 def test_no_inline_default_autobind_in_tool_paths():

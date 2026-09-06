@@ -76,6 +76,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from core.context_relationships import ContextRelationshipRefused
 from core.context_store import create_graph_edge, create_topic, update_topic
 
 try:  # psycopg is always present in the server image; stay importable without it.
@@ -183,6 +184,32 @@ def load_registry_entry(
         relations = sorted(path.stem for path in staging_dir.glob("*.sql"))
 
     return {"manifest": manifest, "catalog": catalog, "relations": relations}
+
+
+def registry_module_names(*, modules_dir: Path | None = None) -> list[str]:
+    """Every connector module the registry holds, by its manifest `name`.
+
+    THE CATALOGUE IS THE REGISTRY, and nothing narrows it. It is not the
+    Connectors an installation exists for, nor the ones a Project's
+    authorizations already open: a person who has not authorized anything yet
+    still has to be able to SEE the Connector they came to add, and adding a
+    module to `server/modules/` is how the catalogue grows.
+
+    The directory name is not the identity -- `manifest.name` is, and it is what
+    every read keys on. A module whose manifest is unreadable or nameless is
+    left out rather than named after its folder, which would invent an id no
+    other table carries.
+    """
+    base = Path(modules_dir) if modules_dir is not None else DEFAULT_MODULES_DIR
+    if not base.is_dir():
+        return []
+    names: set[str] = set()
+    for manifest_path in sorted(base.glob("*/manifest.json")):
+        manifest = _read_json(manifest_path)
+        name = str((manifest or {}).get("name") or "").strip()
+        if name:
+            names.add(name)
+    return sorted(names)
 
 
 def connector_topic_title(manifest: dict[str, Any]) -> str:
@@ -508,6 +535,7 @@ def seed_project_context(
         "topics_updated": 0,
         "topics_skipped_human": 0,
         "edges_created": 0,
+        "links_created": 0,
         "schema_docs": {"status": "skipped", "reason": "not_requested"},
     }
 
@@ -552,6 +580,91 @@ def seed_project_context(
                 summary["modules_skipped"].append(module_name)
 
     return summary
+
+
+def _ensure_domain_link(
+    conn: Any, *, project_id: str, domain_slug: str, topic_id: str, summary: dict[str, Any]
+) -> None:
+    """Link a connector's platform card to its business domain root.
+
+    The mapping is declared in each module's own manifest (`business_domain`)
+    -- AD-2 keeps connector names out of core. The card is platform knowledge
+    (`project_id` NULL); the link is per project because the taxonomy walk is
+    per project. No mapping, no active domain, or an existing link all mean
+    "nothing to write" -- and the duplicate race is contained like the edge's.
+    """
+    from core import business_identity_catalogue as catalogue  # noqa: PLC0415
+    from core.business_taxonomy import (  # noqa: PLC0415
+        BusinessTaxonomyError,
+        create_link,
+    )
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT org_id FROM app.projects WHERE id = %s AND status = 'active'",
+            (project_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return
+        org_id = str(row[0])
+    # Story 49.2: the slug resolves through the AUTHORITY first. Read from the
+    # superseded store alone, an organization that mints its Business Domains in
+    # Master Data -- which is every organization since the cutover -- had no
+    # `sales` row for this lookup to find, so a connector's platform card was
+    # seeded with no business route at all and the walk that starts at a domain
+    # simply had nothing to walk.
+    identity = catalogue.domain_by_slug(conn, org_id=org_id, slug=domain_slug)
+    if identity is None:
+        logger.info(
+            "context_seed: no active domain %r for the org of project=%s -- no link",
+            domain_slug,
+            project_id,
+        )
+        return
+    domain_id = str(identity["id"])
+    with conn.cursor() as cur:
+        # Deliberately NOT filtered on `retired_at IS NULL` (migration 306),
+        # unlike every other read of this table. This is the seed's "has this
+        # already been done once" guard, and a link somebody WITHDREW has been
+        # done: re-creating it would undo a human decision on the next seed
+        # pass, which is the one thing a seed must never do.
+        cur.execute(
+            """
+            SELECT 1 FROM app.mdm_business_links
+             WHERE taxonomy_type = 'business_domain' AND taxonomy_id = %s
+               AND target_type = 'topic' AND target_id = %s
+               AND relation_type = 'explains' AND project_id = %s
+            """,
+            (domain_id, topic_id, project_id),
+        )
+        if cur.fetchone() is not None:
+            return
+    try:
+        with _savepoint(conn, "domain_link"):
+            create_link(
+                conn,
+                org_id=org_id,
+                project_id=project_id,
+                taxonomy_type="business_domain",
+                taxonomy_id=domain_id,
+                target_type="topic",
+                target_id=topic_id,
+                relation_type="explains",
+                actor=SEED_ACTOR,
+                reason="Connector card linked to its business domain (manifest mapping)",
+            )
+    except (UniqueViolation, BusinessTaxonomyError) as exc:
+        # Lost the check-then-insert race, or a refused source/target: the
+        # desired state holds, or the refusal is logged -- the seed never stops.
+        logger.info(
+            "context_seed: domain link not written project=%s topic=%s (%s)",
+            project_id,
+            topic_id,
+            type(exc).__name__,
+        )
+        return
+    summary["links_created"] += 1
 
 
 def _seed_one_module(
@@ -653,6 +766,16 @@ def _seed_one_module(
             summary["topics_updated"] += 1
             summary["modules"].append(module_name)
 
+    domain_slug = manifest.get("business_domain")
+    if domain_slug:
+        _ensure_domain_link(
+            conn,
+            project_id=project_id,
+            domain_slug=str(domain_slug),
+            topic_id=topic_id,
+            summary=summary,
+        )
+
     for relation in entry["relations"]:
         for doc_id in docs_by_relation.get(relation, []):
             if _edge_exists(
@@ -671,9 +794,15 @@ def _seed_one_module(
                         edge_type=DESCRIBES_EDGE,
                         created_by=SEED_ACTOR,
                     )
-            except UniqueViolation:
+            except (UniqueViolation, ContextRelationshipRefused) as race:
                 # Check-then-insert race: another seed inserted the same edge.
-                # The desired state holds either way.
+                # The desired state holds either way. Since migration 317 the
+                # authority says it as `relation_already_exists` (the unique
+                # index is the rule and its violation is the same refusal);
+                # any OTHER refusal is a real one and propagates.
+                if (isinstance(race, ContextRelationshipRefused)
+                        and race.code != "relation_already_exists"):
+                    raise
                 logger.info(
                     "context_seed: edge %s -> %s already inserted concurrently",
                     topic_id,

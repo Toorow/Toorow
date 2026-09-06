@@ -70,19 +70,38 @@ resource "google_storage_bucket" "inbound_quarantine" {
     enabled = true
   }
 
-  # Lifecycle rule STUB — retention/expiry is wired in Story 38.9. Kept as an
-  # inert, valid rule (no-op tombstone cleanup) so the bucket shape is stable
-  # and 38.9 only has to tune the age, not add the block. Adjust in 38.9.
+  # Story 38.9: live raw objects expire after the explicit retention window.
+  # An object-level event hold suspends deletion until audited release.
   lifecycle_rule {
     condition {
-      age                = var.inbound_quarantine_retention_days
-      with_state         = "ARCHIVED"
-      num_newer_versions = 1
+      age        = var.inbound_quarantine_retention_days
+      with_state = "LIVE"
     }
     action {
       type = "Delete"
     }
   }
+
+  # Because versioning turns a LIVE deletion into an archived generation, a
+  # second rule physically removes that generation after a one-day audit window.
+  lifecycle_rule {
+    condition {
+      days_since_noncurrent_time = 1
+      with_state                  = "ARCHIVED"
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
+  # Enforce the same minimum window against direct deletion. This remains
+  # unlocked so future policy changes stay possible through reviewed Terraform.
+  retention_policy {
+    retention_period = var.inbound_quarantine_retention_days * 86400
+    is_locked        = false
+  }
+
+  default_event_based_hold = false
 
   depends_on = [google_project_service.dev_additional_services]
 }
@@ -91,6 +110,18 @@ resource "google_storage_bucket_iam_member" "inbound_quarantine_object_creator" 
   bucket = google_storage_bucket.inbound_quarantine.name
   role   = "roles/storage.objectCreator"
   member = "serviceAccount:${google_service_account.inbound_receipt.email}"
+}
+
+# Lifecycle and operator deletions are material security events. DATA_WRITE
+# audit logging makes deletion externally auditable even when GCS lifecycle,
+# rather than an application process, performs the physical delete.
+resource "google_project_iam_audit_config" "inbound_quarantine_storage_writes" {
+  project = google_project.dev.project_id
+  service = "storage.googleapis.com"
+
+  audit_log_config {
+    log_type = "DATA_WRITE"
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -147,6 +178,10 @@ resource "google_cloud_run_v2_service" "inbound_receipt" {
       env {
         name  = "INBOUND_QUARANTINE_BUCKET"
         value = google_storage_bucket.inbound_quarantine.name
+      }
+      env {
+        name  = "INBOUND_QUARANTINE_RETENTION_DAYS"
+        value = tostring(var.inbound_quarantine_retention_days)
       }
       # Signing secret injected as a Secret Manager reference (never a value).
       env {

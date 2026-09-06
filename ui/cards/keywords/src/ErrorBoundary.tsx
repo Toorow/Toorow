@@ -30,7 +30,7 @@ export class ErrorBoundary extends Component<Props, State> {
           data-testid="card-error-boundary"
           style={{ padding: "16px", color: ERROR }}
         >
-          Une erreur est survenue lors de l&apos;affichage de la carte.
+          This card could not be displayed.
         </div>
       );
     }

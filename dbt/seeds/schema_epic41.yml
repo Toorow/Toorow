@@ -1,0 +1,99 @@
+version: 2
+
+# Epic 41 / Story 41.3 seed properties.
+#
+# A NEW file rather than an edit to dbt/seeds/schema.yml, for the same reason
+# dbt/models/marts/schema_fee_tax.yml is new: dbt merges every YAML under seed-paths,
+# and keeping the Epic-41 entries in their own file is what keeps the "only NEW files"
+# claim checkable with `git diff --name-only` (AC14).
+
+seeds:
+  - name: epic41_cascade_fixture
+    description: >
+      Story 41.3 pinned-arithmetic fixture for the six-phase fee & tax cascade,
+      namespaced __epic41_validation__ / __epic41_dsp_a__ / __epic41_dsp_b__. These keys
+      can NEVER reach fact_daily_kpi (which UNIONs module STAGING, never seeds), so the
+      fixture cannot perturb a production total -- the same isolation argument as
+      epic39_validation_fixture and money_contract_micros_fixture, and asserted directly
+      by test_epic41_totals_bit_identical.sql PART A.
+
+      One row per (scenario, rule) so a multi-rule scenario reads as its rule list; the
+      expected_* columns are CONSTANT across the rows of a (scenario, date) pair, which
+      is what lets a replay test aggregate the rules of a scenario and compare once.
+
+      Every *_micros column holds canonical micros up to 2^53 and MUST therefore be
+      BIGINT: dbt-duckdb otherwise infers INT32 and fails loading a 13-digit value
+      (dbt/seeds/schema.yml lines 59-60).
+
+      TWO COLUMNS BEYOND THE STORY'S LIST, both additive and both load-bearing:
+        * source_decimal_value -- the DISPLAY decimal a connector actually lands, which
+          is what scenario S9 (micros_exactness) exists to normalise. The story's column
+          list has no decimal column at all, so S9 could not be expressed without it.
+        * attr_market -- required by scenario S13, the R4 market/country asymmetry: the
+          discriminating case is a row where attr_market resolves while attr_country
+          does not, and that cannot be written with only attr_country.
+
+      Exercised by the singular tests test_epic41_cascade_pinned_example /
+      _gross_up_formula / _spend_tiers_modes / _row_conditions_heterogeneous /
+      _known_false_vs_unresolvable / _cross_currency_refused / _micros_exactness.
+    config:
+      column_types:
+        net_media_micros: INT64
+        rule_amount_micros: INT64
+        tier_threshold_micros: INT64
+        expected_platform_fee_micros: INT64
+        expected_regulatory_tax_micros: INT64
+        expected_wht_gross_up_micros: INT64
+        expected_agency_fee_micros: INT64
+        expected_subtotal_ht_micros: INT64
+        expected_sales_tax_micros: INT64
+        expected_total_ttc_micros: INT64
+    columns:
+      - name: scenario
+        description: "Scenario key (S1..S13 of the story's §E.1)."
+        tests:
+          - not_null
+      - name: project_id
+        description: "Namespaced validation project (__epic41_validation__ only)."
+        tests:
+          - not_null
+          # Namespacing guard: the fixture can never carry a production project key.
+          - accepted_values:
+              name: epic41_cascade_fixture_project_namespaced
+              arguments:
+                values: ["__epic41_validation__"]
+      - name: connector
+        description: "Namespaced validation connector key (__epic41_dsp_a__ / __epic41_dsp_b__)."
+        tests:
+          - not_null
+          - accepted_values:
+              name: epic41_cascade_fixture_connector_namespaced
+              arguments:
+                values: ["__epic41_dsp_a__", "__epic41_dsp_b__"]
+      - name: date
+        description: "Figure date (part of the scenario grain)."
+        tests:
+          - not_null
+      - name: currency
+        description: "The ladder row's currency (the project canonical currency)."
+        tests:
+          - not_null
+      - name: net_media_micros
+        description: "Phase 1 base in exact integer micros."
+        tests:
+          - not_null
+      - name: expected_is_complete
+        description: >
+          TRUE | FALSE. Both warehouses type this seed column BOOLEAN from the CSV,
+          which is why the vocabulary below is unquoted; the `not_null` above is what
+          keeps a blank from ever reading as FALSE.
+        tests:
+          - not_null
+          - accepted_values:
+              name: epic41_cascade_fixture_expected_is_complete_accepted
+              arguments:
+                # quote: false -- BOOLEAN column. Quoted, BigQuery answers *No
+                # matching signature for operator IN for argument types BOOL and
+                # {STRING}* (execution-substrate 23).
+                quote: false
+                values: ["true", "false"]

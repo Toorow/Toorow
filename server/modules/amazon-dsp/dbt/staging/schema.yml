@@ -1,24 +1,28 @@
 version: 2
 sources:
   - name: raw_amazon_dsp
-    schema: main
+    schema: "{{ var('raw_schema', 'main') }}"  # 24.4 AC2: org_<wslug>_raw injected by orchestrator, 'main' without var (bit-identique)
     tables:
       - name: raw_amazon_dsp_daily
 models:
   - name: stg_amazon_dsp_daily
     description: Amazon DSP values at full regional account/advertiser/report/group grain.
     tests:
-      - dbt_utils.unique_combination_of_columns:
-          combination_of_columns:
-            - project_id
-            - region
-            - ads_account_id
-            - advertiser_id
-            - report_type
-            - group_by
-            - date
-            - dimensions_json
-            - metric
+      # Grain uniqueness (AI-05) -- pattern tiktok-ads / linkedin-ads.
+      # This was `dbt_utils.unique_combination_of_columns`, which has NEVER run:
+      # the repo declares no `dbt/packages.yml`, so the test failed compilation
+      # with `'dbt_utils' is undefined` every single build (AI-162, 2026-08-04).
+      # COALESCE on every nullable grain column is deliberate: `a || NULL` is NULL
+      # in DuckDB and `unique` ignores NULLs, so a bare `||` key would pass by
+      # being absent -- the same silent pass the package test was meant to catch.
+      - unique:
+          name: stg_amazon_dsp_daily_grain_unique
+          arguments:
+            column_name: >
+              project_id || '|' || COALESCE(region, '') || '|' ||
+              COALESCE(ads_account_id, '') || '|' || COALESCE(advertiser_id, '') || '|' ||
+              COALESCE(report_type, '') || '|' || COALESCE(group_by, '') || '|' ||
+              date || '|' || COALESCE(dimensions_json, '') || '|' || metric
     columns:
       - name: advertiser_id
         tests: [not_null]

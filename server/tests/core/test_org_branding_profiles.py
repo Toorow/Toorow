@@ -66,11 +66,30 @@ def _noargs_request() -> MagicMock:
 
 
 def _drop_org_by_slug(slug: str) -> None:
+    """Erase the org THROUGH THE PRODUCT'S PURGE, never with a bare DELETE.
+
+    A bare `DELETE FROM app.organizations` stopped working when migration 130's
+    `trg_organizations_seed_business_domains` began seeding six
+    `app.mdm_business_domains` rows into every new organization: that table
+    references it ON DELETE RESTRICT, so the teardown raised
+    `ForeignKeyViolation` and the test failed AFTER its assertions had passed.
+    The knock-on was worse than the message -- the org survived, its owner kept
+    an active membership, and the next test to create one met the
+    one-org-per-person cap as a `409` that had nothing to do with what it was
+    checking. `tests.conftest.purge_fixture_org` walks `core.org_purge`'s foreign
+    key graph, the same plan production runs, so the next governed table a
+    trigger fills is torn down with no list to maintain.
+    """
     from core.db import get_connection
+
+    from tests.conftest import purge_fixture_org
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM app.organizations WHERE slug = %s", (slug,))
+            cur.execute("SELECT id FROM app.organizations WHERE slug = %s", (slug,))
+            org_ids = [row[0] for row in cur.fetchall()]
+        for org_id in org_ids:
+            purge_fixture_org(conn, org_id)
         conn.commit()
 
 
@@ -90,7 +109,7 @@ def _drop_profile(identity: str) -> None:
 
 @pytest.mark.anyio
 async def test_create_org_invalid_hex_422():
-    from core.admin_api import _create_org
+    from core.organizations_api import _create_org  # noqa: PLC0415
 
     with patch(_AUTH[0], return_value=_AUTH[1]):
         resp = await _create_org(
@@ -101,7 +120,7 @@ async def test_create_org_invalid_hex_422():
 
 @pytest.mark.anyio
 async def test_patch_org_invalid_hex_422():
-    from core.admin_api import _patch_org
+    from core.organizations_api import _patch_org  # noqa: PLC0415
 
     with patch(_AUTH[0], return_value=_AUTH[1]):
         resp = await _patch_org(
@@ -112,7 +131,7 @@ async def test_patch_org_invalid_hex_422():
 
 @pytest.mark.anyio
 async def test_patch_my_profile_display_name_too_long_422():
-    from core.admin_api import _patch_my_profile
+    from core.me_api import _patch_my_profile  # noqa: PLC0415
 
     with patch(_AUTH[0], return_value=_AUTH[1]):
         resp = await _patch_my_profile(_body_request({"display_name": "x" * 256}))
@@ -121,7 +140,7 @@ async def test_patch_my_profile_display_name_too_long_422():
 
 @pytest.mark.anyio
 async def test_get_my_profile_requires_auth():
-    from core.admin_api import _get_my_profile
+    from core.me_api import _get_my_profile  # noqa: PLC0415
 
     with patch(_AUTH[0], return_value=(False, "")):
         resp = await _get_my_profile(_noargs_request())
@@ -136,7 +155,7 @@ async def test_get_my_profile_requires_auth():
 @pg_available
 @pytest.mark.anyio
 async def test_create_org_with_branding_persists():
-    from core.admin_api import _create_org, _get_org
+    from core.organizations_api import _create_org, _get_org  # noqa: PLC0415
 
     slug = f"brand-{uuid.uuid4().hex[:8]}"
     _drop_org_by_slug(slug)
@@ -169,7 +188,7 @@ async def test_create_org_with_branding_persists():
 @pg_available
 @pytest.mark.anyio
 async def test_patch_org_branding_persists():
-    from core.admin_api import _create_org, _patch_org
+    from core.organizations_api import _create_org, _patch_org  # noqa: PLC0415
 
     slug = f"brandp-{uuid.uuid4().hex[:8]}"
     _drop_org_by_slug(slug)
@@ -189,7 +208,7 @@ async def test_patch_org_branding_persists():
 @pg_available
 @pytest.mark.anyio
 async def test_profile_upsert_and_get_defaults_source_self():
-    from core.admin_api import _get_my_profile, _patch_my_profile
+    from core.me_api import _get_my_profile, _patch_my_profile  # noqa: PLC0415
 
     ident = f"user-{uuid.uuid4().hex[:8]}@e.com"
     _drop_profile(ident)
@@ -216,7 +235,7 @@ async def test_profile_upsert_and_get_defaults_source_self():
 @pg_available
 @pytest.mark.anyio
 async def test_profile_is_per_identity():
-    from core.admin_api import _get_my_profile, _patch_my_profile
+    from core.me_api import _get_my_profile, _patch_my_profile  # noqa: PLC0415
 
     id_a = f"a-{uuid.uuid4().hex[:8]}@e.com"
     id_b = f"b-{uuid.uuid4().hex[:8]}@e.com"

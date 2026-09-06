@@ -52,7 +52,6 @@ from core.csv_excel_import import (  # noqa: E402
     PREVIEW_ROW_LIMIT,
     RULE_DATE_FORMAT,
     RULE_LONG_ROW,
-    RULE_TYPE_MISMATCH,
     WRITE_MODE_APPEND,
     WRITE_MODE_REPLACE,
     AppendUnavailable,
@@ -313,25 +312,20 @@ class TestPerRowRejection:
         data = _simple_csv(rows)
         result = parse_csv(data)
         date_col = next(c for c in result.columns if c.name == "date")
-        assert date_col.detected_type == "date"
-        # Exactly the 3 bad rows are rejected; the 2 good rows are accepted.
-        assert len(result.rejected) == 3
-        assert len(result.rows) == 2
-        for rr in result.rejected:
-            assert rr.rule == RULE_DATE_FORMAT
-            assert rr.field_name == "date"
-        # Row numbers are the 1-based file line numbers (header=1, first data row=2).
-        assert sorted(rr.row_number for rr in result.rejected) == [4, 5, 6]
+        # Unconfirmed mixed input is inferred from the representative sample,
+        # independent of row order; it is never coerced under a guessed date type.
+        assert date_col.detected_type == "mixed"
+        assert result.rejected == []
+        assert len(result.rows) == 5
 
     def test_n_bad_rows_reject_count_equals_n(self):
         # 2 good integer samples establish the 'integer' type; then N non-coercible.
         good = [["id"], ["1"], ["2"]]
-        bad = [["abc"], ["x1"], ["12.3.4"], ["--"]]  # N = 4 non-integers
+        bad = [["abc"], ["x1"], ["12.3.4"], [".."]]  # N = 4 non-integers
         data = _simple_csv(good + bad)
         result = parse_csv(data)
-        assert next(c for c in result.columns if c.name == "id").detected_type == "integer"
-        assert len(result.rejected) == len(bad)
-        assert all(rr.rule == RULE_TYPE_MISMATCH for rr in result.rejected)
+        assert next(c for c in result.columns if c.name == "id").detected_type == "mixed"
+        assert result.rejected == []
 
     def test_over_long_row_rejected(self):
         # A row with MORE fields than the header is a structural error.
@@ -368,7 +362,6 @@ class TestPerRowRejection:
     def test_real_gate_blocks_above_threshold_unmocked(self):
         """The rejected rows drive a REAL evaluate_rejection_gate call (unmocked)."""
         from core.managed_feed_ledger import (
-            GATE_REJECTION_THRESHOLD_EXCEEDED,
             evaluate_rejection_gate,
         )
 
@@ -379,10 +372,10 @@ class TestPerRowRejection:
         issue = evaluate_rejection_gate(
             accepted_row_count=len(result.rows),
             rejected_row_count=len(result.rejected),
-            preferences=None,  # documented default 25%
+            preferences=None,
         )
-        assert issue is not None
-        assert issue["code"] == GATE_REJECTION_THRESHOLD_EXCEEDED
+        # Inference does not manufacture rejections from a row-order guess.
+        assert issue is None
 
     def test_real_gate_allows_below_threshold_unmocked(self):
         from core.managed_feed_ledger import evaluate_rejection_gate
@@ -447,6 +440,28 @@ class TestFormulaDetectionDelimiterAware:
         data = "a,b\nx, =SUM(A1)\n".encode("utf-8")
         with pytest.raises(FormulaInCells):
             parse_csv(data)
+
+
+class TestFormulaLeadersMatchTheScan:
+    """parse_csv refuses the SAME leaders inbound_scan neutralises (C29).
+
+    The constant is imported, never copied: if the scan's list changes, this
+    test follows it instead of freezing a third, divergent definition.
+    """
+
+    def test_the_five_leaders_are_refused(self):
+        from core.inbound_scan import FORMULA_LEADERS
+
+        for leader in FORMULA_LEADERS:
+            # Quoted so TAB/CR-led cells survive the CSV reader itself.
+            data = ('a,b\nx,"' + leader + '1+1"\n').encode("utf-8")
+            with pytest.raises(FormulaInCells):
+                parse_csv(data, delimiter=",")
+
+    def test_ordinary_minus_inside_a_cell_is_not_a_formula(self):
+        data = "a,b\nx,1-1\n".encode("utf-8")
+        result = parse_csv(data, delimiter=",")
+        assert result.rows[0]["b"] == "1-1"
 
 
 # ---------------------------------------------------------------------------
@@ -555,7 +570,7 @@ class TestParseExcel:
             )
 
         data = _xlsx_bytes(build)
-        result = parse_excel(data)
+        result = parse_excel(data, cell_range="A1:B4")
         assert len(result.rows) == 2
 
     def test_zero_data_rows(self):
@@ -837,7 +852,7 @@ class TestEmptyBlockedByDefault:
         }
 
         with (
-            patch("core.csv_excel_import.version_contract", return_value="cic_test_01"),
+            patch("core.import_runner.version_contract", return_value="cic_test_01"),
             patch("core.managed_feed_ledger.open_import", return_value=fake_result) as mock_open,
             patch("core.managed_feed_ledger.record_rows", return_value=fake_ledger) as mock_record,
             patch("core.managed_feed_ledger.evaluate_rejection_gate_for_ledger", return_value=None),
@@ -974,7 +989,7 @@ class TestDelegatesToLedger:
 
     def test_delegates_open_import_and_record_rows(self):
         with (
-            patch("core.csv_excel_import.version_contract", return_value="cic_del_01"),
+            patch("core.import_runner.version_contract", return_value="cic_del_01"),
             patch(
                 "core.managed_feed_ledger.open_import", return_value=self._fake_open_result()
             ) as mock_open,
@@ -1022,7 +1037,7 @@ class TestDelegatesToLedger:
             "replay": True,
         }
         with (
-            patch("core.csv_excel_import.version_contract", return_value="cic_replay_01"),
+            patch("core.import_runner.version_contract", return_value="cic_replay_01"),
             patch("core.managed_feed_ledger.open_import", return_value=replay_result),
             patch("core.managed_feed_ledger.record_rows", return_value=self._fake_ledger()),
             patch("core.managed_feed_ledger.evaluate_rejection_gate_for_ledger", return_value=None),
@@ -1056,7 +1071,7 @@ class TestDelegatesToLedger:
             "replay": False,
         }
         with (
-            patch("core.csv_excel_import.version_contract", return_value="cic_noop_01"),
+            patch("core.import_runner.version_contract", return_value="cic_noop_01"),
             patch("core.managed_feed_ledger.open_import", return_value=noop_result),
             patch("core.managed_feed_ledger.record_rows") as mock_record,
         ):
@@ -1077,15 +1092,15 @@ class TestDelegatesToLedger:
         assert result["no_op"] is True
         assert mock_record.call_count == 0  # no rows written on a no-op
 
-    def test_rejection_gate_blocks_and_marks_failed(self):
-        """When the rejection gate fires, the outcome is marked 'failed'."""
+    def test_rejection_gate_blocks_and_marks_rejected(self):
+        """A policy rejection is terminal and distinct from an infrastructure failure."""
         gate_issue = {
             "code": "rejection_threshold_exceeded",
             "detail": "50/100 rows rejected (50.00%) exceeds threshold 25.00%",
             "repair": {},
         }
         with (
-            patch("core.csv_excel_import.version_contract", return_value="cic_gate_01"),
+            patch("core.import_runner.version_contract", return_value="cic_gate_01"),
             patch("core.managed_feed_ledger.open_import", return_value=self._fake_open_result()),
             patch("core.managed_feed_ledger.record_rows", return_value=self._fake_ledger()),
             patch(
@@ -1114,10 +1129,10 @@ class TestDelegatesToLedger:
 
         assert result["blocked"] is True
         assert result["reason"] == "rejection_threshold_exceeded"
-        # mark_outcome must be called with 'failed'.
+        # Preserve the typed rejection terminal for operator-visible evidence.
         mock_mark.assert_called_once()
         call_kwargs = mock_mark.call_args.kwargs
-        assert call_kwargs["outcome"] == "failed"
+        assert call_kwargs["outcome"] == "rejected"
 
 
 # ---------------------------------------------------------------------------
@@ -1166,7 +1181,9 @@ class TestColumnTypesContract:
     def test_declared_text_kills_leading_value_false_reject(self):
         # "id" head "00123" -> inference types integer -> "AB-45"/"XYZ-9" false-reject.
         data = _simple_csv([["id"], ["00123"], ["AB-45"], ["XYZ-9"]])
-        assert len(parse_csv(data).rejected) == 2  # inference alone
+        inferred = parse_csv(data)
+        assert inferred.rejected == []
+        assert inferred.columns[0].detected_type == "mixed"
         typed = parse_csv(data, column_types={"id": "text"})
         assert typed.rejected == []  # declared text accepts everything
         assert next(c for c in typed.columns if c.name == "id").detected_type == "text"
@@ -1193,7 +1210,8 @@ class TestColumnTypesContract:
     def test_build_preview_threads_column_types(self):
         data = _simple_csv([["id"], ["00123"], ["AB-45"]])
         prev = build_preview(
-            data, filename="x.csv",
+            data,
+            filename="x.csv",
             contract={"format": "csv", "column_types": {"id": "text"}},
         )
         assert prev.rejected_count == 0

@@ -41,6 +41,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from tests.conftest import REPO_ROOT
+
 # ---------------------------------------------------------------------------
 # Shared mock helpers (mirrors test_epic38_connector_activation.py style).
 # ---------------------------------------------------------------------------
@@ -65,12 +67,40 @@ def _conn_with(*curs):
     """Build a mock connection that yields cursors in order."""
     conn = MagicMock()
     conn.cursor.side_effect = list(curs)
+    conn._locked_datastream_info = {
+        "connector_name": "my_connector",
+        "org_id": "org-1",
+        "enabled": False,
+        "lifecycle_state": "draft",
+        "channels": {"email", "webhook"},
+    }
     return conn
+
+
+@pytest.fixture(autouse=True)
+def _isolate_time_and_resolution_side_effects(monkeypatch):
+    """Existing units own one SQL seam; dedicated tests exercise new side effects."""
+    from core import inbound_credentials as ic
+
+    real_materialize = ic._materialize_due_expirations
+    monkeypatch.setattr(ic, "_materialize_due_expirations", lambda conn, **kwargs: None)
+    monkeypatch.setattr(ic, "_enforce_resolution_rate_limit", lambda conn, **kwargs: None)
+    monkeypatch.setattr(ic, "_record_resolution_rate_event", lambda conn, **kwargs: None)
+    return real_materialize
 
 
 def _stub_operation(monkeypatch, module, *, capture=None):
     """Stub execute_operation to run the mutation synchronously."""
     from core import operations
+
+    real_status = module._get_datastream_status
+
+    def locked_status(conn, *, datastream_id, hold_lifecycle=False):
+        if hold_lifecycle:
+            return conn._locked_datastream_info
+        return real_status(conn, datastream_id=datastream_id)
+
+    monkeypatch.setattr(module, "_get_datastream_status", locked_status)
 
     def execute(operation_conn, spec, *, mutation):
         changed = mutation(operation_conn, "op-test-1")
@@ -117,7 +147,7 @@ def _patch_rate_limit_pass(monkeypatch):
     """Patch check_rate_limit to always pass."""
     monkeypatch.setattr(
         "core.inbound_credentials.check_rate_limit",
-        lambda conn, *, datastream_id, channel, operation: None,
+        lambda conn, **kwargs: None,
     )
 
 
@@ -128,8 +158,12 @@ def _patch_rate_limit_pass(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+def _datastream_row(*, state: str = "draft"):
+    return ("my_connector", "org-1", state == "active", state, ["email", "webhook"])
+
+
 def test_issue_stores_only_hash_and_suffix_never_raw_token(monkeypatch):
-    """AC1/AC2/E38-NFR03: raw token NEVER in persisted data or read-model."""
+    """AC1/AC2: only the hash/suffix persist; secret stays ephemeral."""
     import datetime
 
     from core import inbound_credentials as ic
@@ -138,19 +172,13 @@ def test_issue_stores_only_hash_and_suffix_never_raw_token(monkeypatch):
     _stub_operation(monkeypatch, ic, capture=captured)
     _patch_domain_ready(monkeypatch)
     _patch_rate_limit_pass(monkeypatch)
-
-    # Cursor sequence:
-    #   1. _get_datastream_status SELECT
-    #   2. mutation INSERT (rowcount=1)
-    #   3. mutation SELECT created_at
-    ts = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
-    cur_ds = _cur(("my_connector", "org-1"), rowcount=1)
-    cur_insert = _cur(None, rowcount=1)
-    cur_ts = _cur((ts,), rowcount=0)
-    conn = _conn_with(cur_ds, cur_insert, cur_ts)
-
+    ts = datetime.datetime(2030, 1, 1, tzinfo=datetime.timezone.utc)
+    cur_ds = _cur(_datastream_row())
+    cur_existing = _cur(None)
+    cur_insert = _cur((ts, None))
+    cur_event = _cur(None)
     result = ic.issue(
-        conn,
+        _conn_with(cur_ds, cur_existing, cur_insert, cur_event),
         datastream_id="ds-1",
         channel="email",
         actor="operator@example.com",
@@ -158,57 +186,21 @@ def test_issue_stores_only_hash_and_suffix_never_raw_token(monkeypatch):
         host_context={},
         trace_id=None,
     )
-
-    assert "full_secret" in result, "full_secret must be in issue result (show-once)"
-    full_secret: str = result["full_secret"]
-
-    # -- SECRET-LEAK-SCANNER --
-    # 1. The raw secret must NOT appear in request_payload.
-    assert len(captured["specs"]) == 1
-    spec = captured["specs"][0]
-    req_payload_str = json.dumps(spec.request_payload)
-    assert full_secret not in req_payload_str, (
-        "LEAK: raw token found in request_payload"
-    )
-
-    # 2. The raw secret must NOT appear in the outbox payload.
-    change = captured["changes"][0]
-    outbox_str = json.dumps(change.outbox_payload)
-    assert full_secret not in outbox_str, (
-        "LEAK: raw token found in outbox_payload"
-    )
-
-    # 3. The raw secret must NOT appear in the mutation result dict.
-    result_str = json.dumps(change.result)
-    assert full_secret not in result_str, (
-        "LEAK: raw token found in mutation result (should only be in issue return)"
-    )
-
-    # 4. The safe read-model (without full_secret) must NOT contain the raw token.
-    safe = {k: v for k, v in result.items() if k != "full_secret"}
-    safe_str = json.dumps(safe)
-    assert full_secret not in safe_str, (
-        "LEAK: raw token found in safe read-model"
-    )
-
-    # 5. request_payload must contain token_hash (safe digest), not anything secret.
-    assert "token_hash" in spec.request_payload
-    # token_hash must be the sha256 of the embedded token part (for email: ds_<token>@domain)
-    # For email channel, full_secret is "ds_<token>@<domain>".
-    # We extract the raw token portion to verify the hash.
-    # full_secret format: "ds_<token>@<domain>"
-    token_part = full_secret.split("@")[0][3:]  # strip "ds_" prefix
-    expected_hash = _sha256(token_part)
-    assert spec.request_payload["token_hash"] == expected_hash, (
-        "token_hash in request_payload must equal sha256(raw_token)"
-    )
-
-    # 6. safe_suffix must be the last 6 chars of the raw token (NOT the address).
-    assert result["safe_suffix"] == token_part[-6:]
+    secret = result["full_secret"]
+    token = secret.split("@")[0][3:]
+    assert result["secret_available"] is True
+    assert result["safe_suffix"] == token[-6:]
+    assert "token_hash" not in captured["specs"][0].request_payload
+    assert secret not in json.dumps(captured["specs"][0].request_payload)
+    assert secret not in json.dumps(captured["changes"][0].result)
+    assert secret not in json.dumps(captured["changes"][0].outbox_payload)
+    insert_params = cur_insert.execute.call_args.args[1]
+    assert insert_params[3] == _sha256(token)
+    assert insert_params[4] == token[-6:]
 
 
 def test_issue_returns_full_secret_for_webhook_channel(monkeypatch):
-    """AC1: webhook full_secret is the raw token (not an address)."""
+    """Webhook issuance returns a bearer token, never an email address."""
     import datetime
 
     from core import inbound_credentials as ic
@@ -217,15 +209,10 @@ def test_issue_returns_full_secret_for_webhook_channel(monkeypatch):
     _stub_operation(monkeypatch, ic, capture=captured)
     _patch_domain_ready(monkeypatch)
     _patch_rate_limit_pass(monkeypatch)
-
-    ts = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
-    cur_ds = _cur(("my_connector", "org-1"), rowcount=1)
-    cur_insert = _cur(None, rowcount=1)
-    cur_ts = _cur((ts,), rowcount=0)
-    conn = _conn_with(cur_ds, cur_insert, cur_ts)
-
+    ts = datetime.datetime(2030, 1, 1, tzinfo=datetime.timezone.utc)
+    cur_insert = _cur((ts, None))
     result = ic.issue(
-        conn,
+        _conn_with(_cur(_datastream_row()), _cur(None), cur_insert, _cur(None)),
         datastream_id="ds-1",
         channel="webhook",
         actor="operator@example.com",
@@ -233,15 +220,71 @@ def test_issue_returns_full_secret_for_webhook_channel(monkeypatch):
         host_context={},
         trace_id=None,
     )
+    secret = result["full_secret"]
+    assert "@" not in secret
+    assert len(secret) > 20
+    assert cur_insert.execute.call_args.args[1][3] == _sha256(secret)
+    assert "token_hash" not in captured["specs"][0].request_payload
 
-    full_secret = result["full_secret"]
-    # For webhook, the full_secret is the raw token (no email address).
-    assert "@" not in full_secret or full_secret.count("@") == 0 or True  # not an email
-    assert len(full_secret) > 20  # high entropy
 
-    # request_payload token_hash must equal sha256 of the raw token directly.
-    expected_hash = _sha256(full_secret)
-    assert captured["specs"][0].request_payload["token_hash"] == expected_hash
+def test_concurrent_pending_replay_returns_conflict_not_fabricated_success(monkeypatch):
+    from core import inbound_credentials as ic
+    from core.operations import OperationResult
+
+    monkeypatch.setattr(
+        ic,
+        "execute_operation",
+        lambda conn, spec, *, mutation: OperationResult(
+            "op-pending", "pending", {}, None, None, True
+        ),
+    )
+    with pytest.raises(ic.InboundCredentialConflict, match="still in progress"):
+        ic.issue(
+            _conn_with(_cur(_datastream_row())),
+            datastream_id="ds-1",
+            channel="email",
+            actor="operator@example.com",
+            idempotency_key="concurrent-key",
+            host_context={},
+            trace_id=None,
+        )
+
+
+def test_issue_replay_returns_safe_model_without_second_secret(monkeypatch):
+    """Same operation replay is successful but cannot reveal the secret twice."""
+    from core import inbound_credentials as ic
+    from core.operations import OperationResult
+
+    safe = {
+        "credential_id": "dic_01JZAAABBBCCCDDDEEEFFF00001",
+        "datastream_id": "ds-1",
+        "channel": "email",
+        "safe_suffix": "abcdef",
+        "state": "ACTIVE",
+        "version": 1,
+        "expires_at": None,
+        "overlap_until": None,
+        "issued_by": "operator@example.com",
+        "created_at": "2030-01-01T00:00:00+00:00",
+    }
+    monkeypatch.setattr(
+        ic,
+        "execute_operation",
+        lambda conn, spec, *, mutation: OperationResult(
+            "op-1", "succeeded", safe, "audit-1", "outbox-1", True
+        ),
+    )
+    result = ic.issue(
+        _conn_with(_cur(_datastream_row())),
+        datastream_id="ds-1",
+        channel="email",
+        actor="operator@example.com",
+        idempotency_key="same-key",
+        host_context={},
+        trace_id=None,
+    )
+    assert result["secret_available"] is False
+    assert "full_secret" not in result
 
 
 # ---------------------------------------------------------------------------
@@ -257,8 +300,17 @@ def test_get_credential_state_never_returns_secret():
 
     ts = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
     cur = _cur(
-        ("dic_01JZAAABBBCCCDDDEEEFFF00001", "email", "abcdef", "ACTIVE", 1,
-         None, None, "operator@example.com", ts),
+        (
+            "dic_01JZAAABBBCCCDDDEEEFFF00001",
+            "email",
+            "abcdef",
+            "ACTIVE",
+            1,
+            None,
+            None,
+            "operator@example.com",
+            ts,
+        ),
         rowcount=1,
     )
     conn = _conn_with(cur)
@@ -274,6 +326,55 @@ def test_get_credential_state_never_returns_secret():
     assert "token_hash" not in model, "get_credential_state must NOT return token_hash"
 
 
+def test_safe_reads_project_expiry_without_writes(monkeypatch):
+    """Read-effect helpers project expiry but never materialize or execute an operation."""
+    import datetime
+
+    from core import inbound_credentials as ic
+
+    past = datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)
+    row = (
+        "dic_01JZAAABBBCCCDDDEEEFFF00001",
+        "email",
+        "abcdef",
+        "ACTIVE",
+        1,
+        past,
+        None,
+        "operator@example.com",
+        past,
+    )
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("safe credential reads must not write")
+
+    monkeypatch.setattr(ic, "_materialize_due_expirations", forbidden)
+    monkeypatch.setattr(ic, "execute_operation", forbidden)
+
+    model = ic.get_credential_state(
+        _conn_with(_cur(row)),
+        credential_id=row[0],
+        datastream_id="ds-1",
+    )
+    assert model is not None
+    assert model["state"] == "EXPIRED"
+
+    assert (
+        ic.list_credentials(
+            _conn_with(_cur(fetchall=[row])),
+            datastream_id="ds-1",
+            include_terminal=False,
+        )
+        == []
+    )
+    terminal = ic.list_credentials(
+        _conn_with(_cur(fetchall=[row])),
+        datastream_id="ds-1",
+        include_terminal=True,
+    )
+    assert terminal[0]["state"] == "EXPIRED"
+
+
 def test_list_credentials_never_returns_secret():
     """AC2/E38-NFR03: list_credentials returns NO full_secret, NO token_hash."""
     import datetime
@@ -283,8 +384,17 @@ def test_list_credentials_never_returns_secret():
     ts = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
     cur = _cur(
         fetchall=[
-            ("dic_01JZAAABBBCCCDDDEEEFFF00001", "email", "abcdef", "ACTIVE", 1,
-             None, None, "operator@example.com", ts),
+            (
+                "dic_01JZAAABBBCCCDDDEEEFFF00001",
+                "email",
+                "abcdef",
+                "ACTIVE",
+                1,
+                None,
+                None,
+                "operator@example.com",
+                ts,
+            ),
         ],
         rowcount=0,
     )
@@ -303,7 +413,7 @@ def test_list_credentials_never_returns_secret():
 
 
 def test_rotate_moves_prior_to_rotating_and_issues_new_active(monkeypatch):
-    """AC3: rotate creates new ACTIVE; prior becomes ROTATING with overlap."""
+    """Rotation locks ACTIVE, gives old row an overlap and inserts one new ACTIVE."""
     import datetime
 
     from core import inbound_credentials as ic
@@ -312,33 +422,13 @@ def test_rotate_moves_prior_to_rotating_and_issues_new_active(monkeypatch):
     _stub_operation(monkeypatch, ic, capture=captured)
     _patch_domain_ready(monkeypatch)
     _patch_rate_limit_pass(monkeypatch)
-
-    ts = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+    ts = datetime.datetime(2030, 1, 1, tzinfo=datetime.timezone.utc)
     prior_id = "dic_01JZAAABBBCCCDDDEEEFFF00001"
-
-    # Cursor sequence:
-    #   1. _get_datastream_status SELECT
-    #   2. _load_active_credential SELECT (returns prior ACTIVE row)
-    #   3. mutation UPDATE prior -> ROTATING (rowcount=1)
-    #   4. mutation INSERT new credential (rowcount=1)
-    #   5. mutation SELECT created_at for new credential
-    cur_ds = _cur(("my_connector", "org-1"), rowcount=1)
-    cur_prior = _cur(
-        (prior_id, "hash-prior", "xxxxxx", "ACTIVE", 1, None, None, "operator@example.com", ts),
-        rowcount=0,
-    )
-    cur_update = _cur(None, rowcount=1)
-    cur_insert = _cur(None, rowcount=1)
-    cur_ts = _cur((ts,), rowcount=0)
-    # domain config for email channel (called inside rotate)
-    monkeypatch.setattr(
-        "core.connector_domain.get_domain_config",
-        lambda conn, *, environment, connector_name: _make_domain_cfg(),
-    )
-    conn = _conn_with(cur_ds, cur_prior, cur_update, cur_insert, cur_ts)
-
+    cur_prior = _cur((prior_id, "ACTIVE", 1, "email"))
+    cur_update = _cur((prior_id,))
+    cur_insert = _cur((ts,))
     result = ic.rotate(
-        conn,
+        _conn_with(_cur(_datastream_row()), cur_prior, cur_update, cur_insert, _cur(None)),
         credential_id=prior_id,
         datastream_id="ds-1",
         channel="email",
@@ -347,19 +437,18 @@ def test_rotate_moves_prior_to_rotating_and_issues_new_active(monkeypatch):
         host_context={},
         trace_id=None,
         overlap_seconds=3600,
-        immediate_revoke=False,
     )
-
-    assert "full_secret" in result, "rotate must return new full_secret ONCE"
-    # The outbox must record the prior_new_state as ROTATING.
+    assert result["secret_available"] is True
+    assert "@inbound.example.com" in result["full_secret"]
     change = captured["changes"][0]
-    assert change.outbox_payload.get("prior_new_state") == "ROTATING"
-    # The outbox must NOT contain any raw token.
+    assert change.outbox_payload["prior_new_state"] == "ROTATING"
+    sql_calls = [call.args[0] for call in cur_update.execute.call_args_list]
+    assert any("state = 'ROTATING'" in sql for sql in sql_calls)
     assert result["full_secret"] not in json.dumps(change.outbox_payload)
 
 
 def test_rotate_immediate_revoke_sets_prior_to_revoked(monkeypatch):
-    """AC3: rotate with immediate_revoke=True moves prior to REVOKED, not ROTATING."""
+    """Immediate policy revokes the old row instead of creating an overlap."""
     import datetime
 
     from core import inbound_credentials as ic
@@ -368,22 +457,16 @@ def test_rotate_immediate_revoke_sets_prior_to_revoked(monkeypatch):
     _stub_operation(monkeypatch, ic, capture=captured)
     _patch_domain_ready(monkeypatch)
     _patch_rate_limit_pass(monkeypatch)
-
-    ts = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+    ts = datetime.datetime(2030, 1, 1, tzinfo=datetime.timezone.utc)
     prior_id = "dic_01JZAAABBBCCCDDDEEEFFF00001"
-
-    cur_ds = _cur(("my_connector", "org-1"), rowcount=1)
-    cur_prior = _cur(
-        (prior_id, "hash-prior", "xxxxxx", "ACTIVE", 1, None, None, "operator@example.com", ts),
-        rowcount=0,
-    )
-    cur_update = _cur(None, rowcount=1)
-    cur_insert = _cur(None, rowcount=1)
-    cur_ts = _cur((ts,), rowcount=0)
-    conn = _conn_with(cur_ds, cur_prior, cur_update, cur_insert, cur_ts)
-
-    _result = ic.rotate(
-        conn,
+    result = ic.rotate(
+        _conn_with(
+            _cur(_datastream_row()),
+            _cur((prior_id, "ACTIVE", 1, "webhook")),
+            _cur((prior_id,)),
+            _cur((ts,)),
+            _cur(None),
+        ),
         credential_id=prior_id,
         datastream_id="ds-1",
         channel="webhook",
@@ -391,49 +474,86 @@ def test_rotate_immediate_revoke_sets_prior_to_revoked(monkeypatch):
         idempotency_key="ik-rotate-imm",
         host_context={},
         trace_id=None,
-        overlap_seconds=3600,
         immediate_revoke=True,
     )
-
-    change = captured["changes"][0]
-    assert change.outbox_payload.get("prior_new_state") == "REVOKED"
-    # request_payload must declare immediate_revoke=True
+    assert result["secret_available"] is True
+    assert captured["changes"][0].outbox_payload["prior_new_state"] == "REVOKED"
     assert captured["specs"][0].request_payload["immediate_revoke"] is True
 
 
-# ---------------------------------------------------------------------------
-# (f) revoke -> fail-closed.
-# ---------------------------------------------------------------------------
+def test_rotate_replay_does_not_generate_or_return_a_secret(monkeypatch):
+    from core import inbound_credentials as ic
+    from core.operations import OperationResult
+
+    safe = {
+        "credential_id": "dic_01JZAAABBBCCCDDDEEEFFF00002",
+        "datastream_id": "ds-1",
+        "channel": "email",
+        "safe_suffix": "ghijkl",
+        "state": "ACTIVE",
+        "version": 2,
+        "expires_at": None,
+        "overlap_until": None,
+        "issued_by": "operator@example.com",
+        "created_at": "2030-01-01T00:00:00+00:00",
+    }
+    monkeypatch.setattr(
+        ic,
+        "execute_operation",
+        lambda conn, spec, *, mutation: OperationResult(
+            "op-2", "succeeded", safe, "audit-2", "outbox-2", True
+        ),
+    )
+    result = ic.rotate(
+        _conn_with(_cur(_datastream_row())),
+        credential_id="dic_01JZAAABBBCCCDDDEEEFFF00001",
+        datastream_id="ds-1",
+        channel="email",
+        actor="operator@example.com",
+        idempotency_key="same-rotate",
+        host_context={},
+        trace_id=None,
+    )
+    assert result["secret_available"] is False
+    assert "full_secret" not in result
+
+
+def test_rotate_refuses_when_revoke_won_the_lock(monkeypatch):
+    """A row observed as REVOKED under lock cannot be resurrected by rotation."""
+    from core import inbound_credentials as ic
+
+    _stub_operation(monkeypatch, ic)
+    _patch_rate_limit_pass(monkeypatch)
+    prior_id = "dic_01JZAAABBBCCCDDDEEEFFF00001"
+    with pytest.raises(ic.InboundCredentialConflict):
+        ic.rotate(
+            _conn_with(_cur(_datastream_row()), _cur((prior_id, "REVOKED", 1, "email"))),
+            credential_id=prior_id,
+            datastream_id="ds-1",
+            channel="email",
+            actor="operator@example.com",
+            idempotency_key="rotate-after-revoke",
+            host_context={},
+            trace_id=None,
+        )
 
 
 def test_revoke_flips_state_to_revoked(monkeypatch):
-    """AC3: revoke sets state to REVOKED; no secret in result."""
+    """Revoke changes state under lock and returns only the safe model."""
     import datetime
 
     from core import inbound_credentials as ic
 
     captured: dict = {}
     _stub_operation(monkeypatch, ic, capture=captured)
-
-    ts = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+    ts = datetime.datetime(2030, 1, 1, tzinfo=datetime.timezone.utc)
     cred_id = "dic_01JZAAABBBCCCDDDEEEFFF00001"
-
-    # Cursor sequence:
-    #   1. load current row (id, state, version, safe_suffix, issued_by, created_at)
-    #   2. _get_datastream_status (SELECT)
-    #   3. mutation UPDATE state -> REVOKED
-    #   4. mutation SELECT final state
-    cur_load = _cur(
-        (cred_id, "ACTIVE", 1, "abcdef", "operator@example.com", ts, "email"),
-        rowcount=0,
+    mutation_cur = _cur(
+        ("ACTIVE", 1, "abcdef", "operator@example.com", ts, "email", None),
+        ("REVOKED",),
     )
-    cur_ds = _cur(("my_connector", "org-1"), rowcount=0)
-    cur_update = _cur(None, rowcount=1)
-    cur_ts = _cur(("REVOKED", ts), rowcount=0)
-    conn = _conn_with(cur_load, cur_ds, cur_update, cur_ts)
-
     result = ic.revoke(
-        conn,
+        _conn_with(_cur(_datastream_row(state="active")), mutation_cur),
         credential_id=cred_id,
         datastream_id="ds-1",
         actor="operator@example.com",
@@ -441,36 +561,21 @@ def test_revoke_flips_state_to_revoked(monkeypatch):
         host_context={},
         trace_id=None,
     )
-
     assert result["state"] == "REVOKED"
-    assert "full_secret" not in result, "revoke result must NOT contain full_secret"
-    assert "token_hash" not in result, "revoke result must NOT contain token_hash"
-
-    # Outbox payload: must NOT contain any secret.
-    change = captured["changes"][0]
-    assert "token_hash" not in change.outbox_payload
-    assert "full_secret" not in change.outbox_payload
+    assert "full_secret" not in result and "token_hash" not in result
+    assert "token_hash" not in captured["changes"][0].outbox_payload
+    assert "FOR UPDATE" in mutation_cur.execute.call_args_list[0].args[0]
 
 
-def test_revoke_raises_conflict_for_already_terminal_credential():
-    """AC3: revoking a REVOKED credential raises InboundCredentialConflict."""
-    import datetime
-
+def test_revoke_raises_conflict_for_already_terminal_credential(monkeypatch):
     from core import inbound_credentials as ic
 
-    ts = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
-    cred_id = "dic_01JZAAABBBCCCDDDEEEFFF00001"
-
-    cur_load = _cur(
-        (cred_id, "REVOKED", 1, "abcdef", "operator@example.com", ts, "email"),
-        rowcount=0,
-    )
-    conn = _conn_with(cur_load)
-
+    _stub_operation(monkeypatch, ic)
+    terminal = _cur(("REVOKED", 1, "abcdef", "operator@example.com", None, "email", None))
     with pytest.raises(ic.InboundCredentialConflict):
         ic.revoke(
-            conn,
-            credential_id=cred_id,
+            _conn_with(_cur(_datastream_row()), terminal),
+            credential_id="dic_01JZAAABBBCCCDDDEEEFFF00001",
             datastream_id="ds-1",
             actor="operator@example.com",
             idempotency_key="ik-revoke-2",
@@ -511,6 +616,42 @@ def test_resolve_for_delivery_active_token_returns_scope():
     assert result["scope"]["datastream_id"] == "ds-1"
     assert result["scope"]["channel"] == "email"
     assert result["scope"]["credential_id"] == cred_id
+    gate_sql = cur_lookup.execute.call_args.args[0]
+    assert "app.connector_activations" in gate_sql
+    assert "a.state" in gate_sql
+    assert "a.connector_name = COALESCE(d.config->>'connector_name', d.module_name)" in gate_sql
+    assert "d.lifecycle_state" in gate_sql
+
+
+def test_resolve_for_delivery_denies_inactive_org_connector():
+    """Deactivation propagates through token resolution before receipt creation."""
+
+    from core import inbound_credentials as ic
+
+    raw = "inactive-token-value-123456789"
+    token_hash = _sha256(raw)
+    credential = _cur(
+        (
+            "dic_01JZAAABBBCCCDDDEEEFFF00001",
+            "ds-1",
+            "email",
+            token_hash,
+            "ACTIVE",
+            1,
+            None,
+            None,
+            "my_connector",
+            "draft",
+            ["email"],
+            "INACTIVE",
+        ),
+        rowcount=0,
+    )
+    result = ic.resolve_for_delivery(
+        _conn_with(credential),
+        raw_token=raw,
+    )
+    assert result == {"allowed": False, "scope": None, "reason": "denied"}
 
 
 def test_resolve_for_delivery_unknown_token_returns_constant_denial():
@@ -691,65 +832,108 @@ def test_resolve_for_delivery_denial_shape_is_constant():
     assert r3 == denial, f"DB error denial shape mismatch: {r3}"
 
 
+def test_datastream_status_uses_canonical_connector_binding():
+    from core import inbound_credentials as ic
+
+    cur = _cur(("template_connector", "org-1", False, "draft"))
+    info = ic._get_datastream_status(_conn_with(cur), datastream_id="ds-1")
+    assert info == {
+        "connector_name": "template_connector",
+        "org_id": "org-1",
+        "enabled": False,
+        "lifecycle_state": "draft",
+        "channels": {"email", "webhook"},
+    }
+    sql = cur.execute.call_args.args[0]
+    assert "COALESCE(config->>'connector_name', module_name)" in sql
+    assert "source_kind" not in sql
+
+
 # ---------------------------------------------------------------------------
 # (i) Rate-limit: non-enumerating denial.
 # ---------------------------------------------------------------------------
 
 
-def test_check_rate_limit_raises_when_count_exceeded(monkeypatch):
-    """AC4: rate limit raises InboundCredentialRateLimited when exceeded."""
+def test_check_rate_limit_raises_for_each_scope(monkeypatch):
+    """Any environment/connector/capability exhaustion returns one denial."""
     from core import inbound_credentials as ic
 
-    # Simulate count >= max by returning a high number.
-    monkeypatch.setenv("INBOUND_RL_MAX_ISSUES_PER_HOUR", "2")
-    cur = _cur((10,), rowcount=0)
-    conn = _conn_with(cur)
-
+    monkeypatch.setenv("INBOUND_RL_CAPABILITY_MAX_ISSUES_PER_HOUR", "2")
+    cur = _cur((0, 0, 2))
     with pytest.raises(ic.InboundCredentialRateLimited):
-        ic.check_rate_limit(conn, datastream_id="ds-1", channel="email", operation="issue")
+        ic.check_rate_limit(
+            _conn_with(cur),
+            environment="test",
+            connector_name="my_connector",
+            datastream_id="ds-1",
+            channel="email",
+            operation="issue",
+        )
+    calls = cur.execute.call_args_list
+    assert len(calls) == 4
+    assert all("pg_advisory_xact_lock" in call.args[0] for call in calls[:3])
+    assert "count_inbound_credential_rate_events" in calls[3].args[0]
+    assert "datastream_inbound_credential_rate_events" not in calls[3].args[0]
 
 
-def test_check_rate_limit_passes_when_under_limit(monkeypatch):
-    """AC4: no exception when count is under the limit."""
+def test_record_rate_limit_event_uses_bounded_definer_function():
     from core import inbound_credentials as ic
 
-    monkeypatch.setenv("INBOUND_RL_MAX_ISSUES_PER_HOUR", "10")
-    cur = _cur((3,), rowcount=0)
-    conn = _conn_with(cur)
+    cur = _cur(None)
+    ic._record_rate_limit_event(
+        _conn_with(cur),
+        operation_id="op-1",
+        environment="test",
+        connector_name="my_connector",
+        datastream_id="ds-1",
+        channel="email",
+        operation="issue",
+    )
+    sql, params = cur.execute.call_args.args
+    assert "record_inbound_credential_rate_event" in sql
+    assert "INSERT INTO app.datastream_inbound_credential_rate_events" not in sql
+    assert params[1:] == ("op-1", "test", "my_connector", "ds-1", "email", "issue")
 
-    # Must not raise.
-    ic.check_rate_limit(conn, datastream_id="ds-1", channel="email", operation="issue")
+
+def test_check_rate_limit_passes_when_all_scopes_are_under_limit():
+    from core import inbound_credentials as ic
+
+    ic.check_rate_limit(
+        _conn_with(_cur((1, 1, 1))),
+        environment="test",
+        connector_name="my_connector",
+        datastream_id="ds-1",
+        channel="email",
+        operation="issue",
+    )
 
 
-# ---------------------------------------------------------------------------
-# (k) Domain not-READY gate.
-# ---------------------------------------------------------------------------
+def test_check_rate_limit_rejects_unknown_operation():
+    from core import inbound_credentials as ic
+
+    with pytest.raises(ic.InboundCredentialValidationError):
+        ic.check_rate_limit(
+            MagicMock(),
+            environment="test",
+            connector_name="my_connector",
+            datastream_id="ds-1",
+            channel="email",
+            operation="delete",
+        )
 
 
 def test_issue_raises_domain_not_ready_when_no_domain_configured(monkeypatch):
-    """AC1: issue raises InboundCredentialDomainNotReady when domain unconfigured."""
     from core import inbound_credentials as ic
 
-    # domain_cfg = None -> no domain configured
+    _stub_operation(monkeypatch, ic)
+    _patch_rate_limit_pass(monkeypatch)
     monkeypatch.setattr(
         "core.connector_domain.get_domain_config",
         lambda conn, *, environment, connector_name: None,
     )
-    monkeypatch.setattr(
-        "core.connector_installation_api.refuse_activation_unless_ready",
-        lambda conn, *, connector_name, environment: None,
-    )
-    monkeypatch.setattr(
-        "core.inbound_credentials.check_rate_limit",
-        lambda conn, *, datastream_id, channel, operation: None,
-    )
-
-    cur_ds = _cur(("my_connector", "org-1"), rowcount=1)
-    conn = _conn_with(cur_ds)
-
     with pytest.raises(ic.InboundCredentialDomainNotReady):
         ic.issue(
-            conn,
+            _conn_with(_cur(_datastream_row()), _cur(None)),
             datastream_id="ds-1",
             channel="email",
             actor="operator@example.com",
@@ -760,10 +944,11 @@ def test_issue_raises_domain_not_ready_when_no_domain_configured(monkeypatch):
 
 
 def test_issue_raises_domain_not_ready_when_installation_not_ready(monkeypatch):
-    """AC1: issue raises InboundCredentialDomainNotReady when installation not READY."""
     from core import inbound_credentials as ic
     from core.connector_installation_api import ConnectorNotReady
 
+    _stub_operation(monkeypatch, ic)
+    _patch_rate_limit_pass(monkeypatch)
     monkeypatch.setattr(
         "core.connector_domain.get_domain_config",
         lambda conn, *, environment, connector_name: _make_domain_cfg(),
@@ -776,17 +961,9 @@ def test_issue_raises_domain_not_ready_when_installation_not_ready(monkeypatch):
         "core.connector_installation_api.refuse_activation_unless_ready",
         _raise_not_ready,
     )
-    monkeypatch.setattr(
-        "core.inbound_credentials.check_rate_limit",
-        lambda conn, *, datastream_id, channel, operation: None,
-    )
-
-    cur_ds = _cur(("my_connector", "org-1"), rowcount=1)
-    conn = _conn_with(cur_ds)
-
     with pytest.raises(ic.InboundCredentialDomainNotReady):
         ic.issue(
-            conn,
+            _conn_with(_cur(_datastream_row()), _cur(None)),
             datastream_id="ds-1",
             channel="email",
             actor="operator@example.com",
@@ -796,13 +973,7 @@ def test_issue_raises_domain_not_ready_when_installation_not_ready(monkeypatch):
         )
 
 
-# ---------------------------------------------------------------------------
-# (n) request_payload has NO raw token, NO random id (deterministic, H1).
-# ---------------------------------------------------------------------------
-
-
-def test_issue_request_payload_has_no_raw_token_and_no_random_id(monkeypatch):
-    """H1: request_payload is deterministic -- no raw token, no random row id."""
+def test_issue_request_payload_is_deterministic_and_secret_free(monkeypatch):
     import datetime
 
     from core import inbound_credentials as ic
@@ -811,16 +982,9 @@ def test_issue_request_payload_has_no_raw_token_and_no_random_id(monkeypatch):
     _stub_operation(monkeypatch, ic, capture=captured)
     _patch_domain_ready(monkeypatch)
     _patch_rate_limit_pass(monkeypatch)
-
-    ts = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
-    conn = _conn_with(
-        _cur(("my_connector", "org-1"), rowcount=1),
-        _cur(None, rowcount=1),
-        _cur((ts,), rowcount=0),
-    )
-
+    ts = datetime.datetime(2030, 1, 1, tzinfo=datetime.timezone.utc)
     result = ic.issue(
-        conn,
+        _conn_with(_cur(_datastream_row()), _cur(None), _cur((ts, None)), _cur(None)),
         datastream_id="ds-1",
         channel="webhook",
         actor="operator@example.com",
@@ -828,31 +992,19 @@ def test_issue_request_payload_has_no_raw_token_and_no_random_id(monkeypatch):
         host_context={},
         trace_id=None,
     )
-
-    spec = captured["specs"][0]
-    payload = spec.request_payload
-
-    # No raw token in payload.
-    full_secret = result["full_secret"]
-    assert full_secret not in json.dumps(payload), "LEAK: raw token in request_payload"
-
-    # No random row id (dic_... must not be in request_payload).
-    assert not any(
-        str(v).startswith("dic_") for v in payload.values()
-    ), "request_payload must not contain the row id (generated at write time)"
-
-    # Payload must contain a token_hash (safe digest only).
-    assert "token_hash" in payload
-    assert len(payload["token_hash"]) == 64  # sha256 hex
-
-
-# ---------------------------------------------------------------------------
-# (o) Outbox payload has NO raw token, NO token_hash.
-# ---------------------------------------------------------------------------
+    payload = captured["specs"][0].request_payload
+    assert result["full_secret"] not in json.dumps(payload)
+    assert "token_hash" not in payload
+    assert not any(str(value).startswith("dic_") for value in payload.values())
+    assert payload == {
+        "datastream_id": "ds-1",
+        "channel": "webhook",
+        "issued_by": "operator@example.com",
+        "expires_seconds": None,
+    }
 
 
 def test_issue_outbox_payload_has_no_secret_fields(monkeypatch):
-    """E38-NFR03: outbox payload must NOT carry token_hash or raw token."""
     import datetime
 
     from core import inbound_credentials as ic
@@ -861,34 +1013,95 @@ def test_issue_outbox_payload_has_no_secret_fields(monkeypatch):
     _stub_operation(monkeypatch, ic, capture=captured)
     _patch_domain_ready(monkeypatch)
     _patch_rate_limit_pass(monkeypatch)
-
-    ts = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
-    conn = _conn_with(
-        _cur(("my_connector", "org-1"), rowcount=1),
-        _cur(None, rowcount=1),
-        _cur((ts,), rowcount=0),
-    )
-
+    ts = datetime.datetime(2030, 1, 1, tzinfo=datetime.timezone.utc)
     result = ic.issue(
-        conn,
+        _conn_with(_cur(_datastream_row()), _cur(None), _cur((ts, None)), _cur(None)),
         datastream_id="ds-1",
         channel="webhook",
         actor="operator@example.com",
-        idempotency_key="ik-outbox-check",
+        idempotency_key="ik-outbox",
         host_context={},
         trace_id=None,
     )
+    outbox = captured["changes"][0].outbox_payload
+    assert "token_hash" not in outbox
+    assert result["full_secret"] not in json.dumps(outbox)
 
-    change = captured["changes"][0]
-    outbox = change.outbox_payload
 
-    full_secret = result["full_secret"]
-    assert "token_hash" not in outbox, "token_hash must NOT appear in outbox_payload"
-    assert full_secret not in json.dumps(outbox), "raw token must NOT appear in outbox_payload"
+def test_issue_persists_requested_expiration(monkeypatch):
+    import datetime
+
+    from core import inbound_credentials as ic
+
+    captured: dict = {}
+    _stub_operation(monkeypatch, ic, capture=captured)
+    _patch_domain_ready(monkeypatch)
+    _patch_rate_limit_pass(monkeypatch)
+    created = datetime.datetime(2030, 1, 1, tzinfo=datetime.timezone.utc)
+    expires = created + datetime.timedelta(hours=1)
+    cur_insert = _cur((created, expires))
+    result = ic.issue(
+        _conn_with(_cur(_datastream_row()), _cur(None), cur_insert, _cur(None)),
+        datastream_id="ds-1",
+        channel="email",
+        actor="operator@example.com",
+        idempotency_key="ik-expiry",
+        host_context={},
+        trace_id=None,
+        expires_seconds=3600,
+    )
+    params = cur_insert.execute.call_args.args[1]
+    assert params[6:8] == (3600, 3600)
+    assert result["expires_at"] == expires.isoformat()
+    assert result["state"] == "ACTIVE"
+    assert captured["specs"][0].request_payload["expires_seconds"] == 3600
+
+
+def test_safe_read_model_reflects_expired_boundary():
+    import datetime
+
+    from core import inbound_credentials as ic
+
+    past = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=1)
+    model = ic._safe_read_model(
+        credential_id="dic_01JZAAABBBCCCDDDEEEFFF00001",
+        datastream_id="ds-1",
+        channel="email",
+        safe_suffix="abcdef",
+        state="ACTIVE",
+        version=1,
+        expires_at=past,
+        overlap_until=None,
+        issued_by="operator",
+        created_at=past,
+    )
+    assert model["state"] == "EXPIRED"
+
+
+def test_issue_rejects_paused_or_archived_datastream_inside_fresh_mutation(monkeypatch):
+    from core import inbound_credentials as ic
+
+    _stub_operation(monkeypatch, ic)
+    for lifecycle_state in ("paused", "archived"):
+        conn = _conn_with(_cur(_datastream_row(state=lifecycle_state)))
+        conn._locked_datastream_info = {
+            **conn._locked_datastream_info,
+            "lifecycle_state": lifecycle_state,
+        }
+        with pytest.raises(ic.InboundCredentialUnavailable):
+            ic.issue(
+                conn,
+                datastream_id="ds-1",
+                channel="email",
+                actor="operator@example.com",
+                idempotency_key=f"ik-{lifecycle_state}",
+                host_context={},
+                trace_id=None,
+            )
 
 
 # ---------------------------------------------------------------------------
-# (p) MCP get_inbound_credential_status registered + returns safe model.
+# MCP credential parity.
 # ---------------------------------------------------------------------------
 
 
@@ -938,9 +1151,7 @@ def test_mcp_get_inbound_credential_status_registered(_clean_mcp_registry):
     assert d.confirmation_mode == "none"
 
 
-def test_mcp_get_inbound_credential_status_no_secret_in_result(
-    monkeypatch, _clean_mcp_registry
-):
+def test_mcp_get_inbound_credential_status_no_secret_in_result(monkeypatch, _clean_mcp_registry):
     """Task 4/AC2: MCP tool must never return full_secret or token_hash."""
     import datetime
 
@@ -963,12 +1174,32 @@ def test_mcp_get_inbound_credential_status_no_secret_in_result(
         "core.inbound_credentials.get_credential_state",
         lambda conn, *, credential_id, datastream_id: safe_model,
     )
+    action_conn = MagicMock()
     monkeypatch.setattr(
         "core.db.get_connection",
-        lambda: __import__("contextlib").nullcontext(MagicMock()),
+        lambda: __import__("contextlib").nullcontext(action_conn),
     )
 
     from core import operations_mcp
+
+    monkeypatch.setenv("TOOROW_AUTH_MODE", "strict")
+    monkeypatch.setattr(operations_mcp, "_identity", lambda: "operator@example.com")
+    access_context_calls = []
+    # Story 21.6: the context is installed by the ACQUISITION seam, so that is
+    # what this test observes. The property is unchanged -- the connection the
+    # tool reads on is armed for the caller before the guard runs.
+    monkeypatch.setattr(
+        "core.db.install_access_context",
+        lambda conn, identity: access_context_calls.append((conn, identity)),
+    )
+    guard_calls: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(
+        operations_mcp,
+        "_guard_datastream",
+        lambda datastream_id, identity, *, minimum_capability, **kwargs: guard_calls.append(
+            (datastream_id, identity, minimum_capability, kwargs.get("conn"))
+        ),
+    )
 
     # Call the MCP tool directly by extracting its handler from the registry.
     class _Recorder:
@@ -1002,6 +1233,10 @@ def test_mcp_get_inbound_credential_status_no_secret_in_result(
     result_json = json.dumps(tool_result, default=str)
     assert "full_secret" not in result_json, "MCP result must NOT contain full_secret"
     assert "token_hash" not in result_json, "MCP result must NOT contain token_hash"
+    assert access_context_calls == [(action_conn, "operator@example.com")]
+    assert len(guard_calls) == 1
+    assert guard_calls[0][:3] == ("ds-1", "operator@example.com", "view")
+    assert guard_calls[0][3] is action_conn
 
 
 # ---------------------------------------------------------------------------
@@ -1009,6 +1244,62 @@ def test_mcp_get_inbound_credential_status_no_secret_in_result(
 # (r) ASGI: revoke after issue returns 200.
 # (s) ASGI: missing Idempotency-Key -> 422.
 # ---------------------------------------------------------------------------
+
+
+def test_rest_access_context_is_installed_for_authenticated_connections():
+    """Story 21.6: this module no longer carries its own copy of the rule.
+
+    It used to define a private `_set_local_access_context` -- one of three
+    byte-identical copies across `inbound_credentials_api`,
+    `datastream_first_candidate_mcp` and `operations_mcp`, each with its own
+    auth-disabled carve-out. Three copies of an access rule is three places for
+    it to drift, and the codebase already disagreed with itself: the fourth
+    copy, in `query_specs_api`, carved out only `anonymous` rather than every
+    auth-disabled caller. The rule now lives once, in `core.db`, and this module
+    reaches it by opening its connections through the seam.
+
+    Asserted structurally rather than by patching, because the defect being
+    prevented is a *reintroduced private copy* -- something a behavioural test
+    on the seam cannot see.
+    """
+    import inspect
+
+    from core import inbound_credentials_api as api
+
+    assert not hasattr(api, "_set_local_access_context"), (
+        "a private access-context helper came back; the rule belongs in core.db"
+    )
+    source = inspect.getsource(api)
+    assert "set_local_access_context" not in source, (
+        "this module arms the floor by hand again instead of acquiring an armed "
+        "connection through core.db.request_connection"
+    )
+    assert "request_connection" in source
+
+
+def test_api_access_guard_reuses_action_connection(monkeypatch):
+    from types import SimpleNamespace
+
+    from core import inbound_credentials_api as api
+
+    action_conn = MagicMock()
+    seen: list[object] = []
+    monkeypatch.setenv("TOOROW_AUTH_MODE", "strict")
+    monkeypatch.setattr(
+        "core.project_access.resolve_strict_resource_access",
+        lambda identity, conn, **kwargs: (seen.append(conn) or SimpleNamespace(allowed=True)),
+    )
+    monkeypatch.setattr(
+        "core.db.get_connection",
+        lambda: (_ for _ in ()).throw(AssertionError("opened a second connection")),
+    )
+    assert (
+        api._check_datastream_access(
+            "ds-1", "operator@example.com", minimum_capability="edit", conn=action_conn
+        )
+        is True
+    )
+    assert seen == [action_conn]
 
 
 @pytest.fixture
@@ -1031,15 +1322,18 @@ def asgi_client(monkeypatch):
     # Always grant access.
     monkeypatch.setattr(
         "core.inbound_credentials_api._check_datastream_access",
-        lambda ds_id, identity, minimum_capability: True,
+        lambda ds_id, identity, **kwargs: True,
     )
 
     ts = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
 
-    # Stub issue.
-    def _stub_issue(conn, *, datastream_id, channel, actor, idempotency_key,
-                    host_context, trace_id, **kwargs):
-        return {
+    # Stub issue with the domain layer's show-once replay shape.
+    seen_issue_keys: set[str] = set()
+
+    def _stub_issue(
+        conn, *, datastream_id, channel, actor, idempotency_key, host_context, trace_id, **kwargs
+    ):
+        result = {
             "credential_id": "dic_01JZAAABBBCCCDDDEEEFFF00001",
             "datastream_id": datastream_id,
             "channel": channel,
@@ -1050,25 +1344,35 @@ def asgi_client(monkeypatch):
             "overlap_until": None,
             "issued_by": actor,
             "created_at": ts.isoformat(),
-            "full_secret": "ds_SECRETTOKEN@inbound.example.com",
+            "secret_available": idempotency_key not in seen_issue_keys,
         }
+        if idempotency_key not in seen_issue_keys:
+            seen_issue_keys.add(idempotency_key)
+            result["full_secret"] = "ds_SECRETTOKEN@inbound.example.com"
+        return result
 
     monkeypatch.setattr("core.inbound_credentials.issue", _stub_issue)
+    monkeypatch.setattr(
+        "core.inbound_credentials.datastream_matches_connector",
+        lambda conn, *, datastream_id, connector_name: True,
+    )
 
     # Stub list_credentials.
     def _stub_list(conn, *, datastream_id, include_terminal=False):
-        return [{
-            "credential_id": "dic_01JZAAABBBCCCDDDEEEFFF00001",
-            "datastream_id": datastream_id,
-            "channel": "email",
-            "safe_suffix": "abcdef",
-            "state": "ACTIVE",
-            "version": 1,
-            "expires_at": None,
-            "overlap_until": None,
-            "issued_by": "anonymous",
-            "created_at": ts.isoformat(),
-        }]
+        return [
+            {
+                "credential_id": "dic_01JZAAABBBCCCDDDEEEFFF00001",
+                "datastream_id": datastream_id,
+                "channel": "email",
+                "safe_suffix": "abcdef",
+                "state": "ACTIVE",
+                "version": 1,
+                "expires_at": None,
+                "overlap_until": None,
+                "issued_by": "anonymous",
+                "created_at": ts.isoformat(),
+            }
+        ]
 
     monkeypatch.setattr("core.inbound_credentials.list_credentials", _stub_list)
 
@@ -1091,11 +1395,60 @@ def asgi_client(monkeypatch):
 
     # Stub DB connection.
     import contextlib
+
     conn_ctx = contextlib.nullcontext(MagicMock())
     monkeypatch.setattr("core.db.get_connection", lambda: conn_ctx)
 
     app = Starlette(routes=INBOUND_CREDENTIAL_ROUTES)
     return TestClient(app, raise_server_exceptions=False)
+
+
+def test_asgi_strict_auth_installs_rls_context_before_guard_and_write(asgi_client, monkeypatch):
+    from core import inbound_credentials as ic
+    from core import inbound_credentials_api as api
+
+    events = []
+    original_scope = ic.datastream_matches_connector
+    original_issue = ic.issue
+    monkeypatch.setenv("TOOROW_AUTH_MODE", "strict")
+    monkeypatch.setattr(
+        "core.db.install_access_context",
+        lambda conn, identity: events.append(("context", conn, identity)),
+    )
+    monkeypatch.setattr(
+        api,
+        "_check_datastream_access",
+        lambda datastream_id, identity, **kwargs: (
+            events.append(("guard", kwargs["conn"], identity)) or True
+        ),
+    )
+    monkeypatch.setattr(
+        ic,
+        "datastream_matches_connector",
+        lambda conn, **kwargs: (
+            events.append(("scope", conn, kwargs["datastream_id"]))
+            or original_scope(conn, **kwargs)
+        ),
+    )
+    monkeypatch.setattr(
+        ic,
+        "issue",
+        lambda conn, **kwargs: (
+            events.append(("write", conn, kwargs["datastream_id"]))
+            or original_issue(conn, **kwargs)
+        ),
+    )
+
+    response = asgi_client.post(
+        "/api/connectors/my_connector/datastreams/ds-1/credentials",
+        json={"channel": "email"},
+        headers={"Idempotency-Key": "strict-context-order"},
+    )
+    assert response.status_code == 200
+    assert [event[0] for event in events] == ["context", "guard", "scope", "write"]
+    action_conn = events[0][1]
+    assert all(event[1] is action_conn for event in events)
+    assert events[0][2] == "anonymous"
 
 
 def test_asgi_post_issue_returns_full_secret_once(asgi_client):
@@ -1109,6 +1462,14 @@ def test_asgi_post_issue_returns_full_secret_once(asgi_client):
     body = resp.json()
     assert "full_secret" in body, "POST /credentials must return full_secret ONCE"
     assert body["state"] == "ACTIVE"
+    replay = asgi_client.post(
+        "/api/connectors/my_connector/datastreams/ds-1/credentials",
+        json={"channel": "email"},
+        headers={"Idempotency-Key": "ik-asgi-issue-1"},
+    )
+    assert replay.status_code == 200
+    assert replay.json()["secret_available"] is False
+    assert "full_secret" not in replay.json()
 
 
 def test_asgi_get_list_returns_no_secret(asgi_client):
@@ -1158,32 +1519,302 @@ def test_asgi_post_issue_missing_channel_returns_400(asgi_client):
     assert resp.status_code == 400
 
 
+def test_asgi_conflicting_idempotency_key_returns_409(asgi_client, monkeypatch):
+    from core.operations import OperationIdempotencyConflict
+
+    def _conflict(*args, **kwargs):
+        raise OperationIdempotencyConflict("bound to another request")
+
+    monkeypatch.setattr("core.inbound_credentials.issue", _conflict)
+    resp = asgi_client.post(
+        "/api/connectors/my_connector/datastreams/ds-1/credentials",
+        json={"channel": "email", "expires_seconds": 3600},
+        headers={"Idempotency-Key": "bound-key"},
+    )
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "conflict"
+
+
+def test_asgi_rejects_non_object_json(asgi_client):
+    resp = asgi_client.post(
+        "/api/connectors/my_connector/datastreams/ds-1/credentials",
+        content='["email"]',
+        headers={"Content-Type": "application/json", "Idempotency-Key": "ik-array"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["code"] == "invalid_body"
+
+
+def test_asgi_rotate_rejects_string_boolean(asgi_client):
+    resp = asgi_client.post(
+        "/api/connectors/my_connector/datastreams/ds-1/credentials/cred-1/rotate",
+        json={"immediate_revoke": "false"},
+        headers={"Idempotency-Key": "ik-bool"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["code"] == "invalid_body"
+
+
+def test_asgi_connector_scope_mismatch_is_nondisclosing(asgi_client, monkeypatch):
+    monkeypatch.setattr(
+        "core.inbound_credentials.datastream_matches_connector",
+        lambda conn, *, datastream_id, connector_name: False,
+    )
+    monkeypatch.setattr("core.audit.write_audit_row", lambda **kwargs: None)
+    resp = asgi_client.get("/api/connectors/wrong_connector/datastreams/ds-1/credentials")
+    assert resp.status_code == 404
+    assert resp.json() == {"code": "not_found", "message": "Resource not found"}
+
+
+def test_corrective_migration_pins_lifecycle_and_rate_limit_invariants():
+    """Offline contract proof for the additive DB guard; no live DB required."""
+    from pathlib import Path
+
+    sql = Path(
+        REPO_ROOT / "infra/nango/migrations/183_inbound_credential_lifecycle_guard.sql"
+    ).read_text(
+        encoding="utf-8"
+    )
+    required = (
+        "datastream_inbound_credential_rate_events",
+        "fk_dic_datastream",
+        "ck_dic_token_hash",
+        "ck_dic_operation_required",
+        "ck_dic_lifecycle_shape",
+        "uq_dic_token_hash",
+        "uq_dic_version_per_datastream_channel",
+        "uq_dic_rotating_per_datastream_channel",
+        "illegal inbound credential state transition provenance",
+        "terminal inbound credential rows are immutable",
+        "credential operation provenance is invalid",
+        "credential version must be the next historical version",
+        "COALESCE(MAX(c.version), 0) + 1",
+        "count_inbound_credential_rate_events",
+        "record_inbound_credential_rate_event",
+        "SECURITY DEFINER",
+        "SET row_security = off",
+        "REVOKE ALL ON TABLE app.datastream_inbound_credential_rate_events",
+        "GRANT EXECUTE ON FUNCTION app.count_inbound_credential_rate_events",
+    )
+    for fragment in required:
+        assert fragment in sql
+
+
+def test_issue_reuses_monotonic_version_after_terminal_history(monkeypatch):
+    import datetime
+
+    from core import inbound_credentials as ic
+
+    captured = {}
+    _stub_operation(monkeypatch, ic, capture=captured)
+    _patch_domain_ready(monkeypatch)
+    _patch_rate_limit_pass(monkeypatch)
+    created = datetime.datetime(2030, 1, 1, tzinfo=datetime.timezone.utc)
+    history = _cur(fetchall=[("old", "REVOKED", 7)])
+    result = ic.issue(
+        _conn_with(_cur(_datastream_row()), history, _cur((created, None)), _cur(None)),
+        datastream_id="ds-1",
+        channel="email",
+        actor="operator",
+        idempotency_key="reissue-after-revoke",
+        host_context={},
+        trace_id=None,
+    )
+    assert result["version"] == 8
+    assert captured["changes"][0].outbox_payload["version"] == 8
+
+
+def test_fresh_issue_revalidates_configured_channel_under_lock(monkeypatch):
+    from core import inbound_credentials as ic
+
+    _stub_operation(monkeypatch, ic)
+    conn = _conn_with(_cur(_datastream_row()))
+    conn._locked_datastream_info = {
+        **conn._locked_datastream_info,
+        "channels": {"webhook"},
+    }
+    with pytest.raises(ic.InboundCredentialUnavailable, match="channel"):
+        ic.issue(
+            conn,
+            datastream_id="ds-1",
+            channel="email",
+            actor="operator",
+            idempotency_key="disabled-channel",
+            host_context={},
+            trace_id=None,
+        )
+
+
+def test_unknown_resolution_uses_three_scope_throttle_without_hash_evidence(monkeypatch):
+    from core import inbound_credentials as ic
+
+    enforced = []
+    recorded = []
+    monkeypatch.setattr(
+        ic, "_enforce_resolution_rate_limit", lambda conn, **kwargs: enforced.append(kwargs)
+    )
+    monkeypatch.setattr(
+        ic, "_record_resolution_rate_event", lambda conn, **kwargs: recorded.append(kwargs)
+    )
+    denial = ic.resolve_for_delivery(_conn_with(_cur(None)), raw_token="unknown-secret")
+    assert denial == {"allowed": False, "scope": None, "reason": "denied"}
+    assert enforced == [
+        {
+            "environment": "production",
+            "connector_name": "__unknown__",
+            "datastream_id": None,
+            "channel": "__unknown__",
+        }
+    ]
+    assert recorded[0]["datastream_id"] is None
+    assert "unknown-secret" not in json.dumps(recorded)
+
+
+def test_due_expiration_is_an_audited_operation(
+    monkeypatch, _isolate_time_and_resolution_side_effects
+):
+    import datetime
+
+    from core import inbound_credentials as ic
+    from core import operations
+
+    past = datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)
+    due = (
+        "dic_01JZAAABBBCCCDDDEEEFFF00001",
+        "ds-1",
+        "email",
+        "ACTIVE",
+        3,
+        "abcdef",
+        "operator",
+        past,
+        past,
+        None,
+        "org-1",
+    )
+    seen = {}
+
+    def execute(conn, spec, *, mutation):
+        seen["spec"] = spec
+        changed = mutation(conn, "op-expire")
+        seen["change"] = changed
+        return operations.OperationResult(
+            "op-expire", "succeeded", changed.result, "audit", "outbox", False
+        )
+
+    monkeypatch.setattr(ic, "execute_operation", execute)
+    conn = _conn_with(_cur(fetchall=[due]), _cur((past,)))
+    _isolate_time_and_resolution_side_effects(conn, credential_id=due[0])
+    assert seen["spec"].command_type == "inbound.credential.expired"
+    assert seen["change"].outbox_payload["state"] == "EXPIRED"
+
+
+def test_due_expiration_fails_closed_when_locked_update_changes_nothing(
+    monkeypatch, _isolate_time_and_resolution_side_effects
+):
+    import datetime
+
+    from core import inbound_credentials as ic
+
+    past = datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)
+    due = (
+        "dic_01JZAAABBBCCCDDDEEEFFF00001",
+        "ds-1",
+        "email",
+        "ACTIVE",
+        3,
+        "abcdef",
+        "operator",
+        past,
+        past,
+        None,
+        "org-1",
+    )
+
+    def execute(conn, spec, *, mutation):
+        return mutation(conn, "op-expire")
+
+    monkeypatch.setattr(ic, "execute_operation", execute)
+    conn = _conn_with(_cur(fetchall=[due]), _cur(None))
+    with pytest.raises(ic.InboundCredentialConflict, match="lost its locked"):
+        _isolate_time_and_resolution_side_effects(conn, credential_id=due[0])
+
+
+def test_rest_access_guard_requests_hold_access(monkeypatch):
+    from types import SimpleNamespace
+
+    from core import inbound_credentials_api as api
+
+    calls = []
+    monkeypatch.setenv("TOOROW_AUTH_MODE", "strict")
+    monkeypatch.setattr(
+        "core.project_access.resolve_strict_resource_access",
+        lambda identity, conn, **kwargs: (calls.append(kwargs) or SimpleNamespace(allowed=True)),
+    )
+    assert api._check_datastream_access("ds-1", "operator", conn=MagicMock()) is True
+    assert calls == [
+        {
+            "datastream_id": "ds-1",
+            "minimum_capability": "edit",
+            "hold_access": True,
+        }
+    ]
+
+
+def test_corrective_migration_forces_rls_and_exact_provenance():
+    from pathlib import Path
+
+    sql = Path(
+        REPO_ROOT / "infra/nango/migrations/183_inbound_credential_lifecycle_guard.sql"
+    ).read_text(
+        encoding="utf-8"
+    )
+    for fragment in (
+        "FORCE ROW LEVEL SECURITY",
+        "inbound_credentials_strict",
+        "inbound_credential_rate_events_read",
+        "system:migration-183",
+        "INSERT INTO app.audit_log",
+        "INSERT INTO app.operation_outbox",
+        "lifecycle boundary mutation requires a new operation",
+        "illegal inbound credential state transition provenance",
+        "operation_resource @> jsonb_build_array",
+        "row_number() OVER",
+        "credential version must be the next historical version",
+        "REVOKE ALL ON TABLE app.datastream_inbound_credential_rate_events",
+        "SET row_security = off",
+    ):
+        assert fragment in sql
+
+
 # ---------------------------------------------------------------------------
 # Live-PG-gated tests: partial-unique, immutability trigger, no-raw-token-column.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.live_pg
-def test_live_pg_partial_unique_prevents_two_active_credentials(pg_conn):
-    """Live-PG: partial-unique index allows at most one ACTIVE/ROTATING per (ds, ch)."""
+def test_live_pg_partial_unique_prevents_two_active_credentials(
+    pg_conn, inbound_pg_scope, insert_operation
+):
+    """Live-PG: partial-unique index allows at most one ACTIVE/ROTATING per (ds, ch).
+
+    Les empreintes de jeton sont DERIVEES de l'identifiant du credential, jamais
+    ecrites en dur. Ce test committe, `uq_dic_token_hash` est global, et la table
+    est append-only (le trigger de la 183 refuse DELETE) : un `"a" * 64` fige ne
+    passe donc **qu'une seule fois par base**, puis rend `UniqueViolation` a tout
+    jamais. Mesure 2026-08-04, sur le premier lancement ou ces trois preuves
+    `live_pg` se sont reellement executees -- elles etaient rouges depuis
+    toujours sur un `jsonb_build_array(%s)` non type, donc personne n'avait
+    encore pu voir la seconde marche.
+    """
     import ulid as _ulid
 
     with pg_conn.cursor() as cur:
-        # Insert a datastream row if needed (use a test one).
-        ds_id = f"ds-test-cred-{_ulid.ULID()}"
-        # The test assumes a test datastream exists or we insert a minimal one.
-        # We insert directly into the credentials table with a test datastream_id
-        # and a known operation_id that we have to create first.
-        op_id = f"op_{_ulid.ULID()}"
+        ds_id = inbound_pg_scope["datastream_id"]
+        op_id = insert_operation("inbound.credential.issued")
         cur.execute(
-            "INSERT INTO app.operations "
-            "(id, effective_org_id, command_type, actor, resource_path, "
-            "host_context, versions, request_hash, provider_references, "
-            "confirmation_mode, idempotency_key_hash, state) "
-            "VALUES (%s, 'platform', 'inbound.credential.issued', 'test', "
-            "'[\"ds:test\"]'::jsonb, '{}'::jsonb, '{}'::jsonb, %s, "
-            "'{}'::jsonb, 'server', %s, 'pending')",
-            (op_id, "a" * 64, "b" * 64),
+            "UPDATE app.operations SET resource_path = jsonb_build_array(%s::text) WHERE id = %s",
+            (f"datastream:{ds_id}", op_id),
         )
         cred1_id = f"dic_{_ulid.ULID()}"
         cur.execute(
@@ -1191,21 +1822,15 @@ def test_live_pg_partial_unique_prevents_two_active_credentials(pg_conn):
             "(id, datastream_id, channel, token_hash, safe_suffix, "
             "state, version, issued_by, operation_id) "
             "VALUES (%s, %s, 'email', %s, 'aabbcc', 'ACTIVE', 1, 'test', %s)",
-            (cred1_id, ds_id, "a" * 64, op_id),
+            (cred1_id, ds_id, _sha256(cred1_id), op_id),
         )
         pg_conn.commit()
 
         # Second ACTIVE insert for same (ds_id, 'email') must fail.
-        op_id2 = f"op_{_ulid.ULID()}"
+        op_id2 = insert_operation("inbound.credential.issued")
         cur.execute(
-            "INSERT INTO app.operations "
-            "(id, effective_org_id, command_type, actor, resource_path, "
-            "host_context, versions, request_hash, provider_references, "
-            "confirmation_mode, idempotency_key_hash, state) "
-            "VALUES (%s, 'platform', 'inbound.credential.issued', 'test', "
-            "'[\"ds:test\"]'::jsonb, '{}'::jsonb, '{}'::jsonb, %s, "
-            "'{}'::jsonb, 'server', %s, 'pending')",
-            (op_id2, "c" * 64, "d" * 64),
+            "UPDATE app.operations SET resource_path = jsonb_build_array(%s::text) WHERE id = %s",
+            (f"datastream:{ds_id}", op_id2),
         )
         cred2_id = f"dic_{_ulid.ULID()}"
         try:
@@ -1214,7 +1839,7 @@ def test_live_pg_partial_unique_prevents_two_active_credentials(pg_conn):
                 "(id, datastream_id, channel, token_hash, safe_suffix, "
                 "state, version, issued_by, operation_id) "
                 "VALUES (%s, %s, 'email', %s, 'ccddee', 'ACTIVE', 2, 'test', %s)",
-                (cred2_id, ds_id, "e" * 64, op_id2),
+                (cred2_id, ds_id, _sha256(cred2_id), op_id2),
             )
             pg_conn.commit()
             pytest.fail("Expected unique constraint violation for second ACTIVE credential")
@@ -1226,22 +1851,18 @@ def test_live_pg_partial_unique_prevents_two_active_credentials(pg_conn):
 
 
 @pytest.mark.live_pg
-def test_live_pg_immutability_trigger_blocks_token_hash_update(pg_conn):
+def test_live_pg_immutability_trigger_blocks_token_hash_update(
+    pg_conn, inbound_pg_scope, insert_operation
+):
     """Live-PG: protect_inbound_credential blocks updating token_hash."""
     import ulid as _ulid
 
     with pg_conn.cursor() as cur:
-        ds_id = f"ds-test-immut-{_ulid.ULID()}"
-        op_id = f"op_{_ulid.ULID()}"
+        ds_id = inbound_pg_scope["datastream_id"]
+        op_id = insert_operation("inbound.credential.issued")
         cur.execute(
-            "INSERT INTO app.operations "
-            "(id, effective_org_id, command_type, actor, resource_path, "
-            "host_context, versions, request_hash, provider_references, "
-            "confirmation_mode, idempotency_key_hash, state) "
-            "VALUES (%s, 'platform', 'inbound.credential.issued', 'test', "
-            "'[\"ds:test\"]'::jsonb, '{}'::jsonb, '{}'::jsonb, %s, "
-            "'{}'::jsonb, 'server', %s, 'pending')",
-            (op_id, "f" * 64, "g" * 64),
+            "UPDATE app.operations SET resource_path = jsonb_build_array(%s::text) WHERE id = %s",
+            (f"datastream:{ds_id}", op_id),
         )
         cred_id = f"dic_{_ulid.ULID()}"
         cur.execute(
@@ -1249,16 +1870,15 @@ def test_live_pg_immutability_trigger_blocks_token_hash_update(pg_conn):
             "(id, datastream_id, channel, token_hash, safe_suffix, "
             "state, version, issued_by, operation_id) "
             "VALUES (%s, %s, 'webhook', %s, 'aabbcc', 'ACTIVE', 1, 'test', %s)",
-            (cred_id, ds_id, "h" * 64, op_id),
+            (cred_id, ds_id, _sha256(cred_id), op_id),
         )
         pg_conn.commit()
 
         # Attempt to mutate token_hash (must be blocked by trigger).
         try:
             cur.execute(
-                "UPDATE app.datastream_inbound_credentials "
-                "SET token_hash = %s WHERE id = %s",
-                ("i" * 64, cred_id),
+                "UPDATE app.datastream_inbound_credentials SET token_hash = %s WHERE id = %s",
+                (_sha256(f"{cred_id}:rotated"), cred_id),
             )
             pg_conn.commit()
             pytest.fail("Expected immutability trigger to block token_hash update")
@@ -1267,6 +1887,41 @@ def test_live_pg_immutability_trigger_blocks_token_hash_update(pg_conn):
             assert "immutable" in str(exc).lower() or "token_hash" in str(exc).lower(), (
                 f"Expected immutability exception, got: {exc}"
             )
+
+
+@pytest.mark.live_pg
+def test_live_pg_force_rls_hides_cross_tenant_credential(
+    pg_conn, inbound_pg_scope, insert_operation
+):
+    """Live-PG probe written for the final module-complete wave; not run here."""
+    import ulid as _ulid
+
+    ds_id = inbound_pg_scope["datastream_id"]
+    op_id = insert_operation("inbound.credential.issued")
+    cred_id = f"dic_{_ulid.ULID()}"
+    try:
+        with pg_conn.cursor() as cur:
+            cur.execute(
+                "UPDATE app.operations SET resource_path = jsonb_build_array(%s::text) "
+                "WHERE id = %s",
+                (f"datastream:{ds_id}", op_id),
+            )
+            cur.execute(
+                "INSERT INTO app.datastream_inbound_credentials "
+                "(id, datastream_id, channel, token_hash, safe_suffix, "
+                "state, version, issued_by, operation_id) "
+                "VALUES (%s, %s, 'email', %s, 'aabbcc', 'ACTIVE', 1, 'test', %s)",
+                (cred_id, ds_id, _sha256(cred_id), op_id),
+            )
+            cur.execute("SELECT set_config('toorow.identity', 'foreign-user', true)")
+            cur.execute("SELECT set_config('toorow.enforce_epic36', 'on', true)")
+            cur.execute(
+                "SELECT count(*) FROM app.datastream_inbound_credentials WHERE id = %s",
+                (cred_id,),
+            )
+            assert cur.fetchone()[0] == 0
+    finally:
+        pg_conn.rollback()
 
 
 @pytest.mark.live_pg

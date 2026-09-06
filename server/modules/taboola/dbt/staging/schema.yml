@@ -1,7 +1,7 @@
 version: 2
 sources:
   - name: raw_taboola
-    schema: main
+    schema: "{{ var('raw_schema', 'main') }}"  # 24.4 AC2: org_<wslug>_raw injected by orchestrator, 'main' without var (bit-identique)
     tables:
       - name: raw_taboola_daily
       - name: raw_taboola_history
@@ -10,7 +10,32 @@ models:
     columns:
       - name: metric
         tests: [not_null]
+      - name: country_source
+        description: "Raw Taboola ISO 3166-1 alpha-2 country code before normalization."
+      - name: country
+        description: "Canonical ISO 3166-1 alpha-2 code; unresolved source values stay NULL."
   - name: stg_taboola_history
+    description: >
+      Staging: Taboola Backstage campaign-history stream. AD-7 supersede lives HERE,
+      not at landing: QUALIFY keeps one current row per (project_id, account_id,
+      record_id), ordered by pull_id DESC, so a re-pull of an overlapping window
+      lands again and exactly one row survives -- the model was a bare SELECT *
+      until 2026-08-30 and duplicated on every retry.
+      Grain: (project_id, account_id, record_id).
     columns:
       - name: record_id
-        tests: [not_null, unique]
+        description: "Provider's immutable identity for one history change record."
+        tests: [not_null]
+      - name: account_id
+        tests: [not_null]
+      - name: pull_id
+        tests: [not_null]
+    tests:
+      # The grain, not a bare `unique` on record_id. A provider id is unique
+      # inside its account, never across the warehouse: the previous
+      # column-level `unique: record_id` would go red the day two tenants pull
+      # the same account, and it is the same call stg_gbp_review already made.
+      - unique:
+          name: stg_taboola_history_grain_unique
+          arguments:
+            column_name: "project_id || '|' || account_id || '|' || record_id"

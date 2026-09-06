@@ -11,6 +11,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
+
+# Import au niveau module (et non paresseux comme les appels a `core` dans les
+# fonctions) : les classes d'exception ci-dessous en HERITENT, donc il doit etre
+# resolu au moment ou le fichier est lu.
+from core import pull_errors
 from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
@@ -60,16 +65,60 @@ KNOWN_COLUMN_TYPES = {
 }
 
 
-class ApiVersionMismatch(RuntimeError):
-    pass
+class ApiVersionMismatch(pull_errors.InvalidRequestError):
+    """L'API a repondu sous une autre version que celle sur laquelle on est epingle.
+
+    `invalid_request` : c'est LA definition de la derive de catalogue, et cette
+    classe est la seule a emettre `pull_invalid_request_drift`. Rejouer ne change
+    rien tant que le connecteur n'a pas ete releve sur la nouvelle version.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message)
 
 
-class MondayGraphQLError(RuntimeError):
+class MondayGraphQLError(pull_errors.ConnectorError):
+    """monday repond HTTP 200 et met l'echec dans `errors[].extensions.code`.
+
+    CE QUE CETTE CLASSE SAVAIT DEJA, ET PERDAIT. Ses sites de levee nomment la
+    bonne reponse en toutes lettres -- `MondayGraphQLError("auth_expired", ...)`
+    -- mais elle heritait d'un `RuntimeError` nu, donc le worker ne voyait qu'une
+    exception generique : `unclassified`, rejouee jusqu'au `dead_letter` contre un
+    token qui ne marchera jamais, et aucun << reconnecte-toi >> a l'ecran.
+
+    `code` reste ce que monday dit ; `error_class` devient ce que le worker lit.
+    La correspondance est ci-dessous, et la taxonomie n'est PAS retranscrite ici :
+    on nomme une classe canonique et `core.pull_errors.error_for_class` la
+    construit, pour qu'`ERROR_CLASSES` reste le seul endroit ou elle est ecrite.
+
+    `rate_limited` n'y figure pas volontairement : une limite de debit doit lever
+    `core.quota.RateLimitError`, la seule que le disjoncteur de quota reconnait.
+    """
+
+    #: code monday -> classe canonique. `resource_not_found` est `invalid_request`
+    #: (la selection designe un tableau qui n'existe plus : rejouer redonne la
+    #: meme reponse) ; `invalid_response` est transitoire (une reponse non-objet
+    #: est un incident de passerelle, pas une requete illegale).
+    _CANONICAL = {
+        "auth_expired": pull_errors.AUTH_EXPIRED,
+        "permission_denied": pull_errors.PERMISSION_DENIED,
+        "invalid_request": pull_errors.INVALID_REQUEST,
+        "resource_not_found": pull_errors.INVALID_REQUEST,
+        "invalid_response": pull_errors.PROVIDER_TRANSIENT,
+        "provider_error": pull_errors.PROVIDER_TRANSIENT,
+    }
+
     def __init__(self, code: str, message: str, *, retry_after: int | None = None, raw=None):
-        super().__init__(message)
+        super().__init__(provider_payload=raw, message=message)
         self.code = code
         self.retry_after = retry_after
         self.raw = raw
+        canonical = pull_errors.error_for_class(
+            self._CANONICAL.get(code, pull_errors.UNCLASSIFIED)
+        )
+        self.error_class = canonical.error_class
+        self.user_action = canonical.user_action
+        self.retryable = canonical.retryable
 
 
 _ERROR_CODES = {
@@ -115,21 +164,46 @@ def _parse_rate_limit(headers) -> dict[str, Any]:
 
 
 def ensure_budget(quota: dict[str, Any]) -> None:
-    """Stop pagination before known complexity or header budgets are exhausted."""
+    """Stop pagination before known complexity or header budgets are exhausted.
+
+    Leve `core.quota.RateLimitError` -- et non plus un `MondayGraphQLError` portant
+    la chaine `"rate_limited"`. C'est le TYPE que `queue.py` attrape pour remettre
+    le job en file et alimenter le disjoncteur ; une exception qui dit seulement
+    << rate_limited >> dans un attribut tombait dans le filet generique, consommait
+    une tentative et laissait le disjoncteur aveugle a toute limite monday.
+    """
+    from core.quota import RateLimitError  # noqa: PLC0415
+
     complexity = quota.get("complexity") or {}
     if complexity and int(complexity.get("after", 1)) <= 0:
-        raise MondayGraphQLError(
-            "rate_limited",
-            "monday complexity budget exhausted",
-            retry_after=complexity.get("reset_in_x_seconds"),
-        )
+        raise RateLimitError("monday", complexity.get("reset_in_x_seconds"))
     remaining = (quota.get("rate_limit_values") or {}).get("remaining")
     if remaining is not None and remaining <= 0:
-        raise MondayGraphQLError(
-            "rate_limited",
-            "monday request budget exhausted",
-            retry_after=quota.get("retry_after"),
+        raise RateLimitError("monday", quota.get("retry_after"))
+
+
+_ERROR_MAP: dict | None = None
+
+
+def _load_error_map() -> dict:
+    """L'`error_map` du manifeste (cle "<statut>:<error_code>"), en cache.
+
+    monday publie un tableau de codes (developer.monday.com, << Error codes >>)
+    et met le sien dans un `error_code` de PREMIER NIVEAU, que
+    `core.pull_errors._extract_provider_codes` lit deja : aucune normalisation
+    n'est necessaire ici. Seuls les codes portes par un statut NON-2xx sont
+    declares -- ceux de la couche GraphQL voyagent sur un HTTP 200 et sont traites
+    dans `graphql_request` / `_ERROR_CODES`, la ou ils s'appliquent.
+    """
+    global _ERROR_MAP
+    if _ERROR_MAP is None:
+        from pathlib import Path  # noqa: PLC0415
+
+        manifest = json.loads(
+            (Path(__file__).parent / "manifest.json").read_text(encoding="utf-8")
         )
+        _ERROR_MAP = manifest.get("error_map") or {}
+    return _ERROR_MAP
 
 
 def _response_json(response):
@@ -155,20 +229,27 @@ def graphql_request(client, token: str, query: str, variables: dict | None = Non
     if actual_version != API_VERSION:
         raise ApiVersionMismatch(f"expected API-Version {API_VERSION}, got {actual_version!r}")
     payload = _response_json(response)
-    if response.status_code == 401:
-        raise MondayGraphQLError("auth_expired", "monday token was rejected", raw=payload)
-    if response.status_code == 403:
-        raise MondayGraphQLError("permission_denied", "monday access was denied", raw=payload)
     if response.status_code == 429:
-        raise MondayGraphQLError(
-            "rate_limited",
-            "monday rate limit exceeded",
-            retry_after=quota.get("retry_after"),
-            raw=payload,
-        )
+        from core.quota import RateLimitError  # noqa: PLC0415
+
+        raise RateLimitError("monday", quota.get("retry_after"))
     if response.status_code >= 400:
-        raise MondayGraphQLError(
-            "provider_error", f"monday HTTP {response.status_code}", raw=payload
+        # Un echec purement HTTP n'a pas besoin du vocabulaire GraphQL de monday :
+        # le classifieur de core le type deja (401/403/400/5xx), et l'`error_map`
+        # du manifeste le raffine si le provider donne un code. Le fourre-tout
+        # `provider_error` d'avant reclassait tout en transitoire, donc un 400
+        # -- une derive de catalogue -- etait rejoue jusqu'au dead_letter.
+        #
+        # 401 ET 403 PASSENT ICI DEPUIS 67-21. Ils partaient avant en
+        # `MondayGraphQLError("auth_expired" / "permission_denied")` AVANT que core
+        # ne voie la reponse : le worker recevait une exception sans `error_class`
+        # canonique, et surtout aucune cle `401:` ou `403:` de l'`error_map` ne
+        # pouvait tirer. Les deux cas que monday distingue et que le pur HTTP ne
+        # distingue pas -- un jeton REVOQUE (monday n'expire pas ses jetons OAuth)
+        # et une restriction d'IP a laquelle se reconnecter ne changera rien --
+        # n'atteignaient donc personne.
+        raise pull_errors.classify_http_error(
+            response.status_code, payload, _load_error_map()
         )
     errors = payload.get("errors") or []
     if errors:
@@ -176,8 +257,18 @@ def graphql_request(client, token: str, query: str, variables: dict | None = Non
         extensions = first.get("extensions") or {}
         provider_code = str(extensions.get("code") or "GRAPHQL_ERROR").upper()
         retry_after = extensions.get("retry_in_seconds") or quota.get("retry_after")
+        canonical = _ERROR_CODES.get(provider_code, "invalid_request")
+        if canonical == "rate_limited":
+            # C'est ICI que monday dit ses limites : HTTP 200, verdict dans le
+            # corps. Cinq de ses onze codes sont des limites de debit, et sans ce
+            # branchement aucune d'elles n'atteignait le disjoncteur.
+            from core.quota import RateLimitError  # noqa: PLC0415
+
+            raise RateLimitError(
+                "monday", int(retry_after) if retry_after is not None else None
+            )
         raise MondayGraphQLError(
-            _ERROR_CODES.get(provider_code, "invalid_request"),
+            canonical,
             str(first.get("message") or provider_code),
             retry_after=int(retry_after) if retry_after is not None else None,
             raw=errors,
@@ -360,6 +451,14 @@ CREATE TABLE IF NOT EXISTS raw_monday_board_snapshot (
 )
 """
 
+_RAW_INSERT_SQL = """
+INSERT INTO raw_monday_board_snapshot
+    (board_id, item_id, item_name, group_id, parent_item_id, updated_at, column_id,
+    column_type, column_text, column_raw_value, known_type, schema_fingerprint, pull_id,
+    loaded_at, project_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+
 
 def _land_snapshot(rows, schema, *, pull_id, project_id, duckdb_path):
     from core import warehouse_write  # noqa: PLC0415
@@ -393,22 +492,33 @@ def _land_snapshot(rows, schema, *, pull_id, project_id, duckdb_path):
                     )
                 )
         if values:
-            con.executemany(
-                "INSERT INTO raw_monday_board_snapshot VALUES "
-                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                values,
-            )
+            con.executemany(_RAW_INSERT_SQL, values)
     finally:
         con.close()
     return len(values)
 
 
-def _board_ids(connection_config):
+def _board_ids(connection_config, board_id=None):
+    """Le(s) tableau(x) a tirer : la SELECTION de l'operateur d'abord.
+
+    `board_id` est le compte choisi dans l'assistant, transmis par le worker
+    sous le nom que le manifeste declare (`account_topology.pull_parameter`).
+    Avant, seul `connection_config` etait lu -- et le contrat de dispatch ne le
+    passe pas davantage que `selection` : aucun tableau n'arrivait jamais, donc
+    ce connecteur levait a chaque pull.
+    """
+    if board_id not in (None, ""):
+        return [str(board_id)]
     config = connection_config or {}
     raw_ids = config.get("board_ids") or [config.get("board_id")]
     board_ids = list(dict.fromkeys(str(value) for value in raw_ids if value not in (None, "")))
     if not board_ids:
-        raise ValueError("connection_config.board_id or board_ids is required")
+        raise ValueError(
+            "monday: a board selection is required. The operator picks one in the "
+            "Datastream wizard (discover_accounts lists the boards the token can "
+            "reach) and the worker passes it as `board_id`. There is no "
+            "deployment-wide default: one would pull the same board for every project."
+        )
     return board_ids
 
 
@@ -419,6 +529,7 @@ def pull_board_snapshot(
     project_id,
     pull_id,
     connection_config=None,
+    board_id=None,
     *,
     _client=None,
     _token_value=None,
@@ -430,7 +541,7 @@ def pull_board_snapshot(
     )
     written = 0
     fingerprints = {}
-    for board_id in _board_ids(connection_config):
+    for board_id in _board_ids(connection_config, board_id):
         rows, schema = fetch_board_snapshot(client, token, board_id)
         written += _land_snapshot(
             rows,
@@ -443,8 +554,11 @@ def pull_board_snapshot(
     return {
         "profile_id": "board_snapshot",
         "rows_written": written,
+        "row_count": written,
         "pull_id": pull_id,
         "schema_fingerprints": fingerprints,
+        "date_from": date_from,
+        "date_to": date_to,
     }
 
 
@@ -484,6 +598,7 @@ def pull_board_events(
     project_id,
     pull_id,
     connection_config=None,
+    board_id=None,
     *,
     _client=None,
     _token_value=None,
@@ -498,7 +613,9 @@ def pull_board_events(
         _client or httpx.Client(),
         token,
         _UPDATES_QUERY,
-        {"boardIds": _board_ids(connection_config), "limit": 100},
+        # The operator's selection, like every other pull of this module: this
+        # one call omitted it and fell back to the deployment config.
+        {"boardIds": _board_ids(connection_config, board_id), "limit": 100},
     )
     events = _update_events(data, date_from, date_to)
     delete_connector_events_in_window(
@@ -519,7 +636,14 @@ def pull_board_events(
             platform="monday",
             source="monday",
         )
-    return {"profile_id": "board_events", "rows_written": len(events), "pull_id": pull_id}
+    return {
+        "profile_id": "board_events",
+        "rows_written": len(events),
+        "row_count": len(events),
+        "pull_id": pull_id,
+        "date_from": date_from,
+        "date_to": date_to,
+    }
 
 
 def handle_webhook(
@@ -553,15 +677,18 @@ def pull(
     pull_id,
     profile_id="board_snapshot",
     connection_config=None,
+    board_id=None,
     **kwargs,
 ):
     if profile_id == "board_snapshot":
         return pull_board_snapshot(
-            connection_id, date_from, date_to, project_id, pull_id, connection_config, **kwargs
+            connection_id, date_from, date_to, project_id, pull_id, connection_config,
+            board_id, **kwargs
         )
     if profile_id == "board_events":
         return pull_board_events(
-            connection_id, date_from, date_to, project_id, pull_id, connection_config, **kwargs
+            connection_id, date_from, date_to, project_id, pull_id, connection_config,
+            board_id, **kwargs
         )
     raise ValueError(f"unsupported monday profile: {profile_id}")
 

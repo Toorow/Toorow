@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
-from core.admin_api import (
+from core.datastream_runs_read import (
     _enrich_datastream_runs,
     _normalize_run_interval,
     _read_datastream_runs,
@@ -35,6 +35,7 @@ def test_runs_are_universal_executions_and_ledger_only_enriches_membership():
             created,
             {"half_open_range": {"from": "2026-07-22", "to_exclusive": "2026-07-23"}},
             "operator",
+            False,
         ),
         (
             "dse_with_ledger",
@@ -47,6 +48,7 @@ def test_runs_are_universal_executions_and_ledger_only_enriches_membership():
             created,
             None,
             "operator",
+            True,
         ),
     ]
     conn, cursor = _connection(rows)
@@ -64,7 +66,6 @@ def test_runs_are_universal_executions_and_ledger_only_enriches_membership():
                 "snapshot_observed_at": "2026-07-22T03:00:00Z",
             }
         ],
-        [{"execution_id": "dse_with_ledger"}],
         "dse_with_ledger",
     )
 
@@ -83,6 +84,9 @@ def test_runs_are_universal_executions_and_ledger_only_enriches_membership():
 def test_run_interval_normalizes_inclusive_end_and_rejects_invalid_ranges():
     assert _normalize_run_interval(
         {"interval": {"from": "2026-07-01", "to": "2026-07-05"}}
+    ) is None
+    assert _normalize_run_interval(
+        {"interval": {"from": "2026-07-01", "to_exclusive": "2026-07-06"}}
     ) == {"from": "2026-07-01", "to_exclusive": "2026-07-06"}
     assert _normalize_run_interval(
         {"half_open_range": {"from": "2026-07-05", "to_exclusive": "2026-07-05"}}

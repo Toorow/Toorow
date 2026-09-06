@@ -1,3 +1,36 @@
+{#-
+  ONE PROJECT DOES NOT HAVE FIFTY-TWO CONNECTORS, and this fact used to require
+  it: every branch below was UNIONed unconditionally, so the model could only be
+  built by a Project that had landed EVERY connector. No real Project has.
+
+  Measured 2026-08-18 on the only production Project carrying data (YouTube
+  alone, 34 640 raw rows, 547 videos): the nightly's own command,
+  `dbt build --vars '{project, raw_schema}'`, returned **53 errors**, each of
+  them `Catalog Error: Table with name raw_<connector>_daily does not exist!`.
+  So this fact had never been built there, every card that reads it answered
+  `warehouse_not_ready`, and the connector's own mart -- `fact_youtube_daily`,
+  which depends on YouTube alone -- built perfectly beside it.
+
+  Each branch is now conditioned on the models it reads being in the warehouse
+  (`toorow_model_present`, dbt/macros/relation_present.sql). `ns.emitted` carries
+  the separator, because `UNION ALL` belongs BETWEEN two emitted branches and is
+  therefore written by the second one -- a separator hard-coded on its own line
+  is what made this file unconditional in the first place.
+
+  THE GUARD IS HALF THE REPAIR. A staging model whose `raw_*` source is missing
+  still errors, and dbt then SKIPS everything downstream, this model included.
+  The runner excludes those staging models for the Project being built; this
+  file drops their branches.
+-#}
+{#- `ref()` sous condition : dbt ne peut pas inferer la dependance
+    statiquement, donc elle est declaree ici. La branche managed_feed (69.2) est
+    la seule dont le `ref` vive dans un `{% if %}` que le parseur ne traverse
+    pas -- les autres passent par `toorow_model_present`, qui rend True au parse
+    et appelle `ref` a ce moment-la. -#}
+-- depends_on: {{ ref('stg_managed_feed_facts') }}
+{%- set ns = namespace(emitted=false) -%}
+{% if toorow_model_present('stg_ga4_standard_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 -- fact_daily_kpi: canonical day-grain fact table (AD-4, AD-7, AD-14)
 -- Schema: (project_id, date, connector, metric, breakdown_dimension, breakdown_value, value, pull_id, loaded_at)
 -- GRAIN (enforced by fact_daily_kpi_grain_unique): one row per
@@ -17,6 +50,10 @@
 
 {% for metric in metrics %}
 {% for dimension in dimensions %}
+{#- Story 58.5, arbitrage 1: a row the source gave no country for keeps a NAMED
+    bucket instead of a NULL `breakdown_value` the not_null test would break on.
+    Every other dimension is untouched -- the macro fires on `country` alone. -#}
+{%- set dimension_value = country_bucket('country', 'country_source') if dimension == 'country' else dimension -%}
 SELECT
     -- Story 2.7 AC6 HG-4: project_id from staging (not hardcoded 'default').
     -- Seeded rows have project_id='default'; real pull rows carry their own project_id.
@@ -25,22 +62,20 @@ SELECT
     'google-analytics'     AS connector,
     '{{ metric }}'         AS metric,
     '{{ dimension }}'      AS breakdown_dimension,
-    {{ dimension }}        AS breakdown_value,
-    SUM(CAST({{ metric }} AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    {{ dimension_value }}  AS breakdown_value,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)           AS pull_id,
     MAX(loaded_at)         AS loaded_at
 FROM {{ ref('stg_ga4_standard_daily') }}
-GROUP BY project_id, date, {{ dimension }}
+GROUP BY project_id, date, {{ dimension_value }}
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_ga4_standard_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- Story 8.11 (R5): composite sub-dimension split 'country>device'.
 -- Emitted as ORDINARY long-format rows using a '>' path separator so no schema
@@ -67,20 +102,24 @@ SELECT
     'google-analytics'                       AS connector,
     '{{ metric }}'                           AS metric,
     'country>device'                         AS breakdown_dimension,
-    country || '>' || device_category        AS breakdown_value,
-    SUM(CAST({{ metric }} AS DOUBLE))        AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    -- Story 58.5, arbitrage 1: THIS is the concatenation that broke. `NULL || '>' ||
+    -- 'mobile'` is NULL in SQL, so a single row with no country turned
+    -- `breakdown_value` NULL and took the nightly build down on the not_null test.
+    -- The named bucket keeps the composite total equal to both single-dimension
+    -- series (test_composite_reconciliation).
+    {{ country_bucket('country', 'country_source') }} || '>' || device_category
+                                             AS breakdown_value,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }}))        AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)                             AS pull_id,
     MAX(loaded_at)                           AS loaded_at
 FROM {{ ref('stg_ga4_standard_daily') }}
-GROUP BY project_id, date, country, device_category
+GROUP BY project_id, date, {{ country_bucket('country', 'country_source') }}, device_category
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_ga4_user_type_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- Epic 10, story 10.1: user_type_daily profile (GA4 newVsReturning).
 -- breakdown_dimension='user_type', values: new / returning / unknown.
@@ -107,19 +146,17 @@ SELECT
     '{{ metric }}'                    AS metric,
     'user_type'                       AS breakdown_dimension,
     user_type                         AS breakdown_value,
-    SUM(CAST({{ metric }} AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)                      AS pull_id,
     MAX(loaded_at)                    AS loaded_at
 FROM {{ ref('stg_ga4_user_type_daily') }}
 GROUP BY project_id, date, user_type
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_ga4_landing_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- Epic 10, story 10.3: pages_daily_landing profile (GA4 landingPage).
 -- breakdown_dimension='landing_page', metric sessions, value = URL path.
@@ -156,19 +193,17 @@ SELECT
     '{{ metric }}'                    AS metric,
     'landing_page'                    AS breakdown_dimension,
     landing_page                      AS breakdown_value,
-    SUM(CAST({{ metric }} AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)                      AS pull_id,
     MAX(loaded_at)                    AS loaded_at
 FROM {{ ref('stg_ga4_landing_daily') }}
 GROUP BY project_id, date, landing_page
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_ga4_paths_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- Epic 10, story 10.3: pages_daily_paths profile (GA4 pagePath).
 -- breakdown_dimension='page', metric screen_page_views, value = URL path.
@@ -197,19 +232,17 @@ SELECT
     '{{ metric }}'                    AS metric,
     'page'                            AS breakdown_dimension,
     page                              AS breakdown_value,
-    SUM(CAST({{ metric }} AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)                      AS pull_id,
     MAX(loaded_at)                    AS loaded_at
 FROM {{ ref('stg_ga4_paths_daily') }}
 GROUP BY project_id, date, page
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_ga4_acquisition_session') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- Epic 16, story 16.1: acquisition_daily_session profile (GA4 last click).
 -- TWO MARGINAL partitions derived from the SINGLE staging grain
@@ -265,11 +298,8 @@ SELECT
     '{{ metric }}'                    AS metric,
     'session_source_medium'           AS breakdown_dimension,
     session_source_medium             AS breakdown_value,
-    SUM(CAST({{ metric }} AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)                      AS pull_id,
     MAX(loaded_at)                    AS loaded_at
 FROM {{ ref('stg_ga4_acquisition_session') }}
@@ -282,19 +312,17 @@ SELECT
     '{{ metric }}'                    AS metric,
     'session_campaign'                AS breakdown_dimension,
     session_campaign                  AS breakdown_value,
-    SUM(CAST({{ metric }} AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)                      AS pull_id,
     MAX(loaded_at)                    AS loaded_at
 FROM {{ ref('stg_ga4_acquisition_session') }}
 GROUP BY project_id, date, session_campaign
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_ga4_acquisition_first_user') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- Epic 16, story 16.1: acquisition_daily_first_user profile (GA4 first click).
 -- breakdown_dimension='first_user_source_medium', metric conversions.
@@ -320,19 +348,17 @@ SELECT
     '{{ metric }}'                    AS metric,
     'first_user_source_medium'        AS breakdown_dimension,
     first_user_source_medium          AS breakdown_value,
-    SUM(CAST({{ metric }} AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)                      AS pull_id,
     MAX(loaded_at)                    AS loaded_at
 FROM {{ ref('stg_ga4_acquisition_first_user') }}
 GROUP BY project_id, date, first_user_source_medium
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_meta_ads_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- Meta Ads (Story 3.6) -- the ONE permitted central dbt edit (HG-2, AC8).
 -- Meta Ads has a different metric/dimension set than GA4, so it is an explicit
@@ -378,16 +404,10 @@ SELECT
     {{ dimension }}     AS breakdown_value,
     {% if metric == 'cost' %}
     SUM({{ fx_convert_at_read('cost') }}) AS value,
-    MAX(fx_rate)        AS fx_rate,
-    MAX(fx_as_of_date)  AS fx_as_of_date,
-    MAX(fx_source)      AS fx_source,
-    MAX(fx_tier)        AS fx_tier,
+    {{ money_evidence_present('cost_source_value', 'cost_source_currency') }}
     {% else %}
-    SUM(CAST({{ metric }} AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     {% endif %}
     MAX(pull_id)        AS pull_id,
     MAX(loaded_at)      AS loaded_at
@@ -401,8 +421,9 @@ GROUP BY project_id, date, {{ dimension }}
 {% endfor %}
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_gsc_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- GSC Search Analytics (Story 6.2) — additive metrics: clicks, impressions.
 -- AD-4: SUM is valid for additive metrics at day grain.
@@ -413,28 +434,30 @@ UNION ALL
 {% set gsc_dimensions = ["page", "country", "device"] %}
 {% for metric in gsc_additive_metrics %}
 {% for dimension in gsc_dimensions %}
+{#- Story 58.5, arbitrage 1: the SAME repair as the GA4 block above. GSC carries
+    `country_source` too, so a row with no country signal is one bucket here as
+    well -- a defect of one connector is a defect of the family. -#}
+{%- set dimension_value = country_bucket('country', 'country_source') if dimension == 'country' else dimension -%}
 SELECT
     project_id,
     date,
     'gsc'               AS connector,
     '{{ metric }}'      AS metric,
     '{{ dimension }}'   AS breakdown_dimension,
-    {{ dimension }}     AS breakdown_value,
-    SUM(CAST({{ metric }} AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    {{ dimension_value }} AS breakdown_value,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)        AS pull_id,
     MAX(loaded_at)      AS loaded_at
 FROM {{ ref('stg_gsc_daily') }}
-GROUP BY project_id, date, {{ dimension }}
+GROUP BY project_id, date, {{ dimension_value }}
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_gsc_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- GSC composite sub-dimension split 'country>device' (AI-51, Epic 8) -- following
 -- the proven GA4 8.11 pattern EXACTLY. stg_gsc_daily lands country AND device on the
@@ -460,20 +483,20 @@ SELECT
     'gsc'                              AS connector,
     '{{ metric }}'                     AS metric,
     'country>device'                   AS breakdown_dimension,
-    country || '>' || device           AS breakdown_value,
-    SUM(CAST({{ metric }} AS DOUBLE))  AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    -- Story 58.5, arbitrage 1: the GSC twin of the GA4 concatenation.
+    {{ country_bucket('country', 'country_source') }} || '>' || device
+                                       AS breakdown_value,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }}))  AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)                       AS pull_id,
     MAX(loaded_at)                     AS loaded_at
 FROM {{ ref('stg_gsc_daily') }}
-GROUP BY project_id, date, country, device
+GROUP BY project_id, date, {{ country_bucket('country', 'country_source') }}, device
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_gsc_query_page_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- Epic 10, story 10.5: GSC composite sub-dimension split 'query>page' (cannibalisation).
 -- Follows the proven 8.11/AI-51 country>device composite pattern EXACTLY. Source is the
@@ -515,19 +538,17 @@ SELECT
     '{{ metric }}'                     AS metric,
     'query>page'                       AS breakdown_dimension,
     query || '>' || page               AS breakdown_value,
-    SUM(CAST({{ metric }} AS DOUBLE))  AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }}))  AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)                       AS pull_id,
     MAX(loaded_at)                     AS loaded_at
 FROM {{ ref('stg_gsc_query_page_daily') }}
 GROUP BY project_id, date, query, page
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_gsc_surface_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- GSC non-web search surfaces (GSC full coverage): Discover, Google News, image,
 -- video, news — landed via the API 'type' parameter (the ONLY access path to those
@@ -551,19 +572,17 @@ SELECT
     '{{ metric }}'                     AS metric,
     'search_type'                      AS breakdown_dimension,
     search_type                        AS breakdown_value,
-    SUM(CAST({{ metric }} AS DOUBLE))  AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }}))  AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)                       AS pull_id,
     MAX(loaded_at)                     AS loaded_at
 FROM {{ ref('stg_gsc_surface_daily') }}
 GROUP BY project_id, date, search_type
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_gsc_surface_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- GSC surface composite 'search_type>page' (same pattern as country>device /
 -- query>page): the joint (search_type, page) grain co-occurs on the SAME staging
@@ -577,19 +596,17 @@ SELECT
     '{{ metric }}'                     AS metric,
     'search_type>page'                 AS breakdown_dimension,
     search_type || '>' || page         AS breakdown_value,
-    SUM(CAST({{ metric }} AS DOUBLE))  AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }}))  AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)                       AS pull_id,
     MAX(loaded_at)                     AS loaded_at
 FROM {{ ref('stg_gsc_surface_daily') }}
 GROUP BY project_id, date, search_type, page
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_gsc_search_appearance_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- GSC searchAppearance (GSC full coverage): rich-result / AMP / etc. appearance
 -- buckets from stg_gsc_search_appearance_daily (grain project x date x
@@ -609,19 +626,17 @@ SELECT
     '{{ metric }}'                     AS metric,
     'search_appearance'                AS breakdown_dimension,
     search_appearance                  AS breakdown_value,
-    SUM(CAST({{ metric }} AS DOUBLE))  AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }}))  AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)                       AS pull_id,
     MAX(loaded_at)                     AS loaded_at
 FROM {{ ref('stg_gsc_search_appearance_daily') }}
 GROUP BY project_id, date, search_appearance
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_shopify_orders_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- Shopify orders (Story 15.4, Epic 15) -- source de verite VENTES e-commerce.
 -- metrics: revenue, refund_amount, orders_count (all ADDITIVE at day grain, AD-4).
@@ -671,16 +686,10 @@ SELECT
     'all'               AS breakdown_value,
     {% if metric in ["revenue", "refund_amount"] %}
     SUM({{ fx_convert_at_read(metric) }}) AS value,
-    MAX(fx_rate)        AS fx_rate,
-    MAX(fx_as_of_date)  AS fx_as_of_date,
-    MAX(fx_source)      AS fx_source,
-    MAX(fx_tier)        AS fx_tier,
+    {{ money_evidence_present('revenue_source_value' if metric == 'revenue' else 'refund_source_value', 'revenue_source_currency') }}
     {% else %}
-    SUM(CAST({{ metric }} AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     {% endif %}
     MAX(pull_id)        AS pull_id,
     MAX(loaded_at)      AS loaded_at
@@ -688,8 +697,9 @@ FROM {{ ref('stg_shopify_orders_daily') }}
 GROUP BY project_id, date
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_woocommerce_orders_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- woocommerce: BEGIN (epic-25) -- STRICTLY ADDITIVE block (do not reformat above).
 -- Self-hosted commerce sales source of record, the sibling of the shopify block above.
@@ -725,16 +735,10 @@ SELECT
     'all'               AS breakdown_value,
     {% if metric in ["revenue", "refund_amount"] %}
     SUM({{ fx_convert_at_read(metric) }}) AS value,
-    MAX(fx_rate)        AS fx_rate,
-    MAX(fx_as_of_date)  AS fx_as_of_date,
-    MAX(fx_source)      AS fx_source,
-    MAX(fx_tier)        AS fx_tier,
+    {{ money_evidence_present('revenue_source_value' if metric == 'revenue' else 'refund_source_value', 'revenue_source_currency') }}
     {% else %}
-    SUM(CAST({{ metric }} AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     {% endif %}
     MAX(pull_id)        AS pull_id,
     MAX(loaded_at)      AS loaded_at
@@ -743,8 +747,9 @@ GROUP BY project_id, date
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
 -- woocommerce: END block.
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_tiktok_ads_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- tiktok-ads: BEGIN Story 15.2 (Epic 15) -- ADDITIVE-ONLY block (do not reformat above).
 -- Third paid-social régie alongside GA4/Meta. TikTok has a different metric/dimension
@@ -802,16 +807,10 @@ SELECT
     {{ dimension }}     AS breakdown_value,
     {% if metric == 'cost' %}
     SUM({{ fx_convert_at_read('cost') }}) AS value,
-    MAX(fx_rate)        AS fx_rate,
-    MAX(fx_as_of_date)  AS fx_as_of_date,
-    MAX(fx_source)      AS fx_source,
-    MAX(fx_tier)        AS fx_tier,
+    {{ money_evidence_present('cost_source_value', 'cost_source_currency') }}
     {% else %}
-    SUM(CAST({{ metric }} AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     {% endif %}
     MAX(pull_id)        AS pull_id,
     MAX(loaded_at)      AS loaded_at
@@ -826,8 +825,9 @@ GROUP BY project_id, date, {{ dimension }}
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
 -- tiktok-ads: END Story 15.2 block.
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_klaviyo_campaigns_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- klaviyo: BEGIN Story 15.8 (Epic 15) -- BLOC STRICTEMENT ADDITIF (ne pas reformater au-dessus).
 -- Email/SMS marketing -- source de metriques d'attribution canal email.
@@ -885,22 +885,20 @@ SELECT
     '{{ metric }}'      AS metric,
     'campaign_id'       AS breakdown_dimension,
     campaign_id         AS breakdown_value,
-    SUM(CAST({{ metric }} AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)        AS pull_id,
     MAX(loaded_at)      AS loaded_at
 FROM {{ ref('stg_klaviyo_campaigns_daily') }}
 WHERE campaign_id IS NOT NULL
 GROUP BY project_id, date, campaign_id
 -- AD-9: agregat entierement NULL -> pas de ligne (jamais un faux 0, contrat value NOT NULL)
-HAVING SUM(CAST({{ metric }} AS DOUBLE)) IS NOT NULL
+HAVING SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) IS NOT NULL
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_klaviyo_flows_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 {% for metric in klaviyo_metrics %}
 SELECT
@@ -910,23 +908,21 @@ SELECT
     '{{ metric }}'      AS metric,
     'flow_id'           AS breakdown_dimension,
     flow_id             AS breakdown_value,
-    SUM(CAST({{ metric }} AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)        AS pull_id,
     MAX(loaded_at)      AS loaded_at
 FROM {{ ref('stg_klaviyo_flows_daily') }}
 WHERE flow_id IS NOT NULL
 GROUP BY project_id, date, flow_id
 -- AD-9: agregat entierement NULL -> pas de ligne (jamais un faux 0, contrat value NOT NULL)
-HAVING SUM(CAST({{ metric }} AS DOUBLE)) IS NOT NULL
+HAVING SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) IS NOT NULL
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
 -- klaviyo: END Story 15.8 block.
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_linkedin_ads_campaign_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- linkedin-ads: BEGIN Story 15.3 (Epic 15) -- BLOC STRICTEMENT ADDITIF (ne pas reformater au-dessus).
 -- Acquisition B2B paid social -- source de metriques de campagne LinkedIn.
@@ -981,16 +977,10 @@ SELECT
     campaign_id          AS breakdown_value,
     {% if metric == 'cost' %}
     SUM({{ fx_convert_at_read('cost') }}) AS value,
-    MAX(fx_rate)        AS fx_rate,
-    MAX(fx_as_of_date)  AS fx_as_of_date,
-    MAX(fx_source)      AS fx_source,
-    MAX(fx_tier)        AS fx_tier,
+    {{ money_evidence_present('cost_source_value', 'cost_source_currency') }}
     {% else %}
-    SUM(CAST({{ metric }} AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     {% endif %}
     MAX(pull_id)         AS pull_id,
     MAX(loaded_at)       AS loaded_at
@@ -998,11 +988,12 @@ FROM {{ ref('stg_linkedin_ads_campaign_daily') }}
 WHERE campaign_id IS NOT NULL
 GROUP BY project_id, date, campaign_id
 -- AD-9: agregat entierement NULL -> pas de ligne (valeur absente != zero reel).
-HAVING SUM(CAST({{ metric }} AS DOUBLE)) IS NOT NULL
+HAVING SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) IS NOT NULL
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_linkedin_ads_campaign_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- Metrique 'leads' (Lead Gen Form) -- emise UNIQUEMENT au grain campaign.
 SELECT
@@ -1012,20 +1003,18 @@ SELECT
     'leads'              AS metric,
     'campaign_id'        AS breakdown_dimension,
     campaign_id          AS breakdown_value,
-    SUM(CAST(leads AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST(leads AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)         AS pull_id,
     MAX(loaded_at)       AS loaded_at
 FROM {{ ref('stg_linkedin_ads_campaign_daily') }}
 WHERE campaign_id IS NOT NULL
   AND leads IS NOT NULL
 GROUP BY project_id, date, campaign_id
-HAVING SUM(CAST(leads AS DOUBLE)) IS NOT NULL
-
-UNION ALL
+HAVING SUM(CAST(leads AS {{ toorow_float_type() }})) IS NOT NULL
+{% endif %}
+{% if toorow_model_present('stg_linkedin_ads_campaign_group_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- Serie campaign_group : roll-up LinkedIn (data_level=CAMPAIGN_GROUP).
 -- NOTE : leads non emis ici (NULL au grain campaign_group -- cf. note staging).
@@ -1039,16 +1028,10 @@ SELECT
     campaign_group_id       AS breakdown_value,
     {% if metric == 'cost' %}
     SUM({{ fx_convert_at_read('cost') }}) AS value,
-    MAX(fx_rate)            AS fx_rate,
-    MAX(fx_as_of_date)      AS fx_as_of_date,
-    MAX(fx_source)          AS fx_source,
-    MAX(fx_tier)            AS fx_tier,
+    {{ money_evidence_present('cost_source_value', 'cost_source_currency') }}
     {% else %}
-    SUM(CAST({{ metric }} AS DOUBLE)) AS value,
-    NULL::DOUBLE            AS fx_rate,
-    NULL::DATE              AS fx_as_of_date,
-    NULL::VARCHAR           AS fx_source,
-    NULL::VARCHAR           AS fx_tier,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     {% endif %}
     MAX(pull_id)            AS pull_id,
     MAX(loaded_at)          AS loaded_at
@@ -1056,12 +1039,13 @@ FROM {{ ref('stg_linkedin_ads_campaign_group_daily') }}
 WHERE campaign_group_id IS NOT NULL
 GROUP BY project_id, date, campaign_group_id
 -- AD-9: agregat entierement NULL -> pas de ligne.
-HAVING SUM(CAST({{ metric }} AS DOUBLE)) IS NOT NULL
+HAVING SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) IS NOT NULL
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
 -- linkedin-ads: END Story 15.3 block.
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_stripe_payments_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- stripe: BEGIN Story 15.7 (Epic 15) -- BLOC STRICTEMENT ADDITIF (ne pas reformater au-dessus).
 -- Source de verite REVENUS SaaS/services (pendant de Shopify pour les business sans boutique).
@@ -1113,28 +1097,23 @@ SELECT
     'all'               AS breakdown_value,
     {% if metric in ["revenue", "refunds", "fees"] %}
     SUM({{ fx_convert_at_read(metric) }}) AS value,
-    MAX(fx_rate)        AS fx_rate,
-    MAX(fx_as_of_date)  AS fx_as_of_date,
-    MAX(fx_source)      AS fx_source,
-    MAX(fx_tier)        AS fx_tier,
+    {{ money_evidence_present(metric ~ '_source_value', 'revenue_source_currency') }}
     {% else %}
-    SUM(CAST({{ metric }} AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     {% endif %}
     MAX(pull_id)        AS pull_id,
     MAX(loaded_at)      AS loaded_at
 FROM {{ ref('stg_stripe_payments_daily') }}
 GROUP BY project_id, date
 -- AD-9: agregat entierement NULL -> pas de ligne (jamais un faux 0, contrat value NOT NULL).
-HAVING SUM(CAST({{ metric }} AS DOUBLE)) IS NOT NULL
+HAVING SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) IS NOT NULL
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
 -- stripe: END Story 15.7 block.
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_square_payments_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- square: BEGIN block -- BLOC STRICTEMENT ADDITIF (ne pas reformater au-dessus).
 -- Source de verite REVENUS POS/omnichannel (pendant Square de Stripe 15.7 / Shopify 15.4).
@@ -1177,28 +1156,23 @@ SELECT
     'all'               AS breakdown_value,
     {% if metric in ["revenue", "refunds", "fees"] %}
     SUM({{ fx_convert_at_read(metric) }}) AS value,
-    MAX(fx_rate)        AS fx_rate,
-    MAX(fx_as_of_date)  AS fx_as_of_date,
-    MAX(fx_source)      AS fx_source,
-    MAX(fx_tier)        AS fx_tier,
+    {{ money_evidence_present(metric ~ '_source_value', 'revenue_source_currency') }}
     {% else %}
-    SUM(CAST({{ metric }} AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     {% endif %}
     MAX(pull_id)        AS pull_id,
     MAX(loaded_at)      AS loaded_at
 FROM {{ ref('stg_square_payments_daily') }}
 GROUP BY project_id, date
 -- AD-9: agregat entierement NULL -> pas de ligne (jamais un faux 0, contrat value NOT NULL).
-HAVING SUM(CAST({{ metric }} AS DOUBLE)) IS NOT NULL
+HAVING SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) IS NOT NULL
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
 -- square: END block.
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_hubspot_contacts_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- hubspot: BEGIN Story 15.5 (Epic 15) -- BLOC STRICTEMENT ADDITIF (ne pas reformater au-dessus).
 -- CRM leads/pipelines -- source de reconciliation entre les leads declares par les regies
@@ -1253,20 +1227,18 @@ SELECT
     'new_contacts'      AS metric,
     'date'              AS breakdown_dimension,
     date                AS breakdown_value,
-    SUM(CAST(new_contacts AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST(new_contacts AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)        AS pull_id,
     MAX(loaded_at)      AS loaded_at
 FROM {{ ref('stg_hubspot_contacts_daily') }}
 WHERE new_contacts IS NOT NULL
 GROUP BY project_id, date
 -- AD-9: agregat entierement NULL -> pas de ligne (jamais un faux 0, contrat value NOT NULL).
-HAVING SUM(CAST(new_contacts AS DOUBLE)) IS NOT NULL
-
-UNION ALL
+HAVING SUM(CAST(new_contacts AS {{ toorow_float_type() }})) IS NOT NULL
+{% endif %}
+{% if toorow_model_present('stg_hubspot_deals_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- Deals crees par jour
 SELECT
@@ -1276,19 +1248,17 @@ SELECT
     'deals_created'     AS metric,
     'date'              AS breakdown_dimension,
     date                AS breakdown_value,
-    SUM(CAST(deals_created AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST(deals_created AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)        AS pull_id,
     MAX(loaded_at)      AS loaded_at
 FROM {{ ref('stg_hubspot_deals_daily') }}
 WHERE deals_created IS NOT NULL
 GROUP BY project_id, date
-HAVING SUM(CAST(deals_created AS DOUBLE)) IS NOT NULL
-
-UNION ALL
+HAVING SUM(CAST(deals_created AS {{ toorow_float_type() }})) IS NOT NULL
+{% endif %}
+{% if toorow_model_present('stg_hubspot_deals_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- Deals fermes/gagnes par jour
 SELECT
@@ -1298,19 +1268,17 @@ SELECT
     'deals_closed'      AS metric,
     'date'              AS breakdown_dimension,
     date                AS breakdown_value,
-    SUM(CAST(deals_closed AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST(deals_closed AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)        AS pull_id,
     MAX(loaded_at)      AS loaded_at
 FROM {{ ref('stg_hubspot_deals_daily') }}
 WHERE deals_closed IS NOT NULL
 GROUP BY project_id, date
-HAVING SUM(CAST(deals_closed AS DOUBLE)) IS NOT NULL
-
-UNION ALL
+HAVING SUM(CAST(deals_closed AS {{ toorow_float_type() }})) IS NOT NULL
+{% endif %}
+{% if toorow_model_present('stg_hubspot_deals_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- Montant des deals fermes par jour (NULL honnete AD-9 : HAVING filtre les NULL)
 SELECT
@@ -1320,21 +1288,19 @@ SELECT
     'deal_amount'       AS metric,
     'currency'          AS breakdown_dimension,
     currency            AS breakdown_value,
-    SUM(CAST(deal_amount AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST(deal_amount AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)        AS pull_id,
     MAX(loaded_at)      AS loaded_at
 FROM {{ ref('stg_hubspot_deals_daily') }}
 WHERE deal_amount IS NOT NULL AND currency IS NOT NULL
 GROUP BY project_id, date, currency
 -- AD-9: une journee sans deal ferme avec montant -> pas de ligne deal_amount.
-HAVING SUM(CAST(deal_amount AS DOUBLE)) IS NOT NULL
+HAVING SUM(CAST(deal_amount AS {{ toorow_float_type() }})) IS NOT NULL
 -- hubspot: END Story 15.5 block.
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_google_sheets_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- google-sheets: BEGIN Story 15.6 (Epic 15) -- BLOC STRICTEMENT ADDITIF (ne pas reformater au-dessus).
 -- Source de saisie manuelle d'objectifs et de budgets declares dans Google Sheets.
@@ -1392,23 +1358,21 @@ SELECT
     '{{ metric }}'      AS metric,
     'sheet_row_id'      AS breakdown_dimension,
     sheet_row_id        AS breakdown_value,
-    SUM(CAST({{ metric }} AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)        AS pull_id,
     MAX(loaded_at)      AS loaded_at
 FROM {{ ref('stg_google_sheets_daily') }}
 WHERE sheet_row_id IS NOT NULL
 GROUP BY project_id, date, sheet_row_id
 -- AD-9: agregat entierement NULL -> pas de ligne (jamais un faux 0, contrat value NOT NULL).
-HAVING SUM(CAST({{ metric }} AS DOUBLE)) IS NOT NULL
+HAVING SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) IS NOT NULL
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
 -- google-sheets: END Story 15.6 block.
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_ias_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- ias: BEGIN Integral Ad Science block -- BLOC STRICTEMENT ADDITIF (ne pas reformater au-dessus).
 -- Ad verification / media-quality measurement (viewability, invalid traffic / IVT,
@@ -1448,23 +1412,21 @@ SELECT
     '{{ metric }}'      AS metric,
     'campaign_id'       AS breakdown_dimension,
     campaign_id         AS breakdown_value,
-    SUM(CAST({{ metric }} AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)        AS pull_id,
     MAX(loaded_at)      AS loaded_at
 FROM {{ ref('stg_ias_daily') }}
 WHERE campaign_id IS NOT NULL
 GROUP BY project_id, date, campaign_id
 -- AD-9: agregat entierement NULL -> pas de ligne (jamais un faux 0, contrat value NOT NULL).
-HAVING SUM(CAST({{ metric }} AS DOUBLE)) IS NOT NULL
+HAVING SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) IS NOT NULL
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
 -- ias: END Integral Ad Science block.
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_adjust_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- adjust: BEGIN (module adjust, kit epic-25) -- BLOC STRICTEMENT ADDITIF (ne pas reformater au-dessus).
 -- Mobile measurement (Report Service API) -- grain staging (date, app_token, network, campaign_id).
@@ -1504,25 +1466,23 @@ SELECT
     '{{ metric }}'      AS metric,
     '{{ dimension }}'   AS breakdown_dimension,
     {{ dimension }}     AS breakdown_value,
-    SUM(CAST({{ metric }} AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)        AS pull_id,
     MAX(loaded_at)      AS loaded_at
 FROM {{ ref('stg_adjust_daily') }}
 WHERE {{ dimension }} IS NOT NULL
 GROUP BY project_id, date, {{ dimension }}
 -- AD-9: agregat entierement NULL -> pas de ligne (jamais un faux 0).
-HAVING SUM(CAST({{ metric }} AS DOUBLE)) IS NOT NULL
+HAVING SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) IS NOT NULL
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
 -- adjust: END block.
-
-UNION ALL
+{% endif %}
+{% if toorow_model_present('stg_cm360_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
 
 -- cm360: BEGIN Story 33-3 (Epic 33) -- BLOC STRICTEMENT ADDITIF (ne pas reformater au-dessus).
 -- Campaign Manager 360 v5 display/video delivery -- source of record for managed display.
@@ -1572,11 +1532,15 @@ SELECT
     '{{ metric }}'      AS metric,
     'campaign_id'       AS breakdown_dimension,
     campaign_id         AS breakdown_value,
-    SUM(CAST({{ metric }} AS DOUBLE)) AS value,
-    NULL::DOUBLE        AS fx_rate,
-    NULL::DATE          AS fx_as_of_date,
-    NULL::VARCHAR       AS fx_source,
-    NULL::VARCHAR       AS fx_tier,
+    -- BUGFIX 2026-07-27 (pre-existing, unrelated to the epic that surfaced it):
+    -- stg_cm360_daily is LONG format (columns `metric` / `value`), so the previous
+    -- `SUM(CAST({{ metric }} AS DOUBLE))` referenced columns that do not exist and
+    -- raised `Binder Error: Referenced column "impressions" not found in FROM clause!`,
+    -- which made the WHOLE fact_daily_kpi model unbuildable. It had never been caught
+    -- because cm360 ships no seed fixtures, so stg_cm360_daily always failed earlier in
+    -- the DAG and this block was never reached. Unpivot instead.
+    SUM(CASE WHEN metric = '{{ metric }}' THEN CAST(value AS {{ toorow_float_type() }}) END) AS value,
+    {{ money_evidence_absent() }}
     MAX(pull_id)        AS pull_id,
     MAX(loaded_at)      AS loaded_at
 FROM {{ ref('stg_cm360_daily') }}
@@ -1586,7 +1550,1083 @@ WHERE non_additive = FALSE
   AND campaign_id IS NOT NULL
 GROUP BY project_id, date, campaign_id
 -- AD-9: agregat entierement NULL -> pas de ligne (jamais un faux 0, contrat value NOT NULL).
-HAVING SUM(CAST({{ metric }} AS DOUBLE)) IS NOT NULL
+-- With the unpivot this also means a metric absent for a campaign-day emits NO row,
+-- rather than a fabricated 0 -- the same honesty contract as before.
+HAVING SUM(CASE WHEN metric = '{{ metric }}' THEN CAST(value AS {{ toorow_float_type() }}) END) IS NOT NULL
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}
 -- cm360: END Story 33-3 block.
+{% endif %}
+{% if toorow_model_present('stg_instagram_insights_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
+
+-- Instagram Insights: only additive account-day profile views enter the shared
+-- daily fact. Unique reach and per-media cumulative engagement stay in the
+-- dedicated fact_instagram_insights_snapshot model.
+SELECT
+    project_id,
+    date,
+    'instagram-insights' AS connector,
+    'profile_views'      AS metric,
+    'account_id'         AS breakdown_dimension,
+    account_id           AS breakdown_value,
+    SUM(CASE WHEN metric = 'profile_views' THEN CAST(value AS {{ toorow_float_type() }}) END) AS value,
+    {{ money_evidence_absent() }}
+    MAX(pull_id)         AS pull_id,
+    MAX(loaded_at)       AS loaded_at
+FROM {{ ref('stg_instagram_insights_daily') }}
+WHERE report_profile = 'account_daily'
+  AND non_additive = FALSE
+  AND account_id IS NOT NULL
+GROUP BY project_id, date, account_id
+HAVING SUM(CASE WHEN metric = 'profile_views' THEN CAST(value AS {{ toorow_float_type() }}) END) IS NOT NULL
+{% endif %}
+{% if toorow_model_present('stg_google_ads_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
+
+-- Google Ads (AI-270) -- the connector was TERMINAL: nothing referenced
+-- `stg_google_ads_daily`, so a Project could connect Google Ads, pull
+-- successfully, and see no figure anywhere. Its own MCP read path already reads
+-- this mart (`connector.py:10`) -- it was written for a table it never reached.
+--
+-- LONG LANDING, so each series filters `metric = '<name>'` and sums `value_num`.
+-- The other ad connectors land WIDE (one column per metric); this one cannot,
+-- because the catalog_daily profile may select any of 278 metrics and wide
+-- columns cannot hold an arbitrary selection.
+--
+-- ONE SERIES PER REPORT GRAIN, exactly as meta-ads does and for the same
+-- measured reason: before that filter, a campaign_id series summed BOTH the
+-- campaign-grain row AND the campaign_id carried by every ad-group- and
+-- ad-grain row, so a campaign was double-counted inside its own series. Each
+-- series reads only its own `data_level`, so no grain bleeds into another.
+-- A mart needing a day total picks a canonical single series via
+-- MIN(breakdown_dimension) -- 'ad_group_id' < 'ad_id' < 'campaign_id' -- never
+-- two grains summed together.
+--
+-- ADDITIVE METRICS ONLY (AD-4). The seven canonical names come from the
+-- manifest's `canonical_metric_mapping`, which is what the connector's
+-- transform() renames to before landing (`_canonical_metric_names`). Every one
+-- of them is a count or an amount. Provider-computed RATIOS (ctr, average_cpc,
+-- ...) also land through catalog_daily and are deliberately absent here: summing
+-- a ratio over a day is the defect AD-4 names, and their honest form is
+-- recomputed at the semantic layer from stored numerators and denominators.
+--
+-- KEYWORD and SEARCH_TERM data levels also land. They are not series here: their
+-- breakdown is the keyword text, not an id, and neither the fact's
+-- `breakdown_value` contract nor any surface asks for it today. Naming them and
+-- leaving them out is the point -- a reader can see the decision instead of
+-- wondering whether the grain was forgotten.
+{% set gads_series = [
+    ("campaign_id", "CAMPAIGN"),
+    ("ad_group_id", "AD_GROUP"),
+    ("ad_id", "AD"),
+] %}
+{% set gads_metrics = [
+    "cost", "impressions", "clicks", "conversions",
+    "conversions_value", "all_conversions", "view_through_conversions",
+] %}
+{#- The two monetary ones. `conversions_value` is revenue in the SAME account
+    billing currency as cost -- `cost_source_currency` names that currency for
+    the row whatever the metric, so both convert through it. -#}
+{% set gads_money = ["cost", "conversions_value"] %}
+{% for metric in gads_metrics %}
+{% for dimension, data_level in gads_series %}
+SELECT
+    project_id,
+    date,
+    'google-ads'        AS connector,
+    '{{ metric }}'      AS metric,
+    '{{ dimension }}'   AS breakdown_dimension,
+    {{ dimension }}     AS breakdown_value,
+    {% if metric in gads_money %}
+    SUM({{ fx_convert_at_read('value_num') }}) AS value,
+    {{ money_evidence_present('cost_source_value', 'cost_source_currency') }}
+    {% else %}
+    SUM(CAST(value_num AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
+    {% endif %}
+    MAX(pull_id)        AS pull_id,
+    MAX(loaded_at)      AS loaded_at
+FROM {{ ref('stg_google_ads_daily') }}
+WHERE metric = '{{ metric }}'
+  AND data_level = '{{ data_level }}'
+  AND {{ dimension }} IS NOT NULL
+GROUP BY project_id, date, {{ dimension }}
+{% if not loop.last %}UNION ALL{% endif %}
+{% endfor %}
+{% if not loop.last %}UNION ALL{% endif %}
+{% endfor %}
+{% endif %}
+{% if toorow_model_present('stg_microsoft_ads_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
+
+-- Microsoft Ads (AI-270) -- terminal for the same reason as google-ads, and
+-- repaired the same way: nothing referenced `stg_microsoft_ads_daily`, so the
+-- connector pulled and produced no figure a person could see.
+--
+-- LONG landing, so each series filters `metric` and sums `value_num`. ONE series
+-- per report grain (`data_level`), so a campaign is never counted twice inside
+-- its own series -- the measured defect meta-ads documents.
+--
+-- FIVE canonical metrics, all additive, from the manifest's
+-- `canonical_metric_mapping`. `revenue` is monetary alongside `cost`: both are
+-- amounts in the account billing currency that `cost_source_currency` names.
+--
+-- THE OTHER FIVE data levels land and are NOT series here: ACCOUNT has no
+-- breakdown id of its own, KEYWORD and SEARCH_QUERY break down by text rather
+-- than an id, and GEOGRAPHIC and AGE_GENDER are segment axes carried in
+-- `segments_json`, not grain keys. Named so a reader sees the decision instead
+-- of wondering whether the grain was forgotten.
+{% set msads_series = [
+    ("campaign_id", "CAMPAIGN"),
+    ("ad_group_id", "AD_GROUP"),
+    ("ad_id", "AD"),
+] %}
+{% set msads_metrics = ["cost", "revenue", "impressions", "clicks", "conversions"] %}
+{% set msads_money = ["cost", "revenue"] %}
+{% for metric in msads_metrics %}
+{% for dimension, data_level in msads_series %}
+SELECT
+    project_id,
+    date,
+    'microsoft-ads'     AS connector,
+    '{{ metric }}'      AS metric,
+    '{{ dimension }}'   AS breakdown_dimension,
+    {{ dimension }}     AS breakdown_value,
+    {% if metric in msads_money %}
+    SUM({{ fx_convert_at_read('value_num') }}) AS value,
+    {{ money_evidence_present('cost_source_value', 'cost_source_currency') }}
+    {% else %}
+    SUM(CAST(value_num AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
+    {% endif %}
+    MAX(pull_id)        AS pull_id,
+    MAX(loaded_at)      AS loaded_at
+FROM {{ ref('stg_microsoft_ads_daily') }}
+WHERE metric = '{{ metric }}'
+  AND data_level = '{{ data_level }}'
+  AND {{ dimension }} IS NOT NULL
+GROUP BY project_id, date, {{ dimension }}
+{% if not loop.last %}UNION ALL{% endif %}
+{% endfor %}
+{% if not loop.last %}UNION ALL{% endif %}
+{% endfor %}
+{% endif %}
+{% if toorow_model_present('stg_doubleverify_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
+
+-- DoubleVerify (AI-270) -- terminal, and the cheapest of the seventeen to
+-- repair: its staging ALREADY carries the fact's own shape
+-- (metric / breakdown_dimension / breakdown_value), so this block renames
+-- nothing and invents no axis. It only sums and stamps the connector.
+--
+-- Ten metrics, all COUNTS of ads or impressions -- additive by construction.
+-- Verification counters have no money at all, so every money column is NULL and
+-- `money_gap_code` is NULL too: nothing to convert is not a gap.
+{% set dv_metrics = [
+    "monitored_ads", "measured_impressions", "eligible_impressions",
+    "authentic_ads", "brand_suitable_ads", "brand_suitability_incidents",
+    "fraud_sivt_free_ads", "fraud_sivt_incidents",
+    "viewable_impressions", "video_viewable_impressions",
+] %}
+SELECT
+    project_id,
+    date,
+    'doubleverify'      AS connector,
+    metric,
+    breakdown_dimension,
+    breakdown_value,
+    SUM(CAST(value AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
+    MAX(pull_id)        AS pull_id,
+    MAX(loaded_at)      AS loaded_at
+FROM {{ ref('stg_doubleverify_daily') }}
+WHERE metric IN ({% for m in dv_metrics %}'{{ m }}'{% if not loop.last %}, {% endif %}{% endfor %})
+  AND breakdown_dimension IS NOT NULL
+  AND breakdown_value IS NOT NULL
+GROUP BY project_id, date, metric, breakdown_dimension, breakdown_value
+{% endif %}
+{% if toorow_model_present('stg_piano_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
+
+-- Piano Analytics (AI-270) -- terminal. LONG landing, broken down by site.
+--
+-- ONLY THE ADDITIVE HALF, and the staging says which: `visits`,
+-- `unique_visitors` and `bounce_rate` carry `non_additive = TRUE` because they
+-- are VISIT- or VISITOR-scoped -- a breakdown sum is NOT the site total, which
+-- is Piano's own documented rule. Summing a visitor count across segments counts
+-- the same person several times.
+--
+-- The filter is on the FLAG, never on a list of names kept here: a metric that
+-- becomes non-additive upstream is then excluded without anyone remembering to
+-- edit this file. `page_loads` and `events` are plain counts and pass it.
+SELECT
+    project_id,
+    date,
+    'piano'             AS connector,
+    metric,
+    'site_id'           AS breakdown_dimension,
+    site_id             AS breakdown_value,
+    SUM(CAST(value_num AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
+    MAX(pull_id)        AS pull_id,
+    MAX(loaded_at)      AS loaded_at
+FROM {{ ref('stg_piano_daily') }}
+WHERE non_additive = FALSE
+  AND site_id IS NOT NULL
+GROUP BY project_id, date, metric, site_id
+{% endif %}
+{% if toorow_model_present('stg_google_ad_manager_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
+
+-- Google Ad Manager (AI-270) -- terminal. Its staging already carried the fact's
+-- shape (metric / breakdown_dimension / breakdown_value), so this block sums and
+-- stamps; the only work was the UNIT, done at staging where the seed prescribes.
+--
+-- `ad_revenue` is monetary and arrives DECIMAL here -- `stg_google_ad_manager_daily`
+-- divides the GAM micros by 1e6, because `dbt/seeds/money_metric_units.csv`
+-- declares `ad_revenue,decimal` and adjust already emits that canonical name in
+-- decimal. Two units under one name in one fact is a total nobody can read.
+--
+-- `impressions` and `clicks` are counts: every money column is NULL for them.
+{% set gam_money = ["ad_revenue"] %}
+{% for metric in ["ad_revenue", "impressions", "clicks"] %}
+SELECT
+    project_id,
+    date,
+    'google-ad-manager' AS connector,
+    '{{ metric }}'      AS metric,
+    breakdown_dimension,
+    breakdown_value,
+    {% if metric in gam_money %}
+    SUM({{ fx_convert_at_read('value') }}) AS value,
+    {{ money_evidence_present('cost_source_value', 'cost_source_currency') }}
+    {% else %}
+    SUM(CAST(value AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
+    {% endif %}
+    MAX(pull_id)        AS pull_id,
+    MAX(loaded_at)      AS loaded_at
+FROM {{ ref('stg_google_ad_manager_daily') }}
+WHERE metric = '{{ metric }}'
+  AND breakdown_dimension IS NOT NULL
+  AND breakdown_value IS NOT NULL
+GROUP BY project_id, date, breakdown_dimension, breakdown_value
+{% if not loop.last %}UNION ALL{% endif %}
+{% endfor %}
+{% endif %}
+{% if toorow_model_present('stg_amazon_ads_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
+
+-- Amazon Ads (AI-270) -- terminal, and the ONE of the seventeen that must NOT
+-- copy the google-ads template. Its `data_level` is not a report GRAIN, it is an
+-- ad PROGRAM: spCampaigns / sbCampaigns / sdCampaigns -- Sponsored Products,
+-- Brands and Display. All three are at CAMPAIGN grain and carry DISJOINT
+-- campaigns, so summing across them is CORRECT here, the exact opposite of
+-- google-ads where one data_level per series is what prevents a double count.
+-- Filtering one program per series would have dropped two thirds of the spend in
+-- silence.
+--
+-- The `IN` list is written out rather than left open, and that is the guard:
+-- every profile amazon-ads exposes today is campaign-grain, but a future
+-- ad-group profile would land under its own data_level and must NOT join the
+-- campaign series by default.
+--
+-- THREE ATTRIBUTION WINDOWS travel as SEPARATE metrics -- `purchases` beside
+-- `purchases_14d` and `purchases_30d`, `sales` beside its two. Each is its own
+-- series and they are never added together: they measure the same conversions
+-- counted over different lookbacks, so their sum means nothing.
+{% set amz_levels = ["spCampaigns", "sbCampaigns", "sdCampaigns"] %}
+{% set amz_metrics = [
+    "cost", "sales", "sales_14d", "sales_30d",
+    "impressions", "viewable_impressions", "clicks",
+    "purchases", "purchases_14d", "purchases_30d", "units_sold",
+] %}
+{% set amz_money = ["cost", "sales", "sales_14d", "sales_30d"] %}
+{% for metric in amz_metrics %}
+SELECT
+    project_id,
+    date,
+    'amazon-ads'        AS connector,
+    '{{ metric }}'      AS metric,
+    'campaign_id'       AS breakdown_dimension,
+    campaign_id         AS breakdown_value,
+    {% if metric in amz_money %}
+    SUM({{ fx_convert_at_read('value_num') }}) AS value,
+    {{ money_evidence_present('cost_source_value', 'cost_source_currency') }}
+    {% else %}
+    SUM(CAST(value_num AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
+    {% endif %}
+    MAX(pull_id)        AS pull_id,
+    MAX(loaded_at)      AS loaded_at
+FROM {{ ref('stg_amazon_ads_daily') }}
+WHERE metric = '{{ metric }}'
+  AND data_level IN ({% for lvl in amz_levels %}'{{ lvl }}'{% if not loop.last %}, {% endif %}{% endfor %})
+  AND campaign_id IS NOT NULL
+GROUP BY project_id, date, campaign_id
+{% if not loop.last %}UNION ALL{% endif %}
+{% endfor %}
+{% endif %}
+{% if toorow_model_present('stg_pinterest_ads_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
+
+-- Pinterest Ads (AI-270) -- terminal. LONG landing, one series per report grain
+-- (`data_level`), same anti-double-count discipline as google-ads.
+--
+-- COUNTS ONLY, AND THE REASON IS STRUCTURAL. `cost` and `checkout_value` land
+-- and are NOT emitted here: neither `raw_pinterest_ads_daily` nor its staging
+-- carries a currency column -- measured 2026-08-16, the raw table has sixteen
+-- columns and none of them names one. A money row whose currency can never be
+-- known would publish an amount that no reporting-currency total may ever
+-- include, and `money_gap_code` would say `native_currency_missing` on every row
+-- forever. That is not a disclosure, it is noise.
+--
+-- The repair belongs at the LANDING (the pull must capture the ad account's
+-- billing currency), exactly like brevo's canonical names. Named here so the
+-- absence is a decision a reader can see, not a grain someone forgot.
+{% set pin_series = [
+    ("campaign_id", "CAMPAIGN"),
+    ("ad_group_id", "AD_GROUP"),
+    ("ad_id", "AD"),
+] %}
+{% set pin_metrics = ["impressions", "clicks", "engagements", "conversions", "checkouts"] %}
+{% for metric in pin_metrics %}
+{% for dimension, data_level in pin_series %}
+SELECT
+    project_id,
+    date,
+    'pinterest-ads'     AS connector,
+    '{{ metric }}'      AS metric,
+    '{{ dimension }}'   AS breakdown_dimension,
+    {{ dimension }}     AS breakdown_value,
+    SUM(CAST(value_num AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
+    MAX(pull_id)        AS pull_id,
+    MAX(loaded_at)      AS loaded_at
+FROM {{ ref('stg_pinterest_ads_daily') }}
+WHERE metric = '{{ metric }}'
+  AND data_level = '{{ data_level }}'
+  AND {{ dimension }} IS NOT NULL
+GROUP BY project_id, date, {{ dimension }}
+{% if not loop.last %}UNION ALL{% endif %}
+{% endfor %}
+{% if not loop.last %}UNION ALL{% endif %}
+{% endfor %}
+{% endif %}
+{% if toorow_model_present('stg_linkedin_company_pages_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
+
+-- LinkedIn company pages (AI-270) -- terminal. Organic page analytics: no money
+-- at all, so every money column is NULL.
+--
+-- THE DATE IS `interval_start`, because this connector reports over an INTERVAL
+-- rather than a day. Only the daily grain belongs in a DAILY fact, so a row
+-- whose interval spans more than one day is excluded rather than attributed to
+-- its first day -- attributing a week's impressions to a Monday would be an
+-- invented figure.
+--
+-- `lifetime = TRUE` rows are CUMULATIVE (total followers to date, not followers
+-- gained). Summing them across days would add the same followers once per day.
+-- They are excluded here, and that exclusion is the reason this connector cannot
+-- simply publish everything it lands.
+--
+-- `non_additive` is honoured too: `engagement_rate` is a ratio and never sums.
+SELECT
+    project_id,
+    CAST(interval_start AS DATE) AS date,
+    'linkedin-company-pages' AS connector,
+    metric,
+    'organization_urn'  AS breakdown_dimension,
+    organization_urn    AS breakdown_value,
+    SUM(CAST(value AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
+    MAX(pull_id)        AS pull_id,
+    MAX(loaded_at)      AS loaded_at
+FROM {{ ref('stg_linkedin_company_pages_daily') }}
+WHERE lifetime = FALSE
+  AND non_additive = FALSE
+  AND organization_urn IS NOT NULL
+  AND CAST(interval_end AS DATE) <= CAST(interval_start AS DATE) + INTERVAL 1 DAY
+GROUP BY project_id, CAST(interval_start AS DATE), metric, organization_urn
+{% endif %}
+{% if toorow_model_present('stg_thetradedesk_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
+
+-- The Trade Desk (AI-270) -- terminal. LONG landing, no `data_level`: TTD
+-- reports one grain per template, so a series per grain dimension is enough and
+-- there is no grain to filter against.
+--
+-- THREE COST METRICS ARE USD BY CONTRACT -- `advertiser_cost_usd`,
+-- `ttd_cost_usd`, `partner_cost_usd` -- and the staging states 'USD' for them
+-- rather than joining a currency column, because that IS what they are. They
+-- convert once at read like every other money series.
+--
+-- `advertiser_cost_adv_currency` IS DELIBERATELY ABSENT. It is denominated in
+-- the advertiser's currency, and that currency is written NOWHERE in the
+-- landing: publishing it would put an amount in the fact whose unit nobody can
+-- name, and summing it with anything would be a category error. Its repair is at
+-- the landing -- the pull must record the advertiser's currency -- not here.
+{% set ttd_money = ["advertiser_cost_usd", "ttd_cost_usd", "partner_cost_usd"] %}
+{% set ttd_metrics = [
+    "advertiser_cost_usd", "ttd_cost_usd", "partner_cost_usd",
+    "impressions", "clicks", "bids",
+    "total_click_conversions", "total_view_through_conversions",
+] %}
+{% set ttd_series = ["campaign_id", "ad_group_id"] %}
+{% for metric in ttd_metrics %}
+{% for dimension in ttd_series %}
+SELECT
+    project_id,
+    date,
+    'thetradedesk'      AS connector,
+    '{{ metric }}'      AS metric,
+    '{{ dimension }}'   AS breakdown_dimension,
+    {{ dimension }}     AS breakdown_value,
+    {% if metric in ttd_money %}
+    SUM({{ fx_convert_at_read('value_num') }}) AS value,
+    {{ money_evidence_present('cost_source_value', 'cost_source_currency') }}
+    {% else %}
+    SUM(CAST(value_num AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
+    {% endif %}
+    MAX(pull_id)        AS pull_id,
+    MAX(loaded_at)      AS loaded_at
+FROM {{ ref('stg_thetradedesk_daily') }}
+WHERE metric = '{{ metric }}'
+  AND {{ dimension }} IS NOT NULL
+GROUP BY project_id, date, {{ dimension }}
+{% if not loop.last %}UNION ALL{% endif %}
+{% endfor %}
+{% if not loop.last %}UNION ALL{% endif %}
+{% endfor %}
+{% endif %}
+{% if toorow_model_present('stg_generic_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
+
+-- Generic KPI datastream (AI-270) -- terminal, and the one whose whole purpose
+-- was to reach this fact: its staging header says « canonical long-format KPI
+-- rows », `module_kind='kpi'`, « any day>measure tabular payload grafts on with
+-- zero core change ». It grafted on and then went nowhere.
+--
+-- THE METRIC NAMES ARE THE CUSTOMER'S, not the platform dictionary's, and that
+-- is BY DESIGN here rather than the brevo defect: a generic datastream carries
+-- whatever measures its source has, and their aggregation semantics are declared
+-- in `target_fields`. Nothing is renamed, because there is nothing to rename to.
+--
+-- No money: a generic payload states no currency, so every money column is NULL.
+-- A generic source that carries an amount reaches money through a governed
+-- mapping, not through a guess made here.
+SELECT
+    project_id,
+    date,
+    'generic'           AS connector,
+    metric,
+    breakdown_dimension,
+    breakdown_value,
+    SUM(CAST(value AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
+    MAX(pull_id)        AS pull_id,
+    MAX(loaded_at)      AS loaded_at
+FROM {{ ref('stg_generic_daily') }}
+WHERE breakdown_dimension IS NOT NULL
+  AND breakdown_value IS NOT NULL
+GROUP BY project_id, date, metric, breakdown_dimension, breakdown_value
+{% endif %}
+{% if toorow_model_present('stg_bigquery_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
+
+-- External BigQuery (AI-270) -- terminal. A replicated customer table, folded
+-- into long format at `transform()`: one row per numeric column per breakdown
+-- value per day. Same shape as the generic datastream and the same reasoning --
+-- the metric names are the CUSTOMER'S columns, and renaming them to a platform
+-- dictionary they were never written against would be an invention.
+--
+-- No money: a replicated table states no currency.
+SELECT
+    project_id,
+    date,
+    'bigquery'          AS connector,
+    metric,
+    breakdown_dimension,
+    breakdown_value,
+    SUM(CAST(value AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
+    MAX(pull_id)        AS pull_id,
+    MAX(loaded_at)      AS loaded_at
+FROM {{ ref('stg_bigquery_daily') }}
+WHERE breakdown_dimension IS NOT NULL
+  AND breakdown_value IS NOT NULL
+GROUP BY project_id, date, metric, breakdown_dimension, breakdown_value
+{% endif %}
+{% if toorow_model_present('stg_amazon_dsp_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
+
+-- The five that landed RAW metric names (AI-270). Their staging now maps through
+-- `connector_metric_names`, so what arrives here is the dictionary name -- see
+-- any of the five staging models for why the repair is there and not at the
+-- landing.
+--
+-- `non_additive` is honoured on every one of them: sa360 ships
+-- `click_through_rate` and `search_impression_share`, x-ads ships
+-- `engagement_rate` and `average_frequency`, adobe ships bounce rates. Summing a
+-- ratio over a day is the defect AD-4 names, and the flag is what says which.
+
+-- Amazon DSP -- broken down by advertiser. `revenue` and `cost` land WITHOUT a
+-- currency column anywhere (measured: the raw table names none), so they are
+-- emitted as counts of nothing rather than money: every money column is NULL and
+-- no total may treat them as an amount. Same structural gap as pinterest, same
+-- repair -- at the landing.
+SELECT
+    project_id,
+    CAST(date AS DATE)  AS date,
+    'amazon-dsp'        AS connector,
+    metric,
+    'advertiser_id'     AS breakdown_dimension,
+    advertiser_id       AS breakdown_value,
+    SUM(CAST(value AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
+    MAX(pull_id)        AS pull_id,
+    MAX(loaded_at)      AS loaded_at
+FROM {{ ref('stg_amazon_dsp_daily') }}
+WHERE non_additive = FALSE
+  AND advertiser_id IS NOT NULL
+GROUP BY project_id, CAST(date AS DATE), metric, advertiser_id
+{% endif %}
+{% if toorow_model_present('stg_sa360_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
+
+-- SA360 -- broken down by campaign. It carries `currency_code`, and its money is
+-- already DECIMAL at landing: `metrics.cost_micros` is a NAME, and the connector
+-- divides by 1e6 in transform(). Verified on landed data rather than believed
+-- from the name -- 1.2, not 1 200 000. Dividing again here would have made every
+-- cost a millionth of itself.
+{% set sa360_money = ["cost", "conversions_value"] %}
+SELECT
+    project_id,
+    CAST(date AS DATE)  AS date,
+    'sa360'             AS connector,
+    metric,
+    'campaign_id'       AS breakdown_dimension,
+    campaign_id         AS breakdown_value,
+    SUM(CAST(value AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
+    MAX(pull_id)        AS pull_id,
+    MAX(loaded_at)      AS loaded_at
+FROM {{ ref('stg_sa360_daily') }}
+WHERE non_additive = FALSE
+  AND campaign_id IS NOT NULL
+  AND metric NOT IN ({% for m in sa360_money %}'{{ m }}'{% if not loop.last %}, {% endif %}{% endfor %})
+GROUP BY project_id, CAST(date AS DATE), metric, campaign_id
+{% endif %}
+{% if toorow_model_present('stg_adobe_analytics_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
+
+-- Adobe Analytics -- broken down by the report's own dimension, which travels in
+-- `dimension` with its value in `item_value`. No money.
+SELECT
+    project_id,
+    CAST(date AS DATE)  AS date,
+    'adobe-analytics'   AS connector,
+    metric,
+    dimension           AS breakdown_dimension,
+    item_value          AS breakdown_value,
+    SUM(CAST(value AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
+    MAX(pull_id)        AS pull_id,
+    MAX(loaded_at)      AS loaded_at
+FROM {{ ref('stg_adobe_analytics_daily') }}
+WHERE non_additive = FALSE
+  AND partial = FALSE
+  AND dimension IS NOT NULL
+  AND item_value IS NOT NULL
+GROUP BY project_id, CAST(date AS DATE), metric, dimension, item_value
+{% endif %}
+{% if toorow_model_present('stg_brevo_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
+
+-- Brevo -- broken down by channel (email / sms). `protected_identifier` is in
+-- the supersede grain and NEVER a breakdown: it identifies a PERSON, and a mart
+-- row keyed by it would publish a recipient.
+SELECT
+    project_id,
+    CAST(date AS DATE)  AS date,
+    'brevo'             AS connector,
+    metric,
+    'channel'           AS breakdown_dimension,
+    channel             AS breakdown_value,
+    SUM(CAST(value AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
+    MAX(pull_id)        AS pull_id,
+    MAX(loaded_at)      AS loaded_at
+FROM {{ ref('stg_brevo_daily') }}
+WHERE non_additive = FALSE
+  AND channel IS NOT NULL
+GROUP BY project_id, CAST(date AS DATE), metric, channel
+{% endif %}
+{% if toorow_model_present('stg_x_ads_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
+
+-- X Ads -- the date is `interval_start`: this connector reports over an INTERVAL.
+-- Only the daily grain enters a DAILY fact, so a row spanning more than one day
+-- is excluded rather than attributed to its first day.
+--
+-- It DOES carry `currency`, but its cost is emitted without money evidence for a
+-- reason worth stating: `billed_charge_local_micro` is divided by 1e6 at
+-- transform(), so the value is decimal -- but nothing states which currency the
+-- `local` in its name refers to per row beyond that column, and the fx join
+-- belongs at staging where the other four have it. Left as a count here, and
+-- named, rather than wired half-way.
+SELECT
+    project_id,
+    CAST(interval_start AS DATE) AS date,
+    'x-ads'             AS connector,
+    metric,
+    'entity_id'         AS breakdown_dimension,
+    entity_id           AS breakdown_value,
+    SUM(CAST(value AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
+    MAX(pull_id)        AS pull_id,
+    MAX(loaded_at)      AS loaded_at
+FROM {{ ref('stg_x_ads_daily') }}
+WHERE non_additive = FALSE
+  AND entity_id IS NOT NULL
+  AND CAST(interval_end AS DATE) <= CAST(interval_start AS DATE) + INTERVAL 1 DAY
+GROUP BY project_id, CAST(interval_start AS DATE), metric, entity_id
+{% endif %}
+{% if toorow_model_present('stg_youtube_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
+
+-- youtube-analytics (AI-270, chantier 67-27) -- STRICTLY ADDITIVE block.
+-- It was NOT terminal: `stg_youtube_daily` reached `fact_youtube_daily`, a mart
+-- OF ITS OWN, so the connector-level coverage guard filed it "another mart" and
+-- nobody looked again. That mart's own header states the deferral in writing --
+-- "wiring these into the cross-source fact_daily_kpi is a follow-up" -- and this
+-- is that follow-up. Reaching a private mart is not reaching the fact: no card
+-- and no cross-source comparison reads `fact_youtube_daily`.
+--
+-- THE TRAP THIS BLOCK EXISTS TO AVOID, and it is invisible from the staging
+-- model alone. FOUR pull profiles land in `raw_youtube_daily`, not two, and they
+-- are indistinguishable once landed -- same table, same columns, and the
+-- `channel_snapshot` profile carries `video = ''` exactly like `channel_daily`:
+--   * channel_daily   -> views, estimated_minutes_watched, likes, comments,
+--                        shares, subscribers_gained, subscribers_lost   ADDITIVE
+--   * video_daily     -> views, estimated_minutes_watched, likes, comments,
+--                        shares                                          ADDITIVE
+--   * channel_snapshot-> subscriber_count, lifetime_view_count, video_count
+--                                                              NOT ADDITIVE
+-- `subscriber_count` is a STOCK and `lifetime_view_count` a running total: the
+-- manifest declares both `aggregation=latest`. Summing a stock across days
+-- produces a number on no scale at all (AD-4), and summing `lifetime_view_count`
+-- over a week multiplies the channel's whole history by seven. `stg_youtube_daily`
+-- carries NO `non_additive` column to filter on -- unlike the five connectors
+-- repaired through `connector_metric_names` -- so the additive set is named
+-- EXPLICITLY below. A `SELECT metric` passthrough here, which is what the
+-- generic/bigquery blocks do, would have silently summed all three stocks.
+-- The three stocks keep their home in `fact_youtube_daily`, which stores them
+-- unaggregated -- the same treatment strava's non-additive club levels get.
+--
+-- NO MONEY. YouTube Analytics states no currency on any of these metrics; every
+-- money evidence column is NULL and no total may treat them as an amount.
+-- Metric names are ALREADY canonical at landing: `transform()` renames the keys
+-- through the manifest's `canonical_metric_mapping` (estimatedMinutesWatched ->
+-- estimated_minutes_watched), so no `connector_metric_names` join is needed.
+--
+-- DOUBLE-COUNT SAFETY (the meta-ads / tiktok data_level discipline -- and since
+-- AI-310 the column IS called data_level here too): the two series below read
+-- DISJOINT row sets of the same relation -- `data_level = 'CHANNEL'` is the
+-- channel-grain profile, `'VIDEO'` the per-video one. Without that split the
+-- channel_id series would sum the channel-grain row AND the channel_id carried by
+-- every video-grain row, double-counting the channel inside its own series. Marts
+-- needing a day total pick a canonical single series via MIN(breakdown_dimension):
+-- 'channel_id' < 'video' ('c' < 'v'), so MIN selects the channel roll-up -- never
+-- the two grains summed together. Neither series is top-N bounded: each is a full
+-- reconciliation of its own day.
+--
+-- ONE ROW SET CHANGES, and in the direction of not losing rows: `video = ''` is
+-- FALSE for a NULL video, so a row landed without one fell out of BOTH series and
+-- was counted nowhere. `data_level` resolves NULL to CHANNEL (the level such a row
+-- actually is), so it now reaches the channel series instead of vanishing. Every
+-- other row is unchanged, and no row can reach two series: the two levels are
+-- exhaustive and disjoint by construction.
+--
+-- OTHERWISE THE ROWS ARE THE SAME ROWS; what changed is that the split says its name.
+-- It used to test `video = ''` / `video <> ''`, a convention every reader of this
+-- relation had to already know -- and the connector's own MCP tool did not know
+-- it, which is how a production answer came back at exactly 2x (AI-310).
+{% set youtube_additive_metrics = [
+    "views", "estimated_minutes_watched", "likes",
+    "comments", "shares", "subscribers_gained", "subscribers_lost",
+] %}
+{% set youtube_series = [("channel_id", "CHANNEL"), ("video", "VIDEO")] %}
+{% for dimension, youtube_data_level in youtube_series %}
+SELECT
+    project_id,
+    CAST(date AS DATE)  AS date,
+    'youtube-analytics' AS connector,
+    metric,
+    '{{ dimension }}'   AS breakdown_dimension,
+    {{ dimension }}     AS breakdown_value,
+    SUM(CAST(value AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
+    MAX(pull_id)        AS pull_id,
+    MAX(loaded_at)      AS loaded_at
+FROM {{ ref('stg_youtube_daily') }}
+-- The additive set, named rather than inferred: see the stock trap above.
+WHERE metric IN ({% for m in youtube_additive_metrics %}'{{ m }}'{% if not loop.last %}, {% endif %}{% endfor %})
+  AND data_level = '{{ youtube_data_level }}'
+  AND {{ dimension }} IS NOT NULL
+GROUP BY project_id, CAST(date AS DATE), metric, {{ dimension }}
+{% if not loop.last %}UNION ALL{% endif %}
+{% endfor %}
+{% endif %}
+{% if toorow_model_present('stg_youtube_breakdown') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
+
+-- youtube-analytics BREAKDOWNS (AI-342) -- the other half of the same connector.
+--
+-- WHAT THIS CLOSES. The block above lands the channel and per-video series, and
+-- for as long as it was the whole of YouTube in this fact, a published Semantic
+-- View could bind `country`, `device_type`, `traffic_source_type` and five more
+-- to a Datastream whose relation carried `video` and `channel_id` and nothing
+-- else. The question « views by country » compiled, resolved, ran, and answered
+-- ZERO ROWS -- not a refusal, an empty answer, which reads as "no views from
+-- anywhere". Measured 2026-09-01 on the reference Project: 11 dimensions bound,
+-- 2 materialised.
+--
+-- ALREADY LONG, SO NOTHING IS PIVOTED. `stg_youtube_breakdown` lands one row per
+-- (date, channel, breakdown_dimension, breakdown_value, metric) -- the exact
+-- slot pair this fact keys on -- so the branch is a SUM over the reported cells,
+-- never a column-per-dimension widening. The sum is what turns the cells of a
+-- two-dimension profile into that profile's marginals: `audience_device` reports
+-- the device x operating-system cross, and summing over `breakdown_value` gives
+-- `device_type=MOBILE` its whole day instead of one of its operating systems.
+--
+-- ONE DATE PER ROW. `stg_youtube_breakdown.date` is a day, the reports take no
+-- hourly dimension, and `CAST(date AS DATE)` is the same coercion the daily
+-- block makes -- so no row of this branch carries a time of day.
+--
+-- THE MEASUREMENT GRAIN IS THE BREAKDOWN, AND THE FACT SAYS IT ROW BY ROW.
+-- `views` cut by country and `views` cut by device are the SAME measure at two
+-- grains and are NOT summable together: adding them counts every view twice.
+-- That is epic 71's point, and this fact expresses it the way it has always
+-- expressed it -- `breakdown_dimension` on the row -- so a reader that sums
+-- across dimensions is summing across declared grains and can be caught doing
+-- it. Nothing here mixes two.
+--
+-- DOUBLE-COUNT SAFETY. Each dimension is one more PARALLEL series that
+-- independently totals the day (proved on the fixture: geography, device,
+-- traffic source, playback location and subscription each sum to the channel
+-- roll-up of the same day, per metric). Marts needing a day total pick a
+-- canonical single series via MIN(breakdown_dimension), and across the eight
+-- YouTube dimensions 'channel_id' still sorts first -- 'ch' < 'co' < 'de' <
+-- 'op' < 'pl' < 'su' < 'tr' < 'vi' -- so the canonical selection is UNCHANGED by
+-- this branch. Guarded by `test_youtube_breakdown_reconciles.sql`.
+--
+-- THE ADDITIVE SET IS NAMED, for the same reason it is named in the block above:
+-- `stg_youtube_breakdown` carries no `non_additive` column, and it carries a
+-- SHARE. `audience_demographics` reports `viewer_percentage` alone -- the
+-- manifest declares it `aggregation=latest`, `non_additive=true` -- so summing
+-- the age/gender split would produce percentages adding to several hundred. The
+-- two age/gender dimensions therefore reach NO row of this fact, and that is a
+-- statement about the metric they carry, not about the dimensions: the day a
+-- demographic report serves `views`, the same filter lets it in with no edit.
+--
+-- NO MONEY. YouTube Analytics states no currency on any of these metrics.
+{% set youtube_breakdown_metrics = ["views", "estimated_minutes_watched"] %}
+SELECT
+    project_id,
+    CAST(date AS DATE)  AS date,
+    'youtube-analytics' AS connector,
+    metric,
+    breakdown_dimension,
+    breakdown_value,
+    SUM(CAST(value AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
+    MAX(pull_id)        AS pull_id,
+    MAX(loaded_at)      AS loaded_at
+FROM {{ ref('stg_youtube_breakdown') }}
+WHERE metric IN (
+    {%- for m in youtube_breakdown_metrics %}'{{ m }}'{% if not loop.last %}, {% endif %}{% endfor -%}
+)
+  -- A cell the source reported under no value is not a breakdown of anything,
+  -- and `breakdown_value` is NOT NULL on this fact. The country lookup is the
+  -- one that can produce it: `normalize_dimension` answers NULL for a code the
+  -- shipped vocabulary does not resolve, and the raw spelling stays readable in
+  -- `country_source` for the data-quality evidence to name.
+  AND breakdown_value IS NOT NULL
+  AND breakdown_value <> ''
+GROUP BY project_id, CAST(date AS DATE), metric, breakdown_dimension, breakdown_value
+{% endif %}
+{% if toorow_model_present('stg_gbp_location_daily') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
+
+-- google-business-profile (AI-270, chantier 67-27) -- STRICTLY ADDITIVE block.
+-- The twin of the youtube case above, and filed the same way: `stg_gbp_location_daily`
+-- reached `fact_gbp_location_daily`, a mart OF ITS OWN, so the connector-level
+-- coverage guard said "another mart" and the connector looked covered while no
+-- card could read it. That mart's header states the deferral in writing -- "wiring
+-- these metrics into the cross-source long-format fact_daily_kpi is a follow-up,
+-- deliberately deferred" -- and this is that follow-up.
+--
+-- WIDE -> LONG. Unlike youtube, this staging model is WIDE: one column per metric,
+-- one row per (project_id, date, location_id). The fact is long-format, so the 11
+-- columns are unpivoted here by the same Jinja loop the GA4 and shopify blocks use.
+-- All 11 are ADDITIVE integer daily counts -- `source_capabilities.fields` declares
+-- every one `aggregation: "sum"`, `non_additive: false` -- so SUM is honest at day
+-- grain for the whole set, and no metric needs excluding (the youtube stock trap has
+-- no equivalent here).
+--
+-- `total_impressions` IS DELIBERATELY NOT EMITTED. It is the sum of the four
+-- `business_impressions_*` metrics and it exists as a column NOWHERE -- not in raw,
+-- not in staging, not in the dedicated mart. Emitting it here would put a derived
+-- figure beside its own components in the same additive fact, so any consumer
+-- summing the connector's day would count those impressions twice. It stays a
+-- downstream computation, which is what the dedicated mart's header already says.
+--
+-- NO MONEY. Google Business Profile states no currency and none of the 11 is an
+-- amount (zero rows in `money_metric_units.csv`); every money evidence column is
+-- NULL. Metric names are ALREADY canonical at landing -- `transform()` renames the
+-- keys through the manifest's `canonical_metric_mapping` (BUSINESS_IMPRESSIONS_
+-- DESKTOP_MAPS -> business_impressions_desktop_maps) -- so no
+-- `connector_metric_names` join is needed.
+--
+-- DOUBLE-COUNT SAFETY: this connector contributes a SINGLE breakdown_dimension
+-- ('location_id') per metric, so there is no intra-connector multi-partition risk
+-- (unlike the GA4 country/device parallel series). It is ONE MORE parallel series
+-- keyed by connector='google-business-profile'; the fact keys on connector, so it
+-- never collides with any other partition. MIN(breakdown_dimension) is trivially
+-- 'location_id'. No series here is top-N bounded: the API returns every location
+-- asked for, so each day is a full reconciliation.
+--
+-- AD-9 NULL HONESTY: GBP omits a metric it has nothing to say about, and the
+-- staging keeps that absence NULL rather than zero-filling. A fully-NULL aggregate
+-- emits NO ROW (the HAVING below) -- absence stays distinguishable from a recorded
+-- zero, and the fixture's real `business_food_orders = 0` still lands as 0.0.
+{% set gbp_metrics = [
+    "business_impressions_desktop_maps",
+    "business_impressions_desktop_search",
+    "business_impressions_mobile_maps",
+    "business_impressions_mobile_search",
+    "business_conversations",
+    "business_direction_requests",
+    "call_clicks",
+    "website_clicks",
+    "business_bookings",
+    "business_food_orders",
+    "business_food_menu_clicks",
+] %}
+{% for metric in gbp_metrics %}
+SELECT
+    project_id,
+    CAST(date AS DATE)          AS date,
+    'google-business-profile'   AS connector,
+    '{{ metric }}'              AS metric,
+    'location_id'               AS breakdown_dimension,
+    location_id                 AS breakdown_value,
+    SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) AS value,
+    {{ money_evidence_absent() }}
+    MAX(pull_id)                AS pull_id,
+    MAX(loaded_at)              AS loaded_at
+FROM {{ ref('stg_gbp_location_daily') }}
+WHERE location_id IS NOT NULL
+GROUP BY project_id, CAST(date AS DATE), location_id
+-- AD-9: a wholly-NULL aggregate produces no row (never a fabricated 0).
+HAVING SUM(CAST({{ metric }} AS {{ toorow_float_type() }})) IS NOT NULL
+{% if not loop.last %}UNION ALL{% endif %}
+{% endfor %}
+{% endif %}
+{% if toorow_model_present('int_country_daily_kpi') %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
+
+-- Country capability partitions are isolated so their staging-to-mart contract
+-- can be built and tested without provisioning every unrelated connector.
+SELECT * FROM {{ ref('int_country_daily_kpi') }}
+{% endif %}
+
+{#- ------------------------------------------------------------------------
+  MANAGED FEED (story 69.2) -- les faits qu'un fichier apporte entrent ici.
+
+  CE QUE CETTE BRANCHE FERME. L'audit du 2026-08-20 (R1) : la donnee d'un
+  managed feed atterrissait, se dedoublonnait (69.1) et s'arretait la. Aucun
+  rapport, aucune alerte, aucun insight ne la voyait, parce que le mart
+  canonique n'avait pas de branche pour elle. Les fichiers de l'operateur
+  vivaient a cote du produit.
+
+  POURQUOI ELLE EST GENEREE ET NON ECRITE. Les 52 autres branches connaissent
+  leurs colonnes : elles viennent d'un connecteur dont le manifeste est dans le
+  depot. Un managed feed n'a que la declaration de son operateur -- son mapping
+  publie. La branche est donc COMPILEE a partir de `mirror.managed_feed_grain`
+  (migrations 227 et 299), qui relaie cette declaration : quelle colonne est le
+  jour, lesquelles sont des axes, lesquelles sont des mesures ADDITIVES. Rien
+  n'est devine ici ; en particulier, << toute colonne numerique est une mesure >>
+  ferait d'un identifiant de campagne numerique une somme.
+
+  `connector` EST LE DATASTREAM. Le mart est unique sur
+  (projet, jour, connector, metrique, axe, valeur d'axe). Deux fichiers d'un
+  meme projet peuvent porter la meme metrique le meme jour : les ecrire tous
+  deux sous `'managed_feed'` ferait echouer `fact_daily_kpi_grain_unique` -- et
+  la faire passer en les additionnant serait pire, car deux fichiers ne sont pas
+  deux moities d'un meme total. Le producteur d'une ligne de fichier EST son
+  Datastream, et `datastreams_dim` le nomme deja pour la console.
+
+  CE QUI EST NOMME PLUTOT QUE TU (AD-9) : un flux sans jour dans sa maille ne
+  decrit pas des faits journaliers et est exclu EN LE DISANT ; une mesure
+  declaree non additive est exclue EN LA NOMMANT (AD-4 : une somme de taux n'est
+  pas un petit mensonge, c'en est un grand). Les deux passent par `log()`, comme
+  les exclusions du staging 69.1.
+
+  SANS AXE, `day_total`. Un fichier dont la maille est le seul jour rend une
+  serie journaliere, avec la convention deja portee par les branches shopify et
+  woocommerce (`breakdown_dimension = 'day_total'`, `breakdown_value = 'all'`) --
+  jamais un NULL que le test `not_null` refuserait.
+------------------------------------------------------------------------- -#}
+{%- set mf_streams = [] -%}
+{%- set mf_without_date = [] -%}
+{%- set mf_without_measure = [] -%}
+{%- set mf_non_additive = [] -%}
+{%- if toorow_model_present('stg_managed_feed_facts') -%}
+  {%- set mf_grain_relation = adapter.get_relation(
+        database=source('mirror', 'managed_feed_grain').database,
+        schema=source('mirror', 'managed_feed_grain').schema,
+        identifier=source('mirror', 'managed_feed_grain').identifier) -%}
+  {#- Le miroir peut dater d'AVANT la migration 299 : il porte alors la maille
+      sans la classification des colonnes. On INTERROGE ses colonnes plutot que
+      de les supposer -- une synchro pas encore refaite n'est pas une panne, et
+      un build qui casse sur `column date_column does not exist` dirait
+      << l'entrepot est mort >> a la place de << le miroir est en retard >>. -#}
+  {#- ET LE MARQUEUR QUE LE NOCTURNE LIT (AI-314) : la branche managed_feed est
+      OMISE quand le miroir n'existe pas dans cet entrepot, et un fait bati sans
+      une de ses sources ne doit pas se lire comme un fait complet. -#}
+  {%- if execute and mf_grain_relation is none -%}
+    {{ toorow_log_source_absent('mirror', ['managed_feed_grain']) }}
+  {%- endif -%}
+  {%- set mf_mirror_columns = [] -%}
+  {%- if mf_grain_relation is not none -%}
+    {%- for column in adapter.get_columns_in_relation(mf_grain_relation) -%}
+      {%- do mf_mirror_columns.append(column.name | string | replace('"', '') | lower) -%}
+    {%- endfor -%}
+  {%- endif -%}
+  {%- set mf_classified = 'measure_columns' in mf_mirror_columns -%}
+  {%- if execute and mf_grain_relation is not none and not mf_classified -%}
+    {{ log("fact_daily_kpi: mirror.managed_feed_grain precede la migration 299 "
+          "(pas de classification des colonnes) -- branche managed_feed omise, "
+          "resynchroniser le miroir", info=true) }}
+  {%- endif -%}
+  {%- if execute and mf_grain_relation is not none and mf_classified -%}
+    {%- set mf_rows = run_query(
+          "SELECT datastream_id, has_grain, date_column, dimension_columns, "
+          "measure_columns, non_additive_columns FROM " ~ mf_grain_relation
+        ) -%}
+    {%- for row in mf_rows.rows -%}
+      {%- if row['has_grain'] -%}
+        {%- set refused = fromjson(row['non_additive_columns'] | string) -%}
+        {%- for name in refused -%}
+          {%- do mf_non_additive.append(row['datastream_id'] ~ '.' ~ name) -%}
+        {%- endfor -%}
+        {%- set measures = fromjson(row['measure_columns'] | string) -%}
+        {%- if not row['date_column'] -%}
+          {%- do mf_without_date.append(row['datastream_id'] | string) -%}
+        {%- elif measures | length == 0 -%}
+          {%- do mf_without_measure.append(row['datastream_id'] | string) -%}
+        {%- else -%}
+          {%- do mf_streams.append({
+                'datastream_id': row['datastream_id'] | string,
+                'date': row['date_column'] | string,
+                'dimensions': fromjson(row['dimension_columns'] | string),
+                'measures': measures,
+              }) -%}
+        {%- endif -%}
+      {%- endif -%}
+    {%- endfor -%}
+  {%- endif -%}
+{%- endif -%}
+{%- if mf_without_date | length > 0 -%}
+  {{ log("fact_daily_kpi: managed feeds sans jour dans leur maille, exclus: "
+        ~ (mf_without_date | join(', ')), info=true) }}
+{%- endif -%}
+{%- if mf_without_measure | length > 0 -%}
+  {{ log("fact_daily_kpi: managed feeds sans mesure additive publiee, exclus: "
+        ~ (mf_without_measure | join(', ')), info=true) }}
+{%- endif -%}
+{%- if mf_non_additive | length > 0 -%}
+  {{ log("fact_daily_kpi: mesures non additives refusees (AD-4), jamais stockees: "
+        ~ (mf_non_additive | join(', ')), info=true) }}
+{%- endif -%}
+{% if mf_streams | length > 0 %}
+{% if ns.emitted %}UNION ALL{% endif %}{% set ns.emitted = true %}
+{#- LE SEPARATEUR EST ECRIT PAR LA SECONDE BRANCHE, comme dans tout ce fichier
+    (`ns.emitted`). Un `loop.last` sur trois boucles imbriquees demanderait
+    `loop.parent`, que l'environnement Jinja de dbt n'expose pas -- et un
+    separateur pose apres la derniere branche est du SQL invalide. Un drapeau
+    local repond a la seule question qui compte : << a-t-on deja emis ? >>. -#}
+{%- set mf = namespace(emitted=false) -%}
+{%- for stream in mf_streams %}
+{%- set axes = stream['dimensions'] if stream['dimensions'] | length > 0 else [none] %}
+{%- for measure in stream['measures'] %}
+{%- for axis in axes %}
+{% if mf.emitted %}UNION ALL{% endif %}{% set mf.emitted = true %}
+SELECT
+    project_id,
+    CAST({{ stream['date'] }} AS DATE)  AS date,
+    '{{ stream['datastream_id'] }}'     AS connector,
+    '{{ measure }}'                     AS metric,
+    {%- if axis is none %}
+    'day_total'                         AS breakdown_dimension,
+    'all'                               AS breakdown_value,
+    {%- else %}
+    '{{ axis }}'                        AS breakdown_dimension,
+    CAST({{ axis }} AS {{ toorow_string_type() }})         AS breakdown_value,
+    {%- endif %}
+    SUM(CAST({{ measure }} AS {{ toorow_float_type() }}))  AS value,
+    {{ money_evidence_absent() }}
+    -- AD-7 : la provenance d'un fichier est son EXECUTION, l'analogue exact du
+    -- `pull_id` d'un connecteur (un dse_<ULID> monotone). Elle voyage dans la
+    -- colonne `pull_id` parce que c'est la colonne de provenance du mart, et
+    -- qu'une seconde colonne serait un second endroit ou la chercher.
+    MAX(execution_id)                   AS pull_id,
+    MAX(loaded_at)                      AS loaded_at
+FROM {{ ref('stg_managed_feed_facts') }}
+WHERE datastream_id = '{{ stream['datastream_id'] }}'
+  AND {{ stream['date'] }} IS NOT NULL
+  -- Le mart exige un `loaded_at` non nul sur TOUTES ses branches. Une ligne
+  -- dont l'execution est inconnue du miroir (synchro en retard) ne peut pas
+  -- dire quand elle a ete chargee : elle est exclue plutot que datee au
+  -- hasard, et elle reviendra a la prochaine synchro. AD-9.
+  AND loaded_at IS NOT NULL
+GROUP BY project_id, CAST({{ stream['date'] }} AS DATE)
+    {%- if axis is not none %}, CAST({{ axis }} AS {{ toorow_string_type() }}){% endif %}
+-- AD-9 : un agregat entierement NULL ne produit pas de ligne (jamais un 0
+-- fabrique).
+HAVING SUM(CAST({{ measure }} AS {{ toorow_float_type() }})) IS NOT NULL
+{%- endfor %}
+{%- endfor %}
+{%- endfor %}
+{% endif %}
+
+{% if not ns.emitted %}
+{#- NOT DECORATION. With no branch emitted the body would be empty, and an empty
+    model is a SQL ERROR rather than an empty table -- which would say "the
+    warehouse is broken" about a Project whose only truth is "it has landed
+    nothing yet". Those two must never be the same answer. -#}
+SELECT
+    CAST(NULL AS {{ dbt.type_string() }})   AS project_id,
+    CAST(NULL AS DATE)      AS date,
+    CAST(NULL AS {{ dbt.type_string() }})   AS connector,
+    CAST(NULL AS {{ dbt.type_string() }})   AS metric,
+    CAST(NULL AS {{ dbt.type_string() }})   AS breakdown_dimension,
+    CAST(NULL AS {{ dbt.type_string() }})   AS breakdown_value,
+    CAST(NULL AS {{ dbt.type_float() }})    AS value,
+    {{ money_evidence_absent() }}
+    CAST(NULL AS {{ dbt.type_string() }})   AS pull_id,
+    CAST(NULL AS {{ dbt.type_timestamp() }}) AS loaded_at
+-- PORTABLE EMPTY SET: `WHERE FALSE` needs something to filter. BigQuery refuses
+-- a WHERE on a query with no FROM -- `Query without FROM clause cannot have a
+-- WHERE clause` -- while DuckDB accepts it, so this branch built green locally
+-- and could not compile on the engine production runs. Measured 2026-08-24 by
+-- replaying the nightly build of a project whose sources are absent, which is
+-- the only case that reaches this branch. `FROM (SELECT 1)` gives the filter a
+-- row to reject, and both engines accept it.
+FROM (SELECT 1) AS _empty
+WHERE FALSE
+{% endif %}

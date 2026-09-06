@@ -4,7 +4,7 @@ import WidgetShell from "@toorow/shell";
  * Story 1.2 sample widget.
  *
  * Demonstrates the full MD3 design system pipeline:
- *   - Wraps content in <WidgetShell> to get the MD3 token-derived MUI theme
+ *   - Wraps content in <WidgetShell> to get the token-derived theme
  *   - Font inlining: Roboto Flex + Material Symbols (via @toorow/shell)
  *   - Transparent background (AD-11 / NFR11)
  *   - hostContext light/dark re-theming without reload (AC2 / UX-DR5)

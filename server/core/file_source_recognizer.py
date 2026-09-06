@@ -176,16 +176,45 @@ def recognize_columns(
         })
 
     # Collision: two source columns matched (confidently) to the SAME canonical.
-    seen: dict[str, str] = {}
+    #
+    # Signalled AND excluded -- both halves, because signalling alone resolved it
+    # in silence. Until 2026-08-04 this loop only appended an ambiguity: both
+    # columns stayed in `mapping`, `seen` reported the FIRST, and the downstream
+    # remap let the LAST one win, so the report and the behaviour disagreed about
+    # which column fed the field.
+    #
+    # The sibling path (`ambiguous_column_match`, above) already keeps an ambiguous
+    # column OUT of the mapping. This one now does the same, and for the same
+    # reason: dropping the required field is what makes the landing gate fail on
+    # `missing_required` and put a human in front of the choice. Choosing by dict
+    # iteration order is not a resolution -- it is the ratified `Incomplete if`
+    # << an ambiguous mapping is resolved silently in favour of one candidate >>.
+    #
+    # NEITHER column is kept: keeping one would be the same silent pick, only
+    # written down.
+    by_target: dict[str, list[str]] = {}
     for source_col, cid in mapping.items():
-        if cid in seen:
-            ambiguities.append({
-                "code": "duplicate_target",
-                "canonical_target": cid,
-                "source_columns": sorted([seen[cid], source_col]),
-            })
-        else:
-            seen[cid] = source_col
+        by_target.setdefault(cid, []).append(source_col)
+
+    colliding: set[str] = set()
+    for cid, columns in by_target.items():
+        if len(columns) < 2:
+            continue
+        ambiguities.append({
+            "code": "duplicate_target",
+            "canonical_target": cid,
+            "source_columns": sorted(columns),
+        })
+        colliding.update(columns)
+
+    # Scoped to the colliding columns only: a collision on one canonical says
+    # nothing about the others, and a file carrying a single ambiguity must stay
+    # importable for everything else.
+    for source_col in colliding:
+        mapping.pop(source_col, None)
+    for field in fields:
+        if field["source_column"] in colliding:
+            field["status"] = "ambiguous"
 
     # Reuse the 12.3 confidence + ambiguity engine over the recognized mapping.
     if mapping:

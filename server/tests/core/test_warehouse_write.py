@@ -18,10 +18,10 @@ Coverage:
 
 from __future__ import annotations
 
-import os
 from unittest.mock import patch
 
 import duckdb
+import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -55,6 +55,96 @@ def _table_schemas(con: duckdb.DuckDBPyConnection) -> list[str]:
 # ---------------------------------------------------------------------------
 
 class TestFlagOff:
+    def test_logical_date_contract_accepts_the_writer_varchar_mapping(
+        self, tmp_path, monkeypatch
+    ):
+        from core import raw_landing, warehouse_write
+
+        db = str(tmp_path / "candidate-logical-date.duckdb")
+        execution_id = "dse_logical_date"
+        relation = f"raw_logical_daily__cand_{execution_id}"
+        monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
+        monkeypatch.delenv("TOOROW_ORG_SCHEMAS", raising=False)
+        raw_landing.record_candidate_landing(
+            execution_id, relation, [("date", "DATE"), ("pull_id", "STRING")]
+        )
+
+        with raw_landing.candidate_execution(execution_id):
+            writer = warehouse_write.open_raw_writer(db, project_id="proj-1")
+            writer.execute(
+                "CREATE TABLE IF NOT EXISTS raw_logical_daily "
+                "(date VARCHAR, pull_id VARCHAR)"
+            )
+            writer.close()
+
+        assert raw_landing.landed_candidate_columns(execution_id, relation) == [
+            ("date", "DATE"),
+            ("pull_id", "STRING"),
+        ]
+
+    def test_existing_stale_table_incompatible_with_logical_contract_is_refused(
+        self, tmp_path, monkeypatch
+    ):
+        from core import raw_landing, warehouse_write
+
+        db = str(tmp_path / "candidate-stale.duckdb")
+        execution_id = "dse_stale_table"
+        relation = f"raw_stale_daily__cand_{execution_id}"
+        monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
+        monkeypatch.delenv("TOOROW_ORG_SCHEMAS", raising=False)
+        raw_landing.record_candidate_landing(execution_id, relation, [("date", "DATE")])
+
+        with raw_landing.candidate_execution(execution_id):
+            writer = warehouse_write.open_raw_writer(db, project_id="proj-1")
+            writer.execute("CREATE TABLE IF NOT EXISTS raw_stale_daily (date BIGINT)")
+            with pytest.raises(raw_landing.RawLandingError, match="physical schema.*incompatible"):
+                writer.close()
+
+    def test_candidate_direct_writer_records_types_and_promotes(self, tmp_path, monkeypatch):
+        """A connector using open_raw_writer directly keeps its publication contract."""
+        from core import raw_landing, warehouse_write
+
+        db = str(tmp_path / "candidate-direct.duckdb")
+        execution_id = "dse_direct_writer"
+        monkeypatch.setenv("TOOROW_DUCKDB_PATH", db)
+        monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
+        monkeypatch.delenv("TOOROW_ORG_SCHEMAS", raising=False)
+
+        with raw_landing.candidate_execution(execution_id):
+            writer = warehouse_write.open_raw_writer(db, project_id="proj-1")
+            writer.execute(
+                "CREATE TABLE IF NOT EXISTS raw_direct_daily "
+                "(date VARCHAR, value DOUBLE, pull_id VARCHAR)"
+            )
+            writer.executemany(
+                "INSERT INTO raw_direct_daily (date,value,pull_id) VALUES (?,?,?)",
+                [("2026-08-16", 4.5, "pull_1")],
+            )
+            writer.close()
+
+        relation = f"raw_direct_daily__cand_{execution_id}"
+        assert raw_landing.landed_candidate_relations(execution_id) == [relation]
+        assert raw_landing.landed_candidate_columns(execution_id, relation) == [
+            ("date", "STRING"),
+            ("value", "FLOAT"),
+            ("pull_id", "STRING"),
+        ]
+
+        promoted = raw_landing.promote_candidate(
+            "raw_direct_daily",
+            execution_id,
+            columns=raw_landing.landed_candidate_columns(execution_id, relation),
+            project_id="proj-1",
+            backend="duckdb",
+            expected_rows=1,
+        )
+        assert promoted["promoted"] == 1
+        con = duckdb.connect(db)
+        try:
+            assert con.execute("SELECT value FROM raw_direct_daily").fetchone() == (4.5,)
+        finally:
+            con.close()
+
     def test_returns_plain_connection_no_resolve(self, tmp_path):
         """Flag OFF: open_raw_writer bit-identical to duckdb.connect(); no PG call."""
         from core import warehouse_tenancy, warehouse_write
@@ -80,13 +170,16 @@ class TestFlagOff:
         con2.close()
         assert "main" in schemas
 
-    def test_flag_off_no_env_var(self, tmp_path):
+    def test_flag_off_no_env_var(self, tmp_path, monkeypatch):
         """No env var set -> flag OFF by default."""
         from core import warehouse_write
 
         warehouse_write._reset_warn()
         db = str(tmp_path / "test.duckdb")
-        os.environ.pop("TOOROW_ORG_SCHEMAS", None)
+        # `monkeypatch.delenv`, never `os.environ.pop`: pytest restores the flag
+        # at the end of the test, where a bare pop turns the warehouse layout
+        # off for every module collected after this one (AI-291).
+        monkeypatch.delenv("TOOROW_ORG_SCHEMAS", raising=False)
 
         con = warehouse_write.open_raw_writer(db, project_id="proj-1")
         con.execute("CREATE TABLE raw_flagoff (id INTEGER)")

@@ -209,6 +209,50 @@ def get_org_plan(org_id: str) -> dict:
     }
 
 
+def _owned_by_platform_admin(org_id: str) -> bool:
+    """Vrai si l'organisation a un propriétaire actif qui est admin plateforme.
+
+    Résout l'identité canonique (`person_01K…`) vers son e-mail vérifié, seule
+    clé que connaît `TOOROW_SUPER_ADMINS`. Une identité héritée d'avant la
+    migration 111 EST déjà un e-mail : elle est testée telle quelle.
+
+    FAIL-CLOSED : toute erreur de lecture rend False, donc le plafond d'essai
+    s'applique. Se tromper dans ce sens fait refuser un flux à un admin ; se
+    tromper dans l'autre ouvrirait le plan complet sur une lecture ratée.
+    """
+    from core.super_admin import identity_is_super_admin  # noqa: PLC0415
+
+    try:
+        from core.db import get_connection  # noqa: PLC0415
+
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT m.identity, pi.verified_email
+                FROM app.org_members m
+                LEFT JOIN LATERAL (
+                    SELECT verified_email FROM app.person_identities
+                     WHERE person_id = m.identity AND verified_email IS NOT NULL
+                     ORDER BY verified_email_at DESC NULLS LAST LIMIT 1
+                ) pi ON TRUE
+                WHERE m.org_id = %s AND m.role = 'owner' AND m.status = 'active'
+                """,
+                (org_id,),
+            )
+            owners = cur.fetchall()
+    except Exception as exc:  # noqa: BLE001 - fail closed on any read error.
+        logger.warning("org_entitlements: platform-admin owner check unavailable: %s", exc)
+        return False
+
+    # UNE SEULE RÉSOLUTION (audit 12, P1-2). L'e-mail vérifié déjà joint ci-dessus
+    # est passé en clé `extra` ; `identity_is_super_admin` fait le reste, comme
+    # partout ailleurs. Ce module ne réassemble plus ses propres clés.
+    for identity, verified_email in owners:
+        if identity_is_super_admin(identity, extra=(verified_email,)):
+            return True
+    return False
+
+
 def resolve_entitlements(org_id: str) -> dict[str, int | None]:
     """Return effective entitlement limits for org_id.
 
@@ -227,6 +271,21 @@ def resolve_entitlements(org_id: str) -> dict[str, int | None]:
     plan = plan_record["plan"]
 
     if plan == PLAN_TRIAL:
+        # UNE ORGANISATION DÉTENUE PAR UN ADMIN PLATEFORME N'A PAS DE PLAFOND.
+        # Directive Jean, 2026-08-05, redonnée après l'avoir déjà donnée : « en
+        # tant que super admin, pas de quotas pour moi ». Le plan `internal`
+        # existait pour ça, mais il fallait le poser à la main sur chaque
+        # organisation — donc la première org creee ensuite retombait sous le
+        # plafond d'essai, et il fallait redemander. Ce n'est pas une exception
+        # accordée à une organisation, c'est une propriété de son propriétaire.
+        #
+        # PORTÉE ÉTROITE, ET C'EST VOULU : il faut un propriétaire ACTIF dont
+        # l'e-mail vérifié figure dans `TOOROW_SUPER_ADMINS`. Un membre, un
+        # admin, un propriétaire suspendu ne suffisent pas — sans quoi inviter un
+        # admin plateforme dans une organisation cliente lui offrirait le plan
+        # complet.
+        if _owned_by_platform_admin(org_id):
+            return {k: None for k in DEFAULT_TRIAL_ENTITLEMENTS}
         return dict(DEFAULT_TRIAL_ENTITLEMENTS)
 
     if plan in (PLAN_FULL, PLAN_INTERNAL):

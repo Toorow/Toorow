@@ -402,6 +402,16 @@ def test_401_persisting_after_reauth_classifies_auth_expired(connector, async_ho
 
 @respx.mock
 def test_401_revoked_body_token_maps_to_auth_revoked(connector, async_hooks):
+    """AI-114: the body token IS TTD's provider code, and CORE applies it.
+
+    The connector normalises the free-text Message into the {"code": <token>}
+    shape core's generic extractor reads, then hands the manifest's
+    error_map over -- so "401:revoked" -> auth_revoked is matched by
+    core.pull_errors.classify_http_error, not by a second module-side reader.
+    auth_revoked is the whole point: it is the only class pure HTTP never
+    produces, and it is a different instruction to the person ("your access was
+    revoked, ask for it again") than 401's default auth_expired ("reconnect").
+    """
     from core.pull_errors import AuthRevokedError
 
     respx.post(_AUTH_URL).mock(return_value=_auth_response())
@@ -410,6 +420,30 @@ def test_401_revoked_body_token_maps_to_auth_revoked(connector, async_hooks):
     )
     with pytest.raises(AuthRevokedError):
         _run_pull(connector, async_hooks, "pull_ttd_revoked")
+
+    # The refinement must come from the MANIFEST, not from a table in the
+    # module: if the key disappears, this connector must stop claiming it.
+    assert connector._load_error_map()["401:revoked"] == "auth_revoked"
+
+
+@respx.mock
+def test_403_disabled_body_token_is_not_claimed_by_the_manifest(connector, async_hooks):
+    """The map declares 401:revoked / 401:disabled / 403:revoked -- and no more.
+
+    A 403 whose message says "disabled" is NOT declared, so it must fall back to
+    the pure-HTTP class rather than silently inherit auth_revoked. This pins the
+    boundary of what was transcribed from the dossier: only what is written is
+    claimed.
+    """
+    from core.pull_errors import PermissionDeniedError
+
+    assert "403:disabled" not in connector._load_error_map()
+    _mock_auth()
+    respx.post(_SCHEDULE_URL).mock(
+        return_value=httpx.Response(403, json={"Message": "account disabled"})
+    )
+    with pytest.raises(PermissionDeniedError):
+        _run_pull(connector, async_hooks, "pull_ttd_403_disabled")
 
 
 @respx.mock
@@ -440,7 +474,14 @@ def test_429_on_submit_raises_rate_limit_error_breaker(connector, async_hooks):
 
 
 @respx.mock
-def test_404_status_only_key_maps_to_invalid_request(connector, async_hooks):
+def test_404_status_override_maps_to_invalid_request(connector, async_hooks):
+    """404 is a status-level judgment, and AI-114 moved it out of the manifest.
+
+    core's pure-HTTP table leaves 404 `unclassified` (retryable). The verdict is
+    unchanged -- invalid_request -- but it now comes from
+    connector._STATUS_OVERRIDES instead of a bare "404" key in
+    manifest.error_map that only this module could read.
+    """
     _mock_auth()
     respx.post(_SCHEDULE_URL).mock(
         return_value=httpx.Response(404, json={"Message": "unknown schedule"})

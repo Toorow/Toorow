@@ -37,14 +37,62 @@
  * slug preview and ScopeSummary are pure client derivations; submit surfaces a
  * safe error and the form stays usable (no dead end).
  *
- * Styling: application.css (global, via the shell) for base classes/tokens +
- * create-org.css for the focused-dialog surface and this page's specifics.
- * Colors come exclusively from the application.css CSS variables — no hex.
+ * Styling: migrated off `create-org.css` (waves 2-4 of `docs/ui-css-strategy.md`).
+ * The focused-dialog surface is composed from Tailwind utilities over the
+ * `@theme` tokens, plus the `Button` / `Input` / `Status` / `Alert` primitives.
+ * The dialog stacks at `--layer-modal`, declared in `shell/application.css`.
+ * Colors come exclusively from theme tokens — no hex.
  */
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../lib/apiFetch";
+import { Alert, Button, Input, ObjectId, stateLabel, stateTone, Status, TONE_TEXT } from "../../ui";
+import {
+  ReportingCurrencyField,
+  ReportingTimezoneField,
+  currencySummary,
+  reportingPayload,
+  timezoneSummary,
+  useReportingDefaults,
+} from "./reportingDefaults";
 import "../application.css";
-import "./create-org.css";
+
+/* ---- The focused-dialog surface, shared by every view of this screen. ------
+   Ported 1:1 from the retired `create-org.css`; geometry (not prose) keeps its
+   px values, prose measures stay in `ch`. The scrim dims with the scheme-stable
+   `surface-dark` token so it reads as dimming on both light and dark. */
+const STAGE = "relative min-h-[828px]";
+const SCRIM =
+  "absolute inset-0 z-[var(--layer-modal)] grid items-start justify-items-center gap-4.5 bg-surface-dark/20 p-7";
+const DIALOG =
+  "w-[min(640px,calc(100%-56px))] overflow-hidden rounded-[18px] border border-divider-base bg-surface-light shadow-overlay max-[1180px]:w-[calc(100%-36px)]";
+const HEADER = "flex items-start justify-between gap-4.5 border-b border-divider-base px-7 pb-5 pt-6";
+const TITLE = "m-0 font-display text-[22px] font-semibold tracking-[-0.01em]";
+const SUBTITLE = "m-0 mt-2 max-w-[44ch] text-label leading-normal text-text-secondary";
+const BODY = "grid gap-5.5 px-7 py-6";
+const FOOTER =
+  "flex items-center justify-between gap-4.5 border-t border-divider-base px-7 py-4.5 max-[1180px]:flex-wrap";
+const FOOTER_NOTE = "text-caption leading-snug text-text-secondary";
+const ACTIONS = "flex flex-none items-center gap-2.5";
+
+/* Field group: label / control / one message. */
+const FIELD = "grid gap-2";
+const FIELD_LABEL = "text-label font-semibold";
+const FIELD_HINT = "m-0 text-caption leading-snug text-text-secondary";
+const FIELD_ERROR = `m-0 text-caption font-semibold leading-snug ${TONE_TEXT.error}`;
+
+/* ScopeSummary (DESIGN.md: page surface, read-only). The first row after the
+   title takes SCOPE_ROW; every following row takes SCOPE_ROW_RULED. */
+const SCOPE_SUMMARY = "rounded-lg border border-divider-base bg-background-light px-4.5 py-4";
+const SCOPE_TITLE = "mb-3 font-display text-label font-semibold";
+const SCOPE_ROW =
+  "grid grid-cols-[128px_minmax(0,1fr)] items-baseline gap-3.5 py-[7px] max-[1180px]:grid-cols-1 max-[1180px]:gap-[3px]";
+const SCOPE_ROW_RULED = `${SCOPE_ROW} border-t border-divider-base`;
+const SCOPE_KEY = "text-caption font-semibold text-text-secondary";
+const SCOPE_VAL = "text-label leading-normal [overflow-wrap:anywhere]";
+const SCOPE_VAL_MONO = `${SCOPE_VAL} font-mono`;
+
+/* JetBrains Mono for immutable identifiers (DESIGN.md), sized as in the sheet. */
+const MONO = "font-mono text-label";
 
 /**
  * WHO the person is — collected here, because this is the LAST moment we still
@@ -116,8 +164,8 @@ const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
 
 /** Warehouse-safe form — mirrors warehouse_tenancy.sanitize_warehouse_slug
  *  ('-' -> '_'); the datasets are org_<wslug>_raw / org_<wslug>_marts. */
-function warehouseSlug(slug: string): string {
-  return slug.replace(/-/g, "_");
+function warehouseSlug(slug?: string): string {
+  return (slug ?? "").replace(/-/g, "_");
 }
 
 function operationKey(prefix: string): string {
@@ -153,14 +201,23 @@ async function createOrganization(
   projectName: string,
   projectSlug: string,
   idempotencyKey: string,
+  /** "" when nobody chose. It is OMITTED from the payload in that case, so the
+   *  provenance decision records a platform default rather than a human one. */
+  currency: string,
+  /** "" keeps the browser suggestion; a value is an operator decision. */
+  timezone: string,
+  /** The browser's zone, travelling as the suggestion it is. */
+  suggestedZone: string,
 ): Promise<CreatedOrg> {
+  // Both rules — omit an unchosen currency, send the browser zone as a
+  // SUGGESTION and never as a choice — live in `reportingDefaults`, shared with
+  // the other Project-creation doors. See that file for why.
   const payload = {
     organization_name: name,
     organization_slug: slug,
     project_name: projectName,
     project_slug: projectSlug,
-    currency: "EUR",
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    ...reportingPayload(currency, timezone, suggestedZone),
   };
   const confirmationResponse = await apiFetch("/api/entry/scope/confirmation", {
     method: "POST",
@@ -228,6 +285,19 @@ export default function CreateOrg({
 }: CreateOrgProps) {
   const [name, setName] = useState("");
   const [projectName, setProjectName] = useState("First project");
+  // "" means NOBODY CHOSE, and it must stay "" all the way to the payload: the
+  // provenance decision reads an absent currency as `default`, and any value it
+  // receives as an operator choice (`project_provenance.decide`). A pre-selected
+  // EUR here would recreate exactly the defect this field exists to close.
+  const [currency, setCurrency] = useState("");
+  // "" means "keep the browser's suggestion". Choosing a zone turns it into an
+  // operator decision; leaving it alone keeps it a SUGGESTION, which is what a
+  // browser guess actually is.
+  const [timezone, setTimezone] = useState("");
+  // The same vocabularies Project Settings offers, through the same searchable
+  // control — a creation screen proposing a subset while settings offered the
+  // whole list is how the two ends disagreed in the first place.
+  const { currencyFallback, timezoneFallback, suggestedZone } = useReportingDefaults();
   const [idempotencyKey] = useState(() => operationKey("hosted-entry"));
   const [submit, setSubmit] = useState<SubmitState>({ status: "idle" });
   const [firstName, setFirstName] = useState("");
@@ -322,6 +392,9 @@ export default function CreateOrg({
             projectNameTrimmed,
             projectSlug,
             idempotencyKey,
+            currency,
+            timezone,
+            suggestedZone,
           );
       setSubmit({ status: "created", org });
       onCreated?.(org.id, typeof org.next_url === "string" ? org.next_url : undefined);
@@ -338,87 +411,102 @@ export default function CreateOrg({
     // rule the server uses so we display the exact provisioned datasets.
     const createdWslug = warehouseSlug(org.slug);
     return (
-      <div className="createorg-stage">
-        <div className="createorg-scrim">
+      <div className={STAGE}>
+        <div className={SCRIM}>
           <section
-            className="createorg-dialog"
+            className={DIALOG}
             role="dialog"
             aria-modal="true"
             aria-labelledby="createorg-done-title"
           >
-            <header className="createorg-header">
-              <h1 id="createorg-done-title">Organization created</h1>
+            <header className={HEADER}>
+              <h1 id="createorg-done-title" className={TITLE}>Organization created</h1>
             </header>
 
-            <div className="createorg-body">
-              <p className="createorg-lead">
-                <strong>{org.name}</strong> is active and you are its owner.{" "}
+            <div className={BODY}>
+              {/* The same rule as the Status row below: the sentence asserted
+                  "is active" whatever the server answered. What is certain here
+                  is the ownership — the create call is what made this person the
+                  owner — so that is what the sentence keeps. */}
+              <p className="m-0 text-ui leading-[1.6]">
+                <strong>{org.name}</strong> is created and you are its owner.{" "}
                 {organizationOnly
-                  ? "No project exists yet; the next screen creates the first real workspace."
+                  ? "No project exists yet; the next screen creates the first real project."
                   : "Its first project is ready. Members, roles, countries, and billing belong to this organization."}
               </p>
 
               {/* ScopeSummary-style read-only summary of what now exists. */}
-              <div className="scope-summary" aria-label="Created organization summary">
-                <div className="scope-row">
-                  <span className="scope-key">Organization</span>
-                  <span className="scope-val">{org.name}</span>
+              <div className={SCOPE_SUMMARY} aria-label="Created organization summary">
+                <div className={SCOPE_ROW}>
+                  <span className={SCOPE_KEY}>Organization</span>
+                  <span className={SCOPE_VAL}>{org.name}</span>
                 </div>
-                <div className="scope-row">
-                  <span className="scope-key">Slug</span>
-                  <span className="scope-val mono">{org.slug}</span>
+                <div className={SCOPE_ROW_RULED}>
+                  <span className={SCOPE_KEY}>Slug</span>
+                  <span className={SCOPE_VAL_MONO}>{org.slug}</span>
                 </div>
-                <div className="scope-row">
-                  <span className="scope-key">Identifier</span>
-                  <span className="scope-val mono">{org.id}</span>
+                <div className={SCOPE_ROW_RULED}>
+                  <span className={SCOPE_KEY}>Identifier</span>
+                  <ObjectId value={org.id} title="Organization" />
                 </div>
-                <div className="scope-row">
-                  <span className="scope-key">Status</span>
-                  <span className="scope-val">
-                    <span className="signal-label success">
-                      <span className="signal-mark" />
-                      {org.status ?? "active"}
-                    </span>
+                <div className={SCOPE_ROW_RULED}>
+                  <span className={SCOPE_KEY}>Status</span>
+                  <span className={SCOPE_VAL}>
+                    {/* NEVER INVENT A STATUS, AND NEVER PICK ITS COLOUR HERE.
+                        This read `org.status ?? "active"` in a hardcoded
+                        `tone="success"`: a server answer that carried no status
+                        was drawn as a healthy one, and a server that answered
+                        `suspended` was drawn green too. Both halves come from
+                        the console's one state vocabulary now — `stateLabel`
+                        turns an absent value into `Unavailable` rather than into
+                        a claim, and `stateTone` colours a word nobody has read
+                        yet `neutral` rather than as a verdict. The tone map is
+                        `ui/stateVocabulary`, so this screen cannot disagree with
+                        the five others that draw the same word. */}
+                    <Status tone={stateTone(org.status)} data-testid="createorg-status">
+                      {stateLabel(org.status)}
+                    </Status>
                   </span>
                 </div>
-                <div className="scope-row">
-                  <span className="scope-key">Your role</span>
-                  <span className="scope-val">Owner</span>
+                <div className={SCOPE_ROW_RULED}>
+                  <span className={SCOPE_KEY}>Your role</span>
+                  <span className={SCOPE_VAL}>Owner</span>
                 </div>
               </div>
 
-              <h2 className="createorg-subhead">Reserved warehouse dataset names</h2>
-              <p className="createorg-note">
+              <h2 className="m-0 font-display text-body font-semibold">
+                Reserved warehouse dataset names
+              </h2>
+              <p className="m-0 -mt-3 text-caption leading-normal text-text-secondary">
                 These names are fixed by the slug. Getting Started will show the actual provisioning state.
               </p>
-              <ul className="schema-list">
-                <li>
-                  <span className="mono">org_{createdWslug}_raw</span>
-                  <span className="schema-role">Raw landing</span>
+              <ul className="m-0 grid list-none gap-2.5 p-0">
+                <li className="flex items-center justify-between gap-3.5 rounded-lg border border-divider-base bg-background-light px-4 py-3">
+                  <span className={MONO}>org_{createdWslug}_raw</span>
+                  <span className="text-caption font-semibold text-text-secondary">Raw landing</span>
                 </li>
-                <li>
-                  <span className="mono">org_{createdWslug}_marts</span>
-                  <span className="schema-role">Published marts</span>
+                <li className="flex items-center justify-between gap-3.5 rounded-lg border border-divider-base bg-background-light px-4 py-3">
+                  <span className={MONO}>org_{createdWslug}_marts</span>
+                  <span className="text-caption font-semibold text-text-secondary">Published marts</span>
                 </li>
               </ul>
             </div>
 
-            <footer className="createorg-footer">
-              <span>
+            <footer className={FOOTER}>
+              <span className={FOOTER_NOTE}>
                 {organizationOnly
                   ? "Next: create the organization's first project."
                   : "Next: continue in Getting Started with the first project."}
               </span>
-              <div className="createorg-actions">
-                <button
-                  className="primary-button"
+              <div className={ACTIONS}>
+                <Button
                   type="button"
                   onClick={() =>
                     onCreated?.(org.id, typeof org.next_url === "string" ? org.next_url : undefined)
                   }
                 >
                   Go to organization
-                </button>
+                </Button>
               </div>
             </footer>
           </section>
@@ -432,18 +520,28 @@ export default function CreateOrg({
   // steps down to <h2> (one h1 per surface).
   const DialogTitle = welcome ? "h2" : "h1";
   return (
-    <div className="createorg-stage">
-      <div className="createorg-scrim">
+    <div className={STAGE}>
+      <div className={SCRIM}>
         {welcome && (
-          <section className="createorg-welcome" aria-labelledby="createorg-welcome-title">
-            <p className="createorg-welcome-eyebrow">Getting started</p>
-            <h1 id="createorg-welcome-title">Welcome to toorow</h1>
-            <p className="createorg-welcome-lead">
+          <section
+            className="w-[min(640px,calc(100%-56px))] rounded-[18px] border border-divider-base bg-background-light px-6.5 py-5.5 max-[1180px]:w-[calc(100%-36px)]"
+            aria-labelledby="createorg-welcome-title"
+          >
+            <p className="m-0 text-caption font-bold uppercase tracking-[0.06em] text-text-secondary">
+              Getting started
+            </p>
+            <h1
+              id="createorg-welcome-title"
+              className="m-0 mt-2 font-display text-[28px] font-extrabold tracking-[-0.02em]"
+            >
+              Welcome to toorow
+            </h1>
+            <p className="m-0 mt-3 max-w-[56ch] text-ui leading-[1.6] text-text">
               You are signed in. You do not belong to an organization yet, so there is no data,
               no project, and no report to show you — creating your organization is the first
               step, and everything else hangs from it.
             </p>
-            <p className="createorg-welcome-note">
+            <p className="m-0 mt-2.5 max-w-[56ch] text-caption leading-[1.55] text-text-secondary">
               Expecting to join a colleague&apos;s organization instead? Open the invitation link
               they sent you by email; accepting it gives you access to their organization and you
               do not need to create one here.
@@ -451,7 +549,7 @@ export default function CreateOrg({
           </section>
         )}
         <form
-          className="createorg-dialog"
+          className={DIALOG}
           role="dialog"
           // In welcome mode this is the page itself, not a modal over something else —
           // aria-modal would hide the welcome banner from assistive technology.
@@ -460,42 +558,42 @@ export default function CreateOrg({
           onSubmit={handleSubmit}
           noValidate
         >
-          <header className="createorg-header">
+          <header className={HEADER}>
             <div>
-              <DialogTitle id="createorg-title">
+              <DialogTitle id="createorg-title" className={TITLE}>
                 {welcome ? "Create your organization" : "Create organization"}
               </DialogTitle>
-              <p className="createorg-subtitle">
+              <p className={SUBTITLE}>
                 An organization owns its members, roles, countries, billing, and a dedicated
                 warehouse. You will be its owner.
               </p>
             </div>
             {onCancel && (
-              <button
-                className="icon-button action-link"
+              <Button
+                variant="secondary"
+                size="icon"
                 type="button"
                 aria-label="Close"
                 onClick={() => onCancel()}
               >
                 ×
-              </button>
+              </Button>
             )}
           </header>
 
-          <div className="createorg-body">
+          <div className={BODY}>
             {mustAskName && (
-              <fieldset className="createorg-identity">
-                <legend>Your name</legend>
-                <p className="field-hint">
+              <fieldset className="m-0 grid gap-3 rounded-lg border border-divider-base px-4.5 py-4">
+                <legend className="px-1.5 text-label font-semibold">Your name</legend>
+                <p className={FIELD_HINT}>
                   We only know your email address. Your name identifies you to the people you
                   invite and to your colleagues inside the organization.
                 </p>
-                <div className="createorg-identity-row">
-                  <div className="field">
-                    <label htmlFor="createorg-firstname">First name</label>
-                    <input
+                <div className="grid grid-cols-2 gap-3.5 max-[1180px]:grid-cols-1">
+                  <div className={FIELD}>
+                    <label htmlFor="createorg-firstname" className={FIELD_LABEL}>First name</label>
+                    <Input
                       id="createorg-firstname"
-                      className="text-input"
                       type="text"
                       value={firstName}
                       maxLength={120}
@@ -507,11 +605,10 @@ export default function CreateOrg({
                       }}
                     />
                   </div>
-                  <div className="field">
-                    <label htmlFor="createorg-lastname">Last name</label>
-                    <input
+                  <div className={FIELD}>
+                    <label htmlFor="createorg-lastname" className={FIELD_LABEL}>Last name</label>
+                    <Input
                       id="createorg-lastname"
-                      className="text-input"
                       type="text"
                       value={lastName}
                       maxLength={120}
@@ -524,15 +621,14 @@ export default function CreateOrg({
                     />
                   </div>
                 </div>
-                {personNameError && <p className="field-error">{personNameError}</p>}
+                {personNameError && <p className={FIELD_ERROR}>{personNameError}</p>}
               </fieldset>
             )}
 
-            <div className="field">
-              <label htmlFor="createorg-name">Organization name</label>
-              <input
+            <div className={FIELD}>
+              <label htmlFor="createorg-name" className={FIELD_LABEL}>Organization name</label>
+              <Input
                 id="createorg-name"
-                className="text-input"
                 type="text"
                 value={name}
                 maxLength={120}
@@ -546,22 +642,21 @@ export default function CreateOrg({
                 }}
               />
               {nameError ? (
-                <p className="field-error" id="createorg-name-error">
+                <p className={FIELD_ERROR} id="createorg-name-error">
                   {nameError}
                 </p>
               ) : (
-                <p className="field-hint" id="createorg-name-hint">
+                <p className={FIELD_HINT} id="createorg-name-hint">
                   Shown to members. You can rename the organization later.
                 </p>
               )}
             </div>
 
             {!organizationOnly && (
-              <div className="field">
-                <label htmlFor="createorg-project-name">First project</label>
-                <input
+              <div className={FIELD}>
+                <label htmlFor="createorg-project-name" className={FIELD_LABEL}>First project</label>
+                <Input
                   id="createorg-project-name"
-                  className="text-input"
                   type="text"
                   value={projectName}
                   maxLength={100}
@@ -570,52 +665,107 @@ export default function CreateOrg({
                     if (submit.status === "error") setSubmit({ status: "idle" });
                   }}
                 />
-                <p className="field-hint">
-                  Created atomically with the organization, so your first workspace is immediately usable.
+                <p className={FIELD_HINT}>
+                  Created atomically with the organization, so your first project is immediately usable.
                 </p>
               </div>
             )}
+
+            {/* Both defaults are asked with the SAME searchable control Project
+                Settings uses, so the whole ISO 4217 and IANA vocabularies are
+                reachable here. Unset stays the initial state on both: choosing
+                nothing is a real answer, and the one that keeps the provenance
+                honest. */}
+            {!organizationOnly && (
+              <ReportingCurrencyField
+                idPrefix="createorg"
+                value={currency}
+                fallback={currencyFallback}
+                onChange={(code) => {
+                  setCurrency(code);
+                  if (submit.status === "error") setSubmit({ status: "idle" });
+                }}
+              />
+            )}
+
+            {!organizationOnly && (
+              <ReportingTimezoneField
+                idPrefix="createorg"
+                value={timezone}
+                suggestedZone={suggestedZone}
+                onChange={(code) => {
+                  setTimezone(code);
+                  if (submit.status === "error") setSubmit({ status: "idle" });
+                }}
+              />
+            )}
             {/* Derived slug preview — the immutable warehouse identity. */}
-            <div className="slug-preview" aria-live="polite">
-              <div className="slug-preview-head">
-                <span className="slug-preview-label">Warehouse slug</span>
-                <span className="slug-preview-value mono">{slug || "—"}</span>
+            <div
+              className="rounded-lg border border-divider-base bg-background-light px-4.5 py-4"
+              aria-live="polite"
+            >
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-caption font-bold uppercase tracking-[0.04em] text-text-secondary">
+                  Warehouse slug
+                </span>
+                <span className={`${MONO} font-bold`}>{slug || "—"}</span>
               </div>
-              <p className="slug-preview-note">
+              <p className="m-0 mt-2.5 text-caption leading-[1.55] text-text-secondary">
                 The slug names this organization&apos;s warehouse datasets{" "}
-                <span className="mono">org_{wslug || "…"}_raw</span> and{" "}
-                <span className="mono">org_{wslug || "…"}_marts</span>. It is derived from the name
-                and is <strong>immutable after creation</strong> — the organization can be renamed,
-                but these dataset names cannot.
+                <span className={MONO}>org_{wslug || "…"}_raw</span> and{" "}
+                <span className={MONO}>org_{wslug || "…"}_marts</span>. It is derived from the name
+                and is <strong className="font-bold text-text">immutable after creation</strong> —
+                the organization can be renamed, but these dataset names cannot.
               </p>
             </div>
 
             {/* ScopeSummary-style confirmation BEFORE create. */}
-            <div className="scope-summary" aria-label="What will be created">
-              <div className="scope-summary-title">Before you create</div>
-              <div className="scope-row">
-                <span className="scope-key">Organization</span>
-                <span className="scope-val">{nameTrimmed || "—"}</span>
+            <div className={SCOPE_SUMMARY} aria-label="What will be created">
+              <div className={SCOPE_TITLE}>Before you create</div>
+              <div className={SCOPE_ROW}>
+                <span className={SCOPE_KEY}>Organization</span>
+                <span className={SCOPE_VAL}>{nameTrimmed || "—"}</span>
               </div>
-              <div className="scope-row">
-                <span className="scope-key">Slug</span>
-                <span className="scope-val mono">{slug || "—"}</span>
+              <div className={SCOPE_ROW_RULED}>
+                <span className={SCOPE_KEY}>Slug</span>
+                <span className={SCOPE_VAL_MONO}>{slug || "—"}</span>
               </div>
-              <div className="scope-row">
-                <span className="scope-key">Warehouse</span>
-                <span className="scope-val mono">
+              <div className={SCOPE_ROW_RULED}>
+                <span className={SCOPE_KEY}>Warehouse</span>
+                <span className={SCOPE_VAL_MONO}>
                   {wslug ? `org_${wslug}_raw · org_${wslug}_marts` : "—"}
                 </span>
               </div>
               {!organizationOnly && (
-                <div className="scope-row">
-                  <span className="scope-key">First project</span>
-                  <span className="scope-val">{projectNameTrimmed || "—"}</span>
+                <div className={SCOPE_ROW_RULED}>
+                  <span className={SCOPE_KEY}>First project</span>
+                  <span className={SCOPE_VAL}>{projectNameTrimmed || "—"}</span>
                 </div>
               )}
-              <div className="scope-row">
-                <span className="scope-key">Owner</span>
-                <span className="scope-val">
+              {/* The two Project defaults the form just asked for. They were
+                  collected and never read back, so the confirmation certified a
+                  scope that omitted two of its own decisions — and the whole
+                  point of these fields is that a value must not be carried
+                  without the person seeing WHICH origin it earned. Absent from
+                  the organization-only mode, where no project is created and
+                  neither field is asked. */}
+              {!organizationOnly && (
+                <div className={SCOPE_ROW_RULED}>
+                  <span className={SCOPE_KEY}>Reporting currency</span>
+                  <span className={SCOPE_VAL}>{currencySummary(currency, currencyFallback)}</span>
+                </div>
+              )}
+              {!organizationOnly && (
+                <div className={SCOPE_ROW_RULED}>
+                  <span className={SCOPE_KEY}>Reporting timezone</span>
+                  <span className={SCOPE_VAL}>
+                    {timezoneSummary(timezone, suggestedZone, timezoneFallback)}
+                  </span>
+                </div>
+              )}
+              <div className={SCOPE_ROW_RULED}>
+                <span className={SCOPE_KEY}>Owner</span>
+                <span className={SCOPE_VAL}>
                   {nameGate.status === "known"
                     ? `${nameGate.displayName} (auto-enrolled)`
                     : displayName
@@ -623,44 +773,36 @@ export default function CreateOrg({
                       : "You (auto-enrolled)"}
                 </span>
               </div>
-              <div className="scope-row">
-                <span className="scope-key">Impact</span>
-                <span className="scope-val">
+              <div className={SCOPE_ROW_RULED}>
+                <span className={SCOPE_KEY}>Impact</span>
+                <span className={SCOPE_VAL}>
                   Provisions the warehouse. The slug cannot be changed afterward.
                 </span>
               </div>
             </div>
 
             {submit.status === "error" && (
-              <div className="createorg-error" role="alert">
-                <span className="signal-label error">
-                  <span className="signal-mark" />
-                  Organization not created
-                </span>
-                <p>{submit.message}</p>
-              </div>
+              <Alert tone="error" title="Organization not created">
+                {submit.message}
+              </Alert>
             )}
           </div>
 
-          <footer className="createorg-footer">
-            <span>
+          <footer className={FOOTER}>
+            <span className={FOOTER_NOTE}>
               {organizationOnly
                 ? "Create the organization first; its first project comes next."
                 : "Your organization and first project are created together."}
             </span>
-            <div className="createorg-actions">
+            <div className={ACTIONS}>
               {onCancel && (
-                <button
-                  className="secondary-button action-link"
-                  type="button"
-                  onClick={() => onCancel()}
-                >
+                <Button variant="secondary" type="button" onClick={() => onCancel()}>
                   Cancel
-                </button>
+                </Button>
               )}
-              <button className="primary-button" type="submit" disabled={!canSubmit}>
+              <Button type="submit" disabled={!canSubmit}>
                 {submit.status === "submitting" ? "Creating…" : "Create organization"}
-              </button>
+              </Button>
             </div>
           </footer>
         </form>

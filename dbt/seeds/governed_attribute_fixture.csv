@@ -1,0 +1,8 @@
+org_id,project_id,registry_id,node_id,version_id,attribute,value_type,unit,value_text,value_number,value_date,value_bool,undeclared,type_mismatch,scenario
+org_AGEPROOF,proj_AGEPROOF,mdreg_AGEPROOF,mdnode_KNOWN,mdver_KNOWN,born_at,date,,2026-01-15,,2026-01-15,,false,false,readable_birth_date
+org_AGEPROOF,proj_AGEPROOF,mdreg_AGEPROOF,mdnode_KNOWN,mdver_KNOWN,duration_s,integer,second,1269,1269,,,false,false,other_attribute_same_node
+org_AGEPROOF,proj_AGEPROOF,mdreg_AGEPROOF,mdnode_SAMEDAY,mdver_SAMEDAY,born_at,date,,2026-06-15,,2026-06-15,,false,false,born_on_the_as_of_date
+org_AGEPROOF,proj_AGEPROOF,mdreg_AGEPROOF,mdnode_UNBORN,mdver_UNBORN,born_at,date,,2026-09-01,,2026-09-01,,false,false,birth_after_the_as_of_date
+org_AGEPROOF,proj_AGEPROOF,mdreg_AGEPROOF,mdnode_MISTYPED,mdver_MISTYPED,born_at,date,,20260807,,,,false,true,birth_written_in_the_wrong_type
+org_AGEPROOF,proj_AGEPROOF,mdreg_AGEPROOF,mdnode_UNDECLARED,mdver_UNDECLARED,born_at,,,2026-01-15,,,,true,false,attribute_never_declared
+org_AGEPROOF,proj_AGEPROOF,mdreg_AGEPROOF,mdnode_NOBIRTH,mdver_NOBIRTH,category,string,,Howto,,,,false,false,node_without_any_birth_attribute

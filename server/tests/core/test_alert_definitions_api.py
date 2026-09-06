@@ -64,14 +64,36 @@ def _conn_ctx(conn):
     yield conn
 
 
+def _conn_factory(conn):
+    """Double for `get_connection` that survives being called more than once.
+
+    AI-171 : `return_value=_conn_ctx(conn)` rend UN generateur, donc la premiere
+    ouverture l'epuise et la seconde leve `'_GeneratorContextManager' object has
+    no attribute 'args'` -- une erreur qui a l'air d'un defaut du handler et n'en
+    est pas un. Chaque `with get_connection()` doit recevoir le sien.
+    """
+    return lambda: _conn_ctx(conn)
+
+
 @pytest.fixture()
 def client():
-    """TestClient for admin_api.router with auth bypassed."""
+    """TestClient for admin_api.router with auth AND project scope bypassed.
+
+    AI-171 : les deux routes de ce fichier autorisent desormais le projet demande
+    (`view` pour la liste, `edit` pour la creation) -- le `WHERE project_id = %s`
+    bornait la requete, pas l'appelant. La doublure l'accorde ici parce que ces
+    tests mesurent le CRUD ; c'est `test_admin_route_project_scope.py` qui tient
+    la garde elle-meme, et son cliquet de classe qui refuse qu'elle reparte.
+    """
     with (
         patch(
             "core.api_auth.authenticate_api_request",
             return_value=(True, "test-user"),
         ),
+        # Neutralise la garde AU NIVEAU DU HELPER, pas de la decision d'acces :
+        # le helper ouvre sa propre connexion, et trois tests de ce fichier n'en
+        # doublent aucune parce qu'ils s'arretent a la validation du corps.
+        patch("core.admin_api._refuse_unless_project_allowed", return_value=None),
     ):
         with TestClient(router, raise_server_exceptions=True) as c:
             yield c
@@ -116,8 +138,8 @@ class TestCreateDefinitionValid:
         conn = _make_conn(insert_cur)
 
         with (
-            patch("core.db.get_connection", return_value=_conn_ctx(conn)),
-            patch("core.admin_api.write_audit_row") as mock_audit,
+            patch("core.db.get_connection", side_effect=_conn_factory(conn)),
+            patch("core.alert_definitions_api.write_audit_row") as mock_audit,
         ):
             resp = client.post(
                 "/api/alert-definitions",
@@ -173,8 +195,8 @@ class TestCreateDefinitionValid:
         conn = _make_conn(insert_cur)
 
         with (
-            patch("core.db.get_connection", return_value=_conn_ctx(conn)),
-            patch("core.admin_api.write_audit_row"),
+            patch("core.db.get_connection", side_effect=_conn_factory(conn)),
+            patch("core.alert_definitions_api.write_audit_row"),
         ):
             resp = client.post(
                 "/api/alert-definitions",
@@ -275,8 +297,8 @@ class TestCreateDefinitionUnknownMetric:
         conn = _make_conn(insert_cur)
 
         with (
-            patch("core.db.get_connection", return_value=_conn_ctx(conn)),
-            patch("core.admin_api.write_audit_row"),
+            patch("core.db.get_connection", side_effect=_conn_factory(conn)),
+            patch("core.alert_definitions_api.write_audit_row"),
         ):
             resp = client.post(
                 "/api/alert-definitions",
@@ -325,8 +347,8 @@ class TestToggleEnabled:
         conn = _make_conn(update_cur)
 
         with (
-            patch("core.db.get_connection", return_value=_conn_ctx(conn)),
-            patch("core.admin_api.write_audit_row") as mock_audit,
+            patch("core.db.get_connection", side_effect=_conn_factory(conn)),
+            patch("core.alert_definitions_api.write_audit_row") as mock_audit,
         ):
             resp = client.patch(
                 "/api/alert-definitions/alrt_TOG",
@@ -350,8 +372,8 @@ class TestToggleEnabled:
         conn = _make_conn(update_cur)
 
         with (
-            patch("core.db.get_connection", return_value=_conn_ctx(conn)),
-            patch("core.admin_api.write_audit_row"),
+            patch("core.db.get_connection", side_effect=_conn_factory(conn)),
+            patch("core.alert_definitions_api.write_audit_row"),
         ):
             resp = client.patch(
                 "/api/alert-definitions/alrt_NOTEXIST",
@@ -398,7 +420,7 @@ class TestListWithLastFiring:
         cur = _make_cursor(rows=[row], description=description)
         conn = _make_conn(cur)
 
-        with patch("core.db.get_connection", return_value=_conn_ctx(conn)):
+        with patch("core.db.get_connection", side_effect=_conn_factory(conn)):
             resp = client.get("/api/alert-definitions?project_id=proj1")
 
         assert resp.status_code == 200, resp.text
@@ -424,8 +446,8 @@ class TestListWithLastFiring:
         conn = _make_conn(del_cur)
 
         with (
-            patch("core.db.get_connection", return_value=_conn_ctx(conn)),
-            patch("core.admin_api.write_audit_row") as mock_audit,
+            patch("core.db.get_connection", side_effect=_conn_factory(conn)),
+            patch("core.alert_definitions_api.write_audit_row") as mock_audit,
         ):
             resp = client.delete("/api/alert-definitions/alrt_DEL")
 

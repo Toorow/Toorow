@@ -1,0 +1,143 @@
+version: 2
+
+# Epic 41 / Story 41.5 seed properties -- BOTH of this story's seeds.
+#
+# A NEW file rather than an edit to dbt/seeds/schema.yml or to 41.3's
+# dbt/seeds/schema_epic41.yml: dbt merges every YAML under seed-paths, and keeping each
+# story's entries in its own file is what keeps the "only NEW files" claim checkable with
+# `git diff --name-only`.
+
+seeds:
+  - name: fee_tax_revenue_scope
+    description: >
+      Story 41.5, a GOVERNED PRODUCTION SEED (the country_tax_defaults / C.3 pattern, not
+      a fixture). The declarative answer to "which metric of which connector is revenue,
+      on what tax basis, and where do I read its transaction count and its measured
+      fee?". It is what keeps ZERO CONNECTOR NAMES in either 41.5 model (AD-2 /
+      E41-NFR05), exactly as metric_source_priority.csv does for cross_source_revenue.
+
+      TWO ABSENCES ARE DELIBERATE AND MUST NOT BE "FIXED" BY ADDING A ROW:
+        * `conversions_value` has NO EMITTER. It is declared in dim_metric.csv and
+          money_metric_units.csv and no block of fact_daily_kpi.sql produces a single row
+          of it, so a scope row would be dead configuration that READS AS COVERAGE. The
+          day a connector wires it, ONE ROW HERE makes it work with no model change.
+        * `refunds` / `refund_amount` / `fees` are NOT revenue. The platform deliberately
+          keeps contra metrics as separate positive rows and never subtracts them
+          silently from the revenue line; netting them here would fork that decision.
+          `fees` enters this story ONLY as the MEASURED payment fee, read by name from
+          measured_fee_metric.
+
+      An EMPTY transaction_count_metric or measured_fee_metric means "this connector
+      offers none", which becomes a TYPED GAP the day a rule needs one -- never a
+      default and never an assumed value.
+
+      AI-63: this seed must be in story 24.4's per-org dbt run alongside the two models.
+      A missing seed is a compile failure for the WHOLE run, not just this module.
+    columns:
+      - name: canonical_metric
+        description: "The canonical metric name as it lands in fact_daily_kpi.metric."
+        tests: [not_null]
+      - name: connector
+        description: "The emitting connector, as it lands in fact_daily_kpi.connector."
+        tests: [not_null]
+      - name: revenue_role
+        description: "Only SALES may ever be a ROAS numerator (Epic 27 invariant 4)."
+        tests:
+          - not_null
+          - accepted_values:
+              name: fee_tax_revenue_scope_role_accepted
+              arguments:
+                values: ["SALES", "ATTRIBUTED", "PLAN"]
+      - name: landed_tax_posture
+        description: >
+          What the LANDED figure ALREADY CONTAINS -- proven from the shopify /
+          woocommerce / stripe / square manifests, not assumed. TAX_EXCLUSIVE has no row
+          today; it is in the vocabulary because a tax-exclusive store is a real,
+          near-term case and the model handles it symmetrically rather than being
+          retrofitted later.
+        tests:
+          - not_null
+          - accepted_values:
+              name: fee_tax_revenue_scope_posture_accepted
+              arguments:
+                values: ["TAX_INCLUSIVE", "TAX_EXCLUSIVE", "UNDECLARED"]
+      - name: source_field_note
+        description: "The manifest evidence for the posture, so a reader can verify the claim rather than trust it."
+
+  - name: epic41_revenue_fixture
+    description: >
+      Story 41.5 pinned-arithmetic fixture, scenarios R1..R14 (+R13b), namespaced
+      __epic41_revenue__ / __epic41_shop_a__ / __epic41_shop_b__ / __epic41_sdk_a__.
+      These keys can NEVER reach fact_daily_kpi (which UNIONs module STAGING, never
+      seeds), so the fixture cannot perturb a production total -- the same isolation
+      argument as epic41_cascade_fixture, and asserted directly by
+      test_epic41_revenue_totals_bit_identical.sql.
+
+      One row per (scenario, rule); the expected_* columns are CONSTANT across the rows
+      of a (scenario, date) pair, which is what lets a replay test aggregate a scenario
+      and compare once.
+
+      Every *_micros column holds canonical micros up to 2^53 and MUST therefore be
+      BIGINT: dbt-duckdb otherwise infers INT32 and fails loading a 13-digit value
+      (dbt/seeds/schema.yml lines 59-60).
+
+      THREE SCENARIOS ARE DOCUMENTED BUT NOT REACHABLE in the dev warehouse (R6, R8, R9),
+      because only shopify and stripe ship a DuckDB seed loader and both are
+      SALES / TAX_INCLUSIVE. That is a PRE-EXISTING gap (epic retro item C.9/7), it is
+      named in dbt/seeds/feetax/seed_fee_tax_revenue_mirror.py's header, and the
+      corresponding tests assert their invariants STRUCTURALLY rather than pretending to
+      falsify them.
+    config:
+      column_types:
+        landed_revenue_micros: INT64
+        rule_amount_micros: INT64
+        transaction_count: INT64
+        measured_fee_micros: INT64
+        expected_gross_ttc_micros: INT64
+        expected_net_ht_micros: INT64
+        expected_sales_tax_micros: INT64
+        expected_payment_fee_micros: INT64
+        expected_cost_ht_micros: INT64
+        expected_roas_ht_numer_micros: INT64
+        expected_roas_ht_denom_micros: INT64
+        expected_gross_margin_micros: INT64
+    columns:
+      - name: scenario
+        description: "Scenario key (R1..R14 of the story's E.1)."
+        tests: [not_null]
+      - name: project_id
+        description: "Namespaced validation project. The guard below is what makes 'the fixture cannot reach production' checkable rather than asserted."
+        tests:
+          - not_null
+          - accepted_values:
+              name: epic41_revenue_fixture_project_namespaced
+              arguments:
+                values: ["__epic41_revenue__"]
+      - name: connector
+        description: "Namespaced validation connector key."
+        tests:
+          - not_null
+          - accepted_values:
+              name: epic41_revenue_fixture_connector_namespaced
+              arguments:
+                values: ["__epic41_shop_a__", "__epic41_shop_b__", "__epic41_sdk_a__"]
+      - name: date
+        tests: [not_null]
+      - name: currency
+        tests: [not_null]
+      - name: landed_revenue_micros
+        description: "The landed figure in exact integer micros. ALWAYS populated, in the fixture as in the model."
+        tests: [not_null]
+      - name: expected_is_complete
+        description: >
+          TRUE | FALSE. Both warehouses type this seed column BOOLEAN from the CSV,
+          which is why the vocabulary below is unquoted; the `not_null` above is what
+          keeps a blank from ever reading as FALSE.
+        tests:
+          - not_null
+          - accepted_values:
+              name: epic41_revenue_fixture_expected_is_complete_accepted
+              arguments:
+                # quote: false -- BOOLEAN column, same class as the cascade fixture.
+                quote: false
+                values: ["true", "false"]

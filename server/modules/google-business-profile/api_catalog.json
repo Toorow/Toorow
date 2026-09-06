@@ -4,18 +4,8 @@
   "connector": "google-business-profile",
   "fields": [
     {
-      "description": "Date a Business Profile local post was published (localPost.createTime from the legacy v4 localPosts edge). Maps to canonical event_type social_post. label = localPost.summary. LIVE-GATED (v4 allowlist, 0-QPM default).",
+      "description": "Business Profile account id (accounts/{account_id}) owning the location. Resolved from the topology parent; the v4 reviews path needs the account+location pair.",
       "exposure": "exposed",
-      "field_id": "social_post",
-      "kind": "event",
-      "physical_type": "datetime",
-      "section": "EVENTS",
-      "source_field": "createTime",
-      "tier": "core"
-    },
-    {
-      "description": "Business Profile account id (accounts/{account_id}) owning the location. Structural; planned (not extracted into the daily fact by v1).",
-      "exposure": "planned",
       "field_id": "account_id",
       "kind": "dimension",
       "physical_type": "string",
@@ -24,8 +14,8 @@
       "tier": "standard"
     },
     {
-      "description": "Location average star rating (reviews.list aggregate). NON-ADDITIVE (an average -- never summed). Planned (v4-gated).",
-      "exposure": "planned",
+      "description": "Location average star rating (reviews.list aggregate). NON-ADDITIVE: a level read by last-value, never summed.",
+      "exposure": "exposed",
       "field_id": "average_rating",
       "kind": "metric",
       "physical_type": "decimal",
@@ -144,6 +134,16 @@
       "tier": "core"
     },
     {
+      "description": "True when the provider returned a threshold instead of a count. The flag that keeps a floor from being read as a measurement.",
+      "exposure": "exposed",
+      "field_id": "is_thresholded",
+      "kind": "dimension",
+      "physical_type": "boolean",
+      "section": "SEARCH KEYWORDS",
+      "source_field": "insightsValue",
+      "tier": "standard"
+    },
+    {
       "description": "The reporting entity: Business Profile location id (resource name locations/{location_id}). Stamped on every row; the Performance and Reviews endpoints are scoped by this id. Discovered via Account Management accounts.list -> Business Information accounts.locations.list.",
       "exposure": "exposed",
       "field_id": "location_id",
@@ -164,8 +164,18 @@
       "tier": "standard"
     },
     {
-      "description": "Review free-text body. Planned (v4-gated).",
-      "exposure": "planned",
+      "description": "Reporting month (YYYY-MM). The response carries no month, so it is stamped from the month REQUESTED: the connector asks one month at a time and the grain is observed rather than assumed.",
+      "exposure": "exposed",
+      "field_id": "month",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "SEARCH KEYWORDS",
+      "source_field": "monthlyRange",
+      "tier": "standard"
+    },
+    {
+      "description": "Review free-text body (nullable -- a rating without text is normal).",
+      "exposure": "exposed",
       "field_id": "review_comment",
       "kind": "dimension",
       "physical_type": "string",
@@ -174,8 +184,8 @@
       "tier": "standard"
     },
     {
-      "description": "Review creation timestamp (RFC 3339). Planned (v4-gated).",
-      "exposure": "planned",
+      "description": "Review creation timestamp (RFC 3339). The additive new_reviews count is derived from it.",
+      "exposure": "exposed",
       "field_id": "review_create_time",
       "kind": "dimension",
       "physical_type": "datetime",
@@ -184,8 +194,8 @@
       "tier": "standard"
     },
     {
-      "description": "Encrypted unique review id (legacy My Business API v4 accounts.locations.reviews.list). Planned (v4 allowlist-gated).",
-      "exposure": "planned",
+      "description": "Encrypted unique review id (legacy My Business API v4 accounts.locations.reviews.list). The supersede key of the reviews fact.",
+      "exposure": "exposed",
       "field_id": "review_id",
       "kind": "dimension",
       "physical_type": "string",
@@ -194,8 +204,8 @@
       "tier": "standard"
     },
     {
-      "description": "Owner reply text to the review (<=4096 bytes). Planned (v4-gated).",
-      "exposure": "planned",
+      "description": "Owner reply text to the review (<=4096 bytes, nullable).",
+      "exposure": "exposed",
       "field_id": "review_reply_comment",
       "kind": "dimension",
       "physical_type": "string",
@@ -204,18 +214,38 @@
       "tier": "standard"
     },
     {
-      "description": "Review star rating enum: STAR_RATING_UNSPECIFIED, ONE, TWO, THREE, FOUR, FIVE. Planned (v4-gated). The derived average rating is NON-ADDITIVE.",
-      "exposure": "planned",
-      "field_id": "review_star_rating",
+      "description": "Timestamp of the last edit to the owner reply (RFC 3339, nullable). Freshness of the response, not of the review.",
+      "exposure": "exposed",
+      "field_id": "review_reply_update_time",
       "kind": "dimension",
-      "physical_type": "string",
+      "physical_type": "datetime",
+      "section": "REVIEWS",
+      "source_field": "reviewReply.updateTime",
+      "tier": "standard"
+    },
+    {
+      "description": "Rating a reviewer gave, as a 1..5 LEVEL (v4 enum ONE..FIVE; the STAR_RATING_UNSPECIFIED sentinel lands NULL, never 0 -- 0 is not a value on this scale). NON-ADDITIVE: averaged, never summed.",
+      "exposure": "exposed",
+      "field_id": "review_star_rating",
+      "kind": "metric",
+      "physical_type": "integer",
       "section": "REVIEWS",
       "source_field": "starRating",
       "tier": "standard"
     },
     {
-      "description": "Reviewer display name (only when reviewer.isAnonymous=false). Planned (v4-gated).",
-      "exposure": "planned",
+      "description": "Timestamp of the last edit to the review (RFC 3339). Drives the supersede order so a re-pull keeps the freshest text of each review.",
+      "exposure": "exposed",
+      "field_id": "review_update_time",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "REVIEWS",
+      "source_field": "updateTime",
+      "tier": "standard"
+    },
+    {
+      "description": "Reviewer display name. PII -- persisted lean and NULLED when reviewer.isAnonymous is true; the reviewer photo URL is never persisted at all.",
+      "exposure": "exposed",
       "field_id": "reviewer_display_name",
       "kind": "dimension",
       "physical_type": "string",
@@ -224,8 +254,18 @@
       "tier": "standard"
     },
     {
-      "description": "A search term users typed to find the business (searchkeywords.impressions.monthly). MONTHLY granularity only -- a separate monthly fact, never merged with the daily metrics stream. Planned.",
-      "exposure": "planned",
+      "description": "Whether the reviewer asked to stay anonymous. Landed so the anonymisation is auditable rather than merely applied.",
+      "exposure": "exposed",
+      "field_id": "reviewer_is_anonymous",
+      "kind": "dimension",
+      "physical_type": "boolean",
+      "section": "REVIEWS",
+      "source_field": "reviewer.isAnonymous",
+      "tier": "standard"
+    },
+    {
+      "description": "A search term users typed to find the business (searchkeywords.impressions.monthly). MONTHLY granularity only -- a separate monthly fact, never merged with the daily metrics stream.",
+      "exposure": "exposed",
       "field_id": "search_keyword",
       "kind": "dimension",
       "physical_type": "string",
@@ -234,18 +274,38 @@
       "tier": "standard"
     },
     {
-      "description": "Monthly impression count for a search keyword. Union insightsValue.{value|threshold}: threshold = a floor for low-volume keywords (e.g. '<15') Google will not report exactly -- model as nullable/threshold-flagged. MONTHLY, additive within a month. Planned.",
-      "exposure": "planned",
+      "description": "Exact monthly impressions for a search keyword (insightsValue.value). Additive ACROSS KEYWORDS WITHIN A MONTH; the monthly grain is never merged into the daily fact. NULL when the keyword fell under the privacy floor -- read search_keyword_impressions_threshold then.",
+      "exposure": "exposed",
       "field_id": "search_keyword_impressions",
       "kind": "metric",
       "physical_type": "integer",
       "section": "SEARCH KEYWORDS",
-      "source_field": "insightsValue",
+      "source_field": "insightsValue.value",
       "tier": "standard"
     },
     {
-      "description": "Location total review count (reviews.list aggregate). Point-in-time count. Planned (v4-gated).",
-      "exposure": "planned",
+      "description": "Privacy FLOOR returned instead of an exact count for a low-volume keyword ('fewer than N'). NON-ADDITIVE by nature: summing floors produces a number that is neither a bound nor a count. Mutually exclusive with search_keyword_impressions.",
+      "exposure": "exposed",
+      "field_id": "search_keyword_impressions_threshold",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "SEARCH KEYWORDS",
+      "source_field": "insightsValue.threshold",
+      "tier": "standard"
+    },
+    {
+      "description": "Date a Business Profile local post was published (localPost.createTime, legacy v4 localPosts edge). Canonical event_type social_post; label = localPost.summary. Landed as a context_events pulse (value null), never a metric.",
+      "exposure": "exposed",
+      "field_id": "social_post",
+      "kind": "event",
+      "physical_type": "datetime",
+      "section": "LOCAL POSTS",
+      "source_field": "createTime",
+      "tier": "standard"
+    },
+    {
+      "description": "Location total review count (reviews.list aggregate). A LEVEL, not a flow: last-value, never summed.",
+      "exposure": "exposed",
       "field_id": "total_review_count",
       "kind": "metric",
       "physical_type": "integer",

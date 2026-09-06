@@ -6,7 +6,7 @@ sources:
       Immutable raw landing zone for generic tabular daily data (AD-7: append-only).
       Written by server/modules/generic/connector.py pull().
       Long-format: one row per (date x metric x dimension combo).
-    schema: main
+    schema: "{{ var('raw_schema', 'main') }}"  # 24.4 AC2: org_<wslug>_raw injected by orchestrator, 'main' without var (bit-identique)
     tables:
       - name: raw_generic_daily
         description: >

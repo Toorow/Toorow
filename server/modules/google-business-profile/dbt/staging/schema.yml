@@ -3,10 +3,22 @@ version: 2
 sources:
   - name: raw_gbp
     description: "Immutable raw landing zone for Google Business Profile performance data (AD-7: append-only)."
-    schema: main
+    schema: "{{ var('raw_schema', 'main') }}"  # 24.4 AC2: org_<wslug>_raw injected by orchestrator, 'main' without var (bit-identique)
     tables:
       - name: raw_gbp_location_daily
         description: "Raw GBP daily location metrics (wide, canonical column names). One row per location per date. Append-only (AD-7)."
+      - name: raw_gbp_review
+        description: >
+          Raw GBP review stream from the legacy v4 host. One row per review per pull --
+          the whole reachable stream is re-landed every run because reviews.list takes no
+          date filter and a review can be edited. Append-only (AD-7); stg_gbp_review keeps
+          one current row per review_id. Ratings are LEVELS, never summed.
+      - name: raw_gbp_search_keyword_monthly
+        description: >
+          Raw GBP monthly keyword impressions. One row per (month, location, keyword).
+          The month is stamped from the month REQUESTED (the response carries none).
+          search_keyword_impressions and search_keyword_impressions_threshold are mutually
+          exclusive; is_thresholded says which is real. Append-only (AD-7).
 
 models:
   - name: stg_gbp_location_daily
@@ -41,3 +53,85 @@ models:
           name: fact_gbp_location_daily_grain_unique
           arguments:
             column_name: "project_id || '|' || date || '|' || location_id"
+
+  - name: stg_gbp_review
+    description: >
+      Staging: GBP review stream. The upsert on reviewId lives HERE, not at landing:
+      QUALIFY keeps one current row per (project_id, review_id), ordered by
+      review_update_time then pull_id, so an edited review replaces its earlier text
+      without any UPDATE against the append-only raw zone (AD-7).
+      Grain: (project_id, review_id). review_star_rating / average_rating /
+      total_review_count are NON-ADDITIVE levels.
+    columns:
+      - name: review_id
+        tests: [not_null]
+      - name: location_id
+        tests: [not_null]
+      - name: pull_id
+        tests: [not_null]
+    tests:
+      - unique:
+          name: stg_gbp_review_grain_unique
+          arguments:
+            column_name: "project_id || '|' || review_id"
+
+  - name: stg_gbp_search_keyword_monthly
+    description: >
+      Staging: GBP monthly search keywords. QUALIFY supersede (AD-7): latest pull per
+      grain wins. Grain: (project_id, month, location_id, search_keyword).
+      search_keyword_impressions (exact) and search_keyword_impressions_threshold (a
+      privacy FLOOR) are mutually exclusive and never coalesced.
+    columns:
+      - name: month
+        tests: [not_null]
+      - name: location_id
+        tests: [not_null]
+      - name: search_keyword
+        tests: [not_null]
+      - name: pull_id
+        tests: [not_null]
+    tests:
+      - unique:
+          name: stg_gbp_search_keyword_monthly_grain_unique
+          arguments:
+            column_name: "project_id || '|' || month || '|' || location_id || '|' || search_keyword"
+
+  - name: fact_gbp_review_rollup
+    description: >
+      Reviews mart, per location per day. new_reviews is the ONLY additive column;
+      new_reviews_avg_star_rating is an average of 1..5 levels, and
+      location_average_rating / location_total_review_count are the provider's CURRENT
+      levels carried as-of location_rating_observed_at -- none of the three may be summed.
+      A day with no new review produces no row (gap-filling would be a claim).
+      Grain: (project_id, location_id, review_date).
+    columns:
+      - name: review_date
+        tests: [not_null]
+      - name: location_id
+        tests: [not_null]
+      - name: new_reviews
+        tests: [not_null]
+    tests:
+      - unique:
+          name: fact_gbp_review_rollup_grain_unique
+          arguments:
+            column_name: "project_id || '|' || CAST(review_date AS VARCHAR) || '|' || location_id"
+
+  - name: fact_gbp_search_keyword_monthly
+    description: >
+      Monthly keyword mart. Never joined to the daily fact: the source has no daily
+      keyword breakdown, so a daily figure would be invented. is_thresholded is carried,
+      not resolved -- a thresholded row holds a FLOOR, not a count.
+      Grain: (project_id, month, location_id, search_keyword).
+    columns:
+      - name: month
+        tests: [not_null]
+      - name: location_id
+        tests: [not_null]
+      - name: search_keyword
+        tests: [not_null]
+    tests:
+      - unique:
+          name: fact_gbp_search_keyword_monthly_grain_unique
+          arguments:
+            column_name: "project_id || '|' || month || '|' || location_id || '|' || search_keyword"

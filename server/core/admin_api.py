@@ -30,60 +30,57 @@ Windows/CI note (L-3): all log strings use ASCII-safe characters only.
 
 from __future__ import annotations
 
-import html as html_module
 import json
 import logging
 import os
 import re
-import time
-from datetime import date, datetime, timedelta, timezone
-from urllib.parse import urlencode
+from functools import lru_cache
 
 from starlette.requests import Request
-from starlette.responses import JSONResponse, RedirectResponse, Response
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Route, Router
 
-from core import nango_client
+from core.ai_paths_api import AI_PATH_ROUTES
+
+# AD-43 : ici un prefixe EST un sujet -- la regle dit de lire, pas que tout
+# prefixe ment.
+# AD-43 : six sujets de plus. `/internal` en est un a lui seul -- son
+# autorisation n'est pas celle des portes humaines.
+# Story 75-4: the AI settings of a Project and of an Organization.
+from core.ai_settings_api import AI_SETTINGS_ROUTES as _AI_SETTINGS_ROUTES
+from core.alert_definitions_api import (
+    ALERT_DEFINITIONS_ROUTES_1,
+)
+from core.alert_destinations_api import (
+    ALERT_DESTINATIONS_ROUTES_1,
+)
+from core.analyze_artifacts_api import ROUTES as _ANALYZE_ARTIFACT_ROUTES
+from core.analyze_workbench_api import ANALYZE_WORKBENCH_ROUTES
+from core.answerable_topics_api import answerable_topic_routes
 from core.audit import (
-    ACTION_ACCOUNT_ERASED,
-    ACTION_ACCOUNT_EXPOSED,
-    ACTION_ACCOUNT_GRANT_REVOKED,
-    ACTION_ALERT_DEF_CREATED,
-    ACTION_ALERT_DEF_DELETED,
-    ACTION_ALERT_DEF_UPDATED,
-    ACTION_CONNECTION_CREATED,
-    ACTION_CONNECTION_REVOKED,
-    ACTION_CONTEXT_EVENT_CREATED,
     ACTION_CROSS_SCOPE_ATTEMPT,
-    ACTION_DATASET_ACCESS_GRANTED,
-    ACTION_DATASET_ACCESS_REVOKED,
-    ACTION_DATASTREAM_CREATED,
-    ACTION_DATASTREAM_DELETED,
-    ACTION_DATASTREAM_RUN,
     ACTION_DATASTREAM_UPDATED,
-    ACTION_FLUX_LINKED,
-    ACTION_FLUX_UNLINKED,
-    ACTION_KEY_CREATED,
-    ACTION_KEY_DELETED,
-    ACTION_KEY_ROTATED,
-    ACTION_NOTEBOOK_DELETED,
-    ACTION_ORG_CREATED,
-    ACTION_ORG_DELETED,
-    ACTION_ORG_MEMBER_ADDED,
-    ACTION_ORG_MEMBER_REMOVED,
-    ACTION_ORG_MEMBER_UPDATED,
-    ACTION_ORG_SCHEMAS_DROPPED,
-    ACTION_ORG_SCHEMAS_PROVISIONED,
-    ACTION_ORG_UPDATED,
-    ACTION_PROJECT_ARCHIVED,
-    ACTION_PROJECT_CREATED,
-    ACTION_PROJECT_GEOGRAPHIC_POSTURE_UPDATED,
-    insert_audit_row,
     write_audit_row,
 )
 from core.browser_oidc import BROWSER_AUTH_ROUTES as _BROWSER_AUTH_ROUTES
+from core.business_taxonomy_api import (
+    BUSINESS_TAXONOMY_ROUTES as _BUSINESS_TAXONOMY_ROUTES,
+)
+
+# Story 75-1: an exploration calculation proposed, reviewed, prepared as a change-set.
+from core.calculated_field_proposals_api import calculated_field_proposal_routes
 from core.cards_api import CARDS_ROUTES as _CARDS_ROUTES
+from core.catalog_api import (
+    CATALOG_ROUTES_1,
+    CATALOG_ROUTES_2,
+)
+from core.chart_templates_api import chart_template_routes
+from core.cleanup_rules_api import CLEANUP_RULE_ROUTES as _CLEANUP_RULE_ROUTES
 from core.conflict_resolutions_api import CONFLICT_RESOLUTION_ROUTES as _CONFLICT_RESOLUTION_ROUTES
+from core.connections_api import (
+    CONNECTIONS_ROUTES_1,
+    CONNECTIONS_ROUTES_2,
+)
 
 # Story 38.5: connector activation/deactivation (org-owner) + health layering.
 from core.connector_activation_api import (
@@ -105,25 +102,98 @@ from core.connector_verification_api import (
     CONNECTOR_VERIFICATION_ROUTES as _CONNECTOR_VERIFICATION_ROUTES,
 )
 from core.context_api import CONTEXT_ROUTES as _CONTEXT_ROUTES
-from core.country_vocabulary import CountryVocabularyError, get_country_vocabulary
+from core.context_events_api import CONTEXT_EVENTS_ROUTES_1
+from core.controls_quality_api import CONTROLS_QUALITY_ROUTES as _CONTROLS_QUALITY_ROUTES
+from core.credential_accounts_api import (
+    CREDENTIAL_ACCOUNTS_ROUTES_1,
+)
 from core.daily_insights_api import DAILY_INSIGHTS_ROUTES as _DAILY_INSIGHTS_ROUTES
+from core.data_surface_api import DATA_SURFACE_ROUTES
 from core.datamodel_api import DATAMODEL_ROUTES as _DATAMODEL_ROUTES
+
+# AD-43 : les quatre sujets de `/api/organizations` ont leur module.
+from core.dataset_access_api import (
+    DATASET_ACCESS_ROUTES_1,
+    # Story 62.3: the SAME saga, scoped to the published marts of one Project.
+    PROJECT_DATASET_ACCESS_ROUTES,
+)
+
+# AD-40: the managed-feed import surface left this file. Two collections, in the
+# order their routes were declared here -- ledger first, then upload/contract/sync.
+from core.datastream_collection_api import (
+    DATASTREAM_COLLECTION_ROUTES,
+    DATASTREAM_SCHEDULE_ROUTES,
+    # RE-EXPORTED ON PURPOSE, and this line is why it is not "an unused import".
+    # `REFETCH_ROUTE_PATH` is THE address of the re-collection, declared once so a
+    # test asserts the mounted path against the constant the router uses rather
+    # than against a second copy typed into the test. Callers already know it at
+    # `core.admin_api`; the extraction moved where it lives, not where it is read.
+    REFETCH_ROUTE_PATH,  # noqa: F401
+)
+
+# Story 58.1: a Datastream read by DAY, project-scoped in the path.
+from core.datastream_daily_breakdown_api import datastream_daily_breakdown_routes
+from core.datastream_executions_api import DATASTREAM_EXECUTION_ROUTES
+from core.datastream_mapping_api import DATASTREAM_MAPPING_ROUTES
+from core.datastream_matches_api import (
+    DATASTREAM_MATCH_ROUTES as _DATASTREAM_MATCH_ROUTES,
+)
+from core.datastream_preconfiguration_api import datastream_preconfiguration_routes
+
+# Story 63.2: the one route of the product that is called in a loop.
+from core.datastream_progress_api import datastream_progress_routes
+from core.datastream_recovery_api import DATASTREAM_RECOVERY_ROUTES
+
+# AD-43 : les quatre sujets de `/api/projects` ont leur module. Un prefixe
+# d'URL n'est pas une responsabilite -- l'ordre de resolution, lui, l'est.
+from core.datastream_sample_api import (
+    DATASTREAM_SAMPLE_ROUTES_1,
+)
+from core.datastream_setup_templates_api import datastream_setup_templates_routes
+from core.datastream_workbench_api import datastream_workbench_routes
+from core.datastreams_api import (
+    DATASTREAM_OBJECT_ROUTES,
+    DATASTREAM_OBJECT_TAIL_ROUTES,
+)
 
 # Story 27.9: inverse lineage ("what feeds this dimension?") + client-owned labels.
 from core.dimension_lineage_api import (
     DIMENSION_LINEAGE_ROUTES as _DIMENSION_LINEAGE_ROUTES,
 )
-from core.dq_api import DQ_ROUTES as _DQ_ROUTES
-from core.flows_api import FLOWS_ROUTES as _FLOWS_ROUTES
-from core.geographic_reporting import (
-    GeographicPosture,
-    InvalidGeographicPosture,
-    fetch_project_geographic_posture,
-    market_diff,
-    merge_geographic_patch,
-    normalize_geographic_posture,
-    persist_project_geographic_posture,
+from core.dossier_api import DOSSIER_ROUTES as _DOSSIER_ROUTES
+from core.entity_context_api import ENTITY_CONTEXT_ROUTES as _ENTITY_CONTEXT_ROUTES
+from core.entity_detail_gaps_api import entity_detail_gaps_routes
+from core.entity_types_api import ENTITY_TYPE_ROUTES as _ENTITY_TYPE_ROUTES
+from core.entry_api import (
+    ENTRY_ROUTES_1,
+    ENTRY_ROUTES_2,
 )
+from core.evaluation_runs_api import evaluation_run_routes
+from core.event_stream_arming_api import event_stream_arming_routes
+
+# Story 38.14: layered connector health + the per-attachment import inbox. Until
+# these mounted, inbound receipts and scan verdicts were WRITTEN AND READ BY
+# NOBODY -- the only reader anywhere was a join from the import ledger, which by
+# construction could only show the deliveries that had already succeeded.
+from core.facts_api import FACT_ROUTES as _FACT_ROUTES
+from core.feedback_regression_api import feedback_regression_routes
+from core.feedback_review_api import feedback_review_routes
+from core.file_import_api import FILE_IMPORT_ROUTES
+from core.file_source_template_api import file_source_template_routes
+from core.first_value_api import (
+    FIRST_VALUE_ROUTES_1,
+)
+from core.flows_api import FLOWS_ROUTES as _FLOWS_ROUTES
+from core.flux_projects_api import FLUX_PROJECTS_ROUTES_1
+from core.getting_started_api import getting_started_routes
+
+# Epic 51: product evaluation and improvement evidence. Four owners, four route
+# lists, mounted here because a handler no route exposes is not delivered.
+from core.golden_questions_api import golden_question_routes
+from core.google_oauth_api import (
+    GOOGLE_OAUTH_ROUTES_1,
+)
+from core.governance_surface_api import GOVERNANCE_SURFACE_ROUTES
 
 # Story 38.6: import template catalog + inbound managed-feed Datastream creation.
 from core.import_templates_api import (
@@ -134,28 +204,151 @@ from core.import_templates_api import (
 from core.inbound_credentials_api import (
     INBOUND_CREDENTIAL_ROUTES as _INBOUND_CREDENTIAL_ROUTES,
 )
+from core.inbound_health_api import (
+    INBOUND_HEALTH_ROUTES as _INBOUND_HEALTH_ROUTES,
+)
+
+# Story 38.18: reprocess a retained raw file without asking the sender to resend.
+from core.inbound_reprocess_api import (
+    INBOUND_REPROCESS_ROUTES as _INBOUND_REPROCESS_ROUTES,
+)
+from core.instance_claim_api import (
+    # Le nom du cookie d'echange est encore lu par le reste d'admin_api ; son
+    # proprietaire est le sujet, et ce module l'importe deja pour ses routes.
+    INSTANCE_CLAIM_ROUTES_1,
+)
+from core.internal_api import (
+    INTERNAL_ROUTES_1,
+)
+from core.invitations_api import (
+    INVITATIONS_ARRIVAL_ROUTES,
+    INVITATIONS_ROUTES_1,
+    INVITATIONS_ROUTES_2,
+)
+from core.jobs_api import JOBS_ROUTES_1
+from core.language_bindings_api import (
+    LANGUAGE_BINDINGS_ROUTES as _LANGUAGE_BINDINGS_ROUTES,
+)
+from core.legacy_evidence_api import LEGACY_EVIDENCE_ROUTES
+from core.managed_feed_imports_api import MANAGED_FEED_IMPORT_ROUTES
+
+# Story 62.3: what a published mart promises an outside reader.
+from core.mart_contract import MART_CONTRACT_ROUTES as _MART_CONTRACT_ROUTES
+from core.mcp_hosts_api import (
+    MCP_HOSTS_ROUTES_1,
+)
+from core.mdm_canonical_fields_api import (
+    MDM_CANONICAL_FIELD_ROUTES as _MDM_CANONICAL_FIELD_ROUTES,
+)
+from core.mdm_common_keys_api import MDM_COMMON_KEY_ROUTES as _MDM_COMMON_KEY_ROUTES
+from core.me_api import (
+    ME_ROUTES_1,
+    ME_ROUTES_2,
+)
 from core.mediaplan_api import MEDIAPLAN_ROUTES as _MEDIAPLAN_ROUTES
+from core.metric_dimensions_api import (
+    MDM_METRIC_DIMENSION_ROUTES as _MDM_METRIC_DIMENSION_ROUTES,
+)
+from core.metric_grain_api import metric_grain_routes
 from core.metric_semantics_api import METRIC_SEMANTICS_ROUTES as _METRIC_SEMANTICS_ROUTES
-from core.money_api import MONEY_ROUTES as _MONEY_ROUTES
+from core.mmm_export_api import MMM_EXPORT_ROUTES as _MMM_EXPORT_ROUTES
+from core.multi_source_api import MULTI_SOURCE_ROUTES as _MULTI_SOURCE_ROUTES
+from core.notebooks_api import (
+    NOTEBOOKS_ROUTES_1,
+    NOTEBOOKS_ROUTES_2,
+)
+
+# AD-43 : la logique metier a quitte ce fichier de routes (critere 4). Ce qui
+# reste ici de non monte est le JOINT d'authentification et de portee, et lui
+# seul -- autoriser EST le travail d'un module de routes.
+from core.org_lifecycle import (
+    _would_orphan_last_owner,
+)
+from core.org_members_api import (
+    # Deux noms encore lus par le reste d'admin_api ; leur proprietaire est le
+    # sujet, et ce module l'importe deja pour ses routes -- pas de cycle.
+    ORG_MEMBERS_ROUTES_1,
+)
 
 # Story 34.3: org-plan control surface routes (isolated import to keep the edit
 # surgical -- appended as its own single-line block, not spliced into the sorted
 # route-import group above).
 from core.org_plan_api import ORG_PLAN_ROUTES as _ORG_PLAN_ROUTES
-from core.overview import OVERVIEW_ROUTES as _OVERVIEW_ROUTES
+from core.organizations_api import (
+    ORGANIZATIONS_ROUTES_1,
+    ORGANIZATIONS_ROUTES_2,
+)
+from core.pivot_api import PIVOT_ROUTES as _PIVOT_ROUTES
+from core.planned_actual_export_api import (
+    PLANNED_ACTUAL_EXPORT_ROUTES as _PLANNED_ACTUAL_EXPORT_ROUTES,
+)
+from core.platform_clocks_api import PLATFORM_CLOCK_ROUTES as _PLATFORM_CLOCK_ROUTES
+from core.platform_maintenance_api import (
+    PLATFORM_MAINTENANCE_ROUTES_1,
+    PLATFORM_MAINTENANCE_ROUTES_2,
+    PLATFORM_MAINTENANCE_ROUTES_3,
+)
+
+# Story 75-6: presentation extends -- a display block on the scope cascade.
+from core.presentation_extends_api import (
+    PRESENTATION_EXTENDS_ROUTES as _PRESENTATION_EXTENDS_ROUTES,
+)
+from core.project_access_api import project_access_routes
+from core.project_connections_api import (
+    PROJECT_CONNECTIONS_ROUTES_1,
+    PROJECT_CONNECTIONS_ROUTES_2,
+)
+from core.project_overview_api import project_overview_routes
+from core.project_settings_api import project_settings_routes
+from core.projects_api import (
+    # Le motif de slug a suivi son proprietaire ; `_create_org` le lit encore,
+    # et ce module importe deja `projects_api` pour ses routes -- pas de cycle.
+    PROJECTS_ROUTES_1,
+)
+from core.publication_reviews_api import PUBLICATION_REVIEWS_ROUTES_1
+from core.query_specs_api import query_spec_routes
+from core.reference_vocabulary_api import COUNTRY_VOCABULARY_ROUTES
+from core.reference_vocabulary_api import (
+    REFERENCE_VOCABULARY_ROUTES as _REFERENCE_VOCABULARY_ROUTES,
+)
+from core.render_shares_api import render_share_routes, share_notebook_gone
+from core.render_shares_console_api import render_share_console_routes
 from core.rendus_api import RENDUS_ROUTES as _RENDUS_ROUTES
 from core.report_chain import REPORT_CHAIN_ROUTES as _REPORT_CHAIN_ROUTES
+from core.rule_versions_api import RULE_VERSION_ROUTES as _RULE_VERSION_ROUTES
 from core.schema_context_api import SCHEMA_CONTEXT_ROUTES as _SCHEMA_CONTEXT_ROUTES
-from core.timezone_api import TIMEZONE_ROUTES as _TIMEZONE_ROUTES
+
+# Story 49.3: the Semantic Model change-set lifecycle. Reads stay on the
+# Governance surface above; this is the only consequential command family.
+from core.semantic_model_api import SEMANTIC_MODEL_ROUTES
+from core.source_delegations_api import (
+    SOURCE_DELEGATIONS_ROUTES_1,
+    SOURCE_DELEGATIONS_ROUTES_2,
+)
+from core.trace_observation_api import trace_observation_routes
+from core.unresolved_values_api import (
+    UNRESOLVED_VALUES_ROUTES as _UNRESOLVED_VALUES_ROUTES,
+)
+from core.value_mapping_api import VALUE_MAPPING_ROUTES as _VALUE_MAPPING_ROUTES
+from core.visualization_specs_api import visualization_spec_routes
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12). Celles-ci n'etaient declarees NULLE PART : la valeur
+# etait retapee en dur ici, parce que la liste centrale de `core/audit.py`
+# etait trop loin pour valoir le detour. Mesure ce jour-la sur le journal
+# vivant : 29 des 64 actions reellement ecrites -- 45 % -- etaient dans ce
+# cas, et rien ne pouvait distinguer une action d'une faute de frappe.
+
+
+# AD-43 : `org_lifecycle` l'ecrit aussi depuis que l'effacement d'organisation
+# a quitte ce fichier. Deux ecrivains -> le centre, comme AD-42 le prescrit.
+
+
 
 logger = logging.getLogger(__name__)
 
-# AI-18: per-connection rate limit on /refresh-health (Story 3.3, AC10).
-# Maps connection_ref_id -> monotonic timestamp of last successful refresh.
-# TODO(Phase-B): move rate-limit state to Postgres for multi-replica safety.
-_refresh_health_last: dict[str, float] = {}
 
-_REFRESH_HEALTH_RATE_LIMIT_SECONDS = 30
 
 
 # ---------------------------------------------------------------------------
@@ -163,11 +356,6 @@ _REFRESH_HEALTH_RATE_LIMIT_SECONDS = 30
 # ---------------------------------------------------------------------------
 
 
-def _mint_conn_id() -> str:
-    """Mint a new ULID with 'conn_' prefix."""
-    from ulid import ULID  # noqa: PLC0415
-
-    return f"conn_{ULID()}"
 
 
 # ---------------------------------------------------------------------------
@@ -175,33 +363,130 @@ def _mint_conn_id() -> str:
 # ---------------------------------------------------------------------------
 
 
-def _canonical_identity_enabled() -> bool:
-    return os.environ.get("TOOROW_CANONICAL_IDENTITY_ENABLED", "0").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-    }
-
-
 async def _check_canonical_principal(request: Request):
-    from core.api_auth import authenticate_canonical_principal  # noqa: PLC0415
-    from core.db import get_connection  # noqa: PLC0415
+    # ONE door (2026-08-30): this used to open its own connection and then ask
+    # who was calling, so the entry, claim, invitation and project-settings
+    # routes kept paying a connection per anonymous probe -- and answered 500
+    # with the database down -- after `authenticate_api_request` had stopped.
+    from core.api_auth import resolve_request_principal  # noqa: PLC0415
 
-    with get_connection() as conn:
-        ok, principal = await authenticate_canonical_principal(request, conn)
-        if ok:
-            conn.commit()
-        return ok, principal
+    return await resolve_request_principal(request)
 
 
 async def _check_auth(request: Request) -> tuple[bool, str]:
-    """Real token verification via the shared api_auth layer (review-2-6 F-01)."""
-    if _canonical_identity_enabled():
-        ok, principal = await _check_canonical_principal(request)
-        return ok, principal.person_id if ok and principal is not None else ""
-    from core.api_auth import authenticate_api_request
+    """Real token verification via the shared api_auth layer (review-2-6 F-01).
+
+    ONE DOOR. This forwards to `api_auth.authenticate_api_request` and adds
+    nothing, because there is nothing left to add: that function resolves the
+    canonical ``person_<ULID>`` itself since the identity flag was removed
+    (2026-08-24), which is the only key `app.org_members` and the strict access
+    seam are keyed on.
+
+    It did not always forward. While the flag existed this helper tested it
+    FIRST and, when set, called `_check_canonical_principal` directly -- jumping
+    over `authenticate_api_request` and, with it, over the `TOOROW_AUTH_MODE=
+    disabled` short-circuit that function owns. Two consequences, both
+    invisible while every environment that mattered ran the legacy path: the
+    documented anonymous local-development mode answered 401 through this helper
+    while answering "anonymous" through the other, and
+    `_strict_project_capability_allowed`'s explicit `disabled` + `anonymous`
+    branch below became unreachable. Restoring the single door restores both.
+    """
+    from core.api_auth import authenticate_api_request  # noqa: PLC0415
 
     return await authenticate_api_request(request)
+
+
+def _strict_project_capability_allowed(
+    conn,
+    *,
+    identity: str,
+    project_id: str,
+    minimum_capability: str,
+    hold_access: bool = False,
+    include_archived_project: bool = False,
+) -> bool:
+    """Authorize one app project surface through the org-rooted strict seam.
+
+    Auth-disabled local mode deliberately preserves the historical anonymous
+    developer workflow. Every authenticated deployment uses the canonical
+    explicit-grant resolver and therefore has no default-open membership path.
+
+    The bypass grants every CAPABILITY; it does not conjure the project. A
+    project id that names no active row is refused in both modes, so a typo
+    answers 404 in `make dev` exactly as it does under OAuth instead of the
+    200-with-an-empty-list that made an unknown project look like a new one
+    (live finding C1).
+    """
+    auth_mode = os.environ.get("TOOROW_AUTH_MODE", "disabled").strip().lower()
+    if auth_mode == "disabled" and identity == "anonymous":
+        from core.project_access import project_exists  # noqa: PLC0415
+
+        return project_exists(project_id, conn, include_archived=include_archived_project)
+
+    from core.project_access import resolve_strict_resource_access  # noqa: PLC0415
+
+    return resolve_strict_resource_access(
+        identity,
+        conn,
+        project_id=project_id,
+        minimum_capability=minimum_capability,
+        auth_mode=auth_mode,
+        hold_access=hold_access,
+        include_archived_project=include_archived_project,
+    ).allowed
+
+
+def _project_not_found_response() -> JSONResponse:
+    """Return the shared non-disclosing project authorization refusal."""
+    return JSONResponse(
+        {"code": "not_found", "message": "Project not found"},
+        status_code=404,
+    )
+
+
+def _refuse_unless_project_allowed(
+    identity: str,
+    project_id: str,
+    minimum_capability: str,
+    surface: str,
+    include_archived_project: bool = False,
+) -> JSONResponse | None:
+    """Return a 404 unless *identity* holds *minimum_capability* on *project_id*.
+
+    AI-171. Six handlers repeated the same eight lines around
+    ``_strict_project_capability_allowed`` -- open a connection, ask, translate a
+    refusal AND a lookup failure into the same non-disclosing 404. Six copies is
+    how five of them came to be written without the gate at all: the motif was
+    long enough to skip. Written once, it is one call to add.
+
+    Existence-hiding is deliberate and matches ``_list_feedback``: a project the
+    caller may not see must not be distinguishable from one that does not exist.
+    A failure to REACH the access seam is refused too -- an authorization that
+    cannot be evaluated is not an authorization granted.
+    """
+    try:
+        from core.db import get_connection  # noqa: PLC0415
+
+        with get_connection() as conn:
+            allowed = _strict_project_capability_allowed(
+                conn,
+                identity=identity,
+                project_id=project_id,
+                minimum_capability=minimum_capability,
+                include_archived_project=include_archived_project,
+            )
+    except Exception as exc:  # noqa: BLE001 -- refuse on an unreachable seam
+        logger.warning(
+            "admin_api: %s access unavailable project=%s: %s",
+            surface,
+            project_id,
+            type(exc).__name__,
+        )
+        return _project_not_found_response()
+    if not allowed:
+        return _project_not_found_response()
+    return None
 
 
 async def _check_invitation_identity(request: Request) -> tuple[bool, str]:
@@ -212,13 +497,16 @@ async def _check_invitation_identity(request: Request) -> tuple[bool, str]:
 
 
 async def _check_invitation_principal(request: Request):
-    if _canonical_identity_enabled():
-        ok, principal = await _check_canonical_principal(request)
-        if not ok or principal is None or not principal.verified_email:
-            return False, "", None
-        return True, principal.verified_email, principal
-    ok, email = await _check_invitation_identity(request)
-    return ok, email, None
+    """Resolve the invited EMAIL and the canonical person behind it, together.
+
+    The third member of the tuple is never None for an authorized caller: an
+    invitation transition binds a person, and binding it on the email alone is
+    the legacy shape this seam no longer has.
+    """
+    ok, principal = await _check_canonical_principal(request)
+    if not ok or principal is None or not principal.verified_email:
+        return False, "", None
+    return True, principal.verified_email, principal
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +516,7 @@ async def _check_invitation_principal(request: Request):
 # is "the admin" and, until now, could PATCH / SCHEDULE / EXPORT ANY project's
 # notebook by id (review-epic-6 F-2). This helper closes that gap on every write
 # path: it fetches the notebook's project_id, verifies caller access via the
-# per-identity ACL (core.project_access + app.project_members, default-open for
+# per-identity ACL (active Organization membership plus exact resource grants;
 # single-tenant), and — critically — treats a scope violation as 404 so the
 # endpoint does not even confirm the notebook's existence to a non-member. Every
 # rejection is AUDITED (ACTION_CROSS_SCOPE_ATTEMPT) so refused access is
@@ -241,76 +529,6 @@ async def _check_invitation_principal(request: Request):
 # ---------------------------------------------------------------------------
 
 
-def _enforce_notebook_project_scope(
-    notebook_project_id: str,
-    identity: str,
-    notebook_id: str,
-    conn,
-    scope_hint: str = "",
-    action: str = "",
-) -> Response | None:
-    """Return a 404 Response if the caller may not touch this notebook, else None.
-
-    Args:
-        notebook_project_id: The notebook's owning project_id (already fetched).
-        identity:            Caller subject from the verified Bearer token.
-        notebook_id:         The notebook id (for the audit metadata).
-        conn:                Open psycopg connection (reused; no new connection).
-        scope_hint:          Explicit project_id the caller CLAIMS to be acting
-                             within (from ?project_id= or body["project_id"]).
-                             Empty = no explicit claim; ACL still applies.
-        action:              Human label of the attempted operation (audit meta).
-
-    A refusal ALWAYS writes an ACTION_CROSS_SCOPE_ATTEMPT audit row before
-    returning the 404. Returns None (access granted) otherwise.
-    """
-    from core.project_access import identity_has_project_access  # noqa: PLC0415
-
-    denied = False
-    reason = ""
-
-    # 1. Explicit scope claim mismatch -> refuse (caller claims a project that is
-    #    not the notebook's owner).
-    if scope_hint and scope_hint != notebook_project_id:
-        denied = True
-        reason = "scope_mismatch"
-    # 2. Per-identity ACL (default-open until the project has members).
-    elif not identity_has_project_access(notebook_project_id, identity, conn):
-        denied = True
-        reason = "not_a_member"
-
-    if not denied:
-        return None
-
-    # Audit the refused access (best-effort; never blocks the 404).
-    write_audit_row(
-        identity=identity or "anonymous",
-        action=ACTION_CROSS_SCOPE_ATTEMPT,
-        provider_account="",
-        connection_ref="",
-        metadata={
-            "notebook_id": notebook_id,
-            "notebook_project_id": notebook_project_id,
-            "claimed_project_id": scope_hint or None,
-            "reason": reason,
-            "operation": action or "notebook_access",
-        },
-    )
-    logger.warning(
-        "admin_api: cross_scope_attempt identity=%s notebook=%s owner_project=%s "
-        "claimed=%s reason=%s op=%s",
-        identity,
-        notebook_id,
-        notebook_project_id,
-        scope_hint or "-",
-        reason,
-        action or "-",
-    )
-    # 404 (not 403): do not disclose that the notebook exists to a non-member.
-    return JSONResponse(
-        {"code": "not_found", "message": "Notebook not found"},
-        status_code=404,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -318,668 +536,28 @@ def _enforce_notebook_project_scope(
 # ---------------------------------------------------------------------------
 
 
-async def _list_connections(request: Request) -> Response:
-    """List provider accounts usable by the requested project organization."""
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    project_id = (request.query_params.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse(
-            {"code": "missing_project", "message": "project_id is required"},
-            status_code=400,
-        )
-
-    try:
-        from core.db import get_connection, set_local_access_context  # noqa: PLC0415
-        from core.project_access import (  # noqa: PLC0415
-            epic36_production_access_enabled,
-            identity_can_access_project_in_org,
-            resolve_strict_resource_access,
-        )
-
-        with get_connection() as conn:
-            strict_gate = epic36_production_access_enabled()
-            if strict_gate:
-                set_local_access_context(conn, identity, enforce_epic36=True)
-                allowed = resolve_strict_resource_access(
-                    identity, conn, project_id=project_id, minimum_capability="view"
-                ).allowed
-            else:
-                allowed = identity_can_access_project_in_org(
-                    project_id, identity or "anonymous", conn
-                )
-            if not allowed:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Project not found"},
-                    status_code=404 if strict_gate else 403,
-                )
-
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    WITH viewer AS (
-                        SELECT org_id
-                        FROM app.projects
-                        WHERE id = %s AND status = 'active'
-                    )
-                    SELECT
-                        r.id,
-                        r.provider,
-                        r.nango_connection_id,
-                        r.project_id,
-                        r.created_at,
-                        r.status,
-                        r.auth_path,
-                        r.owner_org_id,
-                        r.token_expiry,
-                        o.name AS owner_org_name,
-                        v.org_id AS viewer_org_id,
-                        s.account_label,
-                        s.state AS account_state,
-                        h.status AS health_status,
-                        h.last_checked_at,
-                        h.last_fetched_at,
-                        COUNT(ds.id) FILTER (WHERE ds.enabled = TRUE)
-                            AS active_datastream_count,
-                        EXISTS (
-                            SELECT 1
-                            FROM app.credential_account_grants g
-                            WHERE g.credential_id = r.id
-                              AND g.status = 'active'
-                              AND g.grantee_org_id = v.org_id
-                              AND g.external_account_id = s.account_id
-                        ) AS provided_to_viewer,
-                        EXISTS (
-                            SELECT 1
-                            FROM app.credential_account_grants g
-                            WHERE g.credential_id = r.id
-                              AND g.status = 'active'
-                        ) AS has_outgoing_grant,
-                        EXISTS (
-                            SELECT 1
-                            FROM app.org_members m
-                            WHERE m.org_id = r.owner_org_id
-                              AND m.identity = %s
-                              AND m.status = 'active'
-                              AND m.role IN ('owner', 'admin')
-                        ) AS caller_manages_owner,
-                        r.enabled AS connection_enabled
-                    FROM app.connection_ref r
-                    CROSS JOIN viewer v
-                    LEFT JOIN app.connection_health h ON h.connection_ref_id = r.id
-                    LEFT JOIN app.connection_account_scope s ON s.connection_ref_id = r.id
-                    LEFT JOIN app.datastreams ds
-                      ON ds.connection_ref_id = r.id AND ds.org_id = v.org_id AND ds.project_id = %s
-                    LEFT JOIN app.organizations o ON o.id = r.owner_org_id
-                    WHERE r.owner_org_id = v.org_id
-                       OR EXISTS (
-                            SELECT 1
-                            FROM app.credential_account_grants g
-                            WHERE g.credential_id = r.id
-                              AND g.status = 'active'
-                              AND g.grantee_org_id = v.org_id
-                              AND g.external_account_id = s.account_id
-                       )
-                    GROUP BY r.id, r.provider, r.nango_connection_id, r.project_id,
-                             r.created_at, r.status, r.auth_path, r.owner_org_id,
-                             r.token_expiry, o.name, v.org_id, s.account_id,
-                             s.account_label, s.state, h.status, h.last_checked_at,
-                             h.last_fetched_at
-                    ORDER BY r.created_at DESC
-                    """,
-                    (project_id, identity or "anonymous", project_id),
-                )
-                cols = [desc[0] for desc in cur.description]
-                rows = [dict(zip(cols, row)) for row in cur.fetchall()]
-    except Exception as exc:
-        logger.error("admin_api: list_connections db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": "Provider accounts are temporarily unavailable"},
-            status_code=503,
-        )
-
-    timestamp_columns = {
-        "created_at", "last_checked_at", "last_fetched_at", "token_expiry"
-    }
-    connections: list[dict] = []
-    for ref in rows:
-        for column in timestamp_columns:
-            value = ref.get(column)
-            if value is not None and hasattr(value, "isoformat"):
-                ref[column] = value.isoformat()
-        owner_org_id = ref.get("owner_org_id")
-        viewer_org_id = ref.get("viewer_org_id")
-        provided = bool(ref.get("provided_to_viewer"))
-        exposure = (
-            "provided_by_org"
-            if provided and owner_org_id != viewer_org_id
-            else "shared_with_org"
-            if ref.get("has_outgoing_grant")
-            else "owned"
-        )
-        health_status = ref.get("health_status")
-        if ref.get("status") == "revoked":
-            health_status = "revoked"
-        health = None
-        if health_status is not None:
-            health = {
-                "status": health_status,
-                "last_checked_at": ref.get("last_checked_at"),
-                "last_fetched_at": ref.get("last_fetched_at"),
-            }
-        connections.append(
-            {
-                "id": ref["id"],
-                "nango_connection_id": ref["nango_connection_id"],
-                "provider": ref["provider"],
-                "project_id": project_id,
-                "created_at": ref["created_at"],
-                "status": ref.get("status"),
-                "enabled": ref.get("connection_enabled") is not False,
-                "auth_path": ref.get("auth_path"),
-                "health": health,
-                "active_datastream_count": int(ref.get("active_datastream_count") or 0),
-                "owner_org_id": owner_org_id,
-                "owner_org_name": ref.get("owner_org_name"),
-                "token_expiry": ref.get("token_expiry"),
-                "account_label": ref.get("account_label"),
-                "account_state": ref.get("account_state"),
-                "exposure": exposure,
-                "can_manage": bool(ref.get("caller_manages_owner")) and not provided,
-            }
-        )
-
-    return JSONResponse({"connections": connections})
 
 
-def _resolve_connection_create_scope(conn, project_id: str, identity: str):
-    """Return ``(owner_org_id, strict_gate)`` only for project managers."""
-    from core.db import set_local_access_context  # noqa: PLC0415
-    from core.project_access import (  # noqa: PLC0415
-        epic36_production_access_enabled,
-        identity_can_manage_org,
-        resolve_strict_resource_access,
-    )
-
-    strict_gate = epic36_production_access_enabled()
-    if strict_gate:
-        set_local_access_context(conn, identity, enforce_epic36=True)
-        allowed = resolve_strict_resource_access(
-            identity,
-            conn,
-            project_id=project_id,
-            minimum_capability="manage",
-        ).allowed
-    else:
-        allowed = True
-
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT org_id
-            FROM app.projects
-            WHERE id = %s AND status = 'active'
-            """,
-            (project_id,),
-        )
-        row = cur.fetchone()
-    owner_org_id = row[0] if row else None
-    if not owner_org_id:
-        return None, strict_gate
-    if not strict_gate:
-        allowed = identity_can_manage_org(owner_org_id, identity, conn)
-    return (owner_org_id if allowed else None), strict_gate
 
 
-async def _create_connection(request: Request) -> Response:
-    """POST /api/connections -- register a new connection_ref row.
-    Request body (JSON):
-      {"nango_connection_id": str, "provider": str, "project_id": str}
-
-    Response (201):
-      {"id", "nango_connection_id", "provider", "project_id", "created_at"}
-
-    Writes an audit row (ACTION_CONNECTION_CREATED) after successful DB insert.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    # Parse request body
-    try:
-        body_bytes = await request.body()
-        body: dict = json.loads(body_bytes)
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
-            status_code=400,
-        )
-
-    nango_connection_id = (body.get("nango_connection_id") or "").strip()
-    provider = (body.get("provider") or "").strip()
-    # Project scope is explicit; empty and legacy placeholder ids fail closed.
-    project_id = (body.get("project_id") or "").strip()
-
-    if not nango_connection_id:
-        return JSONResponse(
-            {"code": "missing_field", "message": "nango_connection_id is required"},
-            status_code=400,
-        )
-    if not provider:
-        return JSONResponse(
-            {"code": "missing_field", "message": "provider is required"},
-            status_code=400,
-        )
-    if not project_id:
-        return JSONResponse(
-            {"code": "missing_field", "message": "project_id is required"},
-            status_code=400,
-        )
-    if project_id == "default":
-        return JSONResponse(
-            {"code": "invalid_project", "message": "Select a real project."},
-            status_code=400,
-        )
-
-    # review-2-4 F-03: bound and shape-check inputs. provider must be a valid
-    # module/integration key (kebab-case, same charset as manifest names);
-    # ids are capped to keep the table clean.
-    if len(nango_connection_id) > 256 or len(project_id) > 256:
-        return JSONResponse(
-            {"code": "invalid_field", "message": "field exceeds 256 characters"},
-            status_code=400,
-        )
-    if len(provider) > 64 or not re.fullmatch(r"[a-z0-9-]+", provider):
-        return JSONResponse(
-            {"code": "invalid_field", "message": "provider must match [a-z0-9-]+"},
-            status_code=400,
-        )
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            owner_org_id, strict_gate = _resolve_connection_create_scope(
-                conn, project_id, identity or "anonymous"
-            )
-    except Exception as exc:
-        logger.error("admin_api: connection_scope_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": "Cannot verify project access"},
-            status_code=503,
-        )
-    if owner_org_id is None:
-        return JSONResponse(
-            {"code": "not_found", "message": "Project not found"},
-            status_code=404 if strict_gate else 403,
-        )
-
-    # review-2-4 F-01: the popup-closed signal does NOT mean OAuth succeeded.
-    # Refuse to record a connection Nango does not know about (prevents
-    # orphan connection_ref rows when the user aborts the flow).
-    try:
-        nango_conns = await nango_client._list_connections_async()
-        known_ids = {c.get("connection_id") for c in nango_conns}
-        if nango_connection_id not in known_ids:
-            return JSONResponse(
-                {
-                    "code": "unknown_nango_connection",
-                    "message": "Nango has no such connection; complete the OAuth flow first",
-                },
-                status_code=409,
-            )
-    except Exception as exc:
-        logger.error("admin_api: nango_verify_error: %s", exc)
-        return JSONResponse(
-            {"code": "nango_unreachable", "message": "Cannot verify connection with Nango"},
-            status_code=503,
-        )
-
-    # Mint ULID
-    conn_id = _mint_conn_id()
-
-    # Insert only after re-checking the same manage scope in the write transaction.
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            owner_org_id, strict_gate = _resolve_connection_create_scope(
-                conn, project_id, identity or "anonymous"
-            )
-            if owner_org_id is None:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Project not found"},
-                    status_code=404 if strict_gate else 403,
-                )
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO app.connection_ref
-                        (id, provider, nango_connection_id, project_id,
-                         owner_org_id, owner_identity)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    RETURNING id, provider, nango_connection_id, project_id, created_at
-                    """,
-                    (
-                        conn_id,
-                        provider,
-                        nango_connection_id,
-                        project_id,
-                        owner_org_id,
-                        identity or "anonymous",
-                    ),
-                )
-                row = cur.fetchone()
-                if row is None:  # pragma: no cover
-                    raise RuntimeError("INSERT RETURNING returned no row")
-                cols = [desc[0] for desc in cur.description]
-                created_record: dict = {}
-                for col, val in zip(cols, row):
-                    if col == "created_at" and val is not None:
-                        created_record[col] = val.isoformat()
-                    else:
-                        created_record[col] = val
-            conn.commit()
-
-    except Exception as exc:
-        logger.error("admin_api: db_insert_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    # Write audit row (never raises -- AC6 in audit.py)
-    write_audit_row(
-        identity=identity,
-        action=ACTION_CONNECTION_CREATED,
-        provider_account=provider,
-        connection_ref=conn_id,
-    )
-
-    return JSONResponse(created_record, status_code=201)
 
 
-async def _refresh_health(request: Request) -> Response:
-    """POST /api/connections/<id>/refresh-health -- on-demand health poll (AC4).
-
-    Reads the connection_ref row for <id>, calls nango_client.poll_connection_health()
-    immediately (NOT the cached value), upserts connection_health, and returns the
-    updated health state.
-
-    Response (200):
-      {"id": ..., "health": {"status": ..., "last_checked_at": ..., "last_fetched_at": ...}}
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    conn_ref_id = request.path_params.get("id", "")
-    if not conn_ref_id:
-        return JSONResponse(
-            {"code": "missing_id", "message": "Connection ref id is required"},
-            status_code=400,
-        )
-
-    # AI-18: per-connection rate limit (Story 3.3, AC10).
-    # Reject if the same connection was refreshed within the last 30 seconds.
-    now_mono = time.monotonic()
-    last = _refresh_health_last.get(conn_ref_id, 0.0)
-    elapsed = now_mono - last
-    if elapsed < _REFRESH_HEALTH_RATE_LIMIT_SECONDS:
-        retry_after = int(_REFRESH_HEALTH_RATE_LIMIT_SECONDS - elapsed)
-        return JSONResponse(
-            {"code": "rate_limited", "retry_after": retry_after},
-            status_code=429,
-        )
-
-    # Fetch connection_ref to get nango_connection_id + provider
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            _scope_ref, scope_error = _resolve_conn_project_scoped(conn_ref_id, identity, conn)
-            if scope_error is not None:
-                return scope_error
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id, nango_connection_id, provider
-                    FROM app.connection_ref
-                    WHERE id = %s
-                    """,
-                    (conn_ref_id,),
-                )
-                row = cur.fetchone()
-    except Exception as exc:
-        logger.error("admin_api: refresh_health db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    if row is None:
-        return JSONResponse(
-            {"code": "not_found", "message": f"Connection ref '{conn_ref_id}' not found"},
-            status_code=404,
-        )
-
-    nango_connection_id, provider = row[1], row[2]
-
-    # Poll Nango (on-demand -- this is the explicit refresh, not the background poller)
-    try:
-        health = await nango_client._poll_connection_health_async(
-            nango_connection_id, provider=provider
-        )
-    except Exception as exc:
-        logger.error("admin_api: refresh_health nango_error: %s", exc)
-        return JSONResponse(
-            {"code": "nango_error", "message": f"Nango unavailable: {exc}"},
-            status_code=502,
-        )
-
-    now = datetime.now(tz=timezone.utc)
-
-    # Upsert into connection_health
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO app.connection_health
-                        (connection_ref_id, status, last_checked_at, last_fetched_at)
-                    VALUES (%(id)s, %(status)s, %(last_checked_at)s, %(last_fetched_at)s)
-                    ON CONFLICT (connection_ref_id) DO UPDATE
-                        SET status          = EXCLUDED.status,
-                            last_checked_at = EXCLUDED.last_checked_at,
-                            last_fetched_at = EXCLUDED.last_fetched_at
-                    """,
-                    {
-                        "id": conn_ref_id,
-                        "status": health.status,
-                        "last_checked_at": now,
-                        "last_fetched_at": health.last_fetched_at,
-                    },
-                )
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: refresh_health upsert_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error on health upsert: {exc}"},
-            status_code=500,
-        )
-
-    # AI-18: record successful refresh timestamp for per-connection rate limiting.
-    _refresh_health_last[conn_ref_id] = time.monotonic()
-    # review-3-2 F-3: bound the in-memory rate-limit map -- drop entries older
-    # than 10 minutes whenever it grows past 1000 keys.
-    if len(_refresh_health_last) > 1000:
-        _cutoff = time.monotonic() - 600
-        for _k in [k for k, v in _refresh_health_last.items() if v < _cutoff]:
-            _refresh_health_last.pop(_k, None)
-
-    health_payload = {
-        "status": health.status,
-        "last_checked_at": now.isoformat(),
-        "last_fetched_at": health.last_fetched_at.isoformat() if health.last_fetched_at else None,
-    }
-
-    return JSONResponse({"id": conn_ref_id, "health": health_payload})
 
 
-# ISO-8601 date pattern (YYYY-MM-DD) — used by _trigger_pull to validate body dates
-_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
-async def _trigger_pull(request: Request) -> Response:
-    """POST /api/connections/{id}/pull -- enqueue a pull job (Story 3.2, AC4).
 
-    Rewired from Story 2.7 (synchronous pull) to Story 3.2 (queue dispatch).
-    The pull_id is now minted inside enqueue_pull() (AD-7). The audit row
-    (ACTION_PULL_TRIGGERED) is written inside enqueue_pull() -- not here.
 
-    Request body (JSON, optional):
-        {"date_from": "YYYY-MM-DD", "date_to": "YYYY-MM-DD"}
-    Defaults to a 7-day window ending yesterday if omitted.
 
-    Response (202 Accepted):
-        {"job_id", "pull_id", "state": "queued"}
 
-    Error responses:
-        401 -- unauthorized
-        404 -- connection_ref not found
-        422 -- invalid date format in body
-        500 -- DB or enqueue error
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
 
-    conn_ref_id = request.path_params.get("id", "")
-    if not conn_ref_id:
-        return JSONResponse(
-            {"code": "missing_id", "message": "Connection ref id is required"},
-            status_code=400,
-        )
 
-    # Parse optional JSON body for date_from / date_to
-    date_from: str
-    date_to: str
-    try:
-        body_bytes = await request.body()
-        body: dict = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception:
-        body = {}
 
-    default_date_to = (date.today() - timedelta(days=1)).isoformat()
-    default_date_from = (date.today() - timedelta(days=7)).isoformat()
 
-    date_to = (body.get("date_to") or default_date_to).strip()
-    date_from = (body.get("date_from") or default_date_from).strip()
 
-    if not _ISO_DATE_RE.match(date_from):
-        return JSONResponse(
-            {
-                "code": "invalid_date",
-                "message": f"date_from must be YYYY-MM-DD, got: {date_from!r}",
-            },
-            status_code=422,
-        )
-    if not _ISO_DATE_RE.match(date_to):
-        return JSONResponse(
-            {
-                "code": "invalid_date",
-                "message": f"date_to must be YYYY-MM-DD, got: {date_to!r}",
-            },
-            status_code=422,
-        )
 
-    # Verify the credential exists AND that the caller may use it.
-    #
-    # L'autorisation se resout sur l'ORGANISATION proprietaire, jamais sur la
-    # personne qui a branche l'acces : c'est precisement ce qui permet a un
-    # collegue de rafraichir un report sans posseder lui-meme l'acces a la
-    # source. Un controle `appelant == owner_identity` bloquerait la sync des
-    # que le proprietaire n'est pas la.
-    #
-    # Avant ce garde-fou, ce handler ne verifiait QUE l'existence : n'importe
-    # quelle identite authentifiee pouvait declencher une sync sur n'importe
-    # quel credential, y compris celui d'une autre organisation.
-    try:
-        from core.db import get_connection  # noqa: PLC0415
 
-        with get_connection() as conn:
-            denied = _enforce_credential_org_read(conn_ref_id, identity, conn)
-            if denied is not None:
-                write_audit_row(
-                    identity=identity or "anonymous",
-                    action=ACTION_CROSS_SCOPE_ATTEMPT,
-                    provider_account="",
-                    connection_ref=conn_ref_id,
-                    metadata={
-                        "reason": "credential_not_in_caller_org",
-                        "operation": "trigger_pull",
-                    },
-                )
-                return denied
-    except Exception as exc:
-        logger.error("admin_api: trigger_pull db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
 
-    # Enqueue the pull job (AD-7: pull_id minted inside enqueue_pull)
-    try:
-        from core.queue import enqueue_pull  # noqa: PLC0415
-
-        result = enqueue_pull(
-            conn_ref_id,
-            date_from,
-            date_to,
-            requested_by=identity,
-        )
-    except Exception as exc:
-        logger.error("admin_api: trigger_pull enqueue_error: %s", exc)
-        return JSONResponse(
-            {"code": "enqueue_error", "message": f"Failed to enqueue pull job: {exc}"},
-            status_code=500,
-        )
-
-    # Story 25.5 review F-1: a topology-declaring provider without a selected
-    # + verified reporting account returns a refusal dict (no job_id/pull_id).
-    # Surface it as an actionable 409 instead of KeyError-ing into a 500.
-    if result.get("state") == "refused":
-        return JSONResponse(
-            {
-                "code": result.get("code", "account_not_selected"),
-                "message": result.get("message", "Select and verify a reporting account first."),
-            },
-            status_code=409,
-        )
-
-    return JSONResponse(
-        {
-            "job_id": result["job_id"],
-            "pull_id": result["pull_id"],
-            "state": result["state"],
-        },
-        status_code=202,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -992,656 +570,197 @@ async def _trigger_pull(request: Request) -> Response:
 # write_audit_row's free-form action column -- no migration needed).
 # ---------------------------------------------------------------------------
 
-ACTION_ACCOUNT_SELECTED = "connection.account_selected"
 
 
-def _resolve_conn_project_scoped(conn_ref_id: str, identity: str, conn):
-    """Resolve a connection_ref's project_id and enforce AD-5 access on *conn*.
 
-    Returns a tuple ``(scope_ref, error_response)``:
-      * scope_ref: {"project_id", "provider"} when the connection exists AND the
-        caller has project access; None otherwise.
-      * error_response: a JSONResponse (404 unknown / 403 cross-scope) when the
-        access fails; None on success.
-    A cross-scope refusal writes an ACTION_CROSS_SCOPE_ATTEMPT audit row (AD-8).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def _google_oidc_caller_is_ours(request: Request) -> bool:
+    """True when the caller presents a Google OIDC id token minted for this service.
+
+    Story 56.7. Cloud Scheduler and Cloud Tasks can attach one; a Pub/Sub push
+    subscription can attach ONLY this -- it has no way to send `X-Internal-Auth`.
+    So the substrate's third component would have been unreachable without it.
+
+    What is verified, and why each part matters:
+      * the signature, against Google's keys -- a token nobody could forge;
+      * the audience, against `INTERNAL_OIDC_AUDIENCE` (defaulting to the service
+        URL Cloud Tasks already targets) -- a token minted for ANOTHER service
+        must not open this one;
+      * the issuer, which the library pins to Google.
+
+    Absent or invalid means "not this mechanism", never "denied": the caller
+    still gets the shared-secret and user-token paths. A malformed token is not
+    an attack to report, it is a request that authenticates some other way.
     """
-    from core.db import set_local_access_context  # noqa: PLC0415
-    from core.project_access import (  # noqa: PLC0415
-        epic36_production_access_enabled,
-        identity_has_project_access,
-        resolve_strict_resource_access,
+    header = request.headers.get("authorization", "")
+    if not header.lower().startswith("bearer "):
+        return False
+    audience = (
+        os.environ.get("INTERNAL_OIDC_AUDIENCE", "").strip()
+        or os.environ.get("CLOUD_TASKS_WORKER_URL", "").strip()
     )
-
-    strict_gate = epic36_production_access_enabled()
-    if strict_gate:
-        set_local_access_context(conn, identity, enforce_epic36=True)
-
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT project_id, provider FROM app.connection_ref WHERE id = %s",
-            (conn_ref_id,),
-        )
-        row = cur.fetchone()
-    if row is None:
-        return None, JSONResponse(
-            {"code": "not_found", "message": f"Connection ref '{conn_ref_id}' not found"},
-            status_code=404,
-        )
-    project_id, provider = row[0], row[1]
-    if strict_gate:
-        allowed = resolve_strict_resource_access(
-            identity, conn, project_id=project_id, minimum_capability="view"
-        ).allowed
-    else:
-        allowed = identity_has_project_access(project_id, identity or "anonymous", conn)
-    if not allowed:
-        write_audit_row(
-            identity=identity or "anonymous",
-            action=ACTION_CROSS_SCOPE_ATTEMPT,
-            provider_account=provider or "",
-            connection_ref=conn_ref_id,
-            metadata={
-                "project_id": project_id,
-                "operation": "account_topology",
-                "reason": "not_a_member",
-            },
-        )
-        if strict_gate:
-            return None, JSONResponse(
-                {"code": "not_found", "message": "Connection not found"},
-                status_code=404,
-            )
-        return None, JSONResponse(
-            {"code": "forbidden", "message": "Access denied: not a member of this project."},
-            status_code=403,
-        )
-    return {"project_id": project_id, "provider": provider}, None
-
-
-async def _list_connection_accounts(request: Request) -> Response:
-    """GET /api/connections/{id}/accounts -- discover the reachable accounts (AC3).
-
-    Runs the module's discovery callable (token via the existing connection path)
-    and returns the account>property hierarchy. 409 when the module declares no
-    account topology; 404 unknown connection; 403 cross-project (AD-5).
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    conn_ref_id = request.path_params.get("id", "")
-    if not conn_ref_id:
-        return JSONResponse(
-            {"code": "missing_id", "message": "Connection ref id is required"},
-            status_code=400,
-        )
-
+    if not audience:
+        return False
     try:
-        from core import account_topology  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
+        from google.auth.transport import requests as google_requests  # noqa: PLC0415
+        from google.oauth2 import id_token as google_id_token  # noqa: PLC0415
 
-        with get_connection() as conn:
-            scope_ref, err = _resolve_conn_project_scoped(conn_ref_id, identity, conn)
-            if err is not None:
-                return err
-            discovered = account_topology.discover_accounts(conn_ref_id)
-    except account_topology.NoTopologyError:
-        return JSONResponse(
-            {
-                "code": "no_account_topology",
-                "message": "This connector does not declare an account topology.",
-            },
-            status_code=409,
+        claims = google_id_token.verify_oauth2_token(
+            header.split(" ", 1)[1].strip(),
+            google_requests.Request(),
+            audience=audience,
         )
-    except account_topology.ConnectionNotFound:
-        return JSONResponse(
-            {"code": "not_found", "message": f"Connection ref '{conn_ref_id}' not found"},
-            status_code=404,
-        )
-    except Exception as exc:  # noqa: BLE001
-        # Typed connector errors (auth_expired, etc.) and transport failures land
-        # here; expose the class so the shell can render a reconnect affordance.
-        error_class = getattr(exc, "error_class", None)
-        logger.error(
-            "admin_api: list_accounts discovery_error conn=%s class=%s: %s",
-            conn_ref_id,
-            error_class,
-            type(exc).__name__,
-        )
-        return JSONResponse(
-            {
-                "code": error_class or "discovery_error",
-                "message": "Account discovery failed.",
-            },
-            status_code=502,
-        )
+    except Exception:  # noqa: BLE001 -- see docstring: not this mechanism
+        return False
 
-    return JSONResponse(
-        {
-            "connection_ref_id": conn_ref_id,
-            "topology": discovered.get("topology"),
-            "accounts": discovered.get("accounts"),
-        }
-    )
-
-
-async def _select_connection_account(request: Request) -> Response:
-    """POST /api/connections/{id}/account {account_id} -- select + verify (AC3).
-
-    Verifies access to the requested account (minimal read via the discovery
-    path), persists the scope with state='ready' + verified_at, writes an audit
-    row, then enqueues a bounded TRIAL pull (last 3 days) via enqueue_pull.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    conn_ref_id = request.path_params.get("id", "")
-    if not conn_ref_id:
-        return JSONResponse(
-            {"code": "missing_id", "message": "Connection ref id is required"},
-            status_code=400,
-        )
-
-    try:
-        body_bytes = await request.body()
-        body: dict = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception:
-        body = {}
-    account_id = (body.get("account_id") or "").strip()
-    if not account_id:
-        return JSONResponse(
-            {"code": "missing_field", "message": "account_id is required"},
-            status_code=422,
-        )
-
-    try:
-        from core import account_topology  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            scope_ref, err = _resolve_conn_project_scoped(conn_ref_id, identity, conn)
-            if err is not None:
-                return err
-            scope = account_topology.verify_and_select_account(
-                conn_ref_id, account_id, selected_by=identity or "anonymous"
-            )
-    except account_topology.NoTopologyError:
-        return JSONResponse(
-            {
-                "code": "no_account_topology",
-                "message": "This connector does not declare an account topology.",
-            },
-            status_code=409,
-        )
-    except account_topology.ConnectionNotFound:
-        return JSONResponse(
-            {"code": "not_found", "message": f"Connection ref '{conn_ref_id}' not found"},
-            status_code=404,
-        )
-    except account_topology.AccountNotReachable:
-        return JSONResponse(
-            {
-                "code": "account_not_reachable",
-                "message": "The selected account is not reachable by this connection.",
-            },
-            status_code=422,
-        )
-    except Exception as exc:  # noqa: BLE001
-        error_class = getattr(exc, "error_class", None)
-        logger.error(
-            "admin_api: select_account error conn=%s class=%s: %s",
-            conn_ref_id,
-            error_class,
-            type(exc).__name__,
-        )
-        return JSONResponse(
-            {
-                "code": error_class or "select_account_error",
-                "message": "Account selection failed.",
-            },
-            status_code=502,
-        )
-
-    # AD-8/AD-14: audit the selection (best-effort; never blocks the response).
-    write_audit_row(
-        identity=identity or "anonymous",
-        action=ACTION_ACCOUNT_SELECTED,
-        provider_account=scope_ref.get("provider") if scope_ref else "",
-        connection_ref=conn_ref_id,
-        metadata={
-            "account_id": account_id,
-            "account_label": scope.get("account_label"),
-            "state": scope.get("state"),
-        },
-    )
-
-    # Bounded TRIAL pull (last 3 days) via the EXISTING queue path.
-    trial: dict = {}
-    try:
-        from core.account_topology import enqueue_trial_pull  # noqa: PLC0415
-
-        trial = enqueue_trial_pull(conn_ref_id, requested_by=identity or "anonymous")
-    except Exception as exc:  # noqa: BLE001
-        # Selection succeeded and is persisted; a trial-enqueue hiccup is not fatal.
-        logger.warning("admin_api: select_account trial_enqueue_failed: %s", exc)
-        trial = {"state": "trial_enqueue_failed"}
-
-    return JSONResponse(
-        {
-            "connection_ref_id": conn_ref_id,
-            "scope": {
-                "account_id": scope.get("account_id"),
-                "account_label": scope.get("account_label"),
-                "state": scope.get("state"),
-                "verified_at": scope.get("verified_at"),
-            },
-            "trial": trial,
-        },
-        status_code=201,
-    )
-
-
-async def _backfill_connection(request: Request) -> Response:
-    """POST /api/connections/{id}/backfill {days} -- windowed backfill (AC3).
-
-    Validates 1..365, splits into <=31-day windows, enqueues one job per window
-    (existing dedup applies), and returns the window list. NEVER auto-triggered.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    conn_ref_id = request.path_params.get("id", "")
-    if not conn_ref_id:
-        return JSONResponse(
-            {"code": "missing_id", "message": "Connection ref id is required"},
-            status_code=400,
-        )
-
-    try:
-        body_bytes = await request.body()
-        body: dict = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception:
-        body = {}
-
-    try:
-        from core import account_topology  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        # Validate days BEFORE any enqueue (AC3: 1..365).
-        days = account_topology.validate_backfill_days(body.get("days"))
-
-        with get_connection() as conn:
-            _scope_ref, err = _resolve_conn_project_scoped(conn_ref_id, identity, conn)
-        if err is not None:
-            return err
-
-        windows = account_topology.enqueue_backfill(
-            conn_ref_id, days, requested_by=identity or "anonymous"
-        )
-    except account_topology.BackfillDaysInvalid:
-        return JSONResponse(
-            {
-                "code": "invalid_days",
-                "message": "days must be an integer in [1, 365].",
-            },
-            status_code=422,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.error("admin_api: backfill error conn=%s: %s", conn_ref_id, type(exc).__name__)
-        return JSONResponse(
-            {"code": "backfill_error", "message": "Backfill enqueue failed."},
-            status_code=500,
-        )
-
-    return JSONResponse(
-        {
-            "connection_ref_id": conn_ref_id,
-            "days": days,
-            "windows": windows,
-        },
-        status_code=202,
-    )
-
-
-async def _list_jobs(request: Request) -> Response:
-    """GET /api/jobs -- list pull jobs with optional state and connection_ref_id filters.
-
-    Story 3.4 (AC6): surfaces dead-letter jobs for visibility.
-    Future admin UI panels should use this endpoint for the dead-letter queue view.
-
-    Query params (all optional):
-        state              filter by job state (e.g. "dead_letter", "queued", "running")
-        connection_ref_id  filter by connection (conn_ ULID)
-
-    Response (200):
-        {"jobs": [{id, pull_id, connection_ref_id, date_from, date_to, state,
-                   requested_by, error_detail, attempt_count,
-                   enqueued_at, started_at, completed_at}, ...]}
-        All timestamps as ISO-8601 strings. Maximum 200 rows, newest first.
-
-    Error responses:
-        401 -- unauthorized
-        500 -- DB error
-    """
-    authorized, _identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    # Validate state param against known enum (hardening: reject unknowns with 400).
-    _VALID_JOB_STATES = {"queued", "running", "done", "failed", "dead_letter"}
-    state_filter = request.query_params.get("state") or None
-    if state_filter is not None and state_filter not in _VALID_JOB_STATES:
-        valid_list = ", ".join(sorted(_VALID_JOB_STATES))
-        return JSONResponse(
-            {
-                "code": "invalid_param",
-                "message": (
-                    f"Valeur de 'state' invalide : '{state_filter}'. "
-                    f"Valeurs valides : {valid_list}."
-                ),
-            },
-            status_code=400,
-        )
-    conn_ref_filter = request.query_params.get("connection_ref_id") or None
-    if conn_ref_filter is not None and len(conn_ref_filter) > 256:
-        return JSONResponse(
-            {
-                "code": "invalid_param",
-                "message": "Le parametre 'connection_ref_id' ne peut depasser 256 caracteres.",
-            },
-            status_code=400,
-        )
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                # Build parameterised query with optional filters
-                params: list = []
-                sql = """
-                    SELECT id, pull_id, connection_ref_id, date_from, date_to,
-                           state, requested_by, error_detail, attempt_count,
-                           enqueued_at, started_at, completed_at
-                    FROM app.pull_jobs
-                    WHERE 1=1
-                """
-                if state_filter is not None:
-                    sql += " AND state = %s"
-                    params.append(state_filter)
-                if conn_ref_filter is not None:
-                    sql += " AND connection_ref_id = %s"
-                    params.append(conn_ref_filter)
-                sql += " ORDER BY enqueued_at DESC LIMIT 200"
-                cur.execute(sql, params)
-                cols = [desc[0] for desc in cur.description]
-                _TS_COLS = {"enqueued_at", "started_at", "completed_at"}
-                jobs = []
-                for row in cur.fetchall():
-                    record: dict = {}
-                    for col, val in zip(cols, row):
-                        if col in _TS_COLS and val is not None:
-                            record[col] = val.isoformat()
-                        elif col in ("date_from", "date_to") and val is not None:
-                            record[col] = str(val)
-                        else:
-                            record[col] = val
-                    jobs.append(record)
-    except Exception as exc:
-        logger.error("admin_api: list_jobs db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    return JSONResponse({"jobs": jobs})
-
-
-async def _check_internal_auth(request: Request) -> tuple[bool, Response | None]:
-    """Env-gated header guard for /internal/* endpoints (Phase-A scaffold).
-
-    When INTERNAL_ENDPOINTS_REQUIRE_HEADER is set (non-empty), the request MUST
-    carry header X-Internal-Auth equal to that value; otherwise 403 is returned
-    and an audit row is written.
-
-    When the env var is unset (default), returns (True, None) -- current behavior
-    preserved so existing callers are unaffected.
-
-    Phase B: replace this check with Cloud Scheduler OIDC audience validation.
-    The env var will be retired; remove this function and its callsites at that time.
-    """
-    required_secret = os.environ.get("INTERNAL_ENDPOINTS_REQUIRE_HEADER", "")
-    if not required_secret:
-        # Env var not set -- Phase-A default, allow through.
-        return True, None
-
-    presented = request.headers.get("x-internal-auth", "")
-    if presented != required_secret:
+    # An identity Google vouches for is not automatically OURS. When the expected
+    # service account is declared, a token from any other Google principal --
+    # including another customer's -- is refused.
+    expected = os.environ.get("INTERNAL_OIDC_SERVICE_ACCOUNT", "").strip()
+    if expected and claims.get("email") != expected:
         logger.warning(
-            "admin_api: internal_auth_rejected path=%s -- missing or wrong X-Internal-Auth",
+            "admin_api: oidc_wrong_principal path=%s email=%s",
+            request.url.path,
+            claims.get("email"),
+        )
+        return False
+    return True
+
+
+async def _authorize_internal(request: Request) -> Response | None:
+    """Authorize a platform-to-platform call. Returns None when authorized.
+
+    STORY 56.5, AND IT FIXES A CONTRADICTION THAT WOULD HAVE 401'd EVERY TASK.
+    The internal endpoints used to require BOTH the shared-secret header AND
+    ``_check_auth`` -- a user Bearer token. Cloud Scheduler and Cloud Tasks do
+    not carry one: they are the platform calling itself, not a person. So the
+    two mechanisms are alternatives, not a conjunction:
+
+      * the shared secret matches -> authorized, this IS the platform;
+      * otherwise -> a human may still call it with a valid Bearer token, which
+        is how these endpoints are exercised by hand.
+
+    FAIL-CLOSED WHERE IT MATTERS. Under QUEUE_BACKEND=cloud_tasks the secret is
+    MANDATORY: without it no task could ever authenticate, and the endpoints
+    would answer 401 to every delivery -- a misconfiguration that reads exactly
+    like a broken queue. Answering 503 instead makes Cloud Tasks come back once
+    an operator sets it, so the work waits rather than dies.
+
+    AI-127 -- THE HUMAN BRANCH WAS NAKED, AND IT GUARDS EIGHT ENDPOINTS.
+    Breaking the conjunction was right; what it left behind was ``_check_auth``
+    ALONE, so any authenticated principal, from any organization, could fire
+    ``dispatch-nightly``, ``reconcile-queues``, ``drain-outbox``,
+    ``poll-health``, ``run-dq-monitors``, ``dispatch-hourly``,
+    ``execute-pull/{job_id}`` and ``execute-activation/{job_id}``. The action
+    item named four; the code has eight. Those are not reads: they start work at
+    PLATFORM scale, and two of them execute a named job. The mismatched secret
+    was AUDITED and then waved through, which reads as a guard and is not one.
+
+    So the human branch now costs what it always should have: a platform role,
+    via the same ``TOOROW_SUPER_ADMINS`` allow-list every other no-organization
+    act in this file uses (``_enforce_platform_admin``). Deliberately NOT a new
+    notion of "platform operator" -- a second vocabulary for the same idea is
+    how the two drift apart.
+
+    THE TWO MACHINE BRANCHES ARE UNTOUCHED, and that is the point: Cloud
+    Scheduler and Cloud Tasks return above on OIDC or on the secret, so the 56.8
+    cutover is not re-opened by this. Refusal is 404, not 403, matching
+    ``_enforce_platform_admin``: we do not confirm the surface to a caller who
+    is not allow-listed.
+
+    Deny-by-default follows from the allow-list: with ``TOOROW_SUPER_ADMINS``
+    unset, NO human can call these by hand. That is the correct posture for an
+    endpoint whose other two callers are machines -- an operator who needs one
+    either joins the allow-list or presents the internal secret.
+
+    Phase B note: an OIDC token minted for this service is the stronger form and
+    the one the original TODO named. It is not implemented here -- what IS fixed
+    is the conjunction that made the endpoints unreachable by their own callers.
+    """
+    # A Google-issued OIDC id token is the STRONGER form, and for Pub/Sub push it
+    # is the ONLY one: a push subscription cannot send a custom header, so the
+    # shared secret is unreachable there. Checked first because a caller that
+    # presents one is the platform proving its identity cryptographically rather
+    # than by knowing a string.
+    if _google_oidc_caller_is_ours(request):
+        return None
+
+    required_secret = os.environ.get("INTERNAL_ENDPOINTS_REQUIRE_HEADER", "")
+    if required_secret:
+        if request.headers.get("x-internal-auth", "") == required_secret:
+            return None
+        logger.warning(
+            "admin_api: internal_auth_rejected path=%s -- falling back to user auth",
             request.url.path,
         )
-        # Write audit row (best-effort; swallowed on error by write_audit_row).
         write_audit_row(
             identity="anonymous",
-            action="access_denied",
+            action=ACTION_CROSS_SCOPE_ATTEMPT,
             provider_account="",
             connection_ref="",
-            metadata={"path": str(request.url.path), "reason": "internal_auth_missing"},
+            metadata={"path": str(request.url.path), "reason": "internal_auth_mismatch"},
         )
-        return False, JSONResponse(
-            {"code": "forbidden", "message": "X-Internal-Auth header required"},
-            status_code=403,
+    elif os.environ.get("QUEUE_BACKEND", "local") == "cloud_tasks":
+        logger.error(
+            "admin_api: internal_secret_missing path=%s -- QUEUE_BACKEND=cloud_tasks "
+            "requires INTERNAL_ENDPOINTS_REQUIRE_HEADER, no task can authenticate",
+            request.url.path,
         )
-
-    return True, None
-
-
-async def _dispatch_nightly_internal(request: Request) -> Response:
-    """POST /internal/scheduler/dispatch-nightly -- Cloud Scheduler trigger (Story 3.4, AC3).
-
-    Phase B only (QUEUE_BACKEND=cloud_tasks). Returns 404 for local backend.
-    Auth via _check_auth (service-account Bearer token validates as any caller).
-    Also gated by _check_internal_auth (Phase-A scaffold for OIDC -- see that function).
-
-    This endpoint is STUBBED at P3-dev (same pattern as CloudTasksBackend in Story 3.2,
-    AC8). No google-cloud-scheduler import at runtime (HG-1).
-
-    Response (200, Phase B only):
-        {"jobs": [...]}  -- list of enqueued job dicts from dispatch_nightly()
-    """
-    ok, err_resp = await _check_internal_auth(request)
-    if not ok:
-        return err_resp  # type: ignore[return-value]
-
-    authorized, _identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    queue_backend = os.environ.get("QUEUE_BACKEND", "local")
-    if queue_backend != "cloud_tasks":
         return JSONResponse(
             {
-                "code": "not_available",
-                "message": "POST /internal/scheduler/dispatch-nightly is only active "
-                "when QUEUE_BACKEND=cloud_tasks (Phase B)",
+                "code": "internal_auth_unconfigured",
+                "message": "INTERNAL_ENDPOINTS_REQUIRE_HEADER must be set when "
+                "QUEUE_BACKEND=cloud_tasks",
             },
-            status_code=404,
+            status_code=503,
         )
 
-    from core.scheduler import dispatch_nightly  # noqa: PLC0415
-
-    jobs = dispatch_nightly()
-    return JSONResponse({"jobs": jobs})
-
-
-async def _get_job_verification(request: Request) -> Response:
-    """GET /api/jobs/{id}/verification -- return verification record for a job (Story 3.5, AC7).
-
-    Resolves pull_id from app.pull_jobs, then queries app.pull_verifications.
-
-    Response (200):
-        {"pull_id", "expected_rows", "actual_rows", "completeness_ratio",
-         "verdict", "verified_at"}
-        completeness_ratio as float.  verified_at as ISO-8601 string.
-
-    Error responses:
-        401 -- unauthorized
-        404 -- job not found, or no verification record exists yet
-    """
-    authorized, _identity = await _check_auth(request)
+    authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
+            {"code": "unauthorized", "message": "Bearer token or internal secret required"},
             status_code=401,
         )
-
-    job_id = request.path_params.get("id", "")
-    if not job_id:
-        return JSONResponse(
-            {"code": "missing_id", "message": "Job id is required"},
-            status_code=400,
-        )
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            # 1. Resolve pull_id from pull_jobs
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT pull_id FROM app.pull_jobs WHERE id = %s",
-                    (job_id,),
-                )
-                job_row = cur.fetchone()
-
-            if job_row is None:
-                return JSONResponse(
-                    {"code": "not_found", "message": f"Job '{job_id}' not found"},
-                    status_code=404,
-                )
-
-            pull_id = job_row[0]
-
-            # 2. Query pull_verifications
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT pull_id, expected_rows, actual_rows,
-                           completeness_ratio, verdict, verified_at
-                    FROM app.pull_verifications
-                    WHERE pull_id = %s
-                    """,
-                    (pull_id,),
-                )
-                ver_row = cur.fetchone()
-    except Exception as exc:
-        logger.error("admin_api: get_job_verification db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    if ver_row is None:
-        return JSONResponse(
-            {
-                "code": "not_found",
-                "message": "No verification record for this job",
-            },
-            status_code=404,
-        )
-
-    return JSONResponse(
-        {
-            "pull_id": ver_row[0],
-            "expected_rows": ver_row[1],
-            "actual_rows": ver_row[2],
-            "completeness_ratio": float(ver_row[3]),
-            "verdict": ver_row[4],
-            "verified_at": ver_row[5].isoformat() if ver_row[5] is not None else None,
-        }
+    # AI-127: authenticated is not authorized. A valid Bearer says WHO, not
+    # WHETHER, and everything below this line is platform-scale work.
+    return await _enforce_platform_admin(
+        request, identity, f"internal:{request.url.path}"
     )
 
 
-async def _get_job_status(request: Request) -> Response:
-    """GET /api/jobs/{id} -- get pull job status (Story 3.2, AC5).
 
-    Response (200):
-        {"job_id", "pull_id", "state", "connection_ref_id", "date_from", "date_to",
-         "enqueued_at", "started_at", "completed_at", "attempt_count", "error_detail"}
-        All timestamps as ISO-8601 strings.
 
-    Error responses:
-        401 -- unauthorized
-        404 -- job not found
-    """
-    authorized, _identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
 
-    job_id = request.path_params.get("id", "")
-    if not job_id:
-        return JSONResponse(
-            {"code": "missing_id", "message": "Job id is required"},
-            status_code=400,
-        )
 
-    from core.queue import get_job_status  # noqa: PLC0415
 
-    job = get_job_status(job_id)
-    if job is None:
-        return JSONResponse(
-            {"code": "not_found", "message": f"Job '{job_id}' not found"},
-            status_code=404,
-        )
 
-    # AI-24 (Story 4.1 AC12): derive quota_state from error_detail.
-    # quota_state values: null (not quota-blocked), "quota_blocked" (budget exhausted),
-    # "circuit_open" (breaker tripped).
-    error_detail = job.get("error_detail") or ""
-    if error_detail.startswith("quota_blocked: circuit_open"):
-        quota_state: str | None = "circuit_open"
-    elif error_detail.startswith("quota_blocked:"):
-        quota_state = "quota_blocked"
-    else:
-        quota_state = None
 
-    return JSONResponse(
-        {
-            "job_id": job["id"],
-            "pull_id": job["pull_id"],
-            "state": job["state"],
-            "connection_ref_id": job["connection_ref_id"],
-            "date_from": job["date_from"],
-            "date_to": job["date_to"],
-            "enqueued_at": job.get("enqueued_at"),
-            "started_at": job.get("started_at"),
-            "completed_at": job.get("completed_at"),
-            "attempt_count": job["attempt_count"],
-            "error_detail": job.get("error_detail"),
-            "quota_state": quota_state,
-        }
-    )
+
+
+
+
+
+
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -1660,213 +779,16 @@ async def _get_job_status(request: Request) -> Response:
 # AD-2: no module-specific strings.
 # ---------------------------------------------------------------------------
 
-# ISO-8601 date pattern (reused from existing _ISO_DATE_RE above)
-_CONTEXT_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
-def _validate_context_event_input(label: str, event_date: str) -> str | None:
-    """Validate context event inputs. Returns error message string or None if valid.
-
-    Mirrors _validate_event_input in main.py. Both must stay in sync.
-    Returns a French error message on failure, None on success.
-    """
-    if len(label) > 120:
-        return "label trop long (max 120 caractères)"
-    if not _CONTEXT_DATE_RE.match(event_date):
-        return f"event_date invalide (format attendu YYYY-MM-DD) : {event_date!r}"
-    return None
 
 
-async def _create_context_event(request: Request) -> Response:
-    """POST /api/context-events -- create a context event (admin console).
-
-    Request body (JSON):
-        {"project_id": str, "event_date": str, "type": str, "label": str,
-         "description": str?}
-
-    Response (201):
-        {"id", "project_id", "event_date", "type", "label", "created_at"}
-
-    Response (422):
-        {"error": "label trop long (max 120 caracteres)"} on validation failure.
-
-    HG-2: this endpoint is for the admin console only. The widget uses the
-    add_context_event MCP tool (callServerTool). Do NOT call this from the widget.
-    """
-    from ulid import ULID  # noqa: PLC0415
-
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    try:
-        body_bytes = await request.body()
-        body: dict = json.loads(body_bytes)
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
-            status_code=400,
-        )
-
-    project_id = (body.get("project_id") or "").strip()
-    event_date = (body.get("event_date") or "").strip()
-    type_ = (body.get("type") or "").strip()
-    label = (body.get("label") or "").strip()
-    description = (body.get("description") or "").strip() or None
-
-    if not project_id:
-        return JSONResponse(
-            {"code": "missing_field", "message": "project_id is required"},
-            status_code=400,
-        )
-    if not event_date:
-        return JSONResponse(
-            {"code": "missing_field", "message": "event_date is required"},
-            status_code=400,
-        )
-    if not type_:
-        return JSONResponse(
-            {"code": "missing_field", "message": "type is required"},
-            status_code=400,
-        )
-    if not label:
-        return JSONResponse(
-            {"code": "missing_field", "message": "label is required"},
-            status_code=400,
-        )
-
-    validation_error = _validate_context_event_input(label, event_date)
-    if validation_error:
-        return JSONResponse({"error": validation_error}, status_code=422)
-
-    evt_id = f"evt_{ULID()}"
-    created_by = identity or "anonymous"
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO app.context_events
-                        (id, project_id, event_date, type, label, description, created_by)
-                    VALUES (%s, %s, %s::date, %s, %s, %s, %s)
-                    RETURNING id, project_id, event_date, type, label, created_at
-                    """,
-                    (evt_id, project_id, event_date, type_, label, description, created_by),
-                )
-                row = cur.fetchone()
-                if row is None:  # pragma: no cover
-                    raise RuntimeError("INSERT RETURNING returned no row")
-                cols = [desc[0] for desc in cur.description]
-                created_record: dict = {}
-                for col, val in zip(cols, row):
-                    if col == "created_at" and val is not None:
-                        created_record[col] = val.isoformat()
-                    elif col == "event_date" and val is not None:
-                        created_record[col] = str(val)
-                    else:
-                        created_record[col] = val
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: context_event_insert_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    write_audit_row(
-        identity=created_by,
-        action=ACTION_CONTEXT_EVENT_CREATED,
-        provider_account="",
-        connection_ref="",
-        metadata={
-            "event_id": evt_id,
-            "project_id": project_id,
-            "type": type_,
-            "label": label,
-        },
-    )
-
-    return JSONResponse(created_record, status_code=201)
 
 
-async def _list_context_events(request: Request) -> Response:
-    """GET /api/context-events -- list context events for a project.
 
-    Query params:
-        project_id  (required)
-        start       (optional ISO date, inclusive)
-        end         (optional ISO date, inclusive)
 
-    Response (200):
-        {"events": [{id, project_id, event_date, type, label, description,
-                     created_by, created_at}, ...]}
-        Order: event_date DESC, created_at DESC. No pagination (admin console view).
 
-    Response (400): missing project_id.
-    """
-    authorized, _identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
 
-    project_id = request.query_params.get("project_id") or ""
-    if not project_id:
-        return JSONResponse(
-            {"code": "missing_param", "message": "project_id is required"},
-            status_code=400,
-        )
-
-    start = request.query_params.get("start") or None
-    end = request.query_params.get("end") or None
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                params: list = [project_id]
-                sql = """
-                    SELECT id, project_id, event_date, type, label,
-                           description, created_by, created_at
-                    FROM app.context_events
-                    WHERE project_id = %s
-                """
-                if start is not None:
-                    sql += " AND event_date >= %s::date"
-                    params.append(start)
-                if end is not None:
-                    sql += " AND event_date <= %s::date"
-                    params.append(end)
-                sql += " ORDER BY event_date DESC, created_at DESC"
-                cur.execute(sql, params)
-                cols = [desc[0] for desc in cur.description]
-                events: list[dict] = []
-                for row in cur.fetchall():
-                    record: dict = {}
-                    for col, val in zip(cols, row):
-                        if col == "created_at" and val is not None:
-                            record[col] = val.isoformat()
-                        elif col == "event_date" and val is not None:
-                            record[col] = str(val)
-                        else:
-                            record[col] = val
-                    events.append(record)
-    except Exception as exc:
-        logger.error("admin_api: list_context_events db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    return JSONResponse({"events": events})
 
 
 # ---------------------------------------------------------------------------
@@ -1874,37 +796,6 @@ async def _list_context_events(request: Request) -> Response:
 # ---------------------------------------------------------------------------
 
 
-async def _trigger_mirror_sync(request: Request) -> Response:
-    """POST /api/mirror/sync -- trigger a mirror sync manually (Story 4.4, AC8).
-
-    Useful for dev and for Story 5.3 forced syncs. Auth-guarded (same pattern as
-    all other admin API endpoints). Returns the sync result dict from mirror_sync.py.
-
-    Response (200):
-        {"synced": {...}, "lag_seconds": float, "synced_at": str}
-
-    Response (500):
-        {"code": "sync_error", "message": str}  on sync failure.
-    """
-    authorized, _identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    try:
-        from core import mirror_sync  # noqa: PLC0415
-
-        result = mirror_sync.sync_tables()
-    except Exception as exc:
-        logger.error("admin_api: mirror_sync_error: %s", exc)
-        return JSONResponse(
-            {"code": "sync_error", "message": f"Mirror sync failed: {exc}"},
-            status_code=500,
-        )
-
-    return JSONResponse(result)
 
 
 # ---------------------------------------------------------------------------
@@ -1921,40 +812,6 @@ async def _trigger_mirror_sync(request: Request) -> Response:
 # ---------------------------------------------------------------------------
 
 
-async def _health_proxy(request: Request) -> Response:
-    """GET /api/health -- REST proxy for the health MCP tool (Story 5.2, AC4).
-
-    Returns the health tool's dict response as JSON.
-    Useful for the admin Pipeline panel which needs circuit breaker states and
-    mirror sync lag without going through the MCP protocol.
-
-    Response (200):
-        {"data": {"status": "ok", "quota": [...], "mirror_sync": {...}|null, ...}, ...}
-
-    Response (401): unauthorized
-    Response (500): internal error calling health tool
-    """
-    authorized, _identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    project_id = request.query_params.get("project_id", "default")
-
-    try:
-        from core.main import health  # noqa: PLC0415
-
-        result = health(project_id=project_id)
-    except Exception as exc:
-        logger.error("admin_api: health_proxy_error: %s", exc)
-        return JSONResponse(
-            {"code": "health_error", "message": f"Health tool error: {exc}"},
-            status_code=500,
-        )
-
-    return JSONResponse(result)
 
 
 # ---------------------------------------------------------------------------
@@ -1970,461 +827,53 @@ async def _health_proxy(request: Request) -> Response:
 # AD-2: no module-specific strings.
 # ---------------------------------------------------------------------------
 
-# Valid operators for alert threshold comparisons (whitelist enforced at CRUD).
-_ALERT_OPERATOR_WHITELIST = {"<", ">", "<=", ">="}
-
-# Valid metric names: additive metrics from dim_metric + semantic view names.
-# Driven by ALERT_SEMANTIC_METRICS env var at runtime (deferred import below).
-_ALERT_ADDITIVE_METRICS = frozenset(
-    [
-        "sessions",
-        "active_users",
-        "conversions",
-        "cost",
-        "impressions",
-        "clicks",
-        "revenue",
-        "average_position",
-    ]
-)
 
 
-def _get_valid_alert_metrics() -> frozenset[str]:
-    """Return all valid metric names for alert definitions."""
-    from core.business_alerts import _get_semantic_metrics  # noqa: PLC0415
-
-    return _ALERT_ADDITIVE_METRICS | _get_semantic_metrics()
 
 
-async def _list_alert_definitions(request: Request) -> Response:
-    """GET /api/alert-definitions?project_id=<id> -- list definitions for a project.
-
-    Includes last firing date and value per definition via LEFT JOIN on alert_firings.
-
-    Response (200):
-        {"definitions": [{id, project_id, metric, operator, threshold, connector,
-                          enabled, created_by, created_at, updated_at,
-                          last_firing_date, last_firing_value}]}
-
-    Error responses:
-        400 -- missing project_id
-        401 -- unauthorized
-        500 -- DB error
-    """
-    authorized, _identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    project_id = request.query_params.get("project_id") or ""
-    if not project_id:
-        return JSONResponse(
-            {"code": "missing_param", "message": "project_id is required"},
-            status_code=400,
-        )
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT
-                        d.id, d.project_id, d.metric, d.operator, d.threshold,
-                        d.connector, d.enabled, d.created_by, d.created_at, d.updated_at,
-                        lf.last_firing_date,
-                        lf.last_firing_value
-                    FROM app.alert_definitions d
-                    LEFT JOIN (
-                        SELECT
-                            definition_id,
-                            MAX(window_date) AS last_firing_date,
-                            (ARRAY_AGG(observed_value ORDER BY fired_at DESC))[1]
-                                AS last_firing_value
-                        FROM app.alert_firings
-                        GROUP BY definition_id
-                    ) lf ON lf.definition_id = d.id
-                    WHERE d.project_id = %s
-                    ORDER BY d.created_at DESC
-                    """,
-                    (project_id,),
-                )
-                cols = [desc[0] for desc in cur.description]
-                _TS_COLS = {"created_at", "updated_at"}
-                definitions = []
-                for row in cur.fetchall():
-                    record: dict = {}
-                    for col, val in zip(cols, row):
-                        if col in _TS_COLS and val is not None:
-                            record[col] = val.isoformat()
-                        elif col == "last_firing_date" and val is not None:
-                            record[col] = str(val)
-                        elif col in ("threshold", "last_firing_value") and val is not None:
-                            record[col] = float(val)
-                        else:
-                            record[col] = val
-                    definitions.append(record)
-    except Exception as exc:
-        logger.error("admin_api: list_alert_definitions_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    return JSONResponse({"definitions": definitions})
 
 
-async def _create_alert_definition(request: Request) -> Response:
-    """POST /api/alert-definitions -- create a new alert definition.
-
-    Request body (JSON):
-        {"project_id": str, "metric": str, "operator": str,
-         "threshold": number, "connector": str?}
-
-    Response (201):
-        {id, project_id, metric, operator, threshold, connector, enabled,
-         created_by, created_at, updated_at}
-
-    Error responses:
-        400 -- missing required fields
-        401 -- unauthorized
-        422 -- invalid operator or unknown metric
-        500 -- DB error
-    """
-    from ulid import ULID  # noqa: PLC0415
-
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    try:
-        body_bytes = await request.body()
-        body: dict = json.loads(body_bytes)
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
-            status_code=400,
-        )
-
-    project_id = (body.get("project_id") or "").strip()
-    metric = (body.get("metric") or "").strip().lower()
-    operator = (body.get("operator") or "").strip()
-    threshold_raw = body.get("threshold")
-    connector = (body.get("connector") or "").strip() or None
-
-    if not project_id:
-        return JSONResponse(
-            {"code": "missing_field", "message": "project_id is required"},
-            status_code=400,
-        )
-    if not metric:
-        return JSONResponse(
-            {"code": "missing_field", "message": "metric is required"},
-            status_code=400,
-        )
-    if not operator:
-        return JSONResponse(
-            {"code": "missing_field", "message": "operator is required"},
-            status_code=400,
-        )
-    if threshold_raw is None:
-        return JSONResponse(
-            {"code": "missing_field", "message": "threshold is required"},
-            status_code=400,
-        )
-
-    # Operator whitelist validation
-    if operator not in _ALERT_OPERATOR_WHITELIST:
-        return JSONResponse(
-            {
-                "code": "invalid_operator",
-                "message": (
-                    f"operator must be one of {sorted(_ALERT_OPERATOR_WHITELIST)}, "
-                    f"got: {operator!r}"
-                ),
-            },
-            status_code=422,
-        )
-
-    # Metric validation
-    valid_metrics = _get_valid_alert_metrics()
-    if metric not in valid_metrics:
-        return JSONResponse(
-            {
-                "code": "unknown_metric",
-                "message": (
-                    f"metric {metric!r} is not a known metric. "
-                    f"Valid metrics: {sorted(valid_metrics)}"
-                ),
-            },
-            status_code=422,
-        )
-
-    # Threshold must be numeric
-    try:
-        threshold = float(threshold_raw)
-    except (TypeError, ValueError):
-        return JSONResponse(
-            {"code": "invalid_threshold", "message": "threshold must be a number"},
-            status_code=422,
-        )
-
-    alert_id = f"alrt_{ULID()}"
-    created_by = identity or "anonymous"
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO app.alert_definitions
-                        (id, project_id, metric, operator, threshold, connector,
-                         enabled, created_by)
-                    VALUES (%s, %s, %s, %s, %s, %s, TRUE, %s)
-                    RETURNING id, project_id, metric, operator, threshold, connector,
-                              enabled, created_by, created_at, updated_at
-                    """,
-                    (alert_id, project_id, metric, operator, threshold, connector, created_by),
-                )
-                row = cur.fetchone()
-                if row is None:  # pragma: no cover
-                    raise RuntimeError("INSERT RETURNING returned no row")
-                cols = [desc[0] for desc in cur.description]
-                created_record: dict = {}
-                for col, val in zip(cols, row):
-                    if col in ("created_at", "updated_at") and val is not None:
-                        created_record[col] = val.isoformat()
-                    elif col == "threshold" and val is not None:
-                        created_record[col] = float(val)
-                    else:
-                        created_record[col] = val
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: create_alert_definition_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    write_audit_row(
-        identity=created_by,
-        action=ACTION_ALERT_DEF_CREATED,
-        provider_account="",
-        connection_ref="",
-        metadata={
-            "alert_def_id": alert_id,
-            "project_id": project_id,
-            "metric": metric,
-            "operator": operator,
-            "threshold": threshold,
-        },
-    )
-
-    return JSONResponse(created_record, status_code=201)
 
 
-async def _update_alert_definition(request: Request) -> Response:
-    """PATCH /api/alert-definitions/{id} -- toggle enabled or update threshold.
-
-    Request body (JSON, all fields optional):
-        {"enabled": bool?, "threshold": number?}
-
-    Response (200):
-        {id, project_id, metric, operator, threshold, connector, enabled,
-         created_by, created_at, updated_at}
-
-    Error responses:
-        400 -- empty body / no updatable fields
-        401 -- unauthorized
-        404 -- definition not found
-        500 -- DB error
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    alert_id = request.path_params.get("id", "")
-    if not alert_id:
-        return JSONResponse(
-            {"code": "missing_id", "message": "Alert definition id is required"},
-            status_code=400,
-        )
-
-    try:
-        body_bytes = await request.body()
-        body: dict = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
-            status_code=400,
-        )
-
-    # Build the SET clause from allowed updatable fields
-    set_clauses: list[str] = []
-    params: list = []
-
-    if "enabled" in body:
-        set_clauses.append("enabled = %s")
-        params.append(bool(body["enabled"]))
-
-    if "threshold" in body:
-        try:
-            threshold_val = float(body["threshold"])
-            set_clauses.append("threshold = %s")
-            params.append(threshold_val)
-        except (TypeError, ValueError):
-            return JSONResponse(
-                {"code": "invalid_threshold", "message": "threshold must be a number"},
-                status_code=422,
-            )
-
-    if not set_clauses:
-        return JSONResponse(
-            {
-                "code": "no_update_fields",
-                "message": "Provide 'enabled' or 'threshold' to update",
-            },
-            status_code=400,
-        )
-
-    set_clauses.append("updated_at = NOW()")
-    params.append(alert_id)
-
-    sql = (
-        "UPDATE app.alert_definitions SET "
-        + ", ".join(set_clauses)
-        + " WHERE id = %s RETURNING id, project_id, metric, operator, threshold,"
-        " connector, enabled, created_by, created_at, updated_at"
-    )
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(sql, params)
-                row = cur.fetchone()
-                if row is None:
-                    return JSONResponse(
-                        {
-                            "code": "not_found",
-                            "message": f"Alert definition '{alert_id}' not found",
-                        },
-                        status_code=404,
-                    )
-                cols = [desc[0] for desc in cur.description]
-                updated_record: dict = {}
-                for col, val in zip(cols, row):
-                    if col in ("created_at", "updated_at") and val is not None:
-                        updated_record[col] = val.isoformat()
-                    elif col == "threshold" and val is not None:
-                        updated_record[col] = float(val)
-                    else:
-                        updated_record[col] = val
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: update_alert_definition_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    write_audit_row(
-        identity=identity or "anonymous",
-        action=ACTION_ALERT_DEF_UPDATED,
-        provider_account="",
-        connection_ref="",
-        metadata={
-            "alert_def_id": alert_id,
-            "updated_fields": list(k for k in ("enabled", "threshold") if k in body),
-        },
-    )
-
-    return JSONResponse(updated_record)
 
 
-async def _delete_alert_definition(request: Request) -> Response:
-    """DELETE /api/alert-definitions/{id} -- soft-delete (sets enabled=false).
 
-    Design decision (T5.5): soft-delete via enabled=false.
-    Rationale: alert_firings rows reference alert_definitions via FK. A hard
-    delete would violate the FK constraint unless firings are also deleted.
-    Soft-delete preserves audit history and firing provenance (AD-9) while
-    effectively disabling the alert. Hard delete is not used here.
 
-    Response (200):
-        {"id": ..., "deleted": true}
 
-    Error responses:
-        401 -- unauthorized
-        404 -- definition not found
-        500 -- DB error
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
 
-    alert_id = request.path_params.get("id", "")
-    if not alert_id:
-        return JSONResponse(
-            {"code": "missing_id", "message": "Alert definition id is required"},
-            status_code=400,
-        )
 
-    try:
-        from core.db import get_connection  # noqa: PLC0415
+# ---------------------------------------------------------------------------
+# Story 59.6 -- /api/alert-destinations CRUD + test send
+#
+# GET    /api/alert-destinations?project_id=<id>   -- list, MASKED, never sealed
+# POST   /api/alert-destinations                   -- create
+# PATCH  /api/alert-destinations/{id}              -- update
+# DELETE /api/alert-destinations/{id}              -- remove
+# POST   /api/alert-destinations/{id}/test         -- send a test, write NO firing
+#
+# The word is `Alert destination` and it is posed once: the table, the route, the
+# component and the test all carry it. `Channel` and `Webhook` are already
+# ratified for the INPUT side of a Datastream (`glossary.md:161-163`, `:355`) and
+# "one word, one meaning" is the rule story 59.5 just spent itself enforcing.
+#
+# A secret NEVER leaves through a read: `include_secret` is answered
+# `secret_is_write_only`, and the list renders `target_masked` because a Slack
+# incoming-webhook URL is itself a credential.
+# ---------------------------------------------------------------------------
 
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE app.alert_definitions
-                    SET enabled = FALSE, updated_at = NOW()
-                    WHERE id = %s
-                    RETURNING id
-                    """,
-                    (alert_id,),
-                )
-                row = cur.fetchone()
-                if row is None:
-                    return JSONResponse(
-                        {
-                            "code": "not_found",
-                            "message": f"Alert definition '{alert_id}' not found",
-                        },
-                        status_code=404,
-                    )
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: delete_alert_definition_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
 
-    write_audit_row(
-        identity=identity or "anonymous",
-        action=ACTION_ALERT_DEF_DELETED,
-        provider_account="",
-        connection_ref="",
-        metadata={"alert_def_id": alert_id},
-    )
 
-    return JSONResponse({"id": alert_id, "deleted": True})
+
+
+
+
+
+
+
+
+
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -2438,333 +887,57 @@ async def _delete_alert_definition(request: Request) -> Response:
 # ---------------------------------------------------------------------------
 
 
-async def _list_feedback(request: Request) -> Response:
-    """GET /api/feedback?project_id=<id>&module=<name>&limit=50
-
-    List feedback rows for a project, ordered by created_at DESC.
-
-    Query params:
-        project_id  (required)
-        module      (optional) -- filter by module name
-        limit       (optional, default 50, max 200)
-
-    Response (200):
-        [{"id", "rating", "comment", "module", "report_ref", "trace_id", "created_at"}]
-        Note: created_by is intentionally omitted (privacy).
-
-    Error responses:
-        400 -- missing project_id
-        401 -- unauthorized
-        500 -- DB error
-    """
-    authorized, _identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    project_id = request.query_params.get("project_id") or ""
-    if not project_id:
-        return JSONResponse(
-            {"code": "missing_param", "message": "project_id is required"},
-            status_code=400,
-        )
-
-    module_filter = request.query_params.get("module") or None
-    try:
-        limit = max(1, min(int(request.query_params.get("limit", "50")), 200))
-    except (TypeError, ValueError):
-        limit = 50
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                params: list = [project_id]
-                sql = """
-                    SELECT id, rating, comment, module, report_ref, trace_id, created_at
-                    FROM app.feedback
-                    WHERE project_id = %s
-                """
-                if module_filter is not None:
-                    sql += " AND module = %s"
-                    params.append(module_filter)
-                sql += " ORDER BY created_at DESC LIMIT %s"
-                params.append(limit)
-                cur.execute(sql, params)
-                cols = [desc[0] for desc in cur.description]
-                rows: list[dict] = []
-                for row in cur.fetchall():
-                    record: dict = {}
-                    for col, val in zip(cols, row):
-                        if col == "created_at" and val is not None:
-                            record[col] = val.isoformat()
-                        else:
-                            record[col] = val
-                    rows.append(record)
-    except Exception as exc:
-        logger.error("admin_api: list_feedback_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    return JSONResponse(rows)
 
 
 # ---------------------------------------------------------------------------
-# Epic 40 -- competitor / tracked-brand registry (project-facing read)
-# GET /api/tracked-entities?project_id=<id>
+# GET /api/tracked-entities was removed by Story 48.5.
+#
+# It returned every entity with `"bindings": []` hard-coded -- a field the
+# response promised and never filled, on a route whose only caller was an
+# unmounted page. The registry is now read through the governed Master Data
+# collection (`/api/projects/{project_id}/governance/master-data` with
+# `lens=competitor-registry`), which composes identities, Project roles,
+# governed source representations and the real per-Datastream binding states
+# from their owners.
 # ---------------------------------------------------------------------------
-async def _list_tracked_entities(request: Request) -> Response:
-    """GET /api/tracked-entities?project_id=<id>
-
-    List the tracked brands THIS project roles (competitor/brand registry, Epic
-    40). Confidentiality-safe (E40-NFR01): delegates to
-    ``tracked_entity_registry.list_project_roles`` which is scoped to project_id
-    ONLY and never returns a sibling project's brands. Per-source query bindings
-    (the outbound wiring, Story 40.2) land later -- returned empty for now.
-
-    Response (200):
-        {"entities": [{"id", "name", "role", "aliases", "status", "bindings"}]}
-    """
-    project_id = request.query_params.get("project_id") or "default"
-    try:
-        from core import tracked_entity_registry  # noqa: PLC0415
-
-        roles = tracked_entity_registry.list_project_roles(project_id)
-    except Exception as exc:  # noqa: BLE001 -- surface a clean 500, log the cause
-        logger.error("admin_api: list_tracked_entities db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    entities = [
-        {
-            "id": r.get("entity_id"),
-            "name": r.get("entity_display_name") or r.get("entity_canonical_name"),
-            "role": r.get("role"),
-            "aliases": r.get("entity_aliases") or [],
-            "status": r.get("entity_status"),
-            "bindings": [],  # TODO(40.2): per-source query bindings (Trends/YouTube/…)
-        }
-        for r in roles
-    ]
-    return JSONResponse({"entities": entities}, status_code=200)
-
 
 # ---------------------------------------------------------------------------
-# Context workspace read surfaces (Migration 095)
-# GET /api/knowledge?project_id=<id>    -- governed business definitions/policies
-# GET /api/procedures?project_id=<id>   -- per-metric calculation/reconciliation
+# GET /api/procedures -- RETIREE LE 2026-08-05 (AI-172), ET C'EST UN RETRAIT.
+#
+# Le handler `_list_procedures` lisait `app.metric_procedures` (migration 095),
+# l'un des sept magasins que la migration 145 (story 49.4) a remplaces par la
+# famille gouvernee `metric_reconciliation` de `governance_rule_sets`. L'en-tete
+# de 145 dit ce qui restait a faire et pourquoi elle ne l'a pas fait elle-meme :
+# « They stop being AUTHORITIES in this story; the DROP belongs to the commit
+# that removes the last reader. » Ce lecteur etait le dernier -- `grep -rn
+# metric_procedures server` ne rendait que ce fichier.
+#
+# CE N'EST PAS LE MENAGE D'UN SYMBOLE QUI SEMBLE MORT. Trois mesures, dans cet
+# ordre, avant de retirer quoi que ce soit :
+#   1. la surface qui remplace celle-ci EXISTE et est routee -- lens
+#      `reconciliation` de `governance/controls-quality`, servie par
+#      `governance_read_model._reconciliation_lens` ;
+#   2. `app.metric_procedures` compte 0 ligne en production le 2026-08-05, six
+#      jours apres la mesure de 145 ;
+#   3. les deux vocabulaires de methodes DIFFERENT (`sum_then_divide...` ici,
+#      `SUM|PRIORITY|DEDUP_ID|ESTIMATE|KEEP_SEPARATE` dans la famille gouvernee),
+#      donc garder cette route revenait a tenir un second magasin, un second
+#      vocabulaire et un second ecran pour une seule chose -- ce que le
+#      « Incomplete if » de docs/product-architecture/governance.md interdit.
+#
+# L'absence est TENUE, pas seulement faite : `tests/core/test_metric_procedures_scope.py`
+# echoue si la route est remontee, sur le motif retenu pour
+# `_create_datastream_mapping_version`. Un retrait silencieux se fait remonter
+# par le lecteur suivant, qui n'a aucun moyen de savoir qu'il rouvre une porte.
+#
+# La garde de portee posee par AI-125 sur ce handler n'est pas perdue : elle est
+# devenue `_refuse_unless_project_allowed`, que six autres routes appellent
+# (AI-171).
 # ---------------------------------------------------------------------------
-async def _list_knowledge(request: Request) -> Response:
-    """GET /api/knowledge?project_id=<id> -- the project's knowledge entries.
-
-    Response (200): {"entries": [{"id","title","topic","body","author","updated_at"}]}
-
-    DEPRECATED (Story 44.1): the Knowledge surface now reads/writes the governed
-    context store (GET /api/context/topics et al., server/core/context_api.py).
-    Migration 108 copied every app.knowledge_entries row into app.context_topics.
-    This endpoint stays live (nothing here is dropped) but every response carries
-    a `Deprecation: true` header for any remaining caller.
-    """
-    project_id = request.query_params.get("project_id") or "default"
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id, title, topic, body, author, updated_at
-                    FROM app.knowledge_entries
-                    WHERE project_id = %s
-                    ORDER BY updated_at DESC
-                    """,
-                    (project_id,),
-                )
-                cols = [d[0] for d in cur.description]
-                entries = [
-                    {
-                        c: (v.isoformat() if c == "updated_at" and v is not None else v)
-                        for c, v in zip(cols, row)
-                    }
-                    for row in cur.fetchall()
-                ]
-    except Exception as exc:  # noqa: BLE001
-        logger.error("admin_api: list_knowledge db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-            headers={"Deprecation": "true"},
-        )
-    return JSONResponse({"entries": entries}, status_code=200, headers={"Deprecation": "true"})
 
 
-async def _list_procedures(request: Request) -> Response:
-    """GET /api/procedures?project_id=<id> -- per-metric calculation procedures.
-
-    Response (200):
-        {"procedures": [{"id","metric","method","description","owner","updated_at"}]}
-        method ∈ sum_then_divide | priority_source | dedup_union | weighted_blend |
-                 manual_override
-    """
-    project_id = request.query_params.get("project_id") or "default"
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id, metric, method, description, owner, updated_at
-                    FROM app.metric_procedures
-                    WHERE project_id = %s
-                    ORDER BY metric ASC
-                    """,
-                    (project_id,),
-                )
-                cols = [d[0] for d in cur.description]
-                procedures = [
-                    {
-                        c: (v.isoformat() if c == "updated_at" and v is not None else v)
-                        for c, v in zip(cols, row)
-                    }
-                    for row in cur.fetchall()
-                ]
-    except Exception as exc:  # noqa: BLE001
-        logger.error("admin_api: list_procedures db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"}, status_code=500
-        )
-    return JSONResponse({"procedures": procedures}, status_code=200)
 
 
-# ---------------------------------------------------------------------------
-# Test workspace read surfaces (Migration 096, eval loop — Epic 14)
-# GET /api/eval/golden-questions?project_id=<id>
-# GET /api/eval/runs?project_id=<id>
-# ---------------------------------------------------------------------------
-async def _list_golden_questions(request: Request) -> Response:
-    """GET /api/eval/golden-questions?project_id=<id> -- the benchmark set.
-
-    Response (200):
-        {"questions": [{"id","question","topic","expected_citations","last_result"}]}
-        last_result ∈ pass | fail
-    """
-    project_id = request.query_params.get("project_id") or "default"
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id, question, topic, expected_citations, last_result
-                    FROM app.golden_questions
-                    WHERE project_id = %s
-                    ORDER BY topic ASC, question ASC
-                    """,
-                    (project_id,),
-                )
-                cols = [d[0] for d in cur.description]
-                questions = [dict(zip(cols, row)) for row in cur.fetchall()]
-    except Exception as exc:  # noqa: BLE001
-        logger.error("admin_api: list_golden_questions db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"}, status_code=500
-        )
-    return JSONResponse({"questions": questions}, status_code=200)
-
-
-async def _list_eval_runs(request: Request) -> Response:
-    """GET /api/eval/runs?project_id=<id> -- run history, most recent first.
-
-    Response (200):
-        {"runs": [{"id","run_at","score_passed","score_total","precision_pct",
-                   "regressions","status"}]}
-        status ∈ passed | regressed
-    """
-    project_id = request.query_params.get("project_id") or "default"
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id, run_at, score_passed, score_total, precision_pct,
-                           regressions, status
-                    FROM app.eval_runs
-                    WHERE project_id = %s
-                    ORDER BY run_at DESC
-                    """,
-                    (project_id,),
-                )
-                cols = [d[0] for d in cur.description]
-                runs = [
-                    {
-                        c: (
-                            v.isoformat()
-                            if c == "run_at" and v is not None
-                            else (float(v) if c == "precision_pct" and v is not None else v)
-                        )
-                        for c, v in zip(cols, row)
-                    }
-                    for row in cur.fetchall()
-                ]
-    except Exception as exc:  # noqa: BLE001
-        logger.error("admin_api: list_eval_runs db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"}, status_code=500
-        )
-    return JSONResponse({"runs": runs}, status_code=200)
-
-
-# ---------------------------------------------------------------------------
-# Overview metric strip — real aggregates (Epic 42)
-# GET /api/overview/summary?project_id=<id>
-# ---------------------------------------------------------------------------
-async def _overview_summary(request: Request) -> Response:
-    """Return the authorized project's evidence-backed Overview summary.
-
-    Missing or inaccessible projects are nondisclosing; no default scope is used.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Authentication required"},
-            status_code=401,
-        )
-    project_id = (request.query_params.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse(
-            {"code": "missing_param", "message": "project_id is required"},
-            status_code=400,
-        )
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-        from core.overview import get_project_overview  # noqa: PLC0415
-        from core.project_overview import authorize_overview_project  # noqa: PLC0415
-
-        with get_connection() as conn:
-            if not authorize_overview_project(identity, project_id, conn):
-                return JSONResponse(
-                    {"code": "not_found", "message": "Project not found"}, status_code=404
-                )
-            summary = get_project_overview(project_id, conn)["summary"]
-    except Exception as exc:  # noqa: BLE001
-        logger.error("admin_api: overview_summary db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": "Project overview is unavailable"},
-            status_code=500,
-        )
-
-    return JSONResponse(summary, status_code=200)
 
 
 # ---------------------------------------------------------------------------
@@ -2774,7 +947,7 @@ async def _overview_summary(request: Request) -> Response:
 #         -> all reports available for the project, merged from the module
 #            registry (LoadedModule.reports) and app.project_reports. A report not
 #            in project_reports is returned with enabled=false (opt-in default).
-# PATCH /api/reports/{project_id}/{module_name}/{report_id}
+# PATCH /api/reports/{project_id}/{connector_name}/{report_id}
 #         -> upsert the app.project_reports row (INSERT ... ON CONFLICT DO UPDATE).
 #
 # Both project-scoped and api_auth-guarded. AD-8: admin console -> REST API only.
@@ -2782,441 +955,33 @@ async def _overview_summary(request: Request) -> Response:
 # ---------------------------------------------------------------------------
 
 
-def _module_report_catalog() -> list[dict]:
-    """Return [{module_name, report_id, display_name}] from the loaded-module registry.
-
-    Deferred import of core.main avoids a circular import (main imports admin_api
-    at startup via build_asgi_app). Mirrors the _health_proxy pattern.
-    """
-    from core.main import get_loaded_modules  # noqa: PLC0415
-
-    catalog: list[dict] = []
-    for loaded in get_loaded_modules():
-        for report in loaded.reports:
-            catalog.append(
-                {
-                    "module_name": loaded.name,
-                    "report_id": report.get("id"),
-                    "display_name": report.get("display_name"),
-                }
-            )
-    return catalog
 
 
-async def _list_available_reports(request: Request) -> Response:
-    """GET /api/reports/available?project_id=<id> -- merged report availability.
-
-    Response (200):
-        [{"module_name", "report_id", "display_name", "enabled", "display_order"}]
-        enabled=false for reports not yet opted-in for the project (AC9).
-
-    Error responses:
-        400 -- missing project_id
-        401 -- unauthorized
-        500 -- DB error (module catalog still degrades to enabled=false)
-    """
-    authorized, _identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    project_id = request.query_params.get("project_id") or ""
-    if not project_id:
-        return JSONResponse(
-            {"code": "missing_param", "message": "project_id is required"},
-            status_code=400,
-        )
-
-    catalog = _module_report_catalog()
-
-    # Story 7.2 (AC4): load module enablement for this project so we can
-    # exclude reports whose module is disabled. Default-enabled when no row exists.
-    module_enabled: dict[str, bool] = {}
-    # Load per-project enablement rows (project-scoped — never another project).
-    enablement: dict[tuple[str, str], dict] = {}
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-        from core.module_enablement import is_module_enabled  # noqa: PLC0415
-
-        with get_connection() as conn:
-            # Collect distinct module names from catalog to check enablement.
-            distinct_modules = {entry["module_name"] for entry in catalog}
-            for mod_name in distinct_modules:
-                module_enabled[mod_name] = is_module_enabled(mod_name, project_id, conn)
-
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT module_name, report_id, enabled, display_order
-                    FROM app.project_reports
-                    WHERE project_id = %s
-                    """,
-                    (project_id,),
-                )
-                for module_name, report_id, enabled, display_order in cur.fetchall():
-                    enablement[(module_name, report_id)] = {
-                        "enabled": bool(enabled),
-                        "display_order": int(display_order),
-                    }
-    except Exception as exc:
-        logger.warning("admin_api: list_available_reports db_error: %s", exc)
-        # Degrade gracefully: return catalog with the opt-in default (disabled).
-
-    reports = []
-    for entry in catalog:
-        mod_name = entry["module_name"]
-        # Story 7.2 (AC4): skip reports for disabled modules.
-        # module_enabled defaults to True when DB is unavailable (resilience).
-        if not module_enabled.get(mod_name, True):
-            continue
-        key = (mod_name, entry["report_id"])
-        row = enablement.get(key)
-        reports.append(
-            {
-                "module_name": mod_name,
-                "report_id": entry["report_id"],
-                "display_name": entry["display_name"],
-                "enabled": row["enabled"] if row else False,
-                "display_order": row["display_order"] if row else 0,
-            }
-        )
-
-    return JSONResponse(reports)
 
 
 # ---------------------------------------------------------------------------
-# Story 7.2 (AC7) -- Module management endpoints
+# Story 7.2 (AC7) -- Connector enablement endpoints
 #
-# GET  /api/modules/available?project_id=<id>
-#        -> all globally discovered modules with per-project enablement state.
-# PATCH /api/modules/{project_id}/{module_name}
+# GET  /api/connectors/available?project_id=<id>
+#        -> all installed Connectors with per-project enablement state.
+# PATCH /api/connectors/{project_id}/{connector_name}
 #        -> upsert enablement in app.project_modules.
+#
+# Vocabulary (docs/product-architecture/glossary.md): the object is a
+# CONNECTOR. "module" survives only as the on-disk path and the not-yet
+# migrated column names of app.project_modules.
 #
 # Both guarded by api_auth; project-scoped. AD-8: admin console -> REST only.
 # AD-2: no module-specific strings; catalog from LoadedModule registry.
 # ---------------------------------------------------------------------------
 
 
-def _module_discovery_catalog() -> list[dict]:
-    """Return [{name, display_name}] from the globally loaded modules registry.
-
-    Deferred import of core.main to avoid circular imports (same pattern as
-    _module_report_catalog).
-    """
-    from core.main import get_loaded_modules  # noqa: PLC0415
-
-    return [
-        {
-            "name": loaded.name,
-            "display_name": loaded.manifest.get("display_name", loaded.name),
-        }
-        for loaded in get_loaded_modules()
-    ]
 
 
-async def _list_available_modules(request: Request) -> Response:
-    """GET /api/modules/available?project_id=<id> -- module enablement per project.
-
-    Response (200):
-        [
-          {
-            "module_name": "<module-kebab-name>",
-            "display_name": "<Human-readable name>",
-            "enabled": true,
-            "explicitly_set": false,
-            "active_connections": 1
-          },
-          ...
-        ]
-        enabled: True when enabled (including default-enabled).
-        explicitly_set: False = default-enabled (no row in project_modules).
-                        True  = row exists in project_modules.
-        active_connections: count of active+enabled connections for this module.
-
-    Error responses:
-        400 -- missing project_id
-        401 -- unauthorized
-        500 -- DB error
-    """
-    authorized, _identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    project_id = request.query_params.get("project_id") or ""
-    if not project_id:
-        return JSONResponse(
-            {"code": "missing_param", "message": "project_id is required"},
-            status_code=400,
-        )
-
-    discovery = _module_discovery_catalog()
-
-    # Fetch per-project module enablement rows and active connection counts.
-    pm_rows: dict[str, dict] = {}  # module_name -> {"enabled": bool}
-    conn_counts: dict[str, int] = {}  # module_name -> active connection count
-    default_enabled = True  # fallback when DB unavailable
-
-    try:
-        import os  # noqa: PLC0415
-
-        from core.db import get_connection  # noqa: PLC0415
-
-        default_enabled = os.environ.get("MODULE_DEFAULT_ENABLED", "true").lower() != "false"
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                # Fetch explicit module enablement rows.
-                cur.execute(
-                    """
-                    SELECT module_name, enabled
-                    FROM app.project_modules
-                    WHERE project_id = %s
-                    """,
-                    (project_id,),
-                )
-                for module_name, enabled in cur.fetchall():
-                    pm_rows[module_name] = {"enabled": bool(enabled)}
-
-                # Count active+enabled connections per provider (provider = module_name).
-                cur.execute(
-                    """
-                    SELECT provider, COUNT(*) AS cnt
-                    FROM app.connection_ref
-                    WHERE project_id = %s
-                      AND status = 'active'
-                      AND enabled = TRUE
-                    GROUP BY provider
-                    """,
-                    (project_id,),
-                )
-                for provider, cnt in cur.fetchall():
-                    conn_counts[provider] = int(cnt)
-    except Exception as exc:
-        logger.warning("admin_api: list_available_modules db_error: %s", exc)
-        # Degrade gracefully: return catalog with default_enabled state.
-
-    result = []
-    for mod in discovery:
-        mod_name = mod["name"]
-        pm = pm_rows.get(mod_name)
-        result.append(
-            {
-                "module_name": mod_name,
-                "display_name": mod["display_name"],
-                "enabled": pm["enabled"] if pm is not None else default_enabled,
-                "explicitly_set": pm is not None,
-                "active_connections": conn_counts.get(mod_name, 0),
-            }
-        )
-
-    return JSONResponse(result)
 
 
-async def _patch_module(request: Request) -> Response:
-    """PATCH /api/modules/{project_id}/{module_name} -- upsert module enablement.
-
-    Body (JSON): {"enabled": bool}
-
-    Response (200): updated state.
-      On disable with active connections: includes a warning field.
-    Error responses:
-        400 -- missing params or invalid body
-        401 -- unauthorized
-        500 -- DB error
-    """
-    from ulid import ULID  # noqa: PLC0415
-
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    project_id = request.path_params.get("project_id", "")
-    module_name = request.path_params.get("module_name", "")
-    if not project_id or not module_name:
-        return JSONResponse(
-            {"code": "missing_id", "message": "project_id and module_name required"},
-            status_code=400,
-        )
-
-    try:
-        body_bytes = await request.body()
-        body: dict = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
-            status_code=400,
-        )
-
-    if "enabled" not in body:
-        return JSONResponse(
-            {"code": "missing_field", "message": "enabled is required"},
-            status_code=400,
-        )
-
-    enabled = bool(body["enabled"])
-    pmod_id = f"pmod_{ULID()}"
-    updated_by = identity or "system"
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            # Count active connections for the warning (before upsert).
-            active_connections = 0
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT COUNT(*) FROM app.connection_ref
-                    WHERE project_id = %s AND provider = %s
-                      AND status = 'active' AND enabled = TRUE
-                    """,
-                    (project_id, module_name),
-                )
-                row = cur.fetchone()
-                if row:
-                    active_connections = int(row[0])
-
-            # Upsert the enablement row.
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO app.project_modules
-                        (id, project_id, module_name, enabled, enabled_at, disabled_at, updated_by)
-                    VALUES (
-                        %s, %s, %s, %s,
-                        CASE WHEN %s THEN NOW() ELSE NULL END,
-                        CASE WHEN NOT %s THEN NOW() ELSE NULL END,
-                        %s
-                    )
-                    ON CONFLICT (project_id, module_name) DO UPDATE
-                        SET enabled     = EXCLUDED.enabled,
-                            enabled_at  = CASE WHEN EXCLUDED.enabled THEN NOW()
-                                               ELSE app.project_modules.enabled_at END,
-                            disabled_at = CASE WHEN NOT EXCLUDED.enabled THEN NOW()
-                                               ELSE app.project_modules.disabled_at END,
-                            updated_by  = EXCLUDED.updated_by
-                    RETURNING module_name, enabled
-                    """,
-                    (
-                        pmod_id,
-                        project_id,
-                        module_name,
-                        enabled,
-                        enabled,  # enabled_at CASE
-                        enabled,  # disabled_at CASE (NOT enabled)
-                        updated_by,
-                    ),
-                )
-                upserted = cur.fetchone()
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: patch_module db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    response: dict = {
-        "project_id": project_id,
-        "module_name": upserted[0] if upserted else module_name,
-        "enabled": bool(upserted[1]) if upserted else enabled,
-    }
-
-    # On disable with active connections: include a warning (no auto-revoke).
-    if not enabled and active_connections > 0:
-        response["warning"] = (
-            f"Module disabled. {active_connections} active connection(s) will no longer be pulled."
-        )
-
-    return JSONResponse(response)
 
 
-async def _patch_report(request: Request) -> Response:
-    """PATCH /api/reports/{project_id}/{module_name}/{report_id} -- upsert enablement.
-
-    Body (JSON): {"enabled": bool, "display_order": int?}
-
-    Response (200): the upserted row.
-    Error responses:
-        400 -- missing path params
-        401 -- unauthorized
-        500 -- DB error
-    """
-    from ulid import ULID  # noqa: PLC0415
-
-    authorized, _identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    project_id = request.path_params.get("project_id", "")
-    module_name = request.path_params.get("module_name", "")
-    report_id = request.path_params.get("report_id", "")
-    if not project_id or not module_name or not report_id:
-        return JSONResponse(
-            {"code": "missing_id", "message": "project_id, module_name, report_id required"},
-            status_code=400,
-        )
-
-    try:
-        body_bytes = await request.body()
-        body: dict = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
-            status_code=400,
-        )
-
-    enabled = bool(body.get("enabled", True))
-    display_order = int(body.get("display_order", 0))
-    rpt_id = f"rpt_{ULID()}"
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO app.project_reports
-                        (id, project_id, module_name, report_id, enabled, display_order)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (project_id, module_name, report_id) DO UPDATE
-                        SET enabled = EXCLUDED.enabled,
-                            display_order = EXCLUDED.display_order,
-                            updated_at = NOW()
-                    RETURNING project_id, module_name, report_id, enabled, display_order
-                    """,
-                    (rpt_id, project_id, module_name, report_id, enabled, display_order),
-                )
-                row = cur.fetchone()
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: patch_report db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    return JSONResponse(
-        {
-            "project_id": row[0],
-            "module_name": row[1],
-            "report_id": row[2],
-            "enabled": bool(row[3]),
-            "display_order": int(row[4]),
-        }
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -3233,423 +998,16 @@ async def _patch_report(request: Request) -> Response:
 # ---------------------------------------------------------------------------
 
 
-_TS_COLS_NB = {"created_at", "updated_at", "executed_at", "last_run_at"}
 
 
-async def _list_notebooks(request: Request) -> Response:
-    """GET /api/notebooks?project_id=<id> -- list notebooks for project.
-
-    Response (200):
-        [{"id", "title", "report_ref", "window_rule", "created_at",
-          "last_run_at" (nullable), "last_run_status" (nullable)}]
-
-    Error responses:
-        400 -- missing project_id
-        401 -- unauthorized
-        500 -- DB error
-    """
-    authorized, _identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    project_id = request.query_params.get("project_id") or ""
-    if not project_id:
-        return JSONResponse(
-            {"code": "missing_param", "message": "project_id is required"},
-            status_code=400,
-        )
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT
-                        n.id,
-                        n.title,
-                        n.report_ref,
-                        n.window_rule,
-                        n.created_at,
-                        lr.executed_at  AS last_run_at,
-                        lr.status       AS last_run_status
-                    FROM app.notebooks n
-                    LEFT JOIN LATERAL (
-                        SELECT executed_at, status
-                        FROM app.notebook_runs
-                        WHERE notebook_id = n.id
-                        ORDER BY executed_at DESC
-                        LIMIT 1
-                    ) lr ON true
-                    WHERE n.project_id = %s
-                    ORDER BY n.created_at DESC
-                    """,
-                    (project_id,),
-                )
-                cols = [d[0] for d in cur.description]
-                notebooks = []
-                for row in cur.fetchall():
-                    record: dict = {}
-                    for col, val in zip(cols, row):
-                        if col in _TS_COLS_NB and val is not None:
-                            record[col] = val.isoformat()
-                        else:
-                            record[col] = val
-                    notebooks.append(record)
-    except Exception as exc:
-        logger.error("admin_api: list_notebooks_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    return JSONResponse(notebooks)
 
 
-async def _get_notebook(request: Request) -> Response:
-    """GET /api/notebooks/{notebook_id} -- single notebook with last 5 runs.
-
-    Response (200):
-        {"id", "title", "report_ref", "window_rule", "narrative_prompt",
-         "created_at", "updated_at", "project_id",
-         "runs": [{"run_id", "executed_at", "status", "pull_ids"}]}
-
-    Error responses:
-        401 -- unauthorized
-        404 -- not found or project mismatch
-        500 -- DB error
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    notebook_id = request.path_params.get("notebook_id", "")
-    # project_id for scoping (optional query param; if provided we enforce it)
-    filter_project = (request.query_params.get("project_id") or "").strip()
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id, project_id, title, report_ref, window_rule,
-                           narrative_prompt, created_at, updated_at
-                    FROM app.notebooks
-                    WHERE id = %s
-                    """,
-                    (notebook_id,),
-                )
-                row = cur.fetchone()
-                if row is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "Notebook not found"},
-                        status_code=404,
-                    )
-                cols = [d[0] for d in cur.description]
-                nb: dict = {}
-                for col, val in zip(cols, row):
-                    if col in _TS_COLS_NB and val is not None:
-                        nb[col] = val.isoformat()
-                    else:
-                        nb[col] = val
-
-                # Story 7.4 (AC4, AI-38): enforce project scope (explicit claim
-                # mismatch OR non-member) -> 404 + audit row.
-                denied = _enforce_notebook_project_scope(
-                    nb["project_id"],
-                    identity,
-                    notebook_id,
-                    conn,
-                    scope_hint=filter_project,
-                    action="notebook_get",
-                )
-                if denied is not None:
-                    return denied
-
-                # Fetch last 5 runs
-                cur.execute(
-                    """
-                    SELECT id, executed_at, status, pull_ids
-                    FROM app.notebook_runs
-                    WHERE notebook_id = %s
-                    ORDER BY executed_at DESC
-                    LIMIT 5
-                    """,
-                    (notebook_id,),
-                )
-                runs = []
-                for run_row in cur.fetchall():
-                    run_id, executed_at, status, pull_ids = run_row
-                    runs.append(
-                        {
-                            "run_id": run_id,
-                            "executed_at": executed_at.isoformat() if executed_at else None,
-                            "status": status,
-                            "pull_ids": pull_ids[:3] if pull_ids else [],
-                        }
-                    )
-                nb["runs"] = runs
-    except Exception as exc:
-        logger.error("admin_api: get_notebook_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    return JSONResponse(nb)
 
 
-async def _patch_notebook(request: Request) -> Response:
-    """PATCH /api/notebooks/{notebook_id} -- update title/window_rule/narrative_prompt.
-
-    Body (JSON, all optional):
-        {"title": str, "window_rule": str, "narrative_prompt": str}
-
-    Response (200): updated notebook row.
-    Error responses:
-        400 -- invalid body or window_rule
-        401 -- unauthorized
-        404 -- not found
-        500 -- DB error
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    notebook_id = request.path_params.get("notebook_id", "")
-
-    try:
-        body_bytes = await request.body()
-        body: dict = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
-            status_code=400,
-        )
-
-    # Validate window_rule if provided
-    new_window_rule = body.get("window_rule")
-    if new_window_rule is not None:
-        from core.window_rule import resolve_window_rule  # noqa: PLC0415
-
-        try:
-            resolve_window_rule(new_window_rule)
-        except ValueError as exc:
-            return JSONResponse(
-                {"code": "invalid_field", "message": str(exc)},
-                status_code=400,
-            )
-
-    # Story 7.4 (AC7, AI-38): a project_id in the body is an explicit scope claim.
-    scope_hint = (body.get("project_id") or "").strip()
-
-    # Build SET clause dynamically from provided fields
-    updates: list[str] = ["updated_at = NOW()"]
-    params: list = []
-
-    if "title" in body:
-        updates.append("title = %s")
-        params.append(body["title"])
-    if "window_rule" in body:
-        updates.append("window_rule = %s")
-        params.append(body["window_rule"])
-    if "narrative_prompt" in body:
-        updates.append("narrative_prompt = %s")
-        params.append(body["narrative_prompt"] or None)
-
-    params.append(notebook_id)
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                # Story 7.4 (AC7, AI-38): fetch owner project + enforce scope BEFORE
-                # mutating. Cross-scope PATCH must 404 (+ audit), not silently write.
-                cur.execute(
-                    "SELECT project_id FROM app.notebooks WHERE id = %s",
-                    (notebook_id,),
-                )
-                owner_row = cur.fetchone()
-                if owner_row is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "Notebook not found"},
-                        status_code=404,
-                    )
-                denied = _enforce_notebook_project_scope(
-                    owner_row[0],
-                    identity,
-                    notebook_id,
-                    conn,
-                    scope_hint=scope_hint,
-                    action="notebook_patch",
-                )
-                if denied is not None:
-                    return denied
-
-                sql = f"""
-                    UPDATE app.notebooks
-                    SET {", ".join(updates)}
-                    WHERE id = %s
-                    RETURNING id, project_id, title, report_ref, window_rule,
-                              narrative_prompt, created_at, updated_at
-                """
-                cur.execute(sql, params)
-                row = cur.fetchone()
-                if row is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "Notebook not found"},
-                        status_code=404,
-                    )
-                cols = [d[0] for d in cur.description]
-                nb: dict = {}
-                for col, val in zip(cols, row):
-                    if col in _TS_COLS_NB and val is not None:
-                        nb[col] = val.isoformat()
-                    else:
-                        nb[col] = val
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: patch_notebook_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    return JSONResponse(nb)
 
 
-async def _delete_notebook(request: Request) -> Response:
-    """DELETE /api/notebooks/{notebook_id} -- delete notebook (cascades runs).
-
-    Response (204): no content on success.
-    Error responses:
-        401 -- unauthorized
-        404 -- not found
-        500 -- DB error
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    notebook_id = request.path_params.get("notebook_id", "")
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                # Fetch notebook first (for audit and project scoping)
-                cur.execute(
-                    "SELECT id, project_id FROM app.notebooks WHERE id = %s",
-                    (notebook_id,),
-                )
-                row = cur.fetchone()
-                if row is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "Notebook not found"},
-                        status_code=404,
-                    )
-                nb_id, project_id = row
-
-                cur.execute("DELETE FROM app.notebooks WHERE id = %s", (notebook_id,))
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: delete_notebook_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    write_audit_row(
-        identity=identity or "anonymous",
-        action=ACTION_NOTEBOOK_DELETED,
-        provider_account="",
-        connection_ref="",
-        metadata={"notebook_id": notebook_id, "project_id": project_id},
-    )
-
-    return Response(status_code=204)
 
 
-async def _run_notebook_endpoint(request: Request) -> Response:
-    """POST /api/notebooks/{notebook_id}/run -- trigger a notebook run (Story 6.5, AC5, T6.5).
-
-    Calls run_notebook logic server-side (not via MCP protocol layer) and returns
-    the new run id. This is the REST trigger for the admin console "Exécuter" button.
-
-    Response (200):
-        {"run_id": "nbrun_...", "summary": "...", "pull_ids": [...]}
-
-    Error responses:
-        401 -- unauthorized
-        404 -- notebook not found
-        500 -- run error
-    """
-    authorized, _identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    notebook_id = request.path_params.get("notebook_id", "")
-
-    try:
-        body_bytes = await request.body()
-        body: dict = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception:
-        body = {}
-
-    as_of = body.get("as_of", "")
-
-    try:
-        from core.main import run_notebook  # noqa: PLC0415
-
-        result = run_notebook(notebook_id=notebook_id, as_of=as_of or "")
-    except Exception as exc:
-        err_str = str(exc)
-        # Check if it's a ToolError with code=not_found
-        try:
-            err_data = json.loads(exc.args[0]) if exc.args else {}
-        except Exception:
-            err_data = {}
-        if err_data.get("code") == "not_found":
-            return JSONResponse(
-                {"code": "not_found", "message": "Notebook not found"},
-                status_code=404,
-            )
-        logger.error("admin_api: run_notebook_endpoint_error: %s", exc)
-        return JSONResponse(
-            {"code": "run_error", "message": f"Notebook run failed: {err_str}"},
-            status_code=500,
-        )
-
-    # Extract run_id from structured_content meta
-    sc = result.structured_content or {}
-    run_id = sc.get("meta", {}).get("run_id", "")
-    pull_ids = sc.get("meta", {}).get("provenance", {}).get("pull_ids", [])
-    summary = result.content[0].text if result.content else ""
-
-    return JSONResponse(
-        {"run_id": run_id, "summary": summary, "pull_ids": pull_ids},
-        status_code=200,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -3657,617 +1015,39 @@ async def _run_notebook_endpoint(request: Request) -> Response:
 # ---------------------------------------------------------------------------
 
 
-async def _schedule_notebook(request: Request) -> Response:
-    """PATCH /api/notebooks/{notebook_id}/schedule -- set/unset nightly schedule (Story 6.6, AC2).
-
-    Body: {"scheduled": bool, "schedule_rule": "nightly" | null}
-    Response (200): updated notebook object.
-    Error responses:
-        400 -- invalid body / invalid schedule_rule
-        401 -- unauthorized
-        404 -- not found
-        500 -- DB error
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    notebook_id = request.path_params.get("notebook_id", "")
-
-    try:
-        body_bytes = await request.body()
-        body: dict = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
-            status_code=400,
-        )
-
-    if "scheduled" not in body:
-        return JSONResponse(
-            {"code": "invalid_body", "message": "'scheduled' field is required"},
-            status_code=400,
-        )
-
-    scheduled = bool(body["scheduled"])
-    schedule_rule = body.get("schedule_rule")
-    # Story 7.4 (AC7, AI-38): a project_id in the body is an explicit scope claim.
-    scope_hint = (body.get("project_id") or "").strip()
-
-    # Validate: if scheduled=true, schedule_rule must be 'nightly'
-    if scheduled:
-        if schedule_rule != "nightly":
-            return JSONResponse(
-                {
-                    "code": "invalid_field",
-                    "message": "schedule_rule must be 'nightly' when scheduled=true",
-                },
-                status_code=422,
-            )
-    else:
-        # When unscheduling, force schedule_rule to null
-        schedule_rule = None
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                # Story 7.4 (AC7, AI-38): fetch owner project + enforce scope BEFORE
-                # mutating. Cross-scope SCHEDULE must 404 (+ audit), not write.
-                cur.execute(
-                    "SELECT project_id FROM app.notebooks WHERE id = %s",
-                    (notebook_id,),
-                )
-                owner_row = cur.fetchone()
-                if owner_row is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "Notebook not found"},
-                        status_code=404,
-                    )
-                denied = _enforce_notebook_project_scope(
-                    owner_row[0],
-                    identity,
-                    notebook_id,
-                    conn,
-                    scope_hint=scope_hint,
-                    action="notebook_schedule",
-                )
-                if denied is not None:
-                    return denied
-
-                cur.execute(
-                    """
-                    UPDATE app.notebooks
-                    SET scheduled = %s, schedule_rule = %s, updated_at = NOW()
-                    WHERE id = %s
-                    RETURNING id, project_id, title, report_ref, window_rule,
-                              narrative_prompt, scheduled, schedule_rule,
-                              created_at, updated_at
-                    """,
-                    (scheduled, schedule_rule, notebook_id),
-                )
-                row = cur.fetchone()
-                if row is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "Notebook not found"},
-                        status_code=404,
-                    )
-                cols = [d[0] for d in cur.description]
-                _TS_COLS_SCHED = {"created_at", "updated_at"}
-                nb: dict = {}
-                for col, val in zip(cols, row):
-                    if col in _TS_COLS_SCHED and val is not None:
-                        nb[col] = val.isoformat()
-                    else:
-                        nb[col] = val
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: schedule_notebook_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    return JSONResponse(nb)
 
 
 # ---------------------------------------------------------------------------
-# Story 6.6 — Share token endpoints (AC3)
+# Story 6.6 -- Share token endpoints (AC3): RETIRED by Story 50.7
 # ---------------------------------------------------------------------------
-
-# Rate-limit for shared endpoint: 60 req/min per (IP, token_prefix) and a global
-# per-token ceiling so rotating IPs cannot bypass the limit.
-# TODO(Phase-B): move to Redis for multi-replica safety.
-_shared_endpoint_rate: dict[str, tuple[int, float]] = {}  # key -> (count, window_start)
-_SHARED_RATE_LIMIT = 60  # per minute per (IP, token_prefix) bucket
-_SHARED_TOKEN_RATE_LIMIT = 120  # per minute global per-token ceiling
-_SHARED_RATE_WINDOW = 60.0  # seconds
-
-
-def _check_shared_rate_limit(ip: str, token: str = "") -> tuple[bool, float]:
-    """Return (within_limit, retry_after_seconds).
-
-    Keys on (client_host, token_prefix[:8]) to prevent IP spoofing via XFF.
-    Also enforces a global per-token counter so rotating IPs still hits a ceiling.
-    TODO(Phase-B): replace with Redis for cross-replica consistency.
-    """
-    ts = time.monotonic()
-    token_prefix = token[:8] if token else ""
-
-    # Per-(IP, token) bucket
-    ip_key = f"ip::{ip}::{token_prefix}"
-    ip_count, ip_window = _shared_endpoint_rate.get(ip_key, (0, ts))
-    if ts - ip_window >= _SHARED_RATE_WINDOW:
-        ip_count, ip_window = 0, ts
-    if ip_count >= _SHARED_RATE_LIMIT:
-        retry_after = _SHARED_RATE_WINDOW - (ts - ip_window)
-        return False, max(retry_after, 1.0)
-    _shared_endpoint_rate[ip_key] = (ip_count + 1, ip_window)
-
-    # Global per-token bucket (rotating IPs still hit a ceiling)
-    if token_prefix:
-        tok_key = f"tok::{token_prefix}"
-        tok_count, tok_window = _shared_endpoint_rate.get(tok_key, (0, ts))
-        if ts - tok_window >= _SHARED_RATE_WINDOW:
-            tok_count, tok_window = 0, ts
-        if tok_count >= _SHARED_TOKEN_RATE_LIMIT:
-            retry_after = _SHARED_RATE_WINDOW - (ts - tok_window)
-            return False, max(retry_after, 1.0)
-        _shared_endpoint_rate[tok_key] = (tok_count + 1, tok_window)
-
-    return True, 0.0
-
-
-async def _share_notebook(request: Request) -> Response:
-    """PATCH /api/notebooks/{notebook_id}/share -- enable/disable sharing (Story 6.6, AC3).
-
-    Body: {"shared": bool}
-    Response (200):
-        On enable: {"share_url": "https://{host}/api/notebooks/shared/{token}"}
-        On disable: {"shared": false}
-    Error responses:
-        400 -- invalid body
-        401 -- unauthorized
-        404 -- not found
-        500 -- DB error
-    """
-    import secrets  # noqa: PLC0415
-
-    authorized, _identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    notebook_id = request.path_params.get("notebook_id", "")
-
-    try:
-        body_bytes = await request.body()
-        body: dict = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
-            status_code=400,
-        )
-
-    if "shared" not in body:
-        return JSONResponse(
-            {"code": "invalid_body", "message": "'shared' field is required"},
-            status_code=400,
-        )
-
-    shared = bool(body["shared"])
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                # Fetch current state first
-                cur.execute(
-                    "SELECT id, share_token FROM app.notebooks WHERE id = %s",
-                    (notebook_id,),
-                )
-                row = cur.fetchone()
-                if row is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "Notebook not found"},
-                        status_code=404,
-                    )
-                _nb_id, existing_token = row
-
-                if shared:
-                    # Generate token if not already set
-                    token = existing_token if existing_token else secrets.token_urlsafe(24)
-                    cur.execute(
-                        """
-                        UPDATE app.notebooks
-                        SET share_token = %s, shared_at = NOW(), updated_at = NOW()
-                        WHERE id = %s
-                        """,
-                        (token, notebook_id),
-                    )
-                    conn.commit()
-                    # Build share URL from request host
-                    base_url = f"{request.url.scheme}://{request.url.netloc}"
-                    share_url = f"{base_url}/api/notebooks/shared/{token}"
-                    return JSONResponse({"share_url": share_url})
-                else:
-                    # Revoke: clear token and shared_at
-                    cur.execute(
-                        """
-                        UPDATE app.notebooks
-                        SET share_token = NULL, shared_at = NULL, updated_at = NOW()
-                        WHERE id = %s
-                        """,
-                        (notebook_id,),
-                    )
-                    conn.commit()
-                    return JSONResponse({"shared": False})
-    except Exception as exc:
-        logger.error("admin_api: share_notebook_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-
-async def _shared_notebook_endpoint(request: Request) -> Response:
-    """GET /api/notebooks/shared/{token} -- read-only public shared notebook run (Story 6.6, AC3).
-
-    No auth guard. Returns the notebook's last completed run envelope.
-    Rate-limited: 60 req/min per (IP, token_prefix) + global per-token ceiling.
-
-    Response (200): {"notebook": {...}, "run": {...envelope_inline...}}
-    Response (404): token unknown or notebook not shared.
-    Response (429): rate limit exceeded (includes Retry-After header).
-    """
-    token = request.path_params.get("token", "")
-
-    # Rate limit by (IP, token_prefix) -- prevents XFF IP spoofing bypass.
-    client_ip = request.client.host if request.client else "unknown"
-    allowed, retry_after = _check_shared_rate_limit(client_ip, token)
-    if not allowed:
-        return JSONResponse(
-            {"code": "rate_limited", "message": "Too many requests"},
-            status_code=429,
-            headers={"Retry-After": str(int(retry_after))},
-        )
-
-    if not token:
-        return JSONResponse(
-            {"code": "not_found", "message": "Notebook not found"},
-            status_code=404,
-        )
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                # Look up notebook by share_token (must be non-null)
-                cur.execute(
-                    """
-                    SELECT id, title, report_ref, window_rule, created_at
-                    FROM app.notebooks
-                    WHERE share_token = %s AND share_token IS NOT NULL
-                    """,
-                    (token,),
-                )
-                row = cur.fetchone()
-                if row is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "Notebook not found"},
-                        status_code=404,
-                    )
-                nb_cols = [d[0] for d in cur.description]
-                notebook: dict = {}
-                for col, val in zip(nb_cols, row):
-                    if col == "created_at" and val is not None:
-                        notebook[col] = val.isoformat()
-                    else:
-                        notebook[col] = val
-
-                notebook_id = notebook["id"]
-
-                # Get last completed run for this notebook
-                cur.execute(
-                    """
-                    SELECT id, executed_at, summary_text, envelope_inline,
-                           envelope_ref, pull_ids, status
-                    FROM app.notebook_runs
-                    WHERE notebook_id = %s AND status = 'success'
-                    ORDER BY executed_at DESC
-                    LIMIT 1
-                    """,
-                    (notebook_id,),
-                )
-                run_row = cur.fetchone()
-                if run_row is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "No completed run found"},
-                        status_code=404,
-                    )
-                run_cols = [d[0] for d in cur.description]
-                run: dict = {}
-                for col, val in zip(run_cols, run_row):
-                    if col == "executed_at" and val is not None:
-                        run[col] = val.isoformat()
-                    elif col == "envelope_inline" and val is not None:
-                        # Parse JSONB if it came as string
-                        if isinstance(val, str):
-                            try:
-                                run[col] = json.loads(val)
-                            except Exception:
-                                run[col] = val
-                        else:
-                            run[col] = val
-                    else:
-                        run[col] = val
-
-    except Exception as exc:
-        logger.error("admin_api: shared_notebook_endpoint_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    # Security: do NOT expose identity fields (created_by, share_token, etc.)
-    safe_notebook = {
-        "title": notebook["title"],
-        "report_ref": notebook["report_ref"],
-        "window_rule": notebook["window_rule"],
-        "created_at": notebook.get("created_at"),
-    }
-
-    return JSONResponse(
-        {
-            "notebook": safe_notebook,
-            "run": {
-                "id": run["id"],
-                "executed_at": run.get("executed_at"),
-                "summary_text": run.get("summary_text"),
-                "envelope_inline": run.get("envelope_inline"),
-                "envelope_ref": run.get("envelope_ref"),
-                "pull_ids": run.get("pull_ids", []),
-                "status": run.get("status"),
-            },
-        }
-    )
+#
+# `_share_notebook`, `_shared_notebook_endpoint` and the `token[:8]` rate limiter
+# stood here. They are deleted rather than left unmounted: an unmounted handler
+# body is exactly the artefact that got a route remounted once already in this
+# repository (SESSIONS.md, "Desaccord CLOS: _create_datastream_mapping_version"),
+# because the next reader sees a capability with no door and supplies one.
+#
+# What replaced them, and why the replacement is not the same shape:
+#   * the raw path token `/api/notebooks/shared/{token}` is GONE -- no route
+#     matches it, which is what AC10 requires. A 410 there would still be a route
+#     answering on a plaintext bearer carried in a URL path, and it served the
+#     LATEST run, so the artefact behind a link changed under its recipient.
+#   * `PATCH /api/notebooks/{notebook_id}/share` stays MOUNTED and answers 410
+#     through `core.render_shares_api.share_notebook_gone`. Deleting the entry
+#     would answer 405, which is a different statement and indistinguishable to a
+#     client from a routing regression.
+#   * Sharing is now one revocable grant over one immutable Render, exchanged
+#     once through the AD-30 fragment flow (`core.render_shares_api`).
 
 
 # ---------------------------------------------------------------------------
 # Story 6.6 — Slide export: HTML endpoint (AC5)
 # ---------------------------------------------------------------------------
 
-_HTML_SLIDE_TEMPLATE = """\
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{title} — {executed_at}</title>
-  <style>
-    /* Print-friendly standalone HTML — no external references (AD-11) */
-    *, *::before, *::after {{ box-sizing: border-box; }}
-    body {{
-      margin: 0;
-      padding: 2rem;
-      background: #ffffff;
-      color: #1a1a1a;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-      font-size: 15px;
-      line-height: 1.6;
-      max-width: 900px;
-      margin-left: auto;
-      margin-right: auto;
-    }}
-    h1 {{ font-size: 1.75rem; margin: 0 0 0.5rem; font-weight: 700; color: #111; }}
-    .meta {{
-      font-size: 0.85rem; color: #666; margin-bottom: 1.5rem;
-      border-bottom: 1px solid #e0e0e0; padding-bottom: 0.75rem;
-    }}
-    .narrative {{
-      white-space: pre-wrap; background: #f9f9f9;
-      border: 1px solid #e0e0e0; border-radius: 4px;
-      padding: 1rem; font-size: 0.95rem;
-    }}
-    .data-table {{ width: 100%; border-collapse: collapse; margin-top: 1.5rem; }}
-    .data-table th, .data-table td {{
-      border: 1px solid #ddd; padding: 0.5rem 0.75rem;
-      text-align: left; font-size: 0.875rem;
-    }}
-    .data-table th {{ background: #f5f5f5; font-weight: 600; }}
-    .data-table tr:nth-child(even) td {{ background: #fafafa; }}
-    .footer {{
-      margin-top: 2rem; font-size: 0.75rem; color: #999;
-      border-top: 1px solid #e0e0e0; padding-top: 0.5rem;
-    }}
-    @media print {{
-      body {{ padding: 1rem; font-size: 13px; }}
-      .narrative {{ border: none; background: transparent; padding: 0; }}
-    }}
-  </style>
-</head>
-<body>
-  <h1>{title}</h1>
-  <p class="meta">{window_rule} &middot; {executed_at} &middot; Données au {data_date}</p>
-  <pre class="narrative">{summary_text}</pre>
-{data_table}
-  <div class="footer">Généré par Connector &middot; {executed_at}</div>
-</body>
-</html>
-"""
 
 
-def _build_data_table_html(envelope_inline: dict | None) -> str:
-    """Build an HTML table from the envelope's metrics dict."""
-    if not envelope_inline:
-        return ""
-    data = envelope_inline.get("data", {})
-    metrics: dict = data.get("metrics", {})
-    if not metrics:
-        rows_data: list = data.get("rows", [])
-        if not rows_data:
-            return ""
-        # Build from first 20 rows
-        cols = list(rows_data[0].keys()) if rows_data else []
-        if not cols:
-            return ""
-        # review-epic-6 F-3: every stored value is UNTRUSTED — escape it.
-        header_cells = "".join(f"<th>{html_module.escape(str(col))}</th>" for col in cols[:8])
-        row_html_parts = []
-        for r in rows_data[:20]:
-            cells = "".join(f"<td>{html_module.escape(str(r.get(c, '')))}</td>" for c in cols[:8])
-            row_html_parts.append(f"<tr>{cells}</tr>")
-        rows_html = "\n".join(row_html_parts)
-        return (
-            f'  <table class="data-table"><thead><tr>{header_cells}</tr></thead>'
-            f"<tbody>{rows_html}</tbody></table>"
-        )
-    # Metrics dict: display as metric/value pairs
-    header = "<th>Métrique</th><th>Valeur</th>"
-    metric_rows = []
-    for k, v in list(metrics.items())[:30]:
-        metric_rows.append(
-            f"<tr><td>{html_module.escape(str(k))}</td><td>{html_module.escape(str(v))}</td></tr>"
-        )
-    rows_html = "\n".join(metric_rows)
-    return (
-        f'  <table class="data-table"><thead><tr>{header}</tr></thead>'
-        f"<tbody>{rows_html}</tbody></table>"
-    )
 
 
-async def _export_notebook_html(request: Request) -> Response:
-    """GET /api/notebooks/{notebook_id}/runs/{run_id}/export/html -- slide export (Story 6.6, AC5).
-
-    Server-side HTML template rendered from stored envelope_inline + summary_text.
-    No LLM call; pure template substitution. No external references (AD-11).
-
-    Response: text/html with inline CSS. Print to PDF from browser.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    notebook_id = request.path_params.get("notebook_id", "")
-    run_id = request.path_params.get("run_id", "")
-    # Story 7.4 (AC7, AI-38): explicit scope claim from the query string.
-    scope_hint = (request.query_params.get("project_id") or "").strip()
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                # Fetch notebook (incl. project_id for scope enforcement)
-                cur.execute(
-                    "SELECT title, window_rule, project_id FROM app.notebooks WHERE id = %s",
-                    (notebook_id,),
-                )
-                nb_row = cur.fetchone()
-                if nb_row is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "Notebook not found"},
-                        status_code=404,
-                    )
-                nb_title, nb_window_rule, nb_project_id = nb_row
-
-                # Story 7.4 (AC7, AI-38): cross-scope EXPORT must 404 (+ audit).
-                denied = _enforce_notebook_project_scope(
-                    nb_project_id,
-                    identity,
-                    notebook_id,
-                    conn,
-                    scope_hint=scope_hint,
-                    action="notebook_export",
-                )
-                if denied is not None:
-                    return denied
-
-                # Fetch run
-                cur.execute(
-                    """
-                    SELECT executed_at, summary_text, envelope_inline, pull_ids
-                    FROM app.notebook_runs
-                    WHERE id = %s AND notebook_id = %s
-                    """,
-                    (run_id, notebook_id),
-                )
-                run_row = cur.fetchone()
-                if run_row is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "Run not found"},
-                        status_code=404,
-                    )
-                executed_at, summary_text, envelope_inline_raw, pull_ids = run_row
-    except Exception as exc:
-        logger.error("admin_api: export_notebook_html_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    # Parse envelope_inline JSONB
-    envelope_inline: dict | None = None
-    if envelope_inline_raw is not None:
-        try:
-            envelope_inline = (
-                json.loads(envelope_inline_raw)
-                if isinstance(envelope_inline_raw, str)
-                else envelope_inline_raw
-            )
-        except Exception:
-            envelope_inline = None
-
-    # Determine data_date from first pull_id or envelope
-    data_date = "—"
-    if envelope_inline:
-        prov = envelope_inline.get("meta", {}).get("provenance", {})
-        dr = envelope_inline.get("data", {}).get("date_range", {})
-        if dr.get("end"):
-            data_date = dr["end"]
-        elif prov.get("pull_ids"):
-            data_date = str(prov["pull_ids"][0])
-    elif pull_ids:
-        data_date = str(pull_ids[0])
-
-    executed_at_str = executed_at.strftime("%Y-%m-%d %H:%M UTC") if executed_at else "—"
-    # Escape HTML in summary
-
-    summary_escaped = html_module.escape(summary_text or "")
-    title_escaped = html_module.escape(nb_title or "")
-    window_escaped = html_module.escape(nb_window_rule or "")
-    data_date_escaped = html_module.escape(data_date)
-    data_table_html = _build_data_table_html(envelope_inline)
-
-    html_content = _HTML_SLIDE_TEMPLATE.format(
-        title=title_escaped,
-        executed_at=executed_at_str,
-        window_rule=window_escaped,
-        data_date=data_date_escaped,
-        summary_text=summary_escaped,
-        data_table=data_table_html,
-    )
-
-    return Response(
-        content=html_content,
-        media_type="text/html; charset=utf-8",
-        headers={
-            # review-epic-6 F-3: belt-and-braces — even if an escape is ever
-            # missed, no script/external resource can execute or load.
-            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
-        },
-    )
 
 
 # ===========================================================================
@@ -4283,353 +1063,12 @@ async def _export_notebook_html(request: Request) -> Response:
 # ===========================================================================
 
 
-def _oauth_console_redirect(status: str, connection_ref_id: str = "") -> str:
-    """Build the safe console redirect target after a callback.
-
-    Carries ONLY a coarse status flag + the connection id -- never a token, never
-    the authorization code, never any state detail. The console reads
-    ``?google_oauth=<status>`` to render a French success/error banner.
-
-    F-5: la valeur de ADMIN_CONSOLE_OAUTH_RETURN doit commencer par '/' (chemin
-    relatif interne). Toute valeur ne respectant pas ce critere (ex: URL externe
-    http://evil.com) est ignoree et le defaut '/console/connections' est utilise
-    (defense contre les redirections ouvertes).
-    """
-    _DEFAULT_RETURN = "/console/connections"
-    raw = os.environ.get("ADMIN_CONSOLE_OAUTH_RETURN", "").strip()
-    if raw and raw.startswith("/"):
-        base = raw
-    else:
-        if raw:
-            logger.warning(
-                "admin_api: ADMIN_CONSOLE_OAUTH_RETURN=%r ne commence pas par '/' "
-                "-- utilisation du defaut %r (defense open-redirect F-5)",
-                raw,
-                _DEFAULT_RETURN,
-            )
-        base = _DEFAULT_RETURN
-    params = {"google_oauth": status}
-    if connection_ref_id:
-        params["connection"] = connection_ref_id
-    return f"{base}?{urlencode(params)}"
 
 
-async def _google_oauth_authorize(request: Request) -> Response:
-    """GET /api/google/oauth/authorize?project_id=&connection_ref_id=
-
-    Returns {"authorize_url": ...} for the console to redirect the admin to the
-    single multi-scope Google consent screen. Enforces auth (AD-14) AND
-    identity_has_project_access (AD-5) BEFORE generating the URL.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    project_id = (request.query_params.get("project_id") or "").strip()
-    connection_ref_id = (request.query_params.get("connection_ref_id") or "").strip()
-    if not project_id:
-        return JSONResponse(
-            {"code": "missing_param", "message": "Le parametre 'project_id' est requis."},
-            status_code=400,
-        )
-    if not connection_ref_id:
-        return JSONResponse(
-            {
-                "code": "missing_param",
-                "message": "Le parametre 'connection_ref_id' est requis.",
-            },
-            status_code=400,
-        )
-
-    # Consent can mutate only a Google credential owned by the requested project org.
-    from core.project_access import (  # noqa: PLC0415
-        identity_can_manage_org,
-        identity_has_project_access,
-    )
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            allowed = identity_has_project_access(project_id, identity or "anonymous", conn)
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT r.owner_org_id, p.org_id, r.provider
-                    FROM app.connection_ref r
-                    JOIN app.projects p ON p.id = %s AND p.status = 'active'
-                    WHERE r.id = %s
-                    """,
-                    (project_id, connection_ref_id),
-                )
-                connection_row = cur.fetchone()
-            if connection_row is None:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Connexion introuvable."},
-                    status_code=404,
-                )
-            owner_org_id, project_org_id, provider = connection_row
-            owner_managed = (
-                owner_org_id == project_org_id
-                and str(provider or "").lower().startswith("google")
-                and identity_can_manage_org(owner_org_id, identity or "anonymous", conn)
-            )
-    except Exception as exc:
-        logger.error("admin_api: google_oauth_authorize db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": "Erreur base de donnees."},
-            status_code=500,
-        )
-    if not allowed or not owner_managed:
-        write_audit_row(
-            identity=identity or "anonymous",
-            action=ACTION_CROSS_SCOPE_ATTEMPT,
-            provider_account="google_direct",
-            connection_ref=connection_ref_id,
-            metadata={
-                "project_id": project_id,
-                "operation": "google_oauth_authorize",
-                "reason": "not_owner_manager",
-            },
-        )
-        return JSONResponse(
-            {
-                "code": "forbidden",
-                "message": "Seule l'organisation proprietaire peut reconnecter cet acces.",
-            },
-            status_code=403,
-        )
-    from core.google_oauth import GoogleOAuthConfigError, build_authorize_url  # noqa: PLC0415
-
-    try:
-        authorize_url = build_authorize_url(
-            project_id=project_id,
-            connection_ref_id=connection_ref_id,
-            identity=identity or "anonymous",
-        )
-    except GoogleOAuthConfigError:
-        # Client config missing (Phase B / AI-08). Honest French message, no leak.
-        return JSONResponse(
-            {
-                "code": "oauth_not_configured",
-                "message": (
-                    "Le client OAuth Google n'est pas configure sur le serveur "
-                    "(variables GOOGLE_OAUTH_* manquantes)."
-                ),
-            },
-            status_code=503,
-        )
-    except Exception as exc:
-        logger.error("admin_api: google_oauth_authorize error: %s", type(exc).__name__)
-        return JSONResponse(
-            {"code": "oauth_error", "message": "Impossible de construire l'URL d'autorisation."},
-            status_code=500,
-        )
-
-    return JSONResponse({"authorize_url": authorize_url})
 
 
-async def _google_oauth_callback(request: Request) -> Response:
-    """GET /api/google/oauth/callback?code=&state=
 
-    Google redirects here. Validates the anti-CSRF state (expired/unknown/forged
-    -> generic 4xx, no oracle), exchanges the code, stores the encrypted token
-    (Story 18.1), writes the emission audit row (AD-14), and redirects to the
-    console with a coarse status flag. NO token/code in logs, errors, or the
-    redirect URL.
-    """
-    from core.google_oauth import (  # noqa: PLC0415
-        GoogleOAuthError,
-        GoogleOAuthStateError,
-        exchange_code,
-        verify_state,
-    )
 
-    # Google may redirect with ?error=access_denied when the user declines.
-    google_error = (request.query_params.get("error") or "").strip()
-    state_param = request.query_params.get("state") or ""
-    code = request.query_params.get("code") or ""
-
-    # 1. Verify the anti-CSRF state FIRST -- before touching the code. A bad state
-    #    is a generic 4xx with NO distinguishing detail (anti-oracle).
-    try:
-        state = verify_state(state_param)
-    except GoogleOAuthStateError:
-        logger.warning("admin_api: google_oauth_callback rejected_state")
-        return JSONResponse(
-            {
-                "code": "invalid_state",
-                "message": "Requete OAuth invalide ou expiree. Relancez la connexion Google.",
-            },
-            status_code=400,
-        )
-
-    if google_error:
-        # User declined or Google refused. Honest French message; audit the attempt.
-        logger.info("admin_api: google_oauth_callback user_declined")
-        write_audit_row(
-            identity=state.identity or "anonymous",
-            action=ACTION_CROSS_SCOPE_ATTEMPT,
-            provider_account="google_direct",
-            connection_ref=state.connection_ref_id,
-            metadata={
-                "project_id": state.project_id,
-                "operation": "google_oauth_callback",
-                "reason": "user_declined",
-            },
-        )
-        return JSONResponse(
-            {
-                "code": "consent_declined",
-                "message": "Consentement Google refuse ou annule. Aucune connexion creee.",
-            },
-            status_code=400,
-        )
-
-    if not code:
-        return JSONResponse(
-            {
-                "code": "missing_code",
-                "message": "Requete OAuth invalide (code absent). Relancez la connexion Google.",
-            },
-            status_code=400,
-        )
-
-    # 1b. Defense en profondeur -- re-verifier AD-5 AVANT l'echange du code.
-    #     L'acces a pu etre revoque entre authorize et callback (fenetre <= 600 s).
-    #     Si l'acces est refuse ici, on N'echange PAS le code (F-3).
-    from core.project_access import identity_has_project_access  # noqa: PLC0415
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as _conn:
-            _still_allowed = identity_has_project_access(
-                state.project_id, state.identity or "anonymous", _conn
-            )
-    except Exception as _exc:
-        logger.error(
-            "admin_api: google_oauth_callback ad5_recheck_db_error: %s", type(_exc).__name__
-        )
-        return JSONResponse(
-            {
-                "code": "db_error",
-                "message": "Erreur base de donnees lors de la verification d'acces.",
-            },
-            status_code=500,
-        )
-    if not _still_allowed:
-        write_audit_row(
-            identity=state.identity or "anonymous",
-            action=ACTION_CROSS_SCOPE_ATTEMPT,
-            provider_account="google_direct",
-            connection_ref=state.connection_ref_id,
-            metadata={
-                "project_id": state.project_id,
-                "operation": "google_oauth_callback_ad5_recheck",
-                "reason": "access_revoked_between_authorize_and_callback",
-            },
-        )
-        logger.warning(
-            "admin_api: google_oauth_callback ad5_recheck_denied identity=%s project=%s "
-            "(acces revoque entre authorize et callback)",
-            state.identity,
-            state.project_id,
-        )
-        return JSONResponse(
-            {
-                "code": "forbidden",
-                "message": (
-                    "Acces refuse : vous n'etes plus membre de ce projet. "
-                    "La connexion Google n'a pas ete creee."
-                ),
-            },
-            status_code=403,
-        )
-
-    # 2. Exchange the code for tokens (redacted errors -- never the code/tokens).
-    try:
-        token = await exchange_code(code)
-    except GoogleOAuthError as exc:
-        # exc message is redacted (status + short google error code only). Surface
-        # a generic French message -- do NOT echo the redacted detail to the UI.
-        logger.warning("admin_api: google_oauth_callback exchange_failed: %s", exc)
-        return JSONResponse(
-            {
-                "code": "exchange_failed",
-                "message": (
-                    "Echec de la connexion Google (echange du code). Relancez la "
-                    "connexion ; un nouveau consentement peut etre requis."
-                ),
-            },
-            status_code=502,
-        )
-    except Exception as exc:
-        logger.error("admin_api: google_oauth_callback unexpected: %s", type(exc).__name__)
-        return JSONResponse(
-            {"code": "oauth_error", "message": "Erreur inattendue lors de la connexion Google."},
-            status_code=500,
-        )
-
-    # 3. Persist the encrypted token via the Story 18.1 store (single writer).
-    #    expected_project_id defends against cross-project id confusion (18.1 F-1).
-    from core.google_token_store import (  # noqa: PLC0415
-        GoogleTokenStoreError,
-        store_google_token,
-    )
-
-    try:
-        store_google_token(
-            state.connection_ref_id,
-            {
-                "access_token": token.access_token,
-                "refresh_token": token.refresh_token,
-                "metadata": {"token_type": token.token_type},
-            },
-            token.token_expiry,
-            token.granted_scopes,
-            expected_project_id=state.project_id,
-        )
-    except GoogleTokenStoreError as exc:
-        # exc is already redacted. Generic French message to the UI.
-        logger.warning("admin_api: google_oauth_callback store_failed: %s", exc)
-        return JSONResponse(
-            {
-                "code": "store_failed",
-                "message": "Impossible d'enregistrer la connexion Google. Reessayez.",
-            },
-            status_code=500,
-        )
-
-    # 4. Emission audit row (AD-14 On-Behalf-Of). BLOCKED-18.2 F-6: emission audit
-    #    belongs to this flow. Records the REAL identity from the verified state,
-    #    the granted scopes -- NEVER the token.
-    write_audit_row(
-        identity=state.identity or "anonymous",
-        action=ACTION_CONNECTION_CREATED,
-        provider_account="google_direct",
-        connection_ref=state.connection_ref_id,
-        metadata={
-            "project_id": state.project_id,
-            "auth_path": "google_direct",
-            "event": "google_token_emitted",
-            "granted_scopes": token.granted_scopes,
-        },
-    )
-    logger.info(
-        "admin_api: google_oauth_callback success connection=%s scopes=%d",
-        state.connection_ref_id,
-        len(token.granted_scopes),
-    )
-
-    # 5. Redirect the browser back to the console with a coarse success flag only.
-    return RedirectResponse(
-        url=_oauth_console_redirect("success", state.connection_ref_id),
-        status_code=302,
-    )
 
 
 # ===========================================================================
@@ -4653,374 +1092,14 @@ async def _google_oauth_callback(request: Request) -> Response:
 # ===========================================================================
 
 
-def _derive_google_health(token_expiry, auth_path: str) -> str:
-    """Derive a health status string from the token expiry and auth_path.
-
-    Rules (source locale -- pas de polling Nango pour google_direct):
-      * auth_path != 'google_direct'  -> 'not_connected' (pas de token Google)
-      * token_expiry is None          -> 'unknown'  (token sans expiry connue)
-      * expiry dans > 5 min           -> 'ok'
-      * expiry dans <= 5 min ou passe -> 'stale'  (refresh imminent ou requis)
-
-    These mirror the Nango health statuses (ok/stale) reused from the existing
-    surface (Story 2.5) so the UI can render the same badges.
-    """
-    if auth_path != "google_direct":
-        return "not_connected"
-    if token_expiry is None:
-        return "unknown"
-    now = datetime.now(tz=timezone.utc)
-    # token_expiry may be a naive datetime from Postgres -- normalise to UTC.
-    if token_expiry.tzinfo is None:
-        token_expiry = token_expiry.replace(tzinfo=timezone.utc)
-    delta = (token_expiry - now).total_seconds()
-    return "ok" if delta > 300 else "stale"
 
 
-# Human-readable French labels for the known Google stack scopes (UX-DR10).
-# Extend when new scopes are added to GOOGLE_STACK_SCOPES in google_oauth.py.
-_GOOGLE_SCOPE_LABELS: dict[str, str] = {
-    "https://www.googleapis.com/auth/analytics.readonly": "Google Analytics 4 (lecture)",
-    "https://www.googleapis.com/auth/webmasters.readonly": "Google Search Console (lecture)",
-    "https://www.googleapis.com/auth/adwords": "Google Ads",
-    "https://www.googleapis.com/auth/spreadsheets.readonly": "Google Sheets (lecture)",
-}
 
 
-def _scope_label(scope: str) -> str:
-    """Return a human-readable French label for a scope URI, or the raw URI."""
-    return _GOOGLE_SCOPE_LABELS.get(scope, scope)
 
 
-async def _google_status(request: Request) -> Response:
-    """GET /api/google/oauth/status/{connection_ref_id}
-
-    Retourne l'etat Google direct d'une connexion :
-      {
-        "connection_ref_id": str,
-        "auth_path":        "google_direct" | "nango",
-        "health":           "ok" | "stale" | "not_connected" | "unknown",
-        "token_expiry":     str (ISO-8601) | null,
-        "granted_scopes":   [{"scope": str, "label": str}, ...],
-        "project_id":       str
-      }
-
-    Jamais le blob chiffre (NFR3). AD-5 verifie l'acces projet avant reponse.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Token Bearer requis."},
-            status_code=401,
-        )
-
-    connection_ref_id = request.path_params.get("connection_ref_id", "")
-    if not connection_ref_id:
-        return JSONResponse(
-            {"code": "missing_param", "message": "connection_ref_id est requis."},
-            status_code=400,
-        )
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-        from core.project_access import identity_has_project_access  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT project_id, auth_path, token_expiry, granted_scopes
-                      FROM app.connection_ref
-                     WHERE id = %s
-                    """,
-                    (connection_ref_id,),
-                )
-                row = cur.fetchone()
-
-            if row is None:
-                return JSONResponse(
-                    {
-                        "code": "not_found",
-                        "message": (f"Connexion '{connection_ref_id}' introuvable."),
-                    },
-                    status_code=404,
-                )
-
-            project_id, auth_path, token_expiry, granted_scopes = row
-
-            # AD-5: verifier l'acces au projet.
-            if not identity_has_project_access(project_id, identity or "anonymous", conn):
-                write_audit_row(
-                    identity=identity or "anonymous",
-                    action=ACTION_CROSS_SCOPE_ATTEMPT,
-                    provider_account="google_direct",
-                    connection_ref=connection_ref_id,
-                    metadata={
-                        "project_id": project_id,
-                        "operation": "google_status",
-                        "reason": "not_a_member",
-                    },
-                )
-                return JSONResponse(
-                    {
-                        "code": "forbidden",
-                        "message": "Acces refuse : vous n'appartenez pas a ce projet.",
-                    },
-                    status_code=403,
-                )
-    except Exception as exc:
-        logger.error("admin_api: google_status db_error: %s", type(exc).__name__)
-        return JSONResponse(
-            {"code": "db_error", "message": "Erreur base de donnees."},
-            status_code=500,
-        )
-
-    health = _derive_google_health(token_expiry, auth_path or "nango")
-    scopes_list = list(granted_scopes or [])
-    scope_objects = [{"scope": s, "label": _scope_label(s)} for s in scopes_list]
-
-    return JSONResponse(
-        {
-            "connection_ref_id": connection_ref_id,
-            "auth_path": auth_path or "nango",
-            "health": health,
-            "token_expiry": token_expiry.isoformat() if token_expiry else None,
-            "granted_scopes": scope_objects,
-            "project_id": project_id,
-        }
-    )
 
 
-async def _google_revoke(request: Request) -> Response:
-    """POST /api/google/oauth/revoke/{connection_ref_id}
-
-    Revoque le token Google direct :
-      1. Verifie auth + acces projet (AD-5).
-      2. Appelle le revoke endpoint Google (best-effort : une erreur cote Google
-         ne bloque PAS la purge locale -- pattern delete_connection).
-      3. Purge le blob chiffre local via clear_google_token(performed_by=identite
-         REELLE -- jamais 'system' sur un chemin humain, review 18.1 F-6).
-      4. L'audit On-Behalf-Of est ecrit par clear_google_token (AD-14).
-
-    Idempotent : une connexion deja en auth_path='nango' sans blob repond 200.
-    Cross-projet : AD-5 -> 403 (audit ACTION_CROSS_SCOPE_ATTEMPT).
-    Connexion absente : 404.
-
-    Response (200):
-      {"revoked": true, "connection_ref_id": str,
-       "google_revoke": "ok" | "best_effort_failed"
-                      | "skipped_already_clear" | "skipped_decrypt_failed"}
-    Note: "skipped_decrypt_failed" means the blob is present but unreadable --
-    the token may still be ACTIVE at Google; manual revocation may be needed.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Token Bearer requis."},
-            status_code=401,
-        )
-
-    connection_ref_id = request.path_params.get("connection_ref_id", "")
-    if not connection_ref_id:
-        return JSONResponse(
-            {"code": "missing_param", "message": "connection_ref_id est requis."},
-            status_code=400,
-        )
-
-    # 1. Verifier l'existence + le projet + l'acces.
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-        from core.project_access import (  # noqa: PLC0415
-            identity_can_manage_org,
-            identity_has_project_access,
-        )
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT project_id, auth_path, token_expiry, granted_scopes, owner_org_id
-                      FROM app.connection_ref
-                     WHERE id = %s
-                    """,
-                    (connection_ref_id,),
-                )
-                row = cur.fetchone()
-
-            if row is None:
-                return JSONResponse(
-                    {
-                        "code": "not_found",
-                        "message": (f"Connexion '{connection_ref_id}' introuvable."),
-                    },
-                    status_code=404,
-                )
-
-            project_id, auth_path, _expiry, _scopes, owner_org_id = row
-
-            # AD-5: verifier l'acces au projet AVANT toute operation.
-            if not identity_has_project_access(project_id, identity or "anonymous", conn):
-                write_audit_row(
-                    identity=identity or "anonymous",
-                    action=ACTION_CROSS_SCOPE_ATTEMPT,
-                    provider_account="google_direct",
-                    connection_ref=connection_ref_id,
-                    metadata={
-                        "project_id": project_id,
-                        "operation": "google_revoke",
-                        "reason": "not_a_member",
-                    },
-                )
-                return JSONResponse(
-                    {
-                        "code": "forbidden",
-                        "message": "Acces refuse : vous n'appartenez pas a ce projet.",
-                    },
-                    status_code=403,
-                )
-            if not identity_can_manage_org(owner_org_id, identity or "anonymous", conn):
-                return JSONResponse(
-                    {
-                        "code": "forbidden",
-                        "message": "Seule l'organisation proprietaire peut revoquer cet acces.",
-                    },
-                    status_code=403,
-                )
-    except Exception as exc:
-        logger.error("admin_api: google_revoke db_error: %s", type(exc).__name__)
-
-        return JSONResponse(
-            {"code": "db_error", "message": "Erreur base de donnees."},
-            status_code=500,
-        )
-
-    # 2. Appel best-effort au revoke endpoint Google (NFR3 : aucun token loggue).
-    #    Si auth_path n'est pas 'google_direct', il n'y a pas de token a revoquer
-    #    cote Google : on saute l'appel et on purge quand meme (idempotence).
-    google_revoke_status = "skipped"
-    if auth_path == "google_direct":
-        try:
-            # On charge le token pour obtenir l'access_token a revoquer.
-            # clear_google_token efface le blob; il faut charger AVANT.
-            # review-18-5: deux cas de "skip" distincts (AD-9 honnetete) :
-            #   - "skipped_already_clear" : blob absent ou connexion sans blob ->
-            #     le token n'existe pas chez Google (idempotent, safe).
-            #   - "skipped_decrypt_failed" : blob PRESENT mais indechiffrable ->
-            #     le token peut etre encore ACTIF cote Google ; AVERTIR (NFR3).
-            from core.google_token_store import (  # noqa: PLC0415
-                GoogleTokenStoreError,
-                load_google_token,
-            )
-
-            try:
-                gt = load_google_token(connection_ref_id, expected_project_id=project_id)
-                access_token_to_revoke = gt.access_token
-            except GoogleTokenStoreError as _load_exc:
-                access_token_to_revoke = None
-                _err_msg = str(_load_exc)
-                # Distinguish: "no blob" / "not found" (safe, token never issued or
-                # already cleared) vs "decrypt failed" (blob present but unreadable --
-                # token may still be ACTIVE at Google).
-                _decrypt_failed = any(
-                    kw in _err_msg
-                    for kw in (
-                        "cannot decrypt",
-                        "decryption failed",
-                        "tampered",
-                        "wrong key",
-                        "valid JSON",
-                        "unsupported token blob",
-                    )
-                )
-                if _decrypt_failed:
-                    google_revoke_status = "skipped_decrypt_failed"
-                    logger.warning(
-                        "admin_api: google_revoke skipped_decrypt_failed "
-                        "connection=%s -- token may still be active at Google; "
-                        "manual revocation may be required (review-18-5 AD-9)",
-                        connection_ref_id,
-                    )
-                else:
-                    # Blob absent / already purged -> safe to skip (idempotent).
-                    google_revoke_status = "skipped_already_clear"
-
-            if access_token_to_revoke:
-                import httpx  # noqa: PLC0415
-
-                from core.google_oauth import GOOGLE_REVOKE_ENDPOINT  # noqa: PLC0415
-
-                try:
-                    async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
-                        # RFC / Google docs: token must be in the FORM BODY, never in
-                        # the query string (which would leak it to logs/proxies).
-                        resp = await client.post(
-                            GOOGLE_REVOKE_ENDPOINT,
-                            data={"token": access_token_to_revoke},
-                        )
-                    if resp.status_code < 400:
-                        google_revoke_status = "ok"
-                    else:
-                        # Google a refuse mais on continue : best-effort.
-                        google_revoke_status = "best_effort_failed"
-                        logger.warning(
-                            "admin_api: google_revoke google_endpoint_failed "
-                            "status=%d (purge locale continue)",
-                            resp.status_code,
-                        )
-                except Exception as exc:
-                    google_revoke_status = "best_effort_failed"
-                    logger.warning(
-                        "admin_api: google_revoke google_endpoint_error: %s "
-                        "(purge locale continue)",
-                        type(exc).__name__,
-                    )
-            elif google_revoke_status == "skipped":
-                # access_token_to_revoke was empty/falsy but no exception was raised
-                # (empty access_token field in a valid blob) -> treat as already clear.
-                google_revoke_status = "skipped_already_clear"
-        except Exception as exc:
-            logger.warning(
-                "admin_api: google_revoke load_token_error: %s (purge locale continue)",
-                type(exc).__name__,
-            )
-            google_revoke_status = "best_effort_failed"
-
-    # 3. Purge locale -- jamais bloquee par l'echec du revoke Google.
-    #    performed_by = identite REELLE (review-18-1 F-6 : jamais 'system' sur
-    #    un chemin humain).
-    try:
-        from core.google_token_store import (  # noqa: PLC0415
-            GoogleTokenStoreError,
-            clear_google_token,
-        )
-
-        clear_google_token(
-            connection_ref_id,
-            performed_by=identity or "anonymous",
-            expected_project_id=project_id,
-        )
-    except GoogleTokenStoreError as exc:
-        logger.error("admin_api: google_revoke clear_failed: %s", exc)
-        return JSONResponse(
-            {
-                "code": "revoke_failed",
-                "message": "Impossible de purger la connexion Google. Reessayez.",
-            },
-            status_code=500,
-        )
-
-    logger.info(
-        "admin_api: google_revoke success connection=%s google_status=%s",
-        connection_ref_id,
-        google_revoke_status,
-    )
-    return JSONResponse(
-        {
-            "revoked": True,
-            "connection_ref_id": connection_ref_id,
-            "google_revoke": google_revoke_status,
-        }
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -5036,77 +1115,19 @@ async def _google_revoke(request: Request) -> Response:
 # org-level default-closed flip is Story 21.5). All guarded by _check_auth.
 # ===========================================================================
 
-_ORG_ROLES = frozenset({"owner", "admin", "member", "viewer"})
-_ORG_MEMBER_STATUSES = frozenset({"invited", "active", "suspended"})
 
-# Story 21.5 security follow-up: strict role hierarchy (owner > admin > member >
-# viewer). Used to (a) forbid self-escalation / minting a role above the actor's
-# own (FIX 3) and (b) identify "managers" (owner|admin) that keep an enrolled org
-# from silently reopening (FIX 1b).
-_ORG_ROLE_RANK = {"viewer": 1, "member": 2, "admin": 3, "owner": 4}
 # Roles that can manage the org (own the "active manager" floor an enrolled org
 # must never drop below -- else it reaches zero active members and reopens).
 _ORG_MANAGE_ROLES = frozenset({"owner", "admin"})
 
-# Story 21.2: hex colour #RRGGBB for org branding.
-_HEX_COLOUR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
-_ORG_BRAND_COLOUR_FIELDS = ("brand_primary", "brand_secondary", "brand_accent")
 
 
-def _extract_brand_fields(body: dict) -> tuple[dict | None, Response | None]:
-    """Story 21.2: validate + extract org branding fields present in *body*.
-
-    Returns (fields, None) on success or (None, 422) on an invalid hex colour.
-    Only keys present in the body are returned (absent = unchanged on PATCH).
-    The 3 colours must match #RRGGBB; logo_url is a free string (nullable).
-    """
-    fields: dict = {}
-    for col in _ORG_BRAND_COLOUR_FIELDS:
-        if col in body:
-            raw = body.get(col)
-            if raw in (None, ""):
-                fields[col] = None
-            else:
-                val = str(raw).strip()
-                if not _HEX_COLOUR_RE.match(val):
-                    return None, JSONResponse(
-                        {
-                            "code": "invalid_input",
-                            "message": (
-                                f"Couleur invalide pour {col} : '{val}'. "
-                                f"Format attendu : #RRGGBB (hexadécimal)."
-                            ),
-                        },
-                        status_code=422,
-                    )
-                fields[col] = val
-    if "logo_url" in body:
-        raw_logo = body.get("logo_url")
-        fields["logo_url"] = str(raw_logo).strip() if raw_logo else None
-    return fields, None
 
 
-def _mint_org_id() -> str:
-    """Mint a new prefixed ULID 'org_<ULID>' for an organization."""
-    from ulid import ULID  # noqa: PLC0415
-
-    return f"org_{ULID()}"
 
 
-def _mint_org_member_id() -> str:
-    """Mint a new prefixed ULID 'omem_<ULID>' for a membership row."""
-    from ulid import ULID  # noqa: PLC0415
-
-    return f"omem_{ULID()}"
 
 
-def _org_row_to_dict(cols: list[str], row: tuple) -> dict:
-    """Serialise an organizations/org_members row, ISO-formatting timestamps."""
-    _ts_cols = {"created_at", "updated_at", "archived_at", "invited_at", "joined_at"}
-    out: dict = {}
-    for col, val in zip(cols, row):
-        out[col] = val.isoformat() if (col in _ts_cols and val is not None) else val
-    return out
 
 
 def _enforce_org_manage(org_id: str, identity: str, conn, operation: str) -> Response | None:
@@ -5154,22 +1175,22 @@ async def _enforce_platform_admin(
     nothing to check. Its issuer is a PLATFORM admin -- the same deny-by-default
     ``TOOROW_SUPER_ADMINS`` allow-list the CRM control surface uses (story 34.3).
 
-    Both identity keys are considered, exactly like ``_create_org``: the bearer
-    subject (a service token such as the CRM's) and, when the token carries one,
-    the OAuth-verified email (a human platform admin). Refusal is a 404, not a
-    403: we do not reveal that this surface exists to a caller who is not
-    allow-listed. Returns the refusal Response, or None when allowed.
+    Resolution is delegated to ``core.super_admin.identity_is_super_admin`` --
+    THE one answer to "who is a super-admin" (audit 12, P1-2). It resolves the
+    bearer subject to its verified email through ``app.person_identities``; the
+    OAuth-verified email carried by the token is handed over as an ``extra`` key
+    because it is a stronger source than the registry, not a second resolution.
+    Refusal is a 404, not a 403: we do not reveal that this surface exists to a
+    caller who is not allow-listed. Returns the refusal Response, or None when
+    allowed.
 
     This changes NOTHING for invitations that name an organization: they keep the
     membership check.
     """
-    from core.super_admin import is_super_admin  # noqa: PLC0415
+    from core.super_admin import identity_is_super_admin  # noqa: PLC0415
 
-    keys = {identity}
     _, verified_email = await _check_invitation_identity(request)
-    if verified_email:
-        keys.add(verified_email)
-    if any(is_super_admin(key) for key in keys):
+    if identity_is_super_admin(identity, extra=(verified_email,)):
         return None
     write_audit_row(
         identity=identity or "anonymous",
@@ -5182,1369 +1203,35 @@ async def _enforce_platform_admin(
     return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
 
 
-def _enforce_role_assignment(
-    org_id: str,
-    actor_identity: str,
-    target_identity: str,
-    assigned_role: str,
-    conn,
-    operation: str,
-) -> Response | None:
-    """Story 21.5 security follow-up (FIX 3): forbid role self-escalation.
 
-    The actor already passed the manage gate (owner|admin). This adds the strict
-    hierarchy rule (owner > admin > member > viewer):
-      - the actor may NOT assign a role strictly HIGHER than its own resolved active
-        role (an admin cannot mint/promote an owner);
-      - the actor may NOT raise its OWN role (no self-promotion, even to an equal-or-
-        higher rank than it currently holds).
-    An owner (top rank) can assign any role to others. Returns a 403 Response on
-    refusal (audited via ACTION_CROSS_SCOPE_ATTEMPT), or None when allowed.
-    """
-    from core.project_access import resolve_org_role  # noqa: PLC0415
 
-    actor_role = resolve_org_role(org_id, actor_identity or "anonymous", conn)
-    actor_rank = _ORG_ROLE_RANK.get(actor_role or "", 0)
-    assigned_rank = _ORG_ROLE_RANK.get(assigned_role, 0)
 
-    # Deny assigning a role strictly above the actor's own rank. This single rule
-    # covers both threats: an admin minting/promoting an OWNER (target is someone
-    # else) AND an actor promoting ITSELF (self-promotion is by definition a jump to
-    # a rank above the actor's current one). An owner (top rank) is never blocked,
-    # and any assignment at or below the actor's rank is allowed.
-    if assigned_rank <= actor_rank:
-        return None
 
-    write_audit_row(
-        identity=actor_identity or "anonymous",
-        action=ACTION_CROSS_SCOPE_ATTEMPT,
-        provider_account="",
-        connection_ref="",
-        metadata={
-            "org_id": org_id,
-            "operation": operation,
-            "reason": "role_escalation",
-            "actor_role": actor_role,
-            "assigned_role": assigned_role,
-            "target_identity": target_identity,
-        },
-    )
-    logger.warning(
-        "admin_api: org_role_escalation_denied identity=%s org=%s op=%s "
-        "actor_role=%s assigned_role=%s",
-        actor_identity,
-        org_id,
-        operation,
-        actor_role,
-        assigned_role,
-    )
-    return JSONResponse(
-        {
-            "code": "forbidden",
-            "message": ("Acces refuse : vous ne pouvez pas attribuer un role superieur au votre."),
-        },
-        status_code=403,
-    )
 
 
-def _count_active_memberships(keys: set[str]) -> int | None:
-    """Active memberships held by any of *keys*. ``None`` means UNKNOWN.
 
-    None is not zero, and the caller must not treat it as such: an unverifiable
-    count fails closed. Matching is case-insensitive because the two writers of
-    ``app.org_members.identity`` disagree on case as well as on which value they
-    store (token subject vs verified email).
-    """
-    candidates = [k.strip().lower() for k in keys if k and k.strip()]
-    if not candidates:
-        return 0
-    try:
-        from core.db import get_connection  # noqa: PLC0415
 
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT COUNT(*) FROM app.org_members "
-                    "WHERE status = 'active' AND LOWER(identity) = ANY(%s)",
-                    (candidates,),
-                )
-                row = cur.fetchone()
-        return int(row[0]) if row else 0
-    except Exception as exc:  # noqa: BLE001
-        logger.error("admin_api: membership_count_failed: %s", exc)
-        return None
 
 
-def _count_instance_organizations() -> int | None:
-    """Organizations existing on THIS instance. ``None`` means UNKNOWN.
 
-    Only consulted on a self-hosted instance, to answer one question: has this
-    instance been claimed yet? Like the membership count, None is not zero and
-    the caller fails closed -- creating an organization we could not justify
-    would provision warehouse datasets nobody asked for.
-    """
-    try:
-        from core.db import get_connection  # noqa: PLC0415
 
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM app.organizations")
-                row = cur.fetchone()
-        return int(row[0]) if row else 0
-    except Exception as exc:  # noqa: BLE001
-        logger.error("admin_api: instance_org_count_failed: %s", exc)
-        return None
 
 
-async def _get_entry_state(request: Request) -> Response:
-    """Return the only valid first-entry transition for this deployment."""
-    from core.deployment_mode import deployment_mode  # noqa: PLC0415
 
-    mode = deployment_mode()
-    auth_mode = os.environ.get("TOOROW_AUTH_MODE", "disabled").strip().lower()
-    if mode == "hosted" and auth_mode == "disabled":
-        try:
-            from core.db import get_connection  # noqa: PLC0415
 
-            with get_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        SELECT EXISTS (
-                            SELECT 1
-                            FROM app.organizations
-                            WHERE status = 'active'
-                              AND id NOT IN ('org_default', 'org_integ-test-project')
-                        )
-                        """
-                    )
-                    row = cur.fetchone()
-            state = "scoped" if row and row[0] else "local_entry_ready"
-        except Exception as exc:
-            logger.error("admin_api: local_entry_state failed: %s", type(exc).__name__)
-            return _invitation_no_store(
-                JSONResponse(
-                    {
-                        "code": "entry_state_unavailable",
-                        "message": "Entry state unavailable.",
-                    },
-                    status_code=500,
-                )
-            )
-        return _invitation_no_store(JSONResponse({"deployment_mode": mode, "state": state}))
 
-    if not _canonical_identity_enabled():
-        from core.api_auth import authenticate_api_request  # noqa: PLC0415
 
-        authorized, legacy_identity = await authenticate_api_request(request)
-        if not authorized or not legacy_identity:
-            return _invitation_no_store(
-                JSONResponse(
-                    {"code": "unauthorized", "message": "Authentication required"},
-                    status_code=401,
-                )
-            )
-        try:
-            from core.db import get_connection  # noqa: PLC0415
 
-            with get_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        SELECT EXISTS (
-                            SELECT 1 FROM app.org_members
-                            WHERE identity = %s AND status = 'active'
-                        )
-                        """,
-                        (legacy_identity,),
-                    )
-                    row = cur.fetchone()
-            state = "scoped" if row and row[0] else "identity_activation_required"
-        except Exception as exc:
-            logger.error("admin_api: legacy_entry_state failed: %s", type(exc).__name__)
-            return _invitation_no_store(
-                JSONResponse(
-                    {"code": "entry_state_unavailable", "message": "Entry state unavailable."},
-                    status_code=500,
-                )
-            )
-        return _invitation_no_store(JSONResponse({"deployment_mode": mode, "state": state}))
-    authorized, principal = await _check_canonical_principal(request)
-    if not authorized or principal is None:
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "unauthorized", "message": "Authentication required"},
-                status_code=401,
-            )
-        )
 
-    try:
-        from core.db import get_connection  # noqa: PLC0415
 
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                if mode == "self_hosted":
-                    cur.execute(
-                        """
-                        SELECT
-                          EXISTS (SELECT 1 FROM app.instance_claims),
-                          EXISTS (
-                            SELECT 1
-                            FROM app.instance_claims claim
-                            WHERE EXISTS (
-                              SELECT 1
-                              FROM app.instance_members member
-                              WHERE member.person_id = %s
-                                AND member.status = 'active'
-                            )
-                            OR EXISTS (
-                              SELECT 1
-                              FROM app.org_members member
-                              WHERE member.org_id = claim.org_id
-                                AND member.identity = %s
-                                AND member.status = 'active'
-                            )
-                          )
-                        """,
-                        (principal.person_id, principal.person_id),
-                    )
-                    claimed, has_membership = cur.fetchone()
-                    state = (
-                        "setup_required"
-                        if not claimed
-                        else "scoped"
-                        if has_membership
-                        else "invitation_required"
-                    )
-                else:
-                    cur.execute(
-                        """
-                        SELECT
-                          EXISTS (
-                            SELECT 1 FROM app.org_members
-                            WHERE identity = %s AND status = 'active'
-                          ),
-                          EXISTS (
-                            SELECT 1
-                            FROM app.invitations invitation
-                            JOIN app.invitation_exchange_sessions exchange
-                              ON exchange.invitation_id = invitation.id
-                            LEFT JOIN app.hosted_entry_scope_consumptions consumption
-                              ON consumption.invitation_id = invitation.id
-                            WHERE invitation.org_id IS NULL
-                              AND invitation.state = 'accepted'
-                              AND invitation.accepted_at IS NOT NULL
-                              AND exchange.person_id = %s
-                              AND exchange.consumed_at IS NOT NULL
-                              AND exchange.accepted_operation_id IS NOT NULL
-                              AND consumption.id IS NULL
-                          )
-                        """,
-                        (principal.person_id, principal.person_id),
-                    )
-                    has_membership, has_entry = cur.fetchone()
-                    state = (
-                        "scoped"
-                        if has_membership
-                        else "hosted_entry_ready"
-                        if has_entry
-                        else "invitation_required"
-                    )
-    except Exception as exc:
-        logger.error("admin_api: entry_state failed: %s", type(exc).__name__)
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "entry_state_unavailable", "message": "Entry state unavailable."},
-                status_code=500,
-            )
-        )
 
-    return _invitation_no_store(JSONResponse({"deployment_mode": mode, "state": state}))
 
 
-def _first_scope_confirmation_payload(body: dict) -> dict:
-    """Normalize the exact browser-reviewed payload used by both entry commands."""
-    if not isinstance(body, dict):
-        raise ValueError("body must be an object")
-    return {
-        "organization_name": body.get("organization_name"),
-        "organization_slug": body.get("organization_slug"),
-        "project_name": body.get("project_name"),
-        "project_slug": body.get("project_slug"),
-        "currency": body.get("currency", "EUR"),
-        "timezone": body.get("timezone", "Europe/Paris"),
-    }
 
 
-async def _issue_first_scope_confirmation(
-    request: Request, *, expected_mode: str, command_type: str
-) -> Response:
-    """Mint one short-lived console-only confirmation for an exact payload."""
-    from core.deployment_mode import deployment_mode  # noqa: PLC0415
 
-    if deployment_mode() != expected_mode:
-        return _invitation_no_store(
-            JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-        )
-    if not _canonical_identity_enabled():
-        return _invitation_no_store(
-            JSONResponse(
-                {
-                    "code": "identity_activation_required",
-                    "message": (
-                        "Canonical identity activation is required for "
-                        "first-scope confirmation."
-                    ),
-                },
-                status_code=503,
-            )
-        )
 
-    authorized, principal = await _check_canonical_principal(request)
-    if not authorized or principal is None:
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "unauthorized", "message": "Authentication required"},
-                status_code=401,
-            )
-        )
 
-    idempotency_key = (request.headers.get("Idempotency-Key") or "").strip()
-    if not idempotency_key:
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "missing_idempotency_key", "message": "Idempotency-Key is required."},
-                status_code=422,
-            )
-        )
-    workspace_id = (request.headers.get("X-Workspace-Id") or "console")[:256]
-    context_reference = f"{command_type}:{workspace_id}"
-    if expected_mode == "self_hosted":
-        exchange_bearer = request.cookies.get(_INSTANCE_BOOTSTRAP_EXCHANGE_COOKIE, "")
-        if not exchange_bearer:
-            return _invitation_no_store(
-                JSONResponse(
-                    {"code": "not_found", "message": "Instance claim unavailable."},
-                    status_code=404,
-                )
-            )
-        context_reference = f"{context_reference}:{exchange_bearer}"
-
-    from core.entry_confirmations import (  # noqa: PLC0415
-        EntryConfirmationValidationError,
-        issue_entry_confirmation,
-    )
-
-    try:
-        body = json.loads(await request.body())
-        payload = _first_scope_confirmation_payload(body)
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            issued = issue_entry_confirmation(
-                conn,
-                actor_person_id=principal.person_id,
-                command_type=command_type,
-                request_payload=payload,
-                idempotency_key=idempotency_key,
-                context_reference=context_reference,
-            )
-    except (ValueError, TypeError, json.JSONDecodeError, EntryConfirmationValidationError):
-        return _invitation_no_store(
-            JSONResponse(
-                {
-                    "code": "invalid_confirmation_request",
-                    "message": "Confirmation input is invalid.",
-                },
-                status_code=422,
-            )
-        )
-    except Exception as exc:
-        logger.error("admin_api: entry confirmation issue failed: %s", type(exc).__name__)
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "confirmation_unavailable", "message": "Confirmation is unavailable."},
-                status_code=500,
-            )
-        )
-
-    return _invitation_no_store(
-        JSONResponse(
-            {
-                "confirmation_id": issued.confirmation_id,
-                "confirmation_secret": issued.confirmation_secret,
-                "command_type": issued.command_type,
-                "payload_hash": issued.payload_hash,
-                "expires_at": issued.expires_at.isoformat(),
-            },
-            status_code=201,
-        )
-    )
-
-
-async def _issue_hosted_entry_confirmation(request: Request) -> Response:
-    from core.entry_confirmations import HOSTED_ENTRY_COMMAND  # noqa: PLC0415
-
-    return await _issue_first_scope_confirmation(
-        request, expected_mode="hosted", command_type=HOSTED_ENTRY_COMMAND
-    )
-
-
-async def _issue_instance_claim_confirmation(request: Request) -> Response:
-    from core.entry_confirmations import INSTANCE_CLAIM_COMMAND  # noqa: PLC0415
-
-    return await _issue_first_scope_confirmation(
-        request, expected_mode="self_hosted", command_type=INSTANCE_CLAIM_COMMAND
-    )
-
-async def _create_hosted_entry_scope(request: Request) -> Response:
-    """Consume one accepted hosted ENTRY into the first usable tenant scope."""
-    from core.deployment_mode import deployment_mode  # noqa: PLC0415
-
-    if deployment_mode() != "hosted":
-        return _invitation_no_store(
-            JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-        )
-
-    if not _canonical_identity_enabled():
-        return _invitation_no_store(
-            JSONResponse(
-                {
-                    "code": "identity_activation_required",
-                    "message": (
-                        "Canonical identity activation is required for "
-                        "first-scope creation."
-                    ),
-                },
-                status_code=503,
-            )
-        )
-
-    authorized, principal = await _check_canonical_principal(request)
-    if not authorized or principal is None:
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "unauthorized", "message": "Authentication required"},
-                status_code=401,
-            )
-        )
-
-    idempotency_key = (request.headers.get("Idempotency-Key") or "").strip()
-    confirmation_id = (request.headers.get("X-Confirmation-Id") or "").strip()
-    confirmation_secret = (request.headers.get("X-Confirmation-Secret") or "").strip()
-    if not idempotency_key or not confirmation_id or not confirmation_secret:
-        return _invitation_no_store(
-            JSONResponse(
-                {
-                    "code": "missing_confirmation",
-                    "message": "Idempotency-Key and server confirmation are required.",
-                },
-                status_code=422,
-            )
-        )
-
-    from core.entry_confirmations import (  # noqa: PLC0415
-        HOSTED_ENTRY_COMMAND,
-        EntryConfirmationRefused,
-        EntryConfirmationValidationError,
-        bind_entry_confirmation_operation,
-        consume_entry_confirmation,
-    )
-    from core.hosted_entry_scope import (  # noqa: PLC0415
-        HostedEntryScopeUnavailable,
-        HostedEntryScopeValidationError,
-        create_hosted_entry_scope,
-    )
-
-    try:
-        body = json.loads(await request.body())
-        payload = _first_scope_confirmation_payload(body)
-        from core import tracing  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        workspace_id = (request.headers.get("X-Workspace-Id") or "console")[:256]
-        with get_connection() as conn:
-            with conn.transaction():
-                confirmation = consume_entry_confirmation(
-                    conn,
-                    confirmation_id=confirmation_id,
-                    confirmation_secret=confirmation_secret,
-                    actor_person_id=principal.person_id,
-                    command_type=HOSTED_ENTRY_COMMAND,
-                    request_payload=payload,
-                    idempotency_key=idempotency_key,
-                    context_reference=f"{HOSTED_ENTRY_COMMAND}:{workspace_id}",
-                )
-                created = create_hosted_entry_scope(
-                    conn,
-                    deployment_mode="hosted",
-                    person_id=principal.person_id,
-                    organization_name=payload["organization_name"],
-                    organization_slug=payload["organization_slug"],
-                    project_name=payload["project_name"],
-                    project_slug=payload["project_slug"],
-                    currency=payload["currency"],
-                    timezone_name=payload["timezone"],
-                    idempotency_key=idempotency_key,
-                    confirmation=confirmation,
-                    host_context={"host": "rest", "workspace_id": workspace_id},
-                    versions={
-                        "policy": os.environ.get("TOOROW_POLICY_VERSION", "v1"),
-                        "tool": "rest-v1",
-                    },
-                    trace_id=tracing.current_trace_id_hex(),
-                )
-                bind_entry_confirmation_operation(
-                    conn, confirmation=confirmation, operation_id=created.operation_id
-                )
-    except EntryConfirmationRefused as exc:
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": exc.code, "message": "Confirmation is invalid or no longer usable."},
-                status_code=409,
-            )
-        )
-    except (
-        ValueError,
-        TypeError,
-        json.JSONDecodeError,
-        EntryConfirmationValidationError,
-        HostedEntryScopeValidationError,
-    ):
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "invalid_entry_scope", "message": "Entry scope input is invalid."},
-                status_code=422,
-            )
-        )
-    except HostedEntryScopeUnavailable:
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "not_found", "message": "Entry scope unavailable."},
-                status_code=404,
-            )
-        )
-    except Exception as exc:
-        from core.operations import OperationIdempotencyConflict  # noqa: PLC0415
-
-        if (
-            isinstance(exc, OperationIdempotencyConflict)
-            or getattr(exc, "sqlstate", None) == "23505"
-        ):
-            return _invitation_no_store(
-                JSONResponse(
-                    {"code": "conflict", "message": "Entry scope conflicts with existing state."},
-                    status_code=409,
-                )
-            )
-        logger.error("admin_api: hosted_entry_scope failed: %s", type(exc).__name__)
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "operation_failed", "message": "Entry scope creation failed."},
-                status_code=500,
-            )
-        )
-
-    return _invitation_no_store(
-        JSONResponse(
-            {
-                "id": created.org_id,
-                "name": payload["organization_name"].strip(),
-                "slug": payload["organization_slug"],
-                "status": "active",
-                "org_id": created.org_id,
-                "project_id": created.project_id,
-                "journey_id": created.journey_id,
-                "operation_id": created.operation_id,
-                "audit_event_id": created.audit_event_id,
-                "outbox_event_id": created.outbox_event_id,
-                "next_url": created.next_url,
-                "replayed": created.replayed,
-            },
-            status_code=201,
-        )
-    )
-
-
-async def _create_org(request: Request) -> Response:
-    """POST /api/organizations -- create an organization (AC4).
-
-    Body: {"name": str, "slug": str?, "billing_ref": str?}. Returns 201.
-    Auto-generates a unique slug from name when not provided (appends -1, -2 on
-    collision); an explicitly supplied duplicate slug is a 409.
-
-    ONE ORGANIZATION PER PERSON -- their own (decision Jean, 2026-07-25). A 409
-    ``organization_limit_reached`` when the caller already belongs to one.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    from core.deployment_mode import deployment_mode  # noqa: PLC0415
-
-    mode = deployment_mode()
-    auth_mode = os.environ.get("TOOROW_AUTH_MODE", "disabled").strip().lower()
-    if mode == "self_hosted" or auth_mode != "disabled":
-        code = "not_found" if mode == "self_hosted" else "entry_scope_required"
-        status = 404 if mode == "self_hosted" else 409
-        return JSONResponse(
-            {
-                "code": code,
-                "message": (
-                    "Not found"
-                    if mode == "self_hosted"
-                    else "Create the first organization through the hosted ENTRY scope command."
-                ),
-            },
-            status_code=status,
-        )
-    # Self-service creation is what a newcomer does once, and only once. Being
-    # attached to a SECOND organization is an administrative act: a platform
-    # admin does it, exactly as the CRM does. Allowing multi-org ACCESS later
-    # does not change this -- the cap is on CREATION, not on access.
-    #
-    # Before this gate, POST /api/organizations checked nothing beyond a valid
-    # bearer: one identity could mint organizations without limit, each one
-    # provisioning its own warehouse datasets.
-    #
-    # Counted on BOTH identity keys on purpose. The two paths that create a
-    # membership disagree on what they store: this handler writes the token
-    # SUBJECT (below), while invitation acceptance writes the verified EMAIL
-    # (core/invitations.py). Counting one key would miss memberships created by
-    # the other, and the cap would be bypassed by whoever joined by invitation.
-    membership_keys = {identity}
-    _, verified_email = await _check_invitation_identity(request)
-    if verified_email:
-        membership_keys.add(verified_email)
-
-    from core.deployment_mode import is_self_hosted  # noqa: PLC0415
-    from core.super_admin import is_super_admin  # noqa: PLC0415
-
-    # SELF-HOSTED: the instance is CLAIMED once, by its operator.
-    #
-    # There is no waitlist and no CRM on somebody else's stack, so no entry
-    # invitation can be issued and the hosted rule leaves nothing standing in
-    # front of this endpoint: whoever finds a public instance URL first and signs
-    # in with any Google account would create the first organization and own it.
-    #
-    # So on a self-hosted instance: ONE organization, created only by an email on
-    # TOOROW_SUPER_ADMINS, and only while the instance is unclaimed. Everybody
-    # else joins it through an ordinary organization invitation issued by its
-    # owner -- that path is unchanged and needs nothing here.
-    #
-    # Runs BEFORE the per-person cap because it answers a different question
-    # (does this instance belong to anyone yet) and must refuse even a caller
-    # with zero memberships. Hosted deployments never enter this branch.
-    if is_self_hosted():
-        instance_orgs = _count_instance_organizations()
-        if instance_orgs is None:
-            return JSONResponse(
-                {
-                    "code": "db_error",
-                    "message": (
-                        "Could not verify whether this instance already has an "
-                        "organization. Nothing was created."
-                    ),
-                },
-                status_code=500,
-            )
-        if instance_orgs > 0:
-            return JSONResponse(
-                {
-                    "code": "instance_already_claimed",
-                    "message": (
-                        "This self-hosted instance already has its organization. "
-                        "Ask its owner to invite you instead."
-                    ),
-                },
-                status_code=409,
-            )
-        if not any(is_super_admin(key) for key in membership_keys):
-            # 404, not 403: an unclaimed instance must not confirm to a stranger
-            # that it is sitting there waiting to be claimed. Same convention as
-            # the org-plan control surface.
-            logger.warning("admin_api: self_hosted_claim_refused for a non-allow-listed caller")
-            return JSONResponse(
-                {"code": "not_found", "message": "Not found"},
-                status_code=404,
-            )
-
-    if not any(is_super_admin(key) for key in membership_keys):
-        existing = _count_active_memberships(membership_keys)
-        if existing is None:
-            # Fail CLOSED: an unverifiable membership count must not open the
-            # gate. Creating here would provision a warehouse we cannot justify.
-            return JSONResponse(
-                {
-                    "code": "db_error",
-                    "message": (
-                        "Could not verify existing organization membership. Nothing was created."
-                    ),
-                },
-                status_code=500,
-            )
-        if existing > 0:
-            return JSONResponse(
-                {
-                    "code": "organization_limit_reached",
-                    "message": (
-                        "You already belong to an organization. A person creates "
-                        "their own organization once; being added to another one "
-                        "is done by an administrator."
-                    ),
-                },
-                status_code=409,
-            )
-
-    try:
-        body: dict = json.loads(await request.body())
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
-            status_code=400,
-        )
-
-    name = (body.get("name") or "").strip()
-    if not name or len(name) > 100:
-        return JSONResponse(
-            {"code": "invalid_input", "message": "name is required (max 100 chars)"},
-            status_code=422,
-        )
-
-    slug_in = (body.get("slug") or "").strip()
-    base_slug = slug_in or _slugify(name)
-    if not base_slug or not _SLUG_RE.match(base_slug) or len(base_slug) > 50:
-        return JSONResponse(
-            {"code": "invalid_input", "message": f"invalid slug: {base_slug!r}"},
-            status_code=422,
-        )
-
-    billing_ref = body.get("billing_ref")
-    billing_ref = str(billing_ref).strip() if billing_ref else None
-
-    # Story 21.2: optional branding (3 hex colours + logo).
-    brand, brand_err = _extract_brand_fields(body)
-    if brand_err is not None:
-        return brand_err
-
-    org_id = _mint_org_id()
-    created_by = identity or "anonymous"
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            slug = base_slug
-            with conn.cursor() as cur:
-                # Story 24.1: collision check on the SANITISED form ('-' -> '_')
-                # because the slug names the org's warehouse datasets
-                # (org_<wslug>_*, BigQuery charset [A-Za-z0-9_]). _SLUG_RE
-                # forbids '_', so two API-created slugs can never collide once
-                # sanitised -- this guard is DEFENSIVE depth against slugs that
-                # bypassed the API (direct SQL, legacy import) and contain '_'.
-                # The slug is immutable after creation (422 slug_immutable).
-                _COLLIDES_SQL = (
-                    "SELECT 1 FROM app.organizations "
-                    "WHERE REPLACE(slug, '-', '_') = REPLACE(%s, '-', '_')"
-                )
-                if slug_in:
-                    cur.execute(_COLLIDES_SQL, (slug,))
-                    if cur.fetchone() is not None:
-                        return JSONResponse(
-                            {
-                                "code": "conflict",
-                                "message": "slug already exists (or collides once "
-                                "sanitised for warehouse dataset naming)",
-                            },
-                            status_code=409,
-                        )
-                else:
-                    counter = 1
-                    while True:
-                        cur.execute(_COLLIDES_SQL, (slug,))
-                        if cur.fetchone() is None:
-                            break
-                        slug = f"{base_slug}-{counter}"
-                        counter += 1
-
-                cur.execute(
-                    """
-                    INSERT INTO app.organizations
-                        (id, name, slug, status, billing_ref, created_by,
-                         brand_primary, brand_secondary, brand_accent, logo_url)
-                    VALUES (%s, %s, %s, 'active', %s, %s, %s, %s, %s, %s)
-                    RETURNING id, name, slug, status, billing_ref,
-                              created_at, updated_at, archived_at,
-                              brand_primary, brand_secondary, brand_accent, logo_url
-                    """,
-                    (
-                        org_id,
-                        name,
-                        slug,
-                        billing_ref,
-                        created_by,
-                        brand.get("brand_primary"),
-                        brand.get("brand_secondary"),
-                        brand.get("brand_accent"),
-                        brand.get("logo_url"),
-                    ),
-                )
-                row = cur.fetchone()
-                cols = [d[0] for d in cur.description]
-                created = _org_row_to_dict(cols, row)
-
-                # Story 21.5: AUTO-ENROLL the creator as an owner member so the
-                # org is immediately scoped to its creator (default-open-until-
-                # enrolled). The creator then passes every subsequent manage-check.
-                cur.execute(
-                    "INSERT INTO app.org_members "
-                    "(id, org_id, identity, role, status, joined_at) "
-                    "VALUES (%s, %s, %s, 'owner', 'active', NOW()) "
-                    "ON CONFLICT (org_id, identity) DO NOTHING",
-                    (_mint_org_member_id(), org_id, created_by),
-                )
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: create_org db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    write_audit_row(
-        identity=created_by,
-        action=ACTION_ORG_CREATED,
-        provider_account="",
-        connection_ref="",
-        metadata={"org_id": org_id, "slug": created["slug"], "name": name},
-    )
-
-    # Story 24.2 (AC1): provision DuckDB schemas non-blocking -- the 201 is
-    # always emitted even when DuckDB is unavailable (CI, Cloud Run cold-start).
-    # Schema names come from resolve_org_schemas inside provision_org_schemas,
-    # never composed inline here (naming guard invariant).
-    try:
-        from core import warehouse_tenancy as _wt  # noqa: PLC0415
-
-        result = _wt.provision_org_schemas(org_id=org_id, conn=None)
-        logger.info("admin_api: provision_schemas org=%s result=%s", org_id, result)
-    except Exception as exc:  # noqa: BLE001 -- non-blocking degradation (AC1)
-        logger.warning("admin_api: provision_schemas_failed org=%s error=%s", org_id, exc)
-
-    return JSONResponse(created, status_code=201)
-
-
-_INSTANCE_BOOTSTRAP_EXCHANGE_COOKIE = "toorow_instance_bootstrap_exchange"
-
-
-async def _exchange_instance_bootstrap(request: Request) -> Response:
-    """Exchange the fragment-delivered installer bearer before authentication."""
-    from core.deployment_mode import deployment_mode  # noqa: PLC0415
-
-    if deployment_mode() != "self_hosted":
-        return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-    from core.self_hosted_instance_claim import (  # noqa: PLC0415
-        SelfHostedClaimUnavailable,
-        SelfHostedClaimValidationError,
-        exchange_bootstrap_capability,
-    )
-
-    try:
-        body = json.loads(await request.body())
-        if not isinstance(body, dict):
-            raise ValueError("body must be an object")
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            exchanged = exchange_bootstrap_capability(
-                conn,
-                deployment_mode="self_hosted",
-                bootstrap_bearer=body.get("bootstrap_bearer"),
-            )
-    except (ValueError, TypeError, json.JSONDecodeError, SelfHostedClaimValidationError):
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "not_found", "message": "Instance claim unavailable."},
-                status_code=404,
-            )
-        )
-    except SelfHostedClaimUnavailable:
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "not_found", "message": "Instance claim unavailable."},
-                status_code=404,
-            )
-        )
-    except Exception as exc:
-        logger.error("admin_api: instance_bootstrap_exchange failed: %s", type(exc).__name__)
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "operation_failed", "message": "Instance claim unavailable."},
-                status_code=500,
-            )
-        )
-
-    max_age = max(
-        1,
-        min(900, int((exchanged.expires_at - datetime.now(timezone.utc)).total_seconds())),
-    )
-    response = _invitation_no_store(JSONResponse({"ready_to_claim": True}))
-    response.set_cookie(
-        _INSTANCE_BOOTSTRAP_EXCHANGE_COOKIE,
-        exchanged.session_bearer,
-        max_age=max_age,
-        path="/api/instance/claim",
-        secure=True,
-        httponly=True,
-        samesite="strict",
-    )
-    return response
-
-
-async def _get_self_hosted_claim_session(request: Request) -> Response:
-    """Resume a valid tokenless claim session without exposing capability state."""
-    from core.deployment_mode import deployment_mode  # noqa: PLC0415
-
-    if deployment_mode() != "self_hosted":
-        return _invitation_no_store(
-            JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-        )
-
-    exchange_bearer = request.cookies.get(_INSTANCE_BOOTSTRAP_EXCHANGE_COOKIE, "")
-    if not exchange_bearer:
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "not_found", "message": "Instance claim unavailable."},
-                status_code=404,
-            )
-        )
-
-    from core.db import get_connection  # noqa: PLC0415
-    from core.self_hosted_instance_claim import (  # noqa: PLC0415
-        SelfHostedClaimValidationError,
-        bootstrap_exchange_session_is_ready,
-    )
-
-    try:
-        with get_connection() as conn:
-            ready = bootstrap_exchange_session_is_ready(
-                conn,
-                deployment_mode="self_hosted",
-                bootstrap_exchange_bearer=exchange_bearer,
-            )
-    except SelfHostedClaimValidationError:
-        ready = False
-    except Exception as exc:
-        logger.error("admin_api: self_hosted_claim_session failed: %s", type(exc).__name__)
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "operation_failed", "message": "Instance claim unavailable."},
-                status_code=500,
-            )
-        )
-
-    if not ready:
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "not_found", "message": "Instance claim unavailable."},
-                status_code=404,
-            )
-        )
-    return _invitation_no_store(JSONResponse({"ready_to_claim": True}))
-
-
-async def _claim_self_hosted_instance(request: Request) -> Response:
-    """Claim one unclaimed self-hosted instance and create its first usable scope."""
-    from core.deployment_mode import deployment_mode  # noqa: PLC0415
-
-    if deployment_mode() != "self_hosted":
-        return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-
-    if not _canonical_identity_enabled():
-        return _invitation_no_store(
-            JSONResponse(
-                {
-                    "code": "identity_activation_required",
-                    "message": "Canonical identity activation is required for instance claim.",
-                },
-                status_code=503,
-            )
-        )
-
-    authorized, principal = await _check_canonical_principal(request)
-    if not authorized or principal is None:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Authentication required"},
-            status_code=401,
-        )
-
-    exchange_bearer = request.cookies.get(_INSTANCE_BOOTSTRAP_EXCHANGE_COOKIE, "")
-    if not exchange_bearer:
-        return JSONResponse(
-            {"code": "not_found", "message": "Instance claim unavailable."},
-            status_code=404,
-        )
-
-    idempotency_key = (request.headers.get("Idempotency-Key") or "").strip()
-    confirmation_id = (request.headers.get("X-Confirmation-Id") or "").strip()
-    confirmation_secret = (request.headers.get("X-Confirmation-Secret") or "").strip()
-    if not idempotency_key or not confirmation_id or not confirmation_secret:
-        return JSONResponse(
-            {
-                "code": "missing_confirmation",
-                "message": "Idempotency-Key and server confirmation are required.",
-            },
-            status_code=422,
-        )
-
-    from core.entry_confirmations import (  # noqa: PLC0415
-        INSTANCE_CLAIM_COMMAND,
-        EntryConfirmationRefused,
-        EntryConfirmationValidationError,
-        bind_entry_confirmation_operation,
-        consume_entry_confirmation,
-    )
-    from core.self_hosted_instance_claim import (  # noqa: PLC0415
-        SelfHostedClaimUnavailable,
-        SelfHostedClaimValidationError,
-        claim_self_hosted_instance,
-    )
-
-    try:
-        body = json.loads(await request.body())
-        payload = _first_scope_confirmation_payload(body)
-        from core import tracing  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        workspace_id = (request.headers.get("X-Workspace-Id") or "console")[:256]
-        context_reference = f"{INSTANCE_CLAIM_COMMAND}:{workspace_id}:{exchange_bearer}"
-        with get_connection() as conn:
-            with conn.transaction():
-                confirmation = consume_entry_confirmation(
-                    conn,
-                    confirmation_id=confirmation_id,
-                    confirmation_secret=confirmation_secret,
-                    actor_person_id=principal.person_id,
-                    command_type=INSTANCE_CLAIM_COMMAND,
-                    request_payload=payload,
-                    idempotency_key=idempotency_key,
-                    context_reference=context_reference,
-                )
-                claimed = claim_self_hosted_instance(
-                    conn,
-                    deployment_mode="self_hosted",
-                    bootstrap_exchange_bearer=exchange_bearer,
-                    claimant_person_id=principal.person_id,
-                    organization_name=payload["organization_name"],
-                    organization_slug=payload["organization_slug"],
-                    project_name=payload["project_name"],
-                    project_slug=payload["project_slug"],
-                    currency=payload["currency"],
-                    timezone_name=payload["timezone"],
-                    idempotency_key=idempotency_key,
-                    confirmation=confirmation,
-                    host_context={"host": "rest", "workspace_id": workspace_id},
-                    versions={
-                        "policy": os.environ.get("TOOROW_POLICY_VERSION", "v1"),
-                        "tool": "rest-v1",
-                    },
-                    trace_id=tracing.current_trace_id_hex(),
-                )
-                bind_entry_confirmation_operation(
-                    conn, confirmation=confirmation, operation_id=claimed.operation_id
-                )
-    except EntryConfirmationRefused as exc:
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": exc.code, "message": "Confirmation is invalid or no longer usable."},
-                status_code=409,
-            )
-        )
-    except (
-        ValueError,
-        TypeError,
-        json.JSONDecodeError,
-        EntryConfirmationValidationError,
-        SelfHostedClaimValidationError,
-    ):
-        return JSONResponse(
-            {"code": "invalid_claim", "message": "Instance claim input is invalid."},
-            status_code=422,
-        )
-    except SelfHostedClaimUnavailable:
-        return JSONResponse(
-            {"code": "not_found", "message": "Instance claim unavailable."},
-            status_code=404,
-        )
-    except Exception as exc:
-        from core.operations import OperationIdempotencyConflict  # noqa: PLC0415
-
-        if isinstance(exc, OperationIdempotencyConflict):
-            return JSONResponse(
-                {"code": "conflict", "message": "Claim conflicts with existing state."},
-                status_code=409,
-            )
-        logger.error("admin_api: self_hosted_claim failed: %s", type(exc).__name__)
-        return JSONResponse(
-            {"code": "operation_failed", "message": "Instance claim failed."},
-            status_code=500,
-        )
-
-    response = _invitation_no_store(
-        JSONResponse(
-            {
-                "claim_id": claimed.claim_id,
-                "person_id": claimed.person_id,
-                "org_id": claimed.org_id,
-                "project_id": claimed.project_id,
-                "journey_id": claimed.journey_id,
-                "operation_id": claimed.operation_id,
-                "audit_event_id": claimed.audit_event_id,
-                "outbox_event_id": claimed.outbox_event_id,
-                "next_url": f"/p/{claimed.project_id}/overview/getting-started",
-                "replayed": claimed.replayed,
-            },
-            status_code=201,
-        )
-    )
-    response.delete_cookie(
-        _INSTANCE_BOOTSTRAP_EXCHANGE_COOKIE,
-        path="/api/instance/claim",
-        secure=True,
-        httponly=True,
-        samesite="strict",
-    )
-    return response
-
-
-async def _list_orgs(request: Request) -> Response:
-    """GET /api/organizations -- active orgs the caller may see, name ASC.
-
-    Story 21.5 follow-up (reads scoping): an identity sees an org it belongs to
-    (active member) OR an org with zero active members (open, default-open-until-
-    enrolled) -- never another tenant's enrolled org. The dev disabled-auth
-    "anonymous" subject sees all (single-tenant compat).
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    ident = identity or "anonymous"
-    mode = os.environ.get("TOOROW_AUTH_MODE", "disabled").strip().lower()
-    show_all = mode == "disabled" and ident == "anonymous"
-    from core.project_access import epic36_production_access_enabled  # noqa: PLC0415
-
-    production_access = epic36_production_access_enabled(auth_mode=mode)
-    cols_sql = (
-        "id, name, slug, status, billing_ref, created_at, updated_at, archived_at, "
-        "brand_primary, brand_secondary, brand_accent, logo_url"
-    )
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                if show_all:
-                    cur.execute(
-                        f"SELECT {cols_sql} FROM app.organizations "
-                        "WHERE status = 'active' ORDER BY name ASC"
-                    )
-                elif production_access:
-                    cur.execute(
-                        f"SELECT {cols_sql} FROM app.organizations o "
-                        "WHERE o.status = 'active' AND EXISTS ("
-                        "  SELECT 1 FROM app.org_members m "
-                        "  WHERE m.org_id = o.id AND m.identity = %s "
-                        "    AND m.status = 'active'"
-                        ") ORDER BY o.name ASC",
-                        (ident,),
-                    )
-                else:
-                    # Open orgs (no active member) OR orgs where the caller is an
-                    # active member.
-                    cur.execute(
-                        f"SELECT {cols_sql} FROM app.organizations o "
-                        "WHERE o.status = 'active' AND ("
-                        "  NOT EXISTS (SELECT 1 FROM app.org_members m "
-                        "              WHERE m.org_id = o.id AND m.status = 'active')"
-                        "  OR EXISTS (SELECT 1 FROM app.org_members m "
-                        "             WHERE m.org_id = o.id AND m.identity = %s "
-                        "             AND m.status = 'active')"
-                        ") ORDER BY o.name ASC",
-                        (ident,),
-                    )
-                cols = [d[0] for d in cur.description]
-                orgs = [_org_row_to_dict(cols, r) for r in cur.fetchall()]
-    except Exception as exc:
-        logger.error("admin_api: list_orgs db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-    return JSONResponse({"organizations": orgs}, status_code=200)
-
-
-async def _get_org(request: Request) -> Response:
-    """GET /api/organizations/{org_id} -- single org.
-
-    404 when not found OR when the caller may not see it (reads scoping: a
-    non-member of an enrolled org gets 404 -- existence not disclosed, 7.4 pattern).
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    org_id = request.path_params["org_id"]
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-        from core.project_access import identity_has_org_access  # noqa: PLC0415
-
-        with get_connection() as conn:
-            if not identity_has_org_access(org_id, identity or "anonymous", conn):
-                return JSONResponse(
-                    {"code": "not_found", "message": "organization not found"},
-                    status_code=404,
-                )
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id, name, slug, status, billing_ref,
-                           created_at, updated_at, archived_at,
-                           brand_primary, brand_secondary, brand_accent, logo_url
-                    FROM app.organizations WHERE id = %s
-                    """,
-                    (org_id,),
-                )
-                row = cur.fetchone()
-                if row is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "organization not found"},
-                        status_code=404,
-                    )
-                cols = [d[0] for d in cur.description]
-                org = _org_row_to_dict(cols, row)
-    except Exception as exc:
-        logger.error("admin_api: get_org db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-    return JSONResponse(org, status_code=200)
-
-
-async def _patch_org(request: Request) -> Response:
-    """PATCH /api/organizations/{org_id} -- update name/slug/billing_ref (AC4)."""
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    org_id = request.path_params["org_id"]
-    try:
-        body: dict = json.loads(await request.body())
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
-            status_code=400,
-        )
-
-    updates: dict = {}
-    if "name" in body:
-        name = (body.get("name") or "").strip()
-        if not name or len(name) > 100:
-            return JSONResponse(
-                {"code": "invalid_input", "message": "name must be 1..100 chars"},
-                status_code=422,
-            )
-        updates["name"] = name
-    if "slug" in body:
-        # Story 24.1 (epic 24, decision 6): the slug names the org's warehouse
-        # datasets (org_<wslug>_raw / org_<wslug>_marts) -- immutable after
-        # creation. Renaming would orphan the client's data plane.
-        return JSONResponse(
-            {
-                "code": "slug_immutable",
-                "message": "slug cannot be changed: it names the organization's "
-                "warehouse datasets (epic 24). Create a new organization instead.",
-            },
-            status_code=422,
-        )
-    if "billing_ref" in body:
-        raw = body.get("billing_ref")
-        updates["billing_ref"] = str(raw).strip() if raw else None
-
-    # Story 21.2: branding fields (validated hex; absent = unchanged).
-    brand, brand_err = _extract_brand_fields(body)
-    if brand_err is not None:
-        return brand_err
-    updates.update(brand)
-
-    if not updates:
-        return JSONResponse(
-            {"code": "invalid_input", "message": "no updatable fields provided"},
-            status_code=422,
-        )
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                # Existence 404 FIRST (do not disclose manage-state of a missing org),
-                # THEN Story 21.5 manage-gate (owner/admin required on an enrolled org).
-                cur.execute("SELECT 1 FROM app.organizations WHERE id = %s", (org_id,))
-                if cur.fetchone() is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "organization not found"},
-                        status_code=404,
-                    )
-                denied = _enforce_org_manage(org_id, identity, conn, "patch_org")
-                if denied is not None:
-                    return denied
-                set_parts = [f"{col} = %s" for col in updates]
-                params = list(updates.values()) + [org_id]
-                cur.execute(
-                    "UPDATE app.organizations SET "
-                    + ", ".join(set_parts)
-                    + " WHERE id = %s "
-                    + "RETURNING id, name, slug, status, billing_ref, "
-                    + "created_at, updated_at, archived_at, "
-                    + "brand_primary, brand_secondary, brand_accent, logo_url",
-                    params,
-                )
-                row = cur.fetchone()
-                if row is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "organization not found"},
-                        status_code=404,
-                    )
-                cols = [d[0] for d in cur.description]
-                org = _org_row_to_dict(cols, row)
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: patch_org db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    write_audit_row(
-        identity=identity or "anonymous",
-        action=ACTION_ORG_UPDATED,
-        provider_account="",
-        connection_ref="",
-        metadata={"org_id": org_id, "fields": sorted(updates.keys())},
-    )
-    return JSONResponse(org, status_code=200)
 
 
 # ===========================================================================
@@ -6556,904 +1243,26 @@ async def _patch_org(request: Request) -> Response:
 # worse than no preview at all, because the user consents to the wrong thing.
 # ===========================================================================
 
-#: Direct org-scoped dependencies surfaced to a human before the drop. Only the
-#: tables someone recognises by name: the FULL tenant tree (~40 tables) is walked
-#: by core.org_purge and reported as `purged_tables` in the org_deleted audit row.
-#: Every one of these is a table whose FK into app.organizations is RESTRICT (or
-#: CASCADE for members) -- i.e. exactly what used to make DELETE fail with 409.
-_ORG_DEPENDENT_COUNTS: tuple[tuple[str, str], ...] = (
-    ("datastreams", "SELECT count(*) FROM app.datastreams WHERE org_id = %s"),
-    ("connections", "SELECT count(*) FROM app.connection_ref WHERE owner_org_id = %s"),
-    ("invitations", "SELECT count(*) FROM app.invitations WHERE org_id = %s"),
-    ("members", "SELECT count(*) FROM app.org_members WHERE org_id = %s"),
-    ("operations", "SELECT count(*) FROM app.operations WHERE effective_org_id = %s"),
-)
 
 
-def _org_deletion_facts(conn, org_id: str, *, name: str, slug: str) -> dict:
-    """What deleting *org_id* would remove, and what would stop it.
 
-    Read-only. Runs on the CALLER's connection so the erasure path can take this
-    snapshot inside its own transaction (the counts then describe exactly the
-    rows it is about to erase -- no TOCTOU between preview and deletion).
 
-    ``blockers`` empty == the org is deletable. A blocker is never worked
-    around: it names a dependency that cannot legitimately be erased here.
-    """
-    projects: list[dict] = []
-    counts: dict[str, int] = {}
-    blockers: list[dict] = []
 
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT id, name, status FROM app.projects WHERE org_id = %s ORDER BY name, id",
-            (org_id,),
-        )
-        for pid, pname, pstatus in cur.fetchall() or []:
-            projects.append({"id": pid, "name": pname, "status": pstatus})
 
-        for key, sql in _ORG_DEPENDENT_COUNTS:
-            # A count is diagnostic, never authoritative (the FKs are). A table
-            # missing from an older deployment must therefore not abort the
-            # caller's transaction, hence one savepoint per probe.
-            cur.execute("SAVEPOINT org_facts")
-            try:
-                cur.execute(sql, (org_id,))
-                row = cur.fetchone()
-                counts[key] = int(row[0]) if row else 0
-            except Exception:
-                cur.execute("ROLLBACK TO SAVEPOINT org_facts")
-                logger.warning(
-                    "admin_api: org_deletion_facts count_failed org=%s key=%s",
-                    org_id,
-                    key,
-                )
-                counts[key] = 0
-            else:
-                cur.execute("RELEASE SAVEPOINT org_facts")
 
-    active = [p for p in projects if p["status"] != "archived"]
-    if active:
-        blockers.append(
-            {
-                "kind": "active_projects",
-                "detail": (
-                    f"{len(active)} active project(s) still attached: "
-                    + ", ".join(p["name"] for p in active[:5])
-                    + ". Archive or delete them before deleting the organization."
-                ),
-            }
-        )
 
-    # Warehouse: the datasets provisioned at org creation. If the topology
-    # cannot be resolved, drop_org_schemas returns "unresolvable" and the
-    # erasure blocks (RGPD: never report an erasure we could not perform), so
-    # the preview must announce that up front rather than let the DELETE 500.
-    from core import warehouse_tenancy as _wt  # noqa: PLC0415
 
-    schemas = _wt.resolve_org_schemas(org_id=org_id, conn=conn, fresh=True)
-    datasets = [schemas.raw, schemas.marts] if schemas is not None else []
-    if schemas is None:
-        blockers.append(
-            {
-                "kind": "warehouse_unresolvable",
-                "detail": (
-                    "Warehouse datasets cannot be resolved for this organization, "
-                    "so their removal cannot be confirmed. Deletion is blocked "
-                    "until the topology resolves."
-                ),
-            }
-        )
 
-    return {
-        "org_id": org_id,
-        "name": name,
-        "slug": slug,
-        "projects": projects,
-        "counts": counts,
-        "warehouse_datasets": datasets,
-        "blockers": blockers,
-    }
 
 
-async def _org_deletion_preview(request: Request) -> Response:
-    """GET /api/organizations/{org_id}/deletion-preview -- what would disappear.
 
-    Same owner/admin gate as the deletion itself: the composition of an org is
-    not public information. Read-only, no side effect, safe to poll from an
-    onboarding/settings screen before showing the confirmation.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    org_id = request.path_params["org_id"]
 
-    try:
-        from core.db import get_connection  # noqa: PLC0415
 
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                # Existence 404 FIRST (same discipline as _patch_org: do not
-                # disclose the manage-state of an org that does not exist).
-                cur.execute(
-                    "SELECT id, name, slug FROM app.organizations WHERE id = %s",
-                    (org_id,),
-                )
-                row = cur.fetchone()
-            if row is None:
-                return JSONResponse(
-                    {"code": "not_found", "message": "organization not found"},
-                    status_code=404,
-                )
-            denied = _enforce_org_manage(org_id, identity, conn, "org_deletion_preview")
-            if denied is not None:
-                return denied
-            facts = _org_deletion_facts(conn, org_id, name=row[1], slug=row[2])
-            # Read-only path: release the snapshot without writing anything.
-            conn.rollback()
-    except Exception:
-        logger.exception("admin_api: org_deletion_preview db_error org=%s", org_id)
-        return JSONResponse(
-            {"code": "db_error", "message": "database operation failed"},
-            status_code=500,
-        )
-    return JSONResponse(facts, status_code=200)
 
 
-def _erase_org_transactional(
-    pg_conn,
-    org_id: str,
-    *,
-    name: str,
-    slug: str,
-    identity: str,
-) -> tuple[dict | None, Response | None]:
-    """Erase org *org_id* on the caller's OPEN transaction -- no commit here.
 
-    Returns ``(result, None)`` when the erasure is staged and only a commit is
-    missing, or ``(None, response)`` when it was refused/failed -- in which case
-    the transaction has already been rolled back and the org is fully intact.
 
-    Dismantling order (the whole point of this function -- each step exists
-    because the previous one cannot succeed without it):
 
-      1. refuse on ACTIVE projects (409): a live project is a human decision,
-         never something a delete endpoint resolves on its own;
-      2. snapshot the facts + the ACTIVE dataset grants BEFORE touching a row --
-         they are about to be erased and become unobservable;
-      3. purge the tenant tree (core.org_purge): cycle-breaking UPDATEs first,
-         then DELETEs deepest-first over the RESTRICT/NO-ACTION edges. This is
-         what unpins the ~13 tables that used to answer 409 "conflict";
-      4. DELETE the org row -- still uncommitted. Anything the purge missed
-         surfaces HERE as an FK violation naming its own table (409), never as
-         a silent partial erasure;
-      5. drop the warehouse datasets (external, non-transactional) only once
-         Postgres has proven deletable. If the drop cannot be confirmed we
-         rollback: the row survives, RGPD invariant intact (never the reverse
-         order -- dropping data whose row then survives is unrecoverable);
-      6. write the audit rows on this same transaction. The caller commits, so
-         evidence and effect commit together or not at all.
-    """
-    ident = identity or "anonymous"
-
-    with pg_conn.cursor() as cur:
-        # (1) Pre-check: block if active projects exist (readable 409).
-        # The FK ON DELETE RESTRICT is the authoritative truth; this check
-        # gives a human-readable error before we attempt the DELETE.
-        cur.execute(
-            "SELECT 1 FROM app.projects WHERE org_id = %s AND status != 'archived' LIMIT 1",
-            (org_id,),
-        )
-        if cur.fetchone() is not None:
-            pg_conn.rollback()
-            return None, JSONResponse(
-                {
-                    "code": "org_has_active_projects",
-                    "message": ("Archive all active projects before deleting the organization."),
-                },
-                status_code=409,
-            )
-
-        # (2) Epic-24 review X-1/F-2b: snapshot ACTIVE dataset-access grants
-        # BEFORE the DELETE -- the 047 FK ON DELETE CASCADE erases the rows
-        # in this same transaction (RGPD erasure by design); the durable
-        # trace is the audit entry emitted per grant in phase 3.
-        cur.execute(
-            "SELECT id, principal FROM app.dataset_access_grants "
-            "WHERE org_id = %s AND revoked_at IS NULL",
-            (org_id,),
-        )
-        active_grants = cur.fetchall()
-
-    # Same snapshot the preview shows, taken inside the erasing transaction so
-    # the reported `removed` counts are the rows actually about to go (members
-    # and grants leave via CASCADE and are unobservable afterwards).
-    facts = _org_deletion_facts(pg_conn, org_id, name=name, slug=slug)
-
-    with pg_conn.cursor() as cur:
-        # (3) Erase the tenant tree before the org row. ~50 ON DELETE RESTRICT
-        # foreign keys pin it in place (org -> projects -> datastreams ->
-        # ...), and those RESTRICT rules are wanted everywhere else, so the
-        # erasure is explicit here instead of being made implicit in the
-        # schema. Runs on THIS connection, inside THIS transaction: nothing
-        # is committed until the org row itself is gone.
-        from core.org_purge import purge_org_tree  # noqa: PLC0415
-
-        try:
-            purge_result = purge_org_tree(pg_conn, org_id)
-        except Exception:
-            pg_conn.rollback()
-            logger.exception("admin_api: delete_org purge_failed org=%s", org_id)
-            return None, JSONResponse(
-                {
-                    "code": "purge_failed",
-                    "message": (
-                        "Dependent records could not be erased; the "
-                        "organization was NOT deleted. Investigate and retry."
-                    ),
-                },
-                status_code=500,
-            )
-
-        # (4) Issue the DELETE inside the still-open transaction (no commit yet).
-        # If a project slipped through between the pre-check and now, the FK
-        # ON DELETE RESTRICT raises here -> we rollback -> 409 (no partial drop).
-        try:
-            cur.execute("DELETE FROM app.organizations WHERE id = %s", (org_id,))
-        except Exception as exc:
-            # Name the actual blocker. The previous generic "conflict" sent
-            # operators hunting for an active project when the real holder
-            # was something else entirely (an archived project's rows, a
-            # connection, ...): the pre-check above only covers NON-archived
-            # projects, while the FK restricts on every referencing row.
-            diag = getattr(exc, "diag", None)
-            blocking_table = getattr(diag, "table_name", None)
-            blocking_constraint = getattr(diag, "constraint_name", None)
-            pg_conn.rollback()
-            logger.warning(
-                "admin_api: delete_org pg_delete_fk_violation org=%s table=%s constraint=%s",
-                org_id,
-                blocking_table,
-                blocking_constraint,
-            )
-            detail = (
-                f" Still referenced by {blocking_table} ({blocking_constraint})."
-                if blocking_table
-                else ""
-            )
-            return None, JSONResponse(
-                {
-                    "code": "conflict",
-                    "message": ("Organization could not be deleted due to a conflict." + detail),
-                    "blocking_table": blocking_table,
-                    "blocking_constraint": blocking_constraint,
-                },
-                status_code=409,
-            )
-
-    # (5) Drop warehouse schemas BEFORE committing the Postgres DELETE.
-    # If the drop fails we rollback -> org row stays intact (RGPD invariant).
-    from core import warehouse_tenancy as _wt  # noqa: PLC0415
-
-    try:
-        drop_result = _wt.drop_org_schemas(org_id=org_id, conn=None)
-    except Exception:
-        try:
-            pg_conn.rollback()
-        except Exception:
-            pass
-        logger.exception("admin_api: delete_org schema_drop_failed org=%s", org_id)
-        return None, JSONResponse(
-            {
-                "code": "schema_drop_failed",
-                "message": (
-                    "Warehouse schema drop failed; Postgres record NOT deleted "
-                    "(RGPD safety). Investigate and retry."
-                ),
-            },
-            status_code=500,
-        )
-
-    drop_status = drop_result.get("status")
-    drop_reason = drop_result.get("reason", "")
-
-    # "skipped / unresolvable" -> cannot confirm data removal -> block (RGPD).
-    # "skipped / no_duckdb_path" -> nothing to drop -> proceed.
-    if drop_status == "skipped" and drop_reason == "unresolvable":
-        try:
-            pg_conn.rollback()
-        except Exception:
-            pass
-        logger.error(
-            "admin_api: delete_org slug_unresolvable org=%s -- blocking deletion",
-            org_id,
-        )
-        return None, JSONResponse(
-            {"code": "schema_drop_failed", "message": "warehouse operation failed"},
-            status_code=500,
-        )
-
-    # (6) Audit rows on the same transaction; the CALLER commits.
-    from core.audit import insert_audit_row  # noqa: PLC0415
-
-    # Emit org_schemas_dropped only when a real drop occurred (F-7).
-    if drop_status == "ok":
-        insert_audit_row(
-            pg_conn,
-            identity=ident,
-            action=ACTION_ORG_SCHEMAS_DROPPED,
-            provider_account="",
-            connection_ref="",
-            metadata={
-                "org_id": org_id,
-                "raw": drop_result.get("raw"),
-                "marts": drop_result.get("marts"),
-                "drop_status": drop_status,
-            },
-        )
-    # Epic-24 review X-1/F-2b: one revoke audit per grant erased by the 047
-    # CASCADE -- the audit table is the durable RGPD trace of the exposure
-    # gesture; without this an active grant would vanish untracked.
-    for grant_id, principal in active_grants:
-        insert_audit_row(
-            pg_conn,
-            identity=ident,
-            action=ACTION_DATASET_ACCESS_REVOKED,
-            provider_account="",
-            connection_ref="",
-            metadata={
-                "org_id": org_id,
-                "grant_id": grant_id,
-                "principal": principal,
-                "reason": "org_deleted",
-            },
-        )
-
-    # What the caller reports back, and what the audit records: the same dict.
-    removed = {
-        "projects": len(facts["projects"]),
-        **facts["counts"],
-        # Everything else the purge erased across the tenant tree, so the total
-        # is not silently reduced to the five human-readable buckets.
-        "tenant_rows": purge_result.get("total_rows", 0),
-    }
-    insert_audit_row(
-        pg_conn,
-        identity=ident,
-        action=ACTION_ORG_DELETED,
-        provider_account="",
-        connection_ref="",
-        metadata={
-            "org_id": org_id,
-            "slug": slug,
-            "name": name,
-            "drop_status": drop_status,
-            "revoked_grants": len(active_grants),
-            # Durable proof of what the erasure actually removed: the rows
-            # themselves are gone, so this is the only remaining evidence.
-            "purged_rows": purge_result.get("total_rows", 0),
-            "purged_tables": purge_result.get("rows_by_table", {}),
-            "removed": removed,
-        },
-    )
-    return (
-        {
-            "removed": removed,
-            "drop_status": drop_status,
-            "warehouse_datasets": facts["warehouse_datasets"],
-        },
-        None,
-    )
-
-
-async def _delete_org(request: Request) -> Response:
-    """DELETE /api/organizations/{org_id} -- human-gated RGPD drop (Story 24.2 AC5).
-
-    Requires header ``X-Confirm-Delete: drop-warehouse-data`` (422 otherwise).
-    Blocks if active projects exist (409).  Drops warehouse schemas first (RGPD:
-    if the drop cannot be confirmed, the Postgres row is NOT deleted -- no partial
-    deletion).  Two audit entries emitted in order: org_schemas_dropped then
-    org_deleted.  The dismantling order itself lives in
-    ``_erase_org_transactional``; this handler owns auth, the 404/gate, and the
-    single commit.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    org_id = request.path_params["org_id"]
-
-    confirm = request.headers.get("X-Confirm-Delete", "")
-    if confirm != "drop-warehouse-data":
-        return JSONResponse(
-            {
-                "code": "confirmation_required",
-                "message": (
-                    "Include header X-Confirm-Delete: drop-warehouse-data to confirm "
-                    "permanent deletion of the organization and its warehouse data."
-                ),
-            },
-            status_code=422,
-        )
-
-    # Phase 1: read org metadata + pre-check active projects in one connection.
-    # The connection is kept open (not committed) so we can reuse it for the
-    # transactional DELETE below, eliminating the TOCTOU window (F-2).
-    from core.db import get_connection  # noqa: PLC0415
-
-    # `get_connection()` is a @contextmanager. Calling `.__enter__()` on a
-    # TEMPORARY discards the context-manager object itself: the generator is then
-    # finalised by the garbage collector, its `finally: conn.close()` fires, and
-    # the connection is dead before the first cursor is opened. Holding the
-    # reference in `pg_cm` is what keeps it alive until this handler's own
-    # `finally` closes it. Symptom before the fix: every DELETE returned 500 with
-    # `psycopg.OperationalError: the connection is closed`, so the RGPD org drop
-    # was entirely non-functional in production.
-    try:
-        pg_cm = get_connection()
-        pg_conn = pg_cm.__enter__()
-    except Exception:
-        logger.exception("admin_api: delete_org db_open_failed org=%s", org_id)
-        return JSONResponse(
-            {"code": "db_error", "message": "database connection failed"},
-            status_code=500,
-        )
-
-    # ONE try/finally around every path below. The 404, the manage refusal and
-    # each 409 return early, and every one of them must still hand the connection
-    # back to the context manager that owns it -- before this, a refused delete
-    # leaked its connection until the garbage collector noticed.
-    try:
-        try:
-            with pg_conn.cursor() as cur:
-                cur.execute(
-                    "SELECT id, name, slug FROM app.organizations WHERE id = %s",
-                    (org_id,),
-                )
-                org_row = cur.fetchone()
-                if org_row is None:
-                    pg_conn.rollback()
-                    return JSONResponse(
-                        {"code": "not_found", "message": "organization not found"},
-                        status_code=404,
-                    )
-                org_name = org_row[1]
-                org_slug = org_row[2]
-
-                denied = _enforce_org_manage(org_id, identity, pg_conn, "delete_org")
-                if denied is not None:
-                    pg_conn.rollback()
-                    return denied
-        except Exception:
-            try:
-                pg_conn.rollback()
-            except Exception:
-                pass
-            logger.exception("admin_api: delete_org db_error org=%s", org_id)
-            return JSONResponse(
-                {"code": "db_error", "message": "database operation failed"},
-                status_code=500,
-            )
-
-        # Phases 2-4: dismantle the tenant tree, delete the row, drop the
-        # warehouse, audit -- all staged on this open transaction (see
-        # _erase_org_transactional for the order and why it is that order). It
-        # rolls back itself on refusal/failure, so the org stays whole.
-        try:
-            result, error = _erase_org_transactional(
-                pg_conn,
-                org_id,
-                name=org_name,
-                slug=org_slug,
-                identity=identity or "anonymous",
-            )
-            if error is not None:
-                return error
-            # Single commit: state change AND audit evidence land together.
-            pg_conn.commit()
-        except Exception:
-            try:
-                pg_conn.rollback()
-            except Exception:
-                pass
-            logger.exception("admin_api: delete_org audit_commit_failed org=%s", org_id)
-            return JSONResponse(
-                {"code": "db_error", "message": "database operation failed"},
-                status_code=500,
-            )
-    finally:
-        # Close through the context manager that owns the connection, so its own
-        # `finally` runs exactly once and nothing is left to the garbage collector.
-        try:
-            pg_cm.__exit__(None, None, None)
-        except Exception:
-            pass
-
-    return JSONResponse(
-        {"deleted": True, "org_id": org_id, "removed": result["removed"]},
-        status_code=200,
-    )
-
-
-async def _provision_org_warehouse(request: Request) -> Response:
-    """POST /api/organizations/{org_id}/provision-warehouse -- manual provision (AC4).
-
-    Auth: owner or admin of the org.  Idempotent: safe to call multiple times.
-    Emits audit ACTION_ORG_SCHEMAS_PROVISIONED on success.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    org_id = request.path_params["org_id"]
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT 1 FROM app.organizations WHERE id = %s", (org_id,))
-                if cur.fetchone() is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "organization not found"},
-                        status_code=404,
-                    )
-                denied = _enforce_org_manage(org_id, identity, conn, "provision_org_warehouse")
-                if denied is not None:
-                    return denied
-    except Exception:
-        logger.exception("admin_api: provision_org_warehouse db_error org=%s", org_id)
-        return JSONResponse(
-            {"code": "db_error", "message": "database operation failed"},
-            status_code=500,
-        )
-
-    from core import warehouse_tenancy as _wt  # noqa: PLC0415
-
-    try:
-        result = _wt.provision_org_schemas(org_id=org_id, conn=None)
-    except Exception:
-        logger.exception("admin_api: provision_org_warehouse failed org=%s", org_id)
-        return JSONResponse(
-            {"code": "provision_failed", "message": "warehouse operation failed"},
-            status_code=500,
-        )
-
-    write_audit_row(
-        identity=identity or "anonymous",
-        action=ACTION_ORG_SCHEMAS_PROVISIONED,
-        provider_account="",
-        connection_ref="",
-        metadata={"org_id": org_id, **result},
-    )
-    return JSONResponse({"org_id": org_id, **result}, status_code=200)
-
-
-async def _backfill_warehouse_schemas(request: Request) -> Response:
-    """POST /api/admin/warehouse/provision-schemas -- backfill all orgs (AC3).
-
-    Auth: any authenticated user (_check_auth).  Idempotent.
-    Body (optional): {"include_archived": true} -- default false.
-    Returns: {"provisioned": N, "skipped": M, "errors": [...]}
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    try:
-        raw_body = await request.body()
-        body: dict = json.loads(raw_body) if raw_body else {}
-    except Exception:
-        body = {}
-
-    include_archived = bool(body.get("include_archived", False))
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                if include_archived:
-                    cur.execute(
-                        "SELECT id FROM app.organizations "
-                        "WHERE status IN ('active', 'archived') ORDER BY created_at ASC"
-                    )
-                else:
-                    cur.execute(
-                        "SELECT id FROM app.organizations "
-                        "WHERE status = 'active' ORDER BY created_at ASC"
-                    )
-                org_ids = [row[0] for row in cur.fetchall()]
-    except Exception:
-        logger.exception("admin_api: backfill_warehouse_schemas db_error")
-        return JSONResponse(
-            {"code": "db_error", "message": "database operation failed"},
-            status_code=500,
-        )
-
-    from core import warehouse_tenancy as _wt  # noqa: PLC0415
-
-    provisioned = 0
-    skipped = 0
-    errors: list[dict] = []
-
-    for oid in org_ids:
-        try:
-            result = _wt.provision_org_schemas(org_id=oid, conn=None)
-            if result.get("status") == "ok":
-                provisioned += 1
-            else:
-                skipped += 1
-                logger.info(
-                    "admin_api: backfill_warehouse_schemas skip org=%s reason=%s",
-                    oid,
-                    result.get("reason"),
-                )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("admin_api: backfill_warehouse_schemas error org=%s error=%s", oid, exc)
-            errors.append({"org_id": oid, "reason": "provision_failed"})
-
-    logger.info(
-        "admin_api: backfill_warehouse_schemas done provisioned=%d skipped=%d errors=%d",
-        provisioned,
-        skipped,
-        len(errors),
-    )
-    return JSONResponse(
-        {"provisioned": provisioned, "skipped": skipped, "errors": errors},
-        status_code=200,
-    )
-
-
-async def _list_org_members(request: Request) -> Response:
-    """GET /api/organizations/{org_id}/members -- members of an org (21.8 AC4).
-
-    Same read-scoping as _get_org: a non-member of an enrolled org gets 404 so
-    existence is never disclosed (7.4 pattern). The caller's *own* membership
-    status gates the route; suspended members are still visible in the list
-    (they are members with status='suspended').
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    org_id = request.path_params["org_id"]
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-        from core.project_access import identity_has_org_access  # noqa: PLC0415
-
-        with get_connection() as conn:
-            if not identity_has_org_access(org_id, identity or "anonymous", conn):
-                return JSONResponse(
-                    {"code": "not_found", "message": "organization not found"},
-                    status_code=404,
-                )
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT id, org_id, identity, role, status, "
-                    "invited_by, invited_at, joined_at, created_at "
-                    "FROM app.org_members WHERE org_id = %s ORDER BY created_at ASC",
-                    (org_id,),
-                )
-                cols = [d[0] for d in cur.description]
-                members = [_org_row_to_dict(cols, r) for r in cur.fetchall()]
-    except Exception as exc:
-        logger.error("admin_api: list_org_members db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-    return JSONResponse({"members": members}, status_code=200)
-
-
-async def _add_org_member(request: Request) -> Response:
-    """POST /api/organizations/{org_id}/members -- enroll an identity (AC4).
-
-    Body: {"identity": str, "role": str?, "status": str?}. 404 if the org does
-    not exist; 409 on a duplicate (org_id, identity).
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    if _canonical_identity_enabled():
-        return JSONResponse(
-            {
-                "code": "invitation_required",
-                "message": "New members must accept an organization invitation.",
-            },
-            status_code=409,
-        )
-    org_id = request.path_params["org_id"]
-    try:
-        body: dict = json.loads(await request.body())
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
-            status_code=400,
-        )
-
-    member_identity = (body.get("identity") or "").strip()
-    if not member_identity or len(member_identity) > 255:
-        return JSONResponse(
-            {"code": "invalid_input", "message": "identity is required (max 255 chars)"},
-            status_code=422,
-        )
-    role = (body.get("role") or "member").strip().lower()
-    if role not in _ORG_ROLES:
-        return JSONResponse(
-            {"code": "invalid_input", "message": f"invalid role: {role!r}"},
-            status_code=422,
-        )
-    status = (body.get("status") or "active").strip().lower()
-    if status not in _ORG_MEMBER_STATUSES:
-        return JSONResponse(
-            {"code": "invalid_input", "message": f"invalid status: {status!r}"},
-            status_code=422,
-        )
-
-    member_id = _mint_org_member_id()
-    performed_by = identity or "anonymous"
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT 1 FROM app.organizations WHERE id = %s", (org_id,))
-                if cur.fetchone() is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "organization not found"},
-                        status_code=404,
-                    )
-                # Story 21.5: only an owner/admin may enroll members (existence 404
-                # first, then manage 403). Default-open org -> resolves to owner.
-                denied = _enforce_org_manage(org_id, identity, conn, "add_org_member")
-                if denied is not None:
-                    return denied
-                # FIX 3: an admin cannot mint a role above its own (e.g. owner).
-                denied = _enforce_role_assignment(
-                    org_id, identity, member_identity, role, conn, "add_org_member"
-                )
-                if denied is not None:
-                    return denied
-                cur.execute(
-                    "SELECT 1 FROM app.org_members WHERE org_id = %s AND identity = %s",
-                    (org_id, member_identity),
-                )
-                if cur.fetchone() is not None:
-                    return JSONResponse(
-                        {"code": "conflict", "message": "identity already a member"},
-                        status_code=409,
-                    )
-                joined_at = "NOW()" if status == "active" else "NULL"
-                cur.execute(
-                    "INSERT INTO app.org_members "
-                    "(id, org_id, identity, role, status, invited_by, invited_at, joined_at) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, NOW(), " + joined_at + ") "
-                    "RETURNING id, org_id, identity, role, status, "
-                    "invited_by, invited_at, joined_at, created_at",
-                    (member_id, org_id, member_identity, role, status, performed_by),
-                )
-                row = cur.fetchone()
-                cols = [d[0] for d in cur.description]
-                member = _org_row_to_dict(cols, row)
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: add_org_member db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    write_audit_row(
-        identity=performed_by,
-        action=ACTION_ORG_MEMBER_ADDED,
-        provider_account="",
-        connection_ref="",
-        metadata={"org_id": org_id, "member_identity": member_identity, "role": role},
-    )
-    return JSONResponse(member, status_code=201)
-
-
-def _would_orphan_last_owner(
-    cur, org_id: str, target_identity: str, *, new_role: str | None, new_status: str | None
-) -> bool:
-    """Story 21.5 security follow-up: True if removing/downgrading/suspending
-    *target_identity* would leave the org with ZERO active owners.
-
-    An org whose active managers reach zero has zero owners AND admins; if it also
-    has no other active members it silently reopens (default-open-until-enrolled),
-    and even short of full emptiness it becomes unmanageable. member-management must
-    therefore refuse the operation that drops the LAST active manager. This widens
-    the earlier owner-only guard: an org whose sole active manager is an ADMIN can no
-    longer be emptied via remove/suspend/demote of that admin (FIX 1b).
-
-    RACE (FIX 1a): the active-manager set is locked FOR UPDATE on THIS cursor/txn
-    BEFORE it is counted, so two concurrent mutations that each drop a different
-    manager serialize instead of both observing the other as still active.
-    `
-ew_role``/`
-ew_status`` are the POST-change values (None for a removal).
-    """
-    # Lock the org's active-manager set on this transaction so concurrent
-    # remove/suspend/demote operations serialize before we count. The lock must be
-    # taken BEFORE reading membership so the decision is made on a stable snapshot.
-    cur.execute(
-        "SELECT identity, role FROM app.org_members "
-        "WHERE org_id = %s AND status = 'active' AND role = 'owner' "
-        "FOR UPDATE",
-        (org_id,),
-    )
-    active_owners = cur.fetchall()
-
-    cur.execute(
-        "SELECT role, status FROM app.org_members WHERE org_id = %s AND identity = %s",
-        (org_id, target_identity),
-    )
-    row = cur.fetchone()
-    if row is None:
-        return False  # not a member -> caller handles the 404
-    cur_role, cur_status = row
-    was_active_owner = cur_role == "owner" and cur_status == "active"
-    if not was_active_owner:
-        return False  # touching a non-owner never affects the owner floor
-    # Post-change: is the target STILL an active owner?
-    if new_role is None and new_status is None:
-        still_active_owner = False  # removal
-    else:
-        post_role = new_role if new_role is not None else cur_role
-        post_status = new_status if new_status is not None else cur_status
-        still_active_owner = post_role == "owner" and post_status == "active"
-    if still_active_owner:
-        return False  # still an active owner -> owner floor preserved
-    # Are there OTHER active owners (from the locked set)?
-    other_active_owners = [ident for ident, _role in active_owners if ident != target_identity]
-    return len(other_active_owners) == 0
-
-
-def _transfer_org_ownership(cur, org_id: str, current_owner: str, next_owner: str) -> bool:
-    """Atomically promote one active member and demote the current owner."""
-    if current_owner == next_owner:
-        return False
-    cur.execute(
-        "SELECT identity, role FROM app.org_members "
-        "WHERE org_id = %s AND status = 'active' AND role = 'owner' FOR UPDATE",
-        (org_id,),
-    )
-    owners = {identity for identity, _role in cur.fetchall()}
-    if current_owner not in owners:
-        return False
-    cur.execute(
-        "SELECT status FROM app.org_members WHERE org_id = %s AND identity = %s FOR UPDATE",
-        (org_id, next_owner),
-    )
-    target = cur.fetchone()
-    if target is None or target[0] != "active":
-        return False
-    cur.execute(
-        "UPDATE app.org_members SET role = 'owner' WHERE org_id = %s AND identity = %s",
-        (org_id, next_owner),
-    )
-    cur.execute(
-        "UPDATE app.org_members SET role = 'admin' WHERE org_id = %s AND identity = %s",
-        (org_id, current_owner),
-    )
-    return True
 
 
 # Back-compat alias for callers/tests that still use the earlier helper name.
@@ -7461,167 +1270,8 @@ def _transfer_org_ownership(cur, org_id: str, current_owner: str, next_owner: st
 _would_orphan_last_manager = _would_orphan_last_owner
 
 
-async def _remove_org_member(request: Request) -> Response:
-    """DELETE /api/organizations/{org_id}/members/{identity} -- remove a member.
-
-    Manage-gated (owner/admin). 404 if not a member. 409 if it would remove the
-    org's last active owner (would silently reopen the tenant).
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    org_id = request.path_params["org_id"]
-    target = request.path_params["identity"]
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            denied = _enforce_org_manage(org_id, identity, conn, "remove_member")
-            if denied is not None:
-                return denied
-            with conn.cursor() as cur:
-                if _would_orphan_last_owner(cur, org_id, target, new_role=None, new_status=None):
-                    return JSONResponse(
-                        {
-                            "code": "conflict",
-                            "message": "cannot remove the last active owner",
-                        },
-                        status_code=409,
-                    )
-                cur.execute(
-                    "DELETE FROM app.org_members WHERE org_id = %s AND identity = %s",
-                    (org_id, target),
-                )
-                deleted = cur.rowcount
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: remove_org_member db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-    if not deleted:
-        return JSONResponse({"code": "not_found", "message": "member not found"}, status_code=404)
-    write_audit_row(
-        identity=identity or "anonymous",
-        action=ACTION_ORG_MEMBER_REMOVED,
-        provider_account="",
-        connection_ref="",
-        metadata={"org_id": org_id, "member_identity": target},
-    )
-    return JSONResponse({"removed": True}, status_code=200)
 
 
-async def _update_org_member(request: Request) -> Response:
-    """PATCH /api/organizations/{org_id}/members/{identity} -- change role/status.
-
-    Manage-gated. 404 if not a member. 409 if the change would drop the org's last
-    active owner (downgrade or suspend).
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    org_id = request.path_params["org_id"]
-    target = request.path_params["identity"]
-    try:
-        body: dict = json.loads(await request.body())
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
-            status_code=400,
-        )
-    updates: dict = {}
-    if "role" in body:
-        role = (body.get("role") or "").strip().lower()
-        if role not in _ORG_ROLES:
-            return JSONResponse(
-                {"code": "invalid_input", "message": f"invalid role: {role!r}"},
-                status_code=422,
-            )
-        updates["role"] = role
-    if "status" in body:
-        status = (body.get("status") or "").strip().lower()
-        if status not in _ORG_MEMBER_STATUSES:
-            return JSONResponse(
-                {"code": "invalid_input", "message": f"invalid status: {status!r}"},
-                status_code=422,
-            )
-        updates["status"] = status
-    if not updates:
-        return JSONResponse(
-            {"code": "invalid_input", "message": "no updatable fields (role|status)"},
-            status_code=422,
-        )
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            denied = _enforce_org_manage(org_id, identity, conn, "update_member")
-            if denied is not None:
-                return denied
-            # FIX 3: when changing role, forbid assigning above the actor's own rank
-            # and forbid the actor promoting itself (self-escalation to owner).
-            if "role" in updates:
-                denied = _enforce_role_assignment(
-                    org_id, identity, target, updates["role"], conn, "update_member"
-                )
-                if denied is not None:
-                    return denied
-            with conn.cursor() as cur:
-                if _would_orphan_last_owner(
-                    cur,
-                    org_id,
-                    target,
-                    new_role=updates.get("role"),
-                    new_status=updates.get("status"),
-                ):
-                    return JSONResponse(
-                        {
-                            "code": "conflict",
-                            "message": "cannot drop the last active owner",
-                        },
-                        status_code=409,
-                    )
-                set_parts = [f"{col} = %s" for col in updates]
-                params = list(updates.values()) + [org_id, target]
-                cur.execute(
-                    "UPDATE app.org_members SET "
-                    + ", ".join(set_parts)
-                    + " WHERE org_id = %s AND identity = %s "
-                    + "RETURNING id, org_id, identity, role, status, "
-                    + "invited_by, invited_at, joined_at, created_at",
-                    params,
-                )
-                row = cur.fetchone()
-                if row is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "member not found"},
-                        status_code=404,
-                    )
-                cols = [d[0] for d in cur.description]
-                member = _org_row_to_dict(cols, row)
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: update_org_member db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-    write_audit_row(
-        identity=identity or "anonymous",
-        action=ACTION_ORG_MEMBER_UPDATED,
-        provider_account="",
-        connection_ref="",
-        metadata={"org_id": org_id, "member_identity": target, "fields": sorted(updates)},
-    )
-    return JSONResponse(member, status_code=200)
 
 
 # ===========================================================================
@@ -7631,101 +1281,8 @@ async def _update_org_member(request: Request) -> Response:
 # ===========================================================================
 
 
-async def _get_my_profile(request: Request) -> Response:
-    """GET /api/me/profile -- the caller's own profile (AC3)."""
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    ident = identity or "anonymous"
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-        from core.user_profiles import fetch_user_profile  # noqa: PLC0415
-
-        with get_connection() as conn:
-            profile = fetch_user_profile(ident, conn)
-    except Exception as exc:
-        logger.error("admin_api: get_my_profile db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-    return JSONResponse(profile, status_code=200)
 
 
-async def _patch_my_profile(request: Request) -> Response:
-    """PATCH /api/me/profile -- upsert the caller's own profile (AC3).
-
-    Body: {"display_name"?, "email"?, "avatar_url"?, "avatar_source"?}. The
-    identity is ALWAYS the auth subject -- a body-supplied identity is ignored,
-    so a user can only ever write their own profile.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    ident = identity or "anonymous"
-    try:
-        body: dict = json.loads(await request.body())
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
-            status_code=400,
-        )
-
-    def _opt_str(key: str, maxlen: int) -> tuple[str | None, Response | None]:
-        if key not in body:
-            return None, None
-        raw = body.get(key)
-        val = str(raw).strip() if raw else None
-        if val is not None and len(val) > maxlen:
-            return None, JSONResponse(
-                {"code": "invalid_input", "message": f"{key} too long (max {maxlen})"},
-                status_code=422,
-            )
-        return val, None
-
-    display_name, e1 = _opt_str("display_name", 255)
-    if e1:
-        return e1
-    email, e2 = _opt_str("email", 320)
-    if e2:
-        return e2
-    avatar_url, e3 = _opt_str("avatar_url", 2048)
-    if e3:
-        return e3
-    avatar_source, e4 = _opt_str("avatar_source", 64)
-    if e4:
-        return e4
-    # Default source to 'self' when an avatar is set without an explicit source.
-    if avatar_url and "avatar_source" not in body:
-        avatar_source = "self"
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-        from core.user_profiles import upsert_user_profile  # noqa: PLC0415
-
-        with get_connection() as conn:
-            profile = upsert_user_profile(
-                ident,
-                conn,
-                display_name=display_name,
-                email=email,
-                avatar_url=avatar_url,
-                avatar_source=avatar_source,
-            )
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: patch_my_profile db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-    return JSONResponse(profile, status_code=200)
 
 
 # ===========================================================================
@@ -7739,357 +1296,12 @@ async def _patch_my_profile(request: Request) -> Response:
 #     orphan state this whole path exists to prevent.
 # ===========================================================================
 
-_MEMBERSHIP_FACTS_SQL = """
-    SELECT m.org_id, o.name, o.slug, m.role, m.status,
-           (SELECT count(*) FROM app.org_members x
-             WHERE x.org_id = m.org_id AND x.identity <> %s AND x.status = 'active'),
-           (SELECT count(*) FROM app.org_members y
-             WHERE y.org_id = m.org_id AND y.identity <> %s
-               AND y.status = 'active' AND y.role = 'owner')
-    FROM app.org_members m
-    JOIN app.organizations o ON o.id = m.org_id
-    WHERE m.identity = %s
-    ORDER BY o.name, m.org_id
-"""
 
 
-def _account_deletion_facts(conn, identity: str) -> dict:
-    """What erasing *identity* would do, and what would stop it. Read-only.
-
-    ``sole_owner_of`` is every org where the caller is the ONLY active owner --
-    i.e. every org whose fate depends on this account. Each of them either
-    leaves with the account (nobody else is active in it) or blocks the erasure
-    (someone else is), and ``blockers`` says which, per org, with the remedy.
-    """
-    from core.user_profiles import fetch_user_profile  # noqa: PLC0415
-
-    profile = fetch_user_profile(identity, conn)
-
-    memberships: list[dict] = []
-    sole_owner_of: list[dict] = []
-    blockers: list[dict] = []
-    orgs_to_erase: list[dict] = []
-
-    with conn.cursor() as cur:
-        cur.execute(_MEMBERSHIP_FACTS_SQL, (identity, identity, identity))
-        rows = cur.fetchall() or []
-
-    for org_id, name, slug, role, status, others, other_owners in rows:
-        memberships.append(
-            {
-                "org_id": org_id,
-                "org_name": name,
-                "role": role,
-                "other_active_members": int(others or 0),
-            }
-        )
-        # Only an ACTIVE owner owns anything: an invited/suspended row holds no
-        # organization hostage, so it never blocks and never drags an org along.
-        if role != "owner" or status != "active" or int(other_owners or 0) > 0:
-            continue
-        sole_owner_of.append({"org_id": org_id, "org_name": name})
-        if int(others or 0) > 0:
-            blockers.append(
-                {
-                    "kind": "sole_owner_with_members",
-                    "detail": (
-                        f'You are the only owner of "{name}" and '
-                        f"{int(others)} other member(s) are still active. "
-                        "Transfer ownership to another member, or delete the "
-                        "organization first."
-                    ),
-                }
-            )
-            continue
-        # Nobody else is left in it: the org goes with the account. Its own
-        # deletion blockers (active projects, unresolvable warehouse) are the
-        # account's blockers too -- announcing them here is what stops the
-        # erasure from failing halfway through in production.
-        org_facts = _org_deletion_facts(conn, org_id, name=name, slug=slug)
-        for blocker in org_facts["blockers"]:
-            blockers.append(
-                {
-                    "kind": blocker["kind"],
-                    "detail": f'Organization "{name}": {blocker["detail"]}',
-                }
-            )
-        orgs_to_erase.append({"org_id": org_id, "name": name, "slug": slug})
-
-    return {
-        "identity": identity,
-        "email": profile.get("email"),
-        "memberships": memberships,
-        "sole_owner_of": sole_owner_of,
-        "blockers": blockers,
-        # Additive, and the honest half of the promise: these organizations are
-        # erased WITH the account (warehouse datasets included).
-        "organizations_erased_with_account": orgs_to_erase,
-    }
 
 
-async def _get_my_deletion_preview(request: Request) -> Response:
-    """GET /api/me/deletion-preview -- what erasing this account would do.
-
-    Read-only, no side effect. The caller can only ever preview THEIR own
-    account: the identity comes from the auth subject, never from the request.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    ident = identity or ""
-    if not ident:
-        return JSONResponse(
-            {
-                "code": "identity_required",
-                "message": "An authenticated identity is required to preview an erasure.",
-            },
-            status_code=403,
-        )
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            facts = _account_deletion_facts(conn, ident)
-            conn.rollback()
-    except Exception:
-        logger.exception("admin_api: my_deletion_preview db_error")
-        return JSONResponse(
-            {"code": "db_error", "message": "database operation failed"},
-            status_code=500,
-        )
-    return JSONResponse(facts, status_code=200)
 
 
-async def _delete_me(request: Request) -> Response:
-    """DELETE /api/me -- erase the caller's account (RGPD right to erasure).
-
-    Requires header ``X-Confirm-Delete: erase-account`` (422 otherwise).
-    409 when the caller is the last owner of an org that still has other active
-    members -- the message says what to do instead.
-
-    Sequencing: each org that leaves with the account is erased in its OWN
-    transaction (``_erase_org_transactional`` + commit), then the account rows
-    are erased in a final one. A single giant transaction is impossible here --
-    the warehouse drop is external and not transactional, so a rollback after a
-    successful drop would restore rows whose data is already gone. Per-org
-    atomicity is the strongest invariant that actually holds, and it is the one
-    that matters: no org is ever half-erased. Erasure being monotonic, a retry
-    after a mid-sequence failure simply resumes (the erased orgs no longer
-    appear in the facts).
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    ident = identity or ""
-    if not ident:
-        # "anonymous" is not an account; erasing it would erase nothing and
-        # audit a lie.
-        return JSONResponse(
-            {
-                "code": "identity_required",
-                "message": "An authenticated identity is required to erase an account.",
-            },
-            status_code=403,
-        )
-
-    if request.headers.get("X-Confirm-Delete", "") != "erase-account":
-        return JSONResponse(
-            {
-                "code": "confirmation_required",
-                "message": (
-                    "Include header X-Confirm-Delete: erase-account to confirm "
-                    "permanent erasure of your account."
-                ),
-            },
-            status_code=422,
-        )
-
-    from core.db import get_connection  # noqa: PLC0415
-
-    # Phase 1: decide. Read-only snapshot; nothing is touched if it refuses.
-    try:
-        with get_connection() as conn:
-            facts = _account_deletion_facts(conn, ident)
-            conn.rollback()
-    except Exception:
-        logger.exception("admin_api: delete_me facts_failed")
-        return JSONResponse(
-            {"code": "db_error", "message": "database operation failed"},
-            status_code=500,
-        )
-
-    if facts["blockers"]:
-        return JSONResponse(
-            {
-                "code": "account_deletion_blocked",
-                "message": (
-                    "Your account cannot be erased yet: one or more organizations "
-                    "depend on it. Resolve the blockers below and retry."
-                ),
-                "blockers": facts["blockers"],
-                "sole_owner_of": facts["sole_owner_of"],
-            },
-            status_code=409,
-        )
-
-    # Phase 2: erase the organizations that belong to nobody but the caller,
-    # one atomic transaction each (warehouse datasets included).
-    erased_orgs: list[dict] = []
-    for org in facts["organizations_erased_with_account"]:
-        try:
-            org_cm = get_connection()
-            org_conn = org_cm.__enter__()
-        except Exception:
-            logger.exception("admin_api: delete_me db_open_failed org=%s", org["org_id"])
-            return JSONResponse(
-                {"code": "db_error", "message": "database connection failed"},
-                status_code=500,
-            )
-        try:
-            result, error = _erase_org_transactional(
-                org_conn,
-                org["org_id"],
-                name=org["name"],
-                slug=org["slug"],
-                identity=ident,
-            )
-            if error is not None:
-                logger.warning(
-                    "admin_api: delete_me org_erasure_refused identity=%s org=%s status=%s",
-                    ident,
-                    org["org_id"],
-                    error.status_code,
-                )
-                return JSONResponse(
-                    {
-                        "code": "org_erasure_failed",
-                        "message": (
-                            f'Organization "{org["name"]}" could not be erased, so '
-                            "your account was NOT erased. Resolve the cause and retry "
-                            "-- organizations already erased stay erased."
-                        ),
-                        "org_id": org["org_id"],
-                        "cause": json.loads(error.body),
-                        "organizations_erased": erased_orgs,
-                    },
-                    status_code=error.status_code,
-                )
-            org_conn.commit()
-            erased_orgs.append(
-                {
-                    "org_id": org["org_id"],
-                    "name": org["name"],
-                    "removed": result["removed"],
-                    "warehouse_datasets": result["warehouse_datasets"],
-                }
-            )
-        except Exception:
-            try:
-                org_conn.rollback()
-            except Exception:
-                pass
-            logger.exception("admin_api: delete_me org_erasure_failed org=%s", org["org_id"])
-            return JSONResponse(
-                {"code": "db_error", "message": "database operation failed"},
-                status_code=500,
-            )
-        finally:
-            try:
-                org_cm.__exit__(None, None, None)
-            except Exception:
-                pass
-
-    # Phase 3: erase the person -- memberships (org and project) and profile.
-    try:
-        acct_cm = get_connection()
-        acct_conn = acct_cm.__enter__()
-    except Exception:
-        logger.exception("admin_api: delete_me db_open_failed identity=%s", ident)
-        return JSONResponse(
-            {"code": "db_error", "message": "database connection failed"},
-            status_code=500,
-        )
-
-    try:
-        from core.audit import insert_audit_row  # noqa: PLC0415
-
-        with acct_conn.cursor() as cur:
-            cur.execute("DELETE FROM app.org_members WHERE identity = %s", (ident,))
-            org_memberships = cur.rowcount or 0
-            cur.execute("DELETE FROM app.project_members WHERE identity = %s", (ident,))
-            project_memberships = cur.rowcount or 0
-            cur.execute("DELETE FROM app.user_profiles WHERE identity = %s", (ident,))
-            profile_rows = cur.rowcount or 0
-
-        insert_audit_row(
-            acct_conn,
-            identity=ident,
-            action=ACTION_ACCOUNT_ERASED,
-            provider_account="",
-            connection_ref="",
-            metadata={
-                "org_memberships": org_memberships,
-                "project_memberships": project_memberships,
-                "profile_erased": bool(profile_rows),
-                "organizations_erased": [o["org_id"] for o in erased_orgs],
-            },
-        )
-        # Counted AFTER the audit insert so the number includes the entry that
-        # records this very erasure -- what the user is told is retained is
-        # exactly what remains.
-        with acct_conn.cursor() as cur:
-            cur.execute("SELECT count(*) FROM app.audit_log WHERE identity = %s", (ident,))
-            row = cur.fetchone()
-            retained_audit = int(row[0]) if row else 0
-        acct_conn.commit()
-    except Exception:
-        try:
-            acct_conn.rollback()
-        except Exception:
-            pass
-        logger.exception("admin_api: delete_me account_erasure_failed identity=%s", ident)
-        return JSONResponse(
-            {"code": "db_error", "message": "database operation failed"},
-            status_code=500,
-        )
-    finally:
-        try:
-            acct_cm.__exit__(None, None, None)
-        except Exception:
-            pass
-
-    return JSONResponse(
-        {
-            "deleted": True,
-            "identity": ident,
-            "erased": {
-                "profile": bool(profile_rows),
-                "org_memberships": org_memberships,
-                "project_memberships": project_memberships,
-                "organizations": erased_orgs,
-            },
-            # Said out loud rather than discovered later: the audit ledger keeps
-            # the identity. It is the proof that the erasure happened (and that
-            # every earlier action was legitimately taken); an erasure that also
-            # erased its own evidence could not be demonstrated to anyone.
-            "retained": {
-                "audit_entries": retained_audit,
-                "reason": (
-                    "Audit entries are kept as the durable, legally required trace "
-                    "of platform actions -- including this erasure itself. They "
-                    "record actions, not personal content."
-                ),
-            },
-        },
-        status_code=200,
-    )
 
 
 # ===========================================================================
@@ -8104,11 +1316,6 @@ async def _delete_me(request: Request) -> Response:
 # ===========================================================================
 
 
-def _mint_grant_id() -> str:
-    """Mint a prefixed ULID 'cgrant_<ULID>' for a credential account grant."""
-    from ulid import ULID  # noqa: PLC0415
-
-    return f"cgrant_{ULID()}"
 
 
 def _enforce_credential_org_read(credential_id: str, identity: str, conn) -> Response | None:
@@ -8137,200 +1344,14 @@ def _enforce_credential_org_read(credential_id: str, identity: str, conn) -> Res
     return None
 
 
-async def _list_credential_accounts(request: Request) -> Response:
-    """GET /api/credentials/{credential_id}/accounts -- accounts of a credential (AC2)."""
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    credential_id = request.path_params["credential_id"]
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            denied = _enforce_credential_org_read(credential_id, identity, conn)
-            if denied is not None:
-                return denied
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT credential_id, external_account_id, label, discovered_at
-                    FROM app.credential_accounts
-                    WHERE credential_id = %s
-                    ORDER BY external_account_id ASC
-                    """,
-                    (credential_id,),
-                )
-                accounts = [
-                    {
-                        "credential_id": r[0],
-                        "external_account_id": r[1],
-                        "label": r[2],
-                        "discovered_at": r[3].isoformat() if r[3] else None,
-                    }
-                    for r in cur.fetchall()
-                ]
-    except Exception as exc:
-        logger.error("admin_api: list_credential_accounts db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-    return JSONResponse({"accounts": accounts}, status_code=200)
 
 
-async def _register_credential_account(request: Request) -> Response:
-    """POST /api/credentials/{credential_id}/accounts -- upsert an account (AC2).
-
-    Discovery stub: body {"external_account_id": str, "label"?: str}. Upserts into
-    credential_accounts. 404 if the credential does not exist.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    credential_id = request.path_params["credential_id"]
-    try:
-        body: dict = json.loads(await request.body())
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
-            status_code=400,
-        )
-    external_account_id = (body.get("external_account_id") or "").strip()
-    if not external_account_id or len(external_account_id) > 255:
-        return JSONResponse(
-            {"code": "invalid_input", "message": "external_account_id is required"},
-            status_code=422,
-        )
-    label = body.get("label")
-    label = str(label).strip() if label else None
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                # FIX 5: gate account registration on the credential's OWNER-org
-                # manage role (same enforcement the grant path uses). A missing
-                # credential -> 404; a NULL owner_org_id (legacy/un-backfilled) is
-                # NOT registerable -> non-disclosing 404 until backfill.
-                cur.execute(
-                    "SELECT owner_org_id FROM app.connection_ref WHERE id = %s",
-                    (credential_id,),
-                )
-                cred_row = cur.fetchone()
-                if cred_row is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "credential not found"},
-                        status_code=404,
-                    )
-                owner_org_id = cred_row[0]
-                if owner_org_id is None:
-                    write_audit_row(
-                        identity=identity or "anonymous",
-                        action=ACTION_CROSS_SCOPE_ATTEMPT,
-                        provider_account="",
-                        connection_ref=credential_id,
-                        metadata={
-                            "credential_id": credential_id,
-                            "operation": "register_credential_account",
-                            "reason": "credential_owner_org_null",
-                        },
-                    )
-                    return JSONResponse(
-                        {"code": "not_found", "message": "credential not found"},
-                        status_code=404,
-                    )
-                denied = _enforce_org_manage(
-                    owner_org_id, identity, conn, "register_credential_account"
-                )
-                if denied is not None:
-                    return denied
-                cur.execute(
-                    """
-                    INSERT INTO app.credential_accounts (credential_id, external_account_id, label)
-                    VALUES (%s, %s, %s)
-                    ON CONFLICT (credential_id, external_account_id)
-                    DO UPDATE SET label = EXCLUDED.label
-                    RETURNING credential_id, external_account_id, label, discovered_at
-                    """,
-                    (credential_id, external_account_id, label),
-                )
-                r = cur.fetchone()
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: register_credential_account db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-    return JSONResponse(
-        {
-            "credential_id": r[0],
-            "external_account_id": r[1],
-            "label": r[2],
-            "discovered_at": r[3].isoformat() if r[3] else None,
-        },
-        status_code=201,
-    )
 
 
-async def _invitation_bootstrap(_request: Request) -> Response:
-    """Generic no-store shell; Story 36.4 owns authenticated bearer exchange."""
-    import secrets  # noqa: PLC0415
-
-    nonce = secrets.token_urlsafe(18)
-    html = """<!doctype html><html><head><meta charset="utf-8">
-<meta name="referrer" content="no-referrer"><title>Continue to Toorow</title></head>
-<body><main><h1>Continue securely</h1><p>Sign in to continue.</p></main>
-<script nonce="__NONCE__">'use strict';const raw=location.hash.startsWith('#invite=')
-?location.hash.slice(8):'';history.replaceState(null,'',location.pathname);
-if(raw){fetch('/api/invitations/exchange',{method:'POST',credentials:'same-origin',
-headers:{'Content-Type':'application/json'},body:JSON.stringify({bearer:raw})});}</script>
-</body></html>""".replace("__NONCE__", nonce)
-    return Response(
-        html,
-        media_type="text/html",
-        headers={
-            "Cache-Control": "no-store, max-age=0",
-            "Pragma": "no-cache",
-            "Referrer-Policy": "no-referrer",
-            "Content-Security-Policy": (
-                f"default-src 'none'; script-src 'nonce-{nonce}'; "
-                "connect-src 'self'; style-src 'none'; img-src 'none'; "
-                "font-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
-            ),
-            "X-Frame-Options": "DENY",
-            "X-Content-Type-Options": "nosniff",
-        },
-    )
 
 
-def _parse_invitation_grants(body: dict, field: str, scope_type: str):
-    from core.invitations import InvitationGrant, InvitationValidationError  # noqa: PLC0415
-
-    raw = body.get(field, [])
-    if not isinstance(raw, list):
-        raise InvitationValidationError(f"{field} must be an array")
-    grants = []
-    for item in raw:
-        if not isinstance(item, dict):
-            raise InvitationValidationError(f"{field} contains an invalid grant")
-        grants.append(
-            InvitationGrant(
-                scope_type,
-                str(item.get("scope_id") or "").strip(),
-                str(item.get("capability") or "view").strip(),
-            )
-        )
-    return tuple(grants)
 
 
-_INVITATION_EXCHANGE_COOKIE = "toorow_invitation_exchange"
 
 
 def _invitation_no_store(response: Response) -> Response:
@@ -8341,938 +1362,26 @@ def _invitation_no_store(response: Response) -> Response:
     return response
 
 
-async def _exchange_invitation(request: Request) -> Response:
-    """Exchange a fragment bearer only for its matching protected-auth subject."""
-    authorized, identity, canonical_principal = await _check_invitation_principal(request)
-    if (
-        not authorized
-        or identity == "anonymous"
-        or os.environ.get("TOOROW_AUTH_MODE", "disabled").strip().lower() == "disabled"
-    ):
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "unauthorized", "message": "Authentication required"}, status_code=401
-            )
-        )
-    from core.project_access import epic36_production_access_enabled  # noqa: PLC0415
-
-    if not epic36_production_access_enabled():
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "not_found", "message": "Invitation unavailable"}, status_code=404
-            )
-        )
-    from core.invitations import InvitationExchangeError, exchange_invitation  # noqa: PLC0415
-
-    try:
-        body = json.loads(await request.body())
-        bearer = body.get("bearer") if isinstance(body, dict) else None
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            exchanged = exchange_invitation(
-                conn,
-                bearer=bearer,
-                verified_identity=identity,
-                person_id=(
-                    canonical_principal.person_id if canonical_principal is not None else None
-                ),
-            )
-            conn.commit()
-    except (InvitationExchangeError, json.JSONDecodeError, TypeError):
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "not_found", "message": "Invitation unavailable"}, status_code=404
-            )
-        )
-    except Exception as exc:
-        logger.error("admin_api: invitation_exchange failed: %s", type(exc).__name__)
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "operation_failed", "message": "Invitation unavailable"}, status_code=500
-            )
-        )
-    response = _invitation_no_store(
-        JSONResponse(
-            {
-                "ready_to_accept": True,
-                "preview": {
-                    "organization_id": exchanged.preview.organization_id,
-                    "organization_label": exchanged.preview.organization_label,
-                    "authority": {
-                        "role_derived": exchanged.preview.role_derived,
-                        "explicit_grants": list(exchanged.preview.explicit_grants),
-                        "explicit_none": not exchanged.preview.explicit_grants,
-                    },
-                    "expires_at": exchanged.preview.expires_at.isoformat(),
-                },
-            }
-        )
-    )
-    response.set_cookie(
-        _INVITATION_EXCHANGE_COOKIE,
-        exchanged.session_value,
-        max_age=exchanged.max_age_seconds,
-        path="/api/invitations",
-        secure=True,
-        httponly=True,
-        samesite="strict",
-    )
-    return response
 
 
-async def _accept_invitation(request: Request) -> Response:
-    """Confirm exact membership/grants using the narrow exchange cookie."""
-    authorized, identity, canonical_principal = await _check_invitation_principal(request)
-    if (
-        not authorized
-        or identity == "anonymous"
-        or os.environ.get("TOOROW_AUTH_MODE", "disabled").strip().lower() == "disabled"
-    ):
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "unauthorized", "message": "Authentication required"}, status_code=401
-            )
-        )
-    from core.project_access import epic36_production_access_enabled  # noqa: PLC0415
-
-    if not epic36_production_access_enabled():
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "not_found", "message": "Invitation unavailable"}, status_code=404
-            )
-        )
-    idempotency_key = (request.headers.get("Idempotency-Key") or "").strip()
-    if not idempotency_key:
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "missing_idempotency_key", "message": "Idempotency-Key is required"},
-                status_code=422,
-            )
-        )
-    session_value = request.cookies.get(_INVITATION_EXCHANGE_COOKIE, "")
-    from core.invitations import (  # noqa: PLC0415
-        InvitationAcceptanceConflict,
-        InvitationExchangeError,
-        accept_invitation,
-    )
-    from core.operations import OperationIdempotencyConflict  # noqa: PLC0415
-
-    try:
-        body = json.loads(await request.body())
-        confirmed = body.get("confirmed") if isinstance(body, dict) else False
-        from core import tracing  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            accepted = accept_invitation(
-                conn,
-                session_value=session_value,
-                verified_identity=identity,
-                person_id=(
-                    canonical_principal.person_id if canonical_principal is not None else None
-                ),
-                confirmed=confirmed,
-                idempotency_key=idempotency_key,
-                host_context={
-                    "host": "rest",
-                    "workspace_id": (request.headers.get("X-Workspace-Id") or "console")[:256],
-                },
-                trace_id=tracing.current_trace_id_hex(),
-            )
-            conn.commit()
-    except InvitationExchangeError:
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "not_found", "message": "Invitation unavailable"}, status_code=404
-            )
-        )
-    except (InvitationAcceptanceConflict, OperationIdempotencyConflict):
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "conflict", "message": "Invitation conflicts with existing access"},
-                status_code=409,
-            )
-        )
-    except (json.JSONDecodeError, TypeError):
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "invalid_confirmation", "message": "Confirmation required"},
-                status_code=422,
-            )
-        )
-    except Exception as exc:
-        logger.error("admin_api: invitation_accept failed: %s", type(exc).__name__)
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "operation_failed", "message": "Invitation unavailable"}, status_code=500
-            )
-        )
-    # WHO this person is -- resolved here, because acceptance is the one moment
-    # every arrival passes through, whether they are joining an organization or
-    # about to create their own. Jean, 2026-07-26: "invitation -> on te demande
-    # ton nom et ton prénom (si pas dispo dans l'oath) -> tu accèdes à une
-    # organisation (ou ça te permet d'en créer une nouvelle)".
-    #
-    # Canonical mode keys the profile on person_id. Legacy mode keeps the raw
-    # subject until an explicit backfill has mapped existing memberships.
-    #
-    # Best-effort in the strongest sense: acceptance has already COMMITTED. A
-    # failure here must not change its outcome, so everything below is inside one
-    # try/except and the worst case is `needs_name: true` -- the console asks.
-    profile_name: str | None = None
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-        from core.user_profiles import fetch_user_profile, upsert_user_profile  # noqa: PLC0415
-
-        if canonical_principal is not None:
-            ok_subject = True
-            subject = canonical_principal.person_id
-            token_name = canonical_principal.display_name
-        else:
-            from core.api_auth import authenticate_subject_and_name  # noqa: PLC0415
-
-            ok_subject, subject, token_name = await authenticate_subject_and_name(request)
-        if ok_subject and subject:
-            with get_connection() as profile_conn:
-                existing = (fetch_user_profile(subject, profile_conn) or {}).get("display_name")
-                existing = existing.strip() if isinstance(existing, str) else ""
-                if existing:
-                    # Never overwrite: a name the person typed themselves outranks
-                    # whatever the provider carries.
-                    profile_name = existing
-                elif token_name:
-                    upsert_user_profile(subject, profile_conn, display_name=token_name)
-                    profile_conn.commit()
-                    profile_name = token_name
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("admin_api: could not resolve a profile name at acceptance: %s", exc)
-
-    response = _invitation_no_store(
-        JSONResponse(
-            {
-                "invitation_id": accepted.invitation_id,
-                "organization_id": accepted.org_id,
-                # The console asks for a first/last name if and only if this is
-                # true, so it must be false whenever a name is actually on file.
-                "profile": {"display_name": profile_name, "needs_name": not profile_name},
-                "authority": {
-                    "role_derived": accepted.role,
-                    "explicit_grants": list(accepted.explicit_grants),
-                    "explicit_none": accepted.explicit_none,
-                },
-                "operation_id": accepted.operation_id,
-                "audit_event_id": accepted.audit_event_id,
-                "outbox_event_id": accepted.outbox_event_id,
-                "next_url": accepted.next_url,
-                "replayed": accepted.replayed,
-            }
-        )
-    )
-    response.delete_cookie(
-        _INVITATION_EXCHANGE_COOKIE,
-        path="/api/invitations",
-        secure=True,
-        httponly=True,
-        samesite="strict",
-    )
-    return response
 
 
-async def _list_invitations(request: Request) -> Response:
-    """Return the secret-free invitation lifecycle projection for one scope.
-
-    ``GET /api/organizations/{org_id}/invitations`` lists that organization's
-    invitations (org manager). ``GET /api/invitations`` lists the ENTRY
-    invitations, those that name no organization (platform admin) -- so an
-    invitation without an org never falls out of every view.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"}, status_code=401
-        )
-    from core.project_access import epic36_production_access_enabled  # noqa: PLC0415
-
-    if not epic36_production_access_enabled():
-        return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-    from core.db import get_connection  # noqa: PLC0415
-    from core.invitations import list_safe_invitations  # noqa: PLC0415
-
-    org_id = request.path_params.get("org_id")
-    if org_id is None:
-        denied = await _enforce_platform_admin(request, identity, "list_entry_invitations")
-        if denied is not None:
-            return denied
-    try:
-        with get_connection() as conn:
-            if org_id is not None:
-                denied = _enforce_org_manage(org_id, identity, conn, "list_invitations")
-                if denied is not None:
-                    return denied
-            rows = list_safe_invitations(conn, org_id=org_id)
-    except Exception as exc:
-        logger.error("admin_api: list_invitations failed: %s", type(exc).__name__)
-        return JSONResponse(
-            {"code": "operation_failed", "message": "Invitations unavailable"},
-            status_code=500,
-        )
-    return _invitation_no_store(JSONResponse({"items": rows}))
 
 
-def _authorize_invitation_binding(
-    conn,
-    *,
-    identity: str,
-    org_id: str | None,
-    invitation_id: str,
-) -> Response | None:
-    """Require manage on the org and every immutable invitation resource binding.
-
-    ``org_id is None`` is the ENTRY-invitation scope: the platform gate has
-    already been applied by the caller, and such an invitation holds no grant
-    binding, so all that remains is to confirm the invitation really lives in
-    that scope (``org_id IS NULL``) -- never in someone's organization.
-    """
-    if org_id is not None:
-        denied = _enforce_org_manage(org_id, identity, conn, "manage_invitation")
-        if denied is not None:
-            return denied
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT grant_bindings FROM app.invitations "
-            "WHERE id = %s AND org_id IS NOT DISTINCT FROM %s",
-            (invitation_id, org_id),
-        )
-        row = cur.fetchone()
-    if row is None or not isinstance(row[0], list):
-        return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-    from core.project_access import resolve_strict_resource_access  # noqa: PLC0415
-
-    for grant in row[0]:
-        if not isinstance(grant, dict) or grant.get("scope_type") not in {"project", "flux"}:
-            return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-        kwargs = (
-            {"project_id": grant.get("scope_id")}
-            if grant["scope_type"] == "project"
-            else {"datastream_id": grant.get("scope_id")}
-        )
-        decision = resolve_strict_resource_access(
-            identity,
-            conn,
-            minimum_capability="manage",
-            **kwargs,
-        )
-        if not decision.allowed or decision.org_id != org_id:
-            return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-    return None
 
 
-async def _mutate_invitation_lifecycle(request: Request, *, action: str) -> Response:
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"}, status_code=401
-        )
-    from core.project_access import epic36_production_access_enabled  # noqa: PLC0415
-
-    if not epic36_production_access_enabled():
-        return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-    org_id = request.path_params.get("org_id")
-    invitation_id = request.path_params["invitation_id"]
-    # Platform scope (entry invitation): gate before anything else is answered.
-    if org_id is None:
-        denied = await _enforce_platform_admin(request, identity, f"{action}_entry_invitation")
-        if denied is not None:
-            return denied
-    idempotency_key = (request.headers.get("Idempotency-Key") or "").strip()
-    if not idempotency_key:
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "missing_idempotency_key", "message": "Idempotency-Key is required"},
-                status_code=422,
-            )
-        )
-    from core import tracing  # noqa: PLC0415
-    from core.db import get_connection  # noqa: PLC0415
-    from core.invitations import (  # noqa: PLC0415
-        InvitationLifecycleConflict,
-        InvitationValidationError,
-        resend_invitation,
-        transition_invitation,
-    )
-    from core.operations import OperationIdempotencyConflict  # noqa: PLC0415
-
-    try:
-        body = json.loads(await request.body()) if action == "resend" else {}
-        with get_connection() as conn:
-            denied = _authorize_invitation_binding(
-                conn,
-                identity=identity,
-                org_id=org_id,
-                invitation_id=invitation_id,
-            )
-            if denied is not None:
-                return denied
-            common = {
-                "conn": conn,
-                "invitation_id": invitation_id,
-                "actor": identity,
-                "idempotency_key": idempotency_key,
-                "host_context": {
-                    "host": "rest",
-                    "workspace_id": (request.headers.get("X-Workspace-Id") or "console")[:256],
-                },
-                "trace_id": tracing.current_trace_id_hex(),
-            }
-            if action == "resend":
-                result = resend_invitation(
-                    **common,
-                    expires_in_hours=(
-                        body.get("expires_in_hours", 48) if isinstance(body, dict) else 48
-                    ),
-                )
-            else:
-                result = transition_invitation(**common, transition=action)
-            conn.commit()
-    except (InvitationLifecycleConflict, OperationIdempotencyConflict):
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "conflict", "message": "Invitation lifecycle already resolved"},
-                status_code=409,
-            )
-        )
-    except (InvitationValidationError, json.JSONDecodeError, TypeError) as exc:
-        return _invitation_no_store(
-            JSONResponse({"code": "invalid_request", "message": str(exc)}, status_code=422)
-        )
-    except Exception as exc:
-        logger.error("admin_api: invitation_%s failed: %s", action, type(exc).__name__)
-        return _invitation_no_store(
-            JSONResponse(
-                {"code": "operation_failed", "message": "Invitation unavailable"},
-                status_code=500,
-            )
-        )
-    payload = {
-        "invitation_id": result.invitation_id,
-        "state": result.state,
-        "operation_id": result.operation_id,
-        "audit_event_id": result.audit_event_id,
-        "replayed": result.replayed,
-    }
-    if action == "resend" and result.delivery_url is not None:
-        payload["delivery_handoff"] = {"url": result.delivery_url, "single_return": True}
-    return _invitation_no_store(
-        Response(
-            json.dumps(payload),
-            media_type=(
-                "application/vnd.toorow.invitation-handoff+json"
-                if action == "resend"
-                else "application/json"
-            ),
-        )
-    )
 
 
-async def _revoke_invitation(request: Request) -> Response:
-    return await _mutate_invitation_lifecycle(request, action="revoke")
 
 
-async def _resend_invitation(request: Request) -> Response:
-    return await _mutate_invitation_lifecycle(request, action="resend")
 
 
-async def _issue_invitation(request: Request) -> Response:
-    """Issue one exact invitation after strict authorization.
-
-    ONE endpoint handler, two scopes -- the same invitation object either way:
-
-    * ``POST /api/organizations/{org_id}/invitations`` -- join THAT organization.
-      Unchanged: the caller must be an active manager of the org and hold manage
-      on every requested resource.
-    * ``POST /api/invitations`` -- the ENTRY invitation, with no organization at
-      all. Issued by a PLATFORM admin (``TOOROW_SUPER_ADMINS``); grants nothing,
-      because there is no org to grant anything in.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"}, status_code=401
-        )
-    from core.project_access import epic36_production_access_enabled  # noqa: PLC0415
-
-    if not epic36_production_access_enabled():
-        return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-    org_id = request.path_params.get("org_id")
-    # Platform scope: gate FIRST, before reading the body or complaining about a
-    # missing header -- a caller who is not allow-listed must learn nothing at all
-    # about this endpoint, not even that it validates requests.
-    if org_id is None:
-        denied = await _enforce_platform_admin(request, identity, "issue_entry_invitation")
-        if denied is not None:
-            return denied
-    idempotency_key = (request.headers.get("Idempotency-Key") or "").strip()
-    if not idempotency_key:
-        return JSONResponse(
-            {"code": "missing_idempotency_key", "message": "Idempotency-Key is required"},
-            status_code=422,
-        )
-    from core.invitations import InvitationValidationError, issue_invitation  # noqa: PLC0415
-    from core.operations import OperationIdempotencyConflict  # noqa: PLC0415
-
-    try:
-        body = json.loads(await request.body())
-        if not isinstance(body, dict):
-            raise InvitationValidationError("invitation body must be an object")
-        project_grants = _parse_invitation_grants(body, "project_grants", "project")
-        datastream_grants = _parse_invitation_grants(body, "datastream_grants", "flux")
-        role = str(body.get("role") or "").strip()
-        invited_identity = body.get("invited_identity")
-        expires_in_hours = body.get("expires_in_hours", 48)
-        if org_id is None and (project_grants or datastream_grants):
-            return JSONResponse(
-                {
-                    "code": "invalid_invitation",
-                    "message": (
-                        "An invitation without an organization grants nothing: "
-                        "project and datastream grants are org-scoped."
-                    ),
-                },
-                status_code=422,
-            )
-        from core import tracing  # noqa: PLC0415
-        from core.db import get_connection, set_local_access_context  # noqa: PLC0415
-        from core.project_access import resolve_strict_resource_access  # noqa: PLC0415
-
-        with get_connection() as conn:
-            if org_id is not None:
-                denied = _enforce_org_manage(org_id, identity, conn, "issue_invitation")
-                if denied is not None:
-                    return denied
-            set_local_access_context(conn, identity, enforce_epic36=True)
-            if org_id is not None:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT role FROM app.org_members "
-                        "WHERE org_id = %s AND identity = %s AND status = 'active'",
-                        (org_id, identity),
-                    )
-                    issuer_row = cur.fetchone()
-                if issuer_row is None or (role == "owner" and issuer_row[0] != "owner"):
-                    return JSONResponse(
-                        {"code": "not_found", "message": "Invitation scope not found"},
-                        status_code=404,
-                    )
-            for grant in project_grants + datastream_grants:
-                kwargs = (
-                    {"project_id": grant.scope_id}
-                    if grant.scope_type == "project"
-                    else {"datastream_id": grant.scope_id}
-                )
-                decision = resolve_strict_resource_access(
-                    identity, conn, minimum_capability="manage", **kwargs
-                )
-                if not decision.allowed or decision.org_id != org_id:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "Invitation scope not found"},
-                        status_code=404,
-                    )
-            result = issue_invitation(
-                conn,
-                invited_identity=invited_identity,
-                org_id=org_id,
-                role=role,
-                project_grants=project_grants,
-                datastream_grants=datastream_grants,
-                issuer=identity,
-                expires_in_hours=expires_in_hours,
-                policy_version=os.environ.get("TOOROW_POLICY_VERSION", "v1"),
-                idempotency_key=idempotency_key,
-                host_context={
-                    "host": "rest",
-                    "workspace_id": (request.headers.get("X-Workspace-Id") or "console")[:256],
-                },
-                trace_id=tracing.current_trace_id_hex(),
-            )
-            conn.commit()
-    except InvitationValidationError as exc:
-        return JSONResponse({"code": "invalid_invitation", "message": str(exc)}, status_code=422)
-    except OperationIdempotencyConflict:
-        return JSONResponse(
-            {"code": "conflict", "message": "operation conflicts with existing state"},
-            status_code=409,
-        )
-    except Exception as exc:
-        logger.error("admin_api: issue_invitation failed: %s", type(exc).__name__)
-        return JSONResponse(
-            {"code": "operation_failed", "message": "Invitation could not be issued"},
-            status_code=500,
-        )
-    payload = {
-        "invitation_id": result.invitation_id,
-        "state": result.state,
-        "expires_at": result.expires_at,
-        "operation_id": result.operation_id,
-        "audit_event_id": result.audit_event_id,
-        "replayed": result.replayed,
-    }
-    if result.delivery_url is not None:
-        payload["delivery_handoff"] = {"url": result.delivery_url, "single_return": True}
-    return Response(
-        json.dumps(payload),
-        status_code=201,
-        media_type="application/vnd.toorow.invitation-handoff+json",
-        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
-    )
 
 
-async def _create_account_grant(request: Request) -> Response:
-    """POST /api/credentials/{cred}/accounts/{acct}/grants -- expose to an org (AC3).
-
-    Body: {"grantee_org_id": str}. 404 if the account is not in credential_accounts
-    or the org does not exist; 409 on a duplicate grant. The ONLY cross-org bridge.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    credential_id = request.path_params["credential_id"]
-    external_account_id = request.path_params["external_account_id"]
-    try:
-        body: dict = json.loads(await request.body())
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
-            status_code=400,
-        )
-    grantee_org_id = (body.get("grantee_org_id") or "").strip()
-    if not grantee_org_id:
-        return JSONResponse(
-            {"code": "invalid_input", "message": "grantee_org_id is required"},
-            status_code=422,
-        )
-    grant_id = _mint_grant_id()
-    granted_by = identity or "anonymous"
-    operation_result = None
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT 1 FROM app.credential_accounts "
-                    "WHERE credential_id = %s AND external_account_id = %s",
-                    (credential_id, external_account_id),
-                )
-                if cur.fetchone() is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "credential account not found"},
-                        status_code=404,
-                    )
-                # Story 21.5: only an owner/admin of the credential's OWNER org may
-                # expose an account. FIX 4: a credential with NO owner org
-                # (owner_org_id NULL, legacy/un-backfilled) is NOT exposable -- DENY
-                # with a non-disclosing 404 (consistent with cross-scope denials)
-                # until a backfill assigns an owner org. Default-open org -> owner.
-                cur.execute(
-                    "SELECT owner_org_id FROM app.connection_ref WHERE id = %s",
-                    (credential_id,),
-                )
-                owner_row = cur.fetchone()
-                owner_org_id = owner_row[0] if owner_row is not None else None
-                if owner_org_id is None:
-                    write_audit_row(
-                        identity=identity or "anonymous",
-                        action=ACTION_CROSS_SCOPE_ATTEMPT,
-                        provider_account="",
-                        connection_ref=credential_id,
-                        metadata={
-                            "credential_id": credential_id,
-                            "operation": "create_account_grant",
-                            "reason": "credential_owner_org_null",
-                        },
-                    )
-                    return JSONResponse(
-                        {"code": "not_found", "message": "credential account not found"},
-                        status_code=404,
-                    )
-                denied = _enforce_org_manage(owner_org_id, identity, conn, "create_account_grant")
-                if denied is not None:
-                    return denied
-                cur.execute("SELECT 1 FROM app.organizations WHERE id = %s", (grantee_org_id,))
-                if cur.fetchone() is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "grantee organization not found"},
-                        status_code=404,
-                    )
-                from core.project_access import (  # noqa: PLC0415
-                    epic36_production_access_enabled,
-                )
-
-                if epic36_production_access_enabled():
-                    idempotency_key = (request.headers.get("Idempotency-Key") or "").strip()
-                    if not idempotency_key:
-                        return JSONResponse(
-                            {
-                                "code": "missing_idempotency_key",
-                                "message": "Idempotency-Key is required",
-                            },
-                            status_code=422,
-                        )
-                    from core import tracing  # noqa: PLC0415
-                    from core.account_exposure import (  # noqa: PLC0415
-                        AccountExposureConflict,
-                        expose_account,
-                    )
-                    from core.operations import OperationIdempotencyConflict  # noqa: PLC0415
-
-                    try:
-                        operation_result = expose_account(
-                            conn,
-                            grant_id=grant_id,
-                            credential_id=credential_id,
-                            external_account_id=external_account_id,
-                            owner_org_id=owner_org_id,
-                            grantee_org_id=grantee_org_id,
-                            actor=granted_by,
-                            idempotency_key=idempotency_key,
-                            host_context={
-                                "host": "rest",
-                                "workspace_id": (
-                                    request.headers.get("X-Workspace-Id") or "console"
-                                )[:256],
-                            },
-                            versions={
-                                "policy": os.environ.get("TOOROW_POLICY_VERSION", "v1"),
-                                "catalog": os.environ.get("TOOROW_CATALOG_VERSION", "v1"),
-                                "tool": "rest-v1",
-                            },
-                            confirmation_reference=request.headers.get("X-Confirmation-Reference"),
-                            trace_id=tracing.current_trace_id_hex(),
-                        )
-                    except (AccountExposureConflict, OperationIdempotencyConflict):
-                        return JSONResponse(
-                            {
-                                "code": "conflict",
-                                "message": "operation conflicts with existing state",
-                            },
-                            status_code=409,
-                        )
-                    r = operation_result.result
-                else:
-                    cur.execute(
-                        "SELECT id, status FROM app.credential_account_grants "
-                        "WHERE credential_id = %s AND external_account_id = %s "
-                        "AND grantee_org_id = %s FOR UPDATE",
-                        (credential_id, external_account_id, grantee_org_id),
-                    )
-                    existing = cur.fetchone()
-                    if existing is not None and existing[1] == "active":
-                        return JSONResponse(
-                            {
-                                "code": "conflict",
-                                "message": "account already granted to this org",
-                            },
-                            status_code=409,
-                        )
-                    if existing is not None:
-                        cur.execute(
-                            """
-                            UPDATE app.credential_account_grants
-                            SET status = 'active', granted_by = %s, invalidated_at = NULL,
-                                invalidation_reason = NULL,
-                                exposure_version = exposure_version + 1
-                            WHERE id = %s
-                            RETURNING id, credential_id, external_account_id, grantee_org_id,
-                                      granted_by, created_at
-                            """,
-                            (granted_by, existing[0]),
-                        )
-                    else:
-                        cur.execute(
-                            """
-                            INSERT INTO app.credential_account_grants
-                                (id, credential_id, external_account_id, grantee_org_id,
-                                 granted_by)
-                            VALUES (%s, %s, %s, %s, %s)
-                            RETURNING id, credential_id, external_account_id, grantee_org_id,
-                                      granted_by, created_at
-                            """,
-                            (
-                                grant_id,
-                                credential_id,
-                                external_account_id,
-                                grantee_org_id,
-                                granted_by,
-                            ),
-                        )
-                    r = cur.fetchone()
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: create_account_grant db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-    if operation_result is None:
-        write_audit_row(
-            identity=granted_by,
-            action=ACTION_ACCOUNT_EXPOSED,
-            provider_account="",
-            connection_ref=credential_id,
-            metadata={
-                "credential_id": credential_id,
-                "external_account_id": external_account_id,
-                "grantee_org_id": grantee_org_id,
-            },
-        )
-        payload = {
-            "id": r[0],
-            "credential_id": r[1],
-            "external_account_id": r[2],
-            "grantee_org_id": r[3],
-            "granted_by": r[4],
-            "created_at": r[5].isoformat() if r[5] else None,
-        }
-    else:
-        payload = dict(r)
-        payload["operation_id"] = operation_result.operation_id
-        payload["audit_event_id"] = operation_result.audit_event_id
-        payload["replayed"] = operation_result.replayed
-    return JSONResponse(payload, status_code=201)
 
 
-async def _list_credential_grants(request: Request) -> Response:
-    """GET /api/credentials/{credential_id}/grants -- grants (account -> org) (AC3)."""
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    credential_id = request.path_params["credential_id"]
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            denied = _enforce_credential_org_read(credential_id, identity, conn)
-            if denied is not None:
-                return denied
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id, credential_id, external_account_id, grantee_org_id,
-                           granted_by, created_at
-                    FROM app.credential_account_grants
-                    WHERE credential_id = %s AND status = 'active'
-                    ORDER BY external_account_id ASC, created_at ASC
-                    """,
-                    (credential_id,),
-                )
-                grants = [
-                    {
-                        "id": r[0],
-                        "credential_id": r[1],
-                        "external_account_id": r[2],
-                        "grantee_org_id": r[3],
-                        "granted_by": r[4],
-                        "created_at": r[5].isoformat() if r[5] else None,
-                    }
-                    for r in cur.fetchall()
-                ]
-    except Exception as exc:
-        logger.error("admin_api: list_credential_grants db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-    return JSONResponse({"grants": grants}, status_code=200)
 
 
-async def _revoke_account_grant(request: Request) -> Response:
-    """DELETE /api/credentials/{cred}/accounts/{acct}/grants/{org} -- revoke (AC3).
-
-    Offboarding: invalidates the grant. 404 if no active grant. Audited.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    credential_id = request.path_params["credential_id"]
-    external_account_id = request.path_params["external_account_id"]
-    grantee_org_id = request.path_params["grantee_org_id"]
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                # Story 21.5: only an owner/admin of the credential's OWNER org may
-                # revoke a grant. FIX 4: a credential with NO owner org (owner_org_id
-                # NULL, legacy/un-backfilled) is NOT manageable -- DENY with a
-                # non-disclosing 404 until a backfill assigns an owner org.
-                cur.execute(
-                    "SELECT owner_org_id FROM app.connection_ref WHERE id = %s",
-                    (credential_id,),
-                )
-                owner_row = cur.fetchone()
-                owner_org_id = owner_row[0] if owner_row is not None else None
-                if owner_org_id is None:
-                    write_audit_row(
-                        identity=identity or "anonymous",
-                        action=ACTION_CROSS_SCOPE_ATTEMPT,
-                        provider_account="",
-                        connection_ref=credential_id,
-                        metadata={
-                            "credential_id": credential_id,
-                            "operation": "revoke_account_grant",
-                            "reason": "credential_owner_org_null",
-                        },
-                    )
-                    return JSONResponse(
-                        {"code": "not_found", "message": "grant not found"},
-                        status_code=404,
-                    )
-                denied = _enforce_org_manage(owner_org_id, identity, conn, "revoke_account_grant")
-                if denied is not None:
-                    return denied
-                cur.execute(
-                    "UPDATE app.credential_account_grants "
-                    "SET status = 'invalidated', invalidated_at = NOW(), "
-                    "invalidation_reason = 'revocation' "
-                    "WHERE credential_id = %s AND external_account_id = %s "
-                    "AND grantee_org_id = %s AND status = 'active'",
-                    (credential_id, external_account_id, grantee_org_id),
-                )
-                deleted = cur.rowcount
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: revoke_account_grant db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-    if not deleted:
-        return JSONResponse(
-            {"code": "not_found", "message": "grant not found"},
-            status_code=404,
-        )
-    write_audit_row(
-        identity=identity or "anonymous",
-        action=ACTION_ACCOUNT_GRANT_REVOKED,
-        provider_account="",
-        connection_ref=credential_id,
-        metadata={
-            "credential_id": credential_id,
-            "external_account_id": external_account_id,
-            "grantee_org_id": grantee_org_id,
-        },
-    )
-    return JSONResponse({"revoked": True}, status_code=200)
 
 
 # ===========================================================================
@@ -9287,294 +1396,16 @@ async def _revoke_account_grant(request: Request) -> Response:
 #: Valid IAM principal type prefixes (BigQuery member syntax).
 _VALID_IAM_TYPES = frozenset({"user", "serviceAccount", "group"})
 
-# Epic-24 review X-5: strict charset (not just shape) -- this string reaches a
-# real IAM binding in Phase B, so reject anything outside RFC-ish member syntax.
-_IAM_PRINCIPAL_RE = re.compile(
-    r"^(user|serviceAccount|group):[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$"
-)
 
 
-def _mint_dagrant_id() -> str:
-    """Mint a prefixed ULID 'dagrant_<ULID>' for a dataset access grant."""
-    from ulid import ULID  # noqa: PLC0415
-
-    return f"dagrant_{ULID()}"
 
 
-def _validate_principal(principal: str) -> bool:
-    """Return True when *principal* matches ``type:identifier`` (AC2 validation).
-
-    type ∈ {user, serviceAccount, group}; identifier must be non-empty and
-    contain '@' (IAM member syntax for BigQuery).
-    """
-    return bool(_IAM_PRINCIPAL_RE.match(principal.strip()))
 
 
-async def _grant_dataset_access(request: Request) -> Response:
-    """POST /api/organizations/{org_id}/dataset-access -- grant IAM access (AC2, AC3).
-
-    Body: {"principal": "serviceAccount:sa@project.iam.gserviceaccount.com"}.
-    201 on success; 409 on duplicate active grant; 422 on invalid input;
-    403 if caller is not owner/admin; 404 if org absent/inaccessible.
-    """
-    import core.warehouse_tenancy as _wt  # noqa: PLC0415
-
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    org_id = request.path_params["org_id"]
-    try:
-        body: dict = json.loads(await request.body())
-    except Exception:
-        return JSONResponse(
-            {"code": "invalid_body", "message": "Invalid JSON body"},
-            status_code=400,
-        )
-    principal = (body.get("principal") or "").strip()
-    if not principal:
-        return JSONResponse(
-            {"code": "invalid_input", "message": "principal is required"},
-            status_code=422,
-        )
-    if not _validate_principal(principal):
-        return JSONResponse(
-            {
-                "code": "invalid_input",
-                "message": (
-                    "principal must be type:identifier with type in "
-                    "{user, serviceAccount, group} and identifier containing '@'"
-                ),
-            },
-            status_code=422,
-        )
-    grant_id = _mint_dagrant_id()
-    granted_by = identity or "anonymous"
-    org_schemas = None
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            # Gate: owner/admin only (AC2, _enforce_org_manage returns 403+audit if denied).
-            denied = _enforce_org_manage(org_id, identity, conn, "grant_dataset_access")
-            if denied is not None:
-                return denied
-            with conn.cursor() as cur:
-                # Check for an existing ACTIVE grant on the same (org, principal).
-                cur.execute(
-                    "SELECT id FROM app.dataset_access_grants "
-                    "WHERE org_id = %s AND principal = %s AND revoked_at IS NULL",
-                    (org_id, principal),
-                )
-                if cur.fetchone() is not None:
-                    return JSONResponse(
-                        {
-                            "code": "conflict",
-                            "message": "principal already has an active grant on this org",
-                        },
-                        status_code=409,
-                    )
-                cur.execute(
-                    """
-                    INSERT INTO app.dataset_access_grants
-                        (id, org_id, principal, granted_by)
-                    VALUES (%s, %s, %s, %s)
-                    RETURNING id, org_id, principal, granted_by, created_at
-                    """,
-                    (grant_id, org_id, principal, granted_by),
-                )
-                r = cur.fetchone()
-            conn.commit()
-            # Resolve after commit so the cache is not polluted by a failed txn.
-            if _wt.org_schemas_enabled():
-                org_schemas = _wt.resolve_org_schemas(org_id=org_id, conn=conn)
-    except Exception as exc:
-        # Race on the partial unique index (active grant): the pre-check SELECT
-        # cannot see a concurrent INSERT -> deterministic 409, not 500 (F-1).
-        if "UniqueViolation" in type(exc).__name__:
-            return JSONResponse(
-                {
-                    "code": "conflict",
-                    "message": "principal already has an active grant on this org",
-                },
-                status_code=409,
-            )
-        logger.exception("admin_api: grant_dataset_access db_error org=%s", org_id)
-        return JSONResponse(
-            {"code": "db_error", "message": "Database error"},
-            status_code=500,
-        )
-    # Simulate BigQuery IAM binding (gated AI-08, flag ON only, AC6).
-    if org_schemas is not None:
-        try:
-            _wt._simulate_bq_iam_grant(org_schemas, principal, "grant")
-        except Exception:
-            logger.exception(
-                "admin_api: _simulate_bq_iam_grant failed org=%s principal=%s",
-                org_id,
-                principal,
-            )
-    write_audit_row(
-        identity=granted_by,
-        action=ACTION_DATASET_ACCESS_GRANTED,
-        provider_account="",
-        connection_ref="",
-        metadata={
-            "org_id": org_id,
-            "principal": principal,
-            "marts_dataset": org_schemas.marts if org_schemas else None,
-            # Honest trace (F-4): flag OFF grants exist in Postgres but no BQ
-            # binding was simulated -- an auditor must see the difference.
-            "bq_binding": "simulated" if org_schemas is not None else "flag_off_not_simulated",
-        },
-    )
-    return JSONResponse(
-        {
-            "id": r[0],
-            "org_id": r[1],
-            "principal": r[2],
-            "granted_by": r[3],
-            "created_at": r[4].isoformat() if r[4] else None,
-        },
-        status_code=201,
-    )
 
 
-async def _list_dataset_access_grants(request: Request) -> Response:
-    """GET /api/organizations/{org_id}/dataset-access -- list active grants (AC4).
-
-    Returns grants with revoked_at IS NULL, ordered by created_at ASC.
-    404 (non-disclosing) if org absent or caller has no access.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    org_id = request.path_params["org_id"]
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-        from core.project_access import identity_has_org_access  # noqa: PLC0415
-
-        with get_connection() as conn:
-            if not identity_has_org_access(org_id, identity or "anonymous", conn):
-                return JSONResponse(
-                    {"code": "not_found", "message": "organization not found"},
-                    status_code=404,
-                )
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id, org_id, principal, granted_by, created_at
-                    FROM app.dataset_access_grants
-                    WHERE org_id = %s AND revoked_at IS NULL
-                    ORDER BY created_at ASC
-                    """,
-                    (org_id,),
-                )
-                grants = [
-                    {
-                        "id": row[0],
-                        "org_id": row[1],
-                        "principal": row[2],
-                        "granted_by": row[3],
-                        "created_at": row[4].isoformat() if row[4] else None,
-                    }
-                    for row in cur.fetchall()
-                ]
-    except Exception:
-        logger.exception("admin_api: list_dataset_access_grants db_error org=%s", org_id)
-        return JSONResponse(
-            {"code": "db_error", "message": "Database error"},
-            status_code=500,
-        )
-    return JSONResponse({"grants": grants}, status_code=200)
 
 
-async def _revoke_dataset_access(request: Request) -> Response:
-    """DELETE /api/organizations/{org_id}/dataset-access/{grant_id} -- revoke (AC5).
-
-    Soft-delete: sets revoked_at = NOW() (row kept for RGPD audit trail).
-    404 if grant absent or already revoked; 403 if not owner/admin.
-    """
-    import core.warehouse_tenancy as _wt  # noqa: PLC0415
-
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    org_id = request.path_params["org_id"]
-    grant_id = request.path_params["grant_id"]
-    principal_revoked = None
-    org_schemas = None
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            denied = _enforce_org_manage(org_id, identity, conn, "revoke_dataset_access")
-            if denied is not None:
-                return denied
-            with conn.cursor() as cur:
-                # Fetch the active grant (revoked_at IS NULL ensures it's still active).
-                cur.execute(
-                    "SELECT principal FROM app.dataset_access_grants "
-                    "WHERE id = %s AND org_id = %s AND revoked_at IS NULL",
-                    (grant_id, org_id),
-                )
-                row = cur.fetchone()
-                if row is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "grant not found"},
-                        status_code=404,
-                    )
-                principal_revoked = row[0]
-                cur.execute(
-                    "UPDATE app.dataset_access_grants "
-                    "SET revoked_at = NOW() "
-                    "WHERE id = %s AND org_id = %s AND revoked_at IS NULL",
-                    (grant_id, org_id),
-                )
-            conn.commit()
-            if _wt.org_schemas_enabled():
-                org_schemas = _wt.resolve_org_schemas(org_id=org_id, conn=conn)
-    except Exception:
-        logger.exception(
-            "admin_api: revoke_dataset_access db_error org=%s grant=%s",
-            org_id,
-            grant_id,
-        )
-        return JSONResponse(
-            {"code": "db_error", "message": "Database error"},
-            status_code=500,
-        )
-    # Simulate BigQuery IAM revocation (gated AI-08, flag ON only, AC6).
-    if org_schemas is not None and principal_revoked is not None:
-        try:
-            _wt._simulate_bq_iam_grant(org_schemas, principal_revoked, "revoke")
-        except Exception:
-            logger.exception(
-                "admin_api: _simulate_bq_iam_grant revoke failed org=%s grant=%s",
-                org_id,
-                grant_id,
-            )
-    write_audit_row(
-        identity=identity or "anonymous",
-        action=ACTION_DATASET_ACCESS_REVOKED,
-        provider_account="",
-        connection_ref="",
-        metadata={
-            "org_id": org_id,
-            "grant_id": grant_id,
-            "principal": principal_revoked,
-            "marts_dataset": org_schemas.marts if org_schemas else None,
-        },
-    )
-    return JSONResponse({"revoked": True}, status_code=200)
 
 
 # ===========================================================================
@@ -9589,238 +1420,10 @@ async def _revoke_dataset_access(request: Request) -> Response:
 # ===========================================================================
 
 
-async def _link_flux_to_project(request: Request) -> Response:
-    """POST /api/flux/{flux_id}/projects -- link a flux to a project (AC2).
-
-    Body: {"project_id": str}. 404 if the flux or the project does not exist;
-    409 code "cross_org" if project.org_id != flux.org_id (a flux only feeds
-    projects of its own org); 409 if the link already exists. Audited (AD-14).
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    flux_id = request.path_params["flux_id"]
-    try:
-        body: dict = json.loads(await request.body())
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
-            status_code=400,
-        )
-    project_id = (body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse(
-            {"code": "invalid_input", "message": "project_id is required"},
-            status_code=422,
-        )
-    linked_by = identity or "anonymous"
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                # Resolve the flux (and its org) first. 404 if unknown.
-                cur.execute("SELECT org_id FROM app.datastreams WHERE id = %s", (flux_id,))
-                flux_row = cur.fetchone()
-                if flux_row is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "flux not found"},
-                        status_code=404,
-                    )
-                flux_org_id = flux_row[0]
-                # Story 21.5: only an owner/admin of the flux's OWNER org may link it.
-                # A flux with no org yet (NULL) falls through to the existing 409
-                # (cross_org) below; when owned, require manage. Default-open org ->
-                # resolves to owner (keeps 21.4 tests green).
-                if flux_org_id is not None:
-                    denied = _enforce_org_manage(
-                        flux_org_id, identity, conn, "link_flux_to_project"
-                    )
-                    if denied is not None:
-                        return denied
-                # Resolve the project (and its org). 404 if unknown.
-                cur.execute("SELECT org_id FROM app.projects WHERE id = %s", (project_id,))
-                proj_row = cur.fetchone()
-                if proj_row is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "project not found"},
-                        status_code=404,
-                    )
-                project_org_id = proj_row[0]
-                # review-stack F-MEDIUM: a flux or project not yet scoped to an org
-                # (org_id NULL, legacy pre-21.5) is NOT linkable -- guard first so
-                # `None != None` (False) cannot slip a NULL into project_flux.org_id
-                # (NOT NULL) and surface as a raw 500.
-                if flux_org_id is None or project_org_id is None:
-                    return JSONResponse(
-                        {
-                            "code": "cross_org",
-                            "message": "flux or project has no organization yet; cannot link",
-                        },
-                        status_code=409,
-                    )
-                # Friendly cross-org check (the composite FK is the structural
-                # backstop; this yields a clear 409 instead of a bare FK error).
-                if project_org_id != flux_org_id:
-                    return JSONResponse(
-                        {
-                            "code": "cross_org",
-                            "message": "a flux can only feed projects of its own org",
-                        },
-                        status_code=409,
-                    )
-                # Duplicate link -> 409.
-                cur.execute(
-                    "SELECT 1 FROM app.project_flux WHERE project_id = %s AND flux_id = %s",
-                    (project_id, flux_id),
-                )
-                if cur.fetchone() is not None:
-                    return JSONResponse(
-                        {"code": "conflict", "message": "flux already linked to this project"},
-                        status_code=409,
-                    )
-                cur.execute(
-                    """
-                    INSERT INTO app.project_flux (project_id, flux_id, org_id)
-                    VALUES (%s, %s, %s)
-                    RETURNING project_id, flux_id, org_id, created_at
-                    """,
-                    (project_id, flux_id, flux_org_id),
-                )
-                r = cur.fetchone()
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: link_flux_to_project db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-    write_audit_row(
-        identity=linked_by,
-        action=ACTION_FLUX_LINKED,
-        provider_account="",
-        connection_ref="",
-        metadata={"flux_id": flux_id, "project_id": project_id, "org_id": flux_org_id},
-    )
-    return JSONResponse(
-        {
-            "project_id": r[0],
-            "flux_id": r[1],
-            "org_id": r[2],
-            "created_at": r[3].isoformat() if r[3] else None,
-        },
-        status_code=201,
-    )
 
 
-async def _list_flux_projects(request: Request) -> Response:
-    """GET /api/flux/{flux_id}/projects -- projects linked to a flux (AC2)."""
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    flux_id = request.path_params["flux_id"]
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-        from core.project_access import identity_has_org_access  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT org_id FROM app.datastreams WHERE id = %s", (flux_id,))
-                frow = cur.fetchone()
-            # Story 21.5 follow-up (reads scoping): 404 if the flux is absent or in
-            # an org the caller cannot see (NULL org -> legacy, treated as open).
-            if frow is None or (
-                frow[0] is not None
-                and not identity_has_org_access(frow[0], identity or "anonymous", conn)
-            ):
-                return JSONResponse(
-                    {"code": "not_found", "message": "flux not found"},
-                    status_code=404,
-                )
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT p.id, p.name, p.slug
-                    FROM app.project_flux pf
-                    JOIN app.projects p ON p.id = pf.project_id
-                    WHERE pf.flux_id = %s
-                    ORDER BY p.name ASC
-                    """,
-                    (flux_id,),
-                )
-                projects = [
-                    {"project_id": r[0], "name": r[1], "slug": r[2]} for r in cur.fetchall()
-                ]
-    except Exception as exc:
-        logger.error("admin_api: list_flux_projects db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-    return JSONResponse({"projects": projects}, status_code=200)
 
 
-async def _unlink_flux_from_project(request: Request) -> Response:
-    """DELETE /api/flux/{flux_id}/projects/{project_id} -- unlink (AC2).
-
-    Removes the M:N link. 404 if no such link. Audited (AD-14).
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    flux_id = request.path_params["flux_id"]
-    project_id = request.path_params["project_id"]
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                # Story 21.5: only an owner/admin of the flux's OWNER org may unlink.
-                # A flux with no org yet (NULL, legacy) is treated as open (compat).
-                # Default-open org -> resolves to owner (keeps 21.4 tests green).
-                cur.execute("SELECT org_id FROM app.datastreams WHERE id = %s", (flux_id,))
-                flux_row = cur.fetchone()
-                flux_org_id = flux_row[0] if flux_row is not None else None
-                if flux_org_id is not None:
-                    denied = _enforce_org_manage(
-                        flux_org_id, identity, conn, "unlink_flux_from_project"
-                    )
-                    if denied is not None:
-                        return denied
-                cur.execute(
-                    "DELETE FROM app.project_flux WHERE project_id = %s AND flux_id = %s",
-                    (project_id, flux_id),
-                )
-                deleted = cur.rowcount
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: unlink_flux_from_project db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-    if not deleted:
-        return JSONResponse(
-            {"code": "not_found", "message": "link not found"},
-            status_code=404,
-        )
-    write_audit_row(
-        identity=identity or "anonymous",
-        action=ACTION_FLUX_UNLINKED,
-        provider_account="",
-        connection_ref="",
-        metadata={"flux_id": flux_id, "project_id": project_id},
-    )
-    return JSONResponse({"unlinked": True}, status_code=200)
 
 
 # ===========================================================================
@@ -9831,30 +1434,27 @@ async def _unlink_flux_from_project(request: Request) -> Response:
 # projects (AD-15). All guarded by _check_auth. Auth subject -> created_by.
 # ===========================================================================
 
-# Currency allowlist (AC3). ISO-4217 uppercase; extend as needed.
-_PROJECT_CURRENCIES = {"EUR", "USD", "GBP", "CHF", "JPY", "CAD", "AUD"}
+# The Project reporting currency, from the ONE vocabulary the product owns.
+#
+# This was a hand-written set of SEVEN codes with "extend as needed" beside it,
+# while Project Settings offers the whole ISO 4217 list through
+# `/api/reference/currencies` -- `ProjectSettings.tsx:173`, "a searchable
+# validated ISO 4217 list". So a project could be given a currency at
+# settings-time that its own creation route refuses, and the two disagreed by
+# 166 codes (7 against 173 loaded by `load_currency_vocabulary`).
+#
+# `capabilities/currency-fx.md:17` contracts "select Project reporting currency"
+# with no shortlist anywhere. A per-deployment allowlist is a product decision no
+# document takes, and hand-maintaining a subset of a seeded vocabulary is how the
+# two ends drift again.
+#
+# Loaded once, lazily: the seed is a file read, and the module is imported on
+# every request path.
+@lru_cache(maxsize=1)
 
-# slug pattern (AC3): kebab-case, starts alphanumeric.
-_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
-
-# Story 17.1: valeurs autorisées pour verification_source_type.
-# 'stripe' est inclus comme préférence déclarative ; son connecteur est
-# prévu post-story 15.7 mais la préférence est stockable dès maintenant.
-_VERIFICATION_SOURCE_TYPES = frozenset({"ga4", "shopify", "stripe"})
 
 
-def _mint_project_id() -> str:
-    """Mint a new prefixed ULID 'proj_<ULID>' for a project."""
-    from ulid import ULID  # noqa: PLC0415
 
-    return f"proj_{ULID()}"
-
-
-def _mint_project_member_id() -> str:
-    """Mint a new prefixed ULID 'pmem_<ULID>' for a project membership row."""
-    from ulid import ULID  # noqa: PLC0415
-
-    return f"pmem_{ULID()}"
 
 
 def _slugify(name: str) -> str:
@@ -9871,273 +1471,28 @@ def _slugify(name: str) -> str:
     return s.strip("-")
 
 
-def _valid_timezone(tz: str) -> bool:
-    """Return True if *tz* is a valid IANA timezone (window_rule.py pattern)."""
-    try:
-        import zoneinfo  # noqa: PLC0415
-    except ImportError:  # pragma: no cover
-        from backports import zoneinfo  # type: ignore[no-redef]  # noqa: PLC0415
-    try:
-        zoneinfo.ZoneInfo(tz)
-        return True
-    except Exception:
-        return False
 
 
-def _project_row_to_dict(cols: list[str], row: tuple) -> dict:
-    """Serialise a projects row, ISO-formatting timestamp columns."""
-    out: dict = {}
-    for col, val in zip(cols, row):
-        if col in ("created_at", "updated_at", "archived_at") and val is not None:
-            out[col] = val.isoformat()
-        else:
-            out[col] = val
-    return out
 
 
-def _validate_verification_source_fields(
-    body: dict,
-) -> tuple[dict | None, Response | None]:
-    """Story 17.1: valide et extrait les 3 champs source de vérification du body.
-
-    Retourne (fields_dict, None) si valide, ou (None, error_response) si invalide.
-
-    Règles (ACs 17.1) :
-    - verification_source_type doit être dans {'ga4','shopify','stripe'} ou None/absent.
-    - Si verification_source_type = 'ga4', lead_event_name doit être non vide.
-    - verification_source_id est libre (validation cross-projet faite ailleurs, AD-5).
-    - Les champs sont optionnels : absent = inchangé (PATCH) ou NULL (CREATE).
-    - Messages d'erreur en français, code HTTP 422.
-    """
-    fields: dict = {}
-    has_vstype = "verification_source_type" in body
-    has_vsid = "verification_source_id" in body
-    has_len = "lead_event_name" in body
-
-    if not (has_vstype or has_vsid or has_len):
-        return {}, None  # aucun champ source de vérification
-
-    vstype: str | None = None
-    if has_vstype:
-        raw = body.get("verification_source_type")
-        if raw is None or raw == "":
-            vstype = None
-        else:
-            vstype = str(raw).strip().lower()
-            if vstype not in _VERIFICATION_SOURCE_TYPES:
-                return None, JSONResponse(
-                    {
-                        "code": "invalid_input",
-                        "message": (
-                            f"Type de source de vérification invalide : '{vstype}'. "
-                            f"Valeurs acceptées : ga4, shopify, stripe."
-                        ),
-                    },
-                    status_code=422,
-                )
-        fields["verification_source_type"] = vstype
-
-    if has_vsid:
-        raw_id = body.get("verification_source_id")
-        fields["verification_source_id"] = str(raw_id).strip() if raw_id else None
-
-    if has_len:
-        raw_len = body.get("lead_event_name")
-        fields["lead_event_name"] = str(raw_len).strip() if raw_len else None
-
-    # Règle : type='ga4' exige lead_event_name non vide.
-    # On évalue avec la valeur fournie OU la valeur présente dans fields.
-    effective_type = fields.get("verification_source_type", None) if has_vstype else None
-    if effective_type == "ga4":
-        effective_len = fields.get("lead_event_name", None)
-        if has_len and (not effective_len):
-            return None, JSONResponse(
-                {
-                    "code": "invalid_input",
-                    "message": (
-                        "Le nom de l'événement lead (lead_event_name) est obligatoire "
-                        "lorsque le type de source est 'ga4'."
-                    ),
-                },
-                status_code=422,
-            )
-
-    return fields, None
 
 
-def _validate_verification_source_complete(
-    vstype: str | None,
-    lead_event_name: str | None,
-) -> Response | None:
-    """Story 17.1: valide la cohérence globale après fusion PATCH.
-
-    Appelé quand verification_source_type='ga4' est l'état final (après merge),
-    pour s'assurer que lead_event_name est non nul même si non fourni dans ce PATCH.
-    Retourne None si valide, ou une Response 422 si incohérent.
-    """
-    if vstype == "ga4" and not lead_event_name:
-        return JSONResponse(
-            {
-                "code": "invalid_input",
-                "message": (
-                    "Le nom de l'événement lead (lead_event_name) est obligatoire "
-                    "lorsque le type de source est 'ga4'."
-                ),
-            },
-            status_code=422,
-        )
-    return None
 
 
-def _upsert_verification_prefs(
-    project_id: str,
-    fields: dict,
-    conn: object,
-) -> None:
-    """Story 17.1: upsert des colonnes source de vérification dans app.project_preferences.
-
-    Crée la ligne si elle n'existe pas (ON CONFLICT DO UPDATE), met à jour uniquement
-    les colonnes présentes dans `fields`.
-
-    AD-8 : Postgres est le seul writer. La propagation au miroir se fait via
-    mirror_sync.py (SELECT * FROM app.project_preferences).
-    """
-    if not fields:
-        return
-
-    allowed = {"verification_source_type", "verification_source_id", "lead_event_name"}
-    update_fields = {k: v for k, v in fields.items() if k in allowed}
-    if not update_fields:
-        return
-
-    with conn.cursor() as cur:  # type: ignore[attr-defined]
-        # Ensure a project_preferences row exists (may not for old projects).
-        cur.execute(
-            """
-            INSERT INTO app.project_preferences (project_id)
-            VALUES (%s)
-            ON CONFLICT (project_id) DO NOTHING
-            """,
-            (project_id,),
-        )
-        set_parts = [f"{col} = %s" for col in update_fields]
-        params = list(update_fields.values()) + [project_id]
-        cur.execute(
-            "UPDATE app.project_preferences SET "
-            + ", ".join(set_parts)
-            + ", updated_at = NOW() WHERE project_id = %s",
-            params,
-        )
 
 
-def _fetch_verification_prefs(project_id: str, conn: object) -> dict:
-    """Story 17.1: lit les 3 colonnes source de vérification depuis project_preferences.
-
-    Retourne un dict avec les 3 clés (valeur None si absent ou non configuré).
-    """
-    with conn.cursor() as cur:  # type: ignore[attr-defined]
-        cur.execute(
-            """
-            SELECT verification_source_type, verification_source_id, lead_event_name
-            FROM app.project_preferences
-            WHERE project_id = %s
-            """,
-            (project_id,),
-        )
-        row = cur.fetchone()
-    if row is None:
-        return {
-            "verification_source_type": None,
-            "verification_source_id": None,
-            "lead_event_name": None,
-        }
-    return {
-        "verification_source_type": row[0],
-        "verification_source_id": row[1],
-        "lead_event_name": row[2],
-    }
 
 
-def _geographic_error(exc: InvalidGeographicPosture) -> Response:
-    message = str(exc)
-    # Story 37.8: market-shaped validation errors point at ``local_markets`` so
-    # the operator is told exactly which market to fix; flat-code errors keep
-    # pointing at the legacy field.
-    _MARKET_SHAPE_MARKERS = (
-        "each local market",
-        "local_markets must be",
-        "market id",
-        "belongs to both market",
-        "at least one tracked market",
-        "requires a non-empty 'label'",
-        "label exceeds",
-        "country_codes must be an array",
-        "country_codes must contain",
-        "requires at least one country code",
-    )
-    if "geographic_mode" in message:
-        field = "geographic_mode"
-    elif message.startswith("local_market_country_codes"):
-        field = "local_market_country_codes"
-    elif any(marker in message for marker in _MARKET_SHAPE_MARKERS):
-        field = "local_markets"
-    else:
-        field = "local_market_country_codes"
-    return JSONResponse(
-        {
-            "code": "invalid_geographic_posture",
-            "message": message,
-            "details": {field: message},
-        },
-        status_code=422,
-    )
 
 
-def _country_vocabulary_error() -> Response:
-    return JSONResponse(
-        {
-            "code": "country_vocabulary_unavailable",
-            "message": "Canonical country vocabulary is unavailable.",
-        },
-        status_code=503,
-    )
 
 
-def _country_codes() -> frozenset[str]:
-    return frozenset(country.code for country in get_country_vocabulary())
 
 
-def _fetch_geographic_prefs(
-    project_id: str,
-    conn: object,
-    *,
-    for_update: bool = False,
-):
-    return fetch_project_geographic_posture(project_id, conn, for_update=for_update)
 
 
-def _upsert_geographic_prefs(project_id: str, posture, conn: object) -> None:
-    # Single write path (Story 37.8): markets + derived flat code union.
-    persist_project_geographic_posture(project_id, posture, conn)
 
 
-async def _list_countries(request: Request) -> Response:
-    authorized, _identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    try:
-        countries = [
-            {"code": country.code, "display_name": country.display_name}
-            for country in get_country_vocabulary()
-        ]
-    except CountryVocabularyError:
-        logger.exception("admin_api: canonical country vocabulary unavailable")
-        return _country_vocabulary_error()
-    return JSONResponse({"countries": countries}, status_code=200)
 
 
 def _deny_project_scope(identity: str, project_id: str, operation: str) -> Response:
@@ -10154,1053 +1509,16 @@ def _deny_project_scope(identity: str, project_id: str, operation: str) -> Respo
     )
 
 
-async def _preview_geographic_change(request: Request) -> Response:
-    """POST a no-side-effect geographic impact preview (Member)."""
 
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    project_id = request.path_params["project_id"]
-    idempotency_key = (request.headers.get("Idempotency-Key") or "").strip()
-    if not idempotency_key:
-        return JSONResponse(
-            {"code": "missing_idempotency_key", "message": "Idempotency-Key is required"},
-            status_code=400,
-        )
 
-    try:
-        body = json.loads(await request.body())
-        target = normalize_geographic_posture(
-            body.get("geographic_mode"),
-            body.get("local_market_country_codes", []),
-            _country_codes(),
-            local_markets=body.get("local_markets"),
-        )
-    except CountryVocabularyError:
-        return _country_vocabulary_error()
-    except InvalidGeographicPosture as exc:
-        return _geographic_error(exc)
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
-            status_code=400,
-        )
 
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-        from core.geographic_change import create_geographic_change_preview  # noqa: PLC0415
-        from core.main import get_loaded_modules  # noqa: PLC0415
 
-        actor = identity or "anonymous"
-        with get_connection() as conn:
-            role_error = _require_datastream_role(project_id, actor, "member", conn)
-            if role_error is not None:
-                return role_error
-            result = create_geographic_change_preview(
-                project_id=project_id,
-                target=target,
-                identity=actor,
-                idempotency_key=idempotency_key,
-                conn=conn,
-                loaded_modules=get_loaded_modules(),
-            )
-        return JSONResponse(result, status_code=200 if result["idempotent_replay"] else 201)
-    except Exception as exc:
-        from core.geographic_change import (  # noqa: PLC0415
-            GeographicPreviewBlocked,
-            GeographicPreviewConflict,
-        )
 
-        if isinstance(exc, GeographicPreviewConflict):
-            return JSONResponse({"code": exc.code, "message": str(exc)}, status_code=409)
-        if isinstance(exc, GeographicPreviewBlocked):
-            return JSONResponse({"code": exc.code, "message": str(exc)}, status_code=422)
-        logger.exception("admin_api: geographic preview failed project=%s", project_id)
-        return JSONResponse(
-            {"code": "geographic_preview_unavailable", "message": "Preview failed."},
-            status_code=503,
-        )
 
 
-async def _confirm_geographic_change(request: Request) -> Response:
-    """Confirm a fresh geographic preview atomically (Owner)."""
 
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    project_id = request.path_params["project_id"]
-    preview_id = request.path_params["preview_id"]
-    try:
-        raw = await request.body()
-        body = json.loads(raw) if raw.strip() else {}
-        backfill_decision = str(body.get("backfill_decision") or "defer")
-        # Story 37.9: the operator's answer to the market used-by guard. Absent
-        # means "not acknowledged" -- a meaning-changing regroup is refused, never
-        # assumed accepted.
-        acknowledge_market_usage = bool(body.get("acknowledge_market_usage") or False)
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
-            status_code=400,
-        )
 
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-        from core.geographic_change import confirm_geographic_change  # noqa: PLC0415
-        from core.main import get_loaded_modules  # noqa: PLC0415
 
-        actor = identity or "anonymous"
-        with get_connection() as conn:
-            role_error = _require_datastream_role(project_id, actor, "owner", conn)
-            if role_error is not None:
-                return role_error
-            result = confirm_geographic_change(
-                preview_id=preview_id,
-                project_id=project_id,
-                identity=actor,
-                backfill_decision=backfill_decision,
-                conn=conn,
-                loaded_modules=get_loaded_modules(),
-                acknowledge_market_usage=acknowledge_market_usage,
-            )
-        return JSONResponse(result, status_code=200)
-    except ValueError as exc:
-        return JSONResponse({"code": "invalid_input", "message": str(exc)}, status_code=422)
-    except Exception as exc:
-        from core.geographic_change import (  # noqa: PLC0415
-            GeographicPreviewBlocked,
-            GeographicPreviewNotFound,
-            GeographicPreviewStale,
-        )
-        from core.market_governance import MarketUsageBlocked  # noqa: PLC0415
-
-        if isinstance(exc, MarketUsageBlocked):
-            # 409: the change is not invalid, it is un-acknowledged. The dependents
-            # are returned so the operator can decide with the facts in hand.
-            return JSONResponse(
-                {
-                    "code": exc.code,
-                    "message": str(exc),
-                    "market_usage": {
-                        "impacts": [impact.as_dict() for impact in exc.impacts],
-                        "acknowledgement_required": True,
-                    },
-                },
-                status_code=409,
-            )
-        if isinstance(exc, GeographicPreviewNotFound):
-            return JSONResponse({"code": exc.code, "message": str(exc)}, status_code=404)
-        if isinstance(exc, GeographicPreviewStale):
-            return JSONResponse({"code": exc.code, "message": str(exc)}, status_code=409)
-        if isinstance(exc, GeographicPreviewBlocked):
-            return JSONResponse({"code": exc.code, "message": str(exc)}, status_code=422)
-        logger.exception("admin_api: geographic confirmation failed preview=%s", preview_id)
-        return JSONResponse(
-            {"code": "geographic_confirmation_failed", "message": "Confirmation failed."},
-            status_code=503,
-        )
-
-
-def _seed_new_project(proj_id: str) -> None:
-    """Story 44.2 -- day-0 knowledge seed hook for a freshly created project.
-
-    Best-effort : un echec d'amorcage ne doit JAMAIS faire echouer la creation
-    du projet (le seed est un confort, pas un invariant). A la creation il n'y
-    a encore aucun datastream : l'appel est un no-op peu couteux, les topics
-    connecteurs arrivent au premier atterrissage.
-
-    ensure_schema=False explicite (decision revue vague 2) : un hook ne
-    declenche JAMAIS le generateur de schema docs 11.2. Ici il profilerait
-    tout l'entrepot -- y compris des relations d'autres tenants -- pour un
-    projet qui n'a encore aucune donnee. Les schema docs restent produites
-    par le passage nocturne (SCHEMA_CONTEXT_ENABLED).
-
-    Extrait de _create_project pour etre unit-testable sans Postgres
-    (re-review vague 2) : le test patch core.context_seed et appelle ce helper.
-    """
-    try:
-        from core.context_seed import seed_project_context_best_effort  # noqa: PLC0415
-
-        seed_project_context_best_effort(proj_id, ensure_schema=False)
-    except Exception as exc:  # noqa: BLE001 -- seeding never fails project creation
-        logger.warning("admin_api: context_seed_failed project=%s err=%s", proj_id, exc)
-
-
-async def _create_project(request: Request) -> Response:
-    """POST /api/projects -- create a project (AC3).
-
-    Body: {"name": str, "slug": str?, "currency": str?, "timezone": str?,
-           "verification_source_type": str?, "verification_source_id": str?,
-           "lead_event_name": str?}
-    Returns 201 with the created project. Auto-generates a unique slug from name
-    when not provided (appends -1, -2, ... on collision).
-
-    Story 17.1: accepte les 3 champs source de vérification (optionnels).
-    Les champs sont écrits dans app.project_preferences (AD-8 : sole-writer Postgres).
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    try:
-        body: dict = json.loads(await request.body())
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
-            status_code=400,
-        )
-
-    name = (body.get("name") or "").strip()
-    if not name or len(name) > 100:
-        return JSONResponse(
-            {"code": "invalid_input", "message": "name is required (max 100 chars)"},
-            status_code=422,
-        )
-
-    currency = (body.get("currency") or "EUR").strip().upper()
-    if currency not in _PROJECT_CURRENCIES:
-        return JSONResponse(
-            {"code": "invalid_input", "message": f"unsupported currency: {currency}"},
-            status_code=422,
-        )
-
-    timezone_str = (body.get("timezone") or "Europe/Paris").strip()
-    if not _valid_timezone(timezone_str):
-        return JSONResponse(
-            {"code": "invalid_input", "message": f"invalid timezone: {timezone_str}"},
-            status_code=422,
-        )
-
-    slug_in = (body.get("slug") or "").strip()
-    base_slug = slug_in or _slugify(name)
-    if not base_slug or not _SLUG_RE.match(base_slug) or len(base_slug) > 50:
-        return JSONResponse(
-            {"code": "invalid_input", "message": f"invalid slug: {base_slug!r}"},
-            status_code=422,
-        )
-
-    # Story 17.1: valider les champs source de vérification avant d'écrire en DB.
-    vsfields, vs_err = _validate_verification_source_fields(body)
-    if vs_err is not None:
-        return vs_err
-    # Validation de cohérence ga4 + lead_event_name pour la création
-    # (les deux champs peuvent être fournis ensemble ou séparément).
-    effective_vstype = vsfields.get("verification_source_type") if vsfields else None
-    effective_len = vsfields.get("lead_event_name") if vsfields else None
-    if effective_vstype == "ga4" and "lead_event_name" not in body:
-        # Non fourni dans ce body : OK pour CREATE — NULL est persisté tel quel
-        # (AD-9 : pas de valeur fantôme injectée en DB). C'est le CONSOMMATEUR (17.2)
-        # qui appliquera le défaut 'generate_lead' à la lecture quand type='ga4' et
-        # lead_event_name est NULL (review-17-1 F-5 : le défaut est applicatif côté
-        # lecture, jamais écrit). L'AC exige seulement : fourni et vide → 422.
-        pass
-    coherence_err = _validate_verification_source_complete(effective_vstype, effective_len)
-    if coherence_err is not None and "lead_event_name" in body:
-        # Seulement bloquer si le champ a été explicitement fourni et est vide.
-        return coherence_err
-
-    geography_touched = any(
-        key in body for key in ("geographic_mode", "local_market_country_codes", "local_markets")
-    )
-
-    try:
-        geographic_posture = normalize_geographic_posture(
-            body.get("geographic_mode", "global"),
-            body.get("local_market_country_codes", []),
-            _country_codes(),
-            local_markets=body.get("local_markets"),
-        )
-    except CountryVocabularyError:
-        return _country_vocabulary_error()
-    except InvalidGeographicPosture as exc:
-        return _geographic_error(exc)
-
-    proj_id = _mint_project_id()
-    created_by = identity or "anonymous"
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            # Resolve slug collisions by appending a counter (Dev Notes). When a
-            # slug was explicitly supplied, a collision is a 409 (AC8).
-            slug = base_slug
-            with conn.cursor() as cur:
-                if slug_in:
-                    cur.execute("SELECT 1 FROM app.projects WHERE slug = %s", (slug,))
-                    if cur.fetchone() is not None:
-                        return JSONResponse(
-                            {"code": "conflict", "message": "slug already exists"},
-                            status_code=409,
-                        )
-                else:
-                    counter = 1
-                    while True:
-                        cur.execute("SELECT 1 FROM app.projects WHERE slug = %s", (slug,))
-                        if cur.fetchone() is None:
-                            break
-                        slug = f"{base_slug}-{counter}"
-                        counter += 1
-
-                # Rattacher le projet a son organisation. Sans org_id, la
-                # resolution d'entrepot (warehouse_tenancy) ne trouve aucune org
-                # et retombe sur le nommage legacy : les datasets provisionnes a
-                # la creation de l'org ne servent JAMAIS, et le cloisonnement par
-                # org (P4) ne s'applique pas. La colonne existait, l'INSERT ne
-                # l'ecrivait simplement pas.
-                org_id_in = (body.get("org_id") or "").strip()
-                if org_id_in:
-                    cur.execute(
-                        "SELECT 1 FROM app.org_members "
-                        "WHERE org_id = %s AND identity = %s AND status = 'active'",
-                        (org_id_in, created_by),
-                    )
-                    if cur.fetchone() is None:
-                        conn.rollback()
-                        return JSONResponse(
-                            {
-                                "code": "forbidden",
-                                "message": ("You are not an active member of this organization."),
-                            },
-                            status_code=403,
-                        )
-                    org_id_for_project = org_id_in
-                else:
-                    # Non fourni : deduire quand c'est SANS AMBIGUITE (une seule
-                    # org active pour l'appelant). Deux orgs ou plus : exiger le
-                    # choix plutot que d'en deviner une.
-                    cur.execute(
-                        "SELECT org_id FROM app.org_members "
-                        "WHERE identity = %s AND status = 'active' LIMIT 2",
-                        (created_by,),
-                    )
-                    memberships = [r[0] for r in cur.fetchall()]
-                    if len(memberships) > 1:
-                        conn.rollback()
-                        return JSONResponse(
-                            {
-                                "code": "org_id_required",
-                                "message": (
-                                    "You belong to several organizations: specify "
-                                    "org_id for this project."
-                                ),
-                            },
-                            status_code=422,
-                        )
-                    if not memberships:
-                        # Aucune org : REFUSER plutot que de creer un orphelin.
-                        # Un projet sans org n'a pas d'entrepot ou atterrir et
-                        # echappe au cloisonnement : ce n'est pas un projet
-                        # degrade, c'est un projet impossible. L'onboarding dit
-                        # deja que l'organisation est la premiere etape et que
-                        # tout le reste en decoule -- l'API doit tenir le meme
-                        # discours au lieu de fabriquer l'objet incoherent.
-                        conn.rollback()
-                        return JSONResponse(
-                            {
-                                "code": "org_required",
-                                "message": (
-                                    "Create or join an organization before creating a project."
-                                ),
-                            },
-                            status_code=422,
-                        )
-                    org_id_for_project = memberships[0]
-
-                cur.execute(
-                    """
-                    INSERT INTO app.projects
-                        (id, name, slug, status, currency, timezone, created_by, org_id)
-                    VALUES (%s, %s, %s, 'active', %s, %s, %s, %s)
-                    RETURNING id, name, slug, status, currency, timezone, created_at
-                    """,
-                    (
-                        proj_id,
-                        name,
-                        slug,
-                        currency,
-                        timezone_str,
-                        created_by,
-                        org_id_for_project,
-                    ),
-                )
-                row = cur.fetchone()
-                cols = [d[0] for d in cur.description]
-                created = _project_row_to_dict(cols, row)
-
-                # Enroler l'auteur proprietaire, comme le fait la creation d'org.
-                # Sans cette ligne, resolve_project_role ne trouve aucun role et
-                # le createur perd l'acces a son propre projet dans la seconde qui
-                # suit : GET /api/datastreams?project_id=... repondait 404 juste
-                # apres un 201.
-                cur.execute(
-                    "INSERT INTO app.project_members (id, project_id, identity, role) "
-                    "VALUES (%s, %s, %s, 'owner') "
-                    "ON CONFLICT (project_id, identity) DO NOTHING",
-                    (_mint_project_member_id(), proj_id, created_by),
-                )
-
-            # Story 17.1: écrire les préférences source de vérification dans
-            # app.project_preferences (AD-8 sole-writer Postgres).
-            if vsfields:
-                _upsert_verification_prefs(proj_id, vsfields, conn)
-            if geography_touched:
-                _upsert_geographic_prefs(proj_id, geographic_posture, conn)
-                insert_audit_row(
-                    conn,
-                    identity=created_by,
-                    action=ACTION_PROJECT_GEOGRAPHIC_POSTURE_UPDATED,
-                    provider_account="",
-                    connection_ref="",
-                    metadata={
-                        "project_id": proj_id,
-                        "previous": {
-                            "geographic_mode": "global",
-                            "local_markets": [],
-                            "local_market_country_codes": [],
-                        },
-                        "new": geographic_posture.as_dict(),
-                        "market_diff": market_diff(GeographicPosture(), geographic_posture),
-                    },
-                )
-
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: create_project db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    write_audit_row(
-        identity=created_by,
-        action=ACTION_PROJECT_CREATED,
-        provider_account="",
-        connection_ref="",
-        metadata={"project_id": proj_id, "slug": created["slug"], "name": name},
-    )
-
-    # Story 7.3 (AC6): provision per-tenant key immediately after project creation.
-    # If key provisioning fails, roll back the project insert and return 500.
-    try:
-        from core.tenant_keys import get_tenant_key_backend, write_key_audit_row  # noqa: PLC0415
-
-        backend = get_tenant_key_backend()
-        backend.get_or_create_key(proj_id)
-        write_key_audit_row(
-            project_id=proj_id,
-            action="key_created",
-            performed_by=created_by,
-            details={"backend": os.environ.get("TENANT_KEY_BACKEND", "local")},
-        )
-        write_audit_row(
-            identity=created_by,
-            action=ACTION_KEY_CREATED,
-            provider_account="",
-            connection_ref="",
-            metadata={"project_id": proj_id},
-        )
-    except Exception as exc:
-        logger.error("admin_api: key_provision_failed project=%s err=%s", proj_id, exc)
-        # Roll back: delete the project row just inserted.
-        try:
-            from core.db import get_connection  # noqa: PLC0415
-
-            with get_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("DELETE FROM app.projects WHERE id = %s", (proj_id,))
-                conn.commit()
-        except Exception as rb_exc:
-            logger.error("admin_api: rollback_failed project=%s err=%s", proj_id, rb_exc)
-        return JSONResponse(
-            {
-                "code": "key_provision_failed",
-                "message": f"Failed to provision tenant key: {exc}",
-            },
-            status_code=500,
-        )
-
-    # Story 44.2: amorcer la couche de connaissance jour-0 APRES le commit du
-    # projet (helper dedie, unit-testable sans Postgres -- re-review vague 2).
-    _seed_new_project(proj_id)
-
-    # Story 17.1: enrichir la réponse avec les champs source de vérification.
-    created.update(
-        {
-            "verification_source_type": vsfields.get("verification_source_type")
-            if vsfields
-            else None,
-            "verification_source_id": vsfields.get("verification_source_id") if vsfields else None,
-            "lead_event_name": vsfields.get("lead_event_name") if vsfields else None,
-        }
-    )
-    created.update(geographic_posture.as_dict())
-    return JSONResponse(created, status_code=201)
-
-
-async def _list_projects(request: Request) -> Response:
-    """GET /api/projects -- list active projects, ordered by name ASC (AC3)."""
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                from core.project_access import epic36_production_access_enabled  # noqa: PLC0415
-
-                if epic36_production_access_enabled():
-                    cur.execute(
-                        """
-                        SELECT p.id, p.name, p.slug, p.status, p.currency, p.timezone,
-                               p.org_id, p.created_at, p.updated_at
-                        FROM app.projects p
-                        JOIN app.organizations o ON o.id = p.org_id
-                        JOIN app.org_members m
-                          ON m.org_id = p.org_id AND m.identity = %s
-                         AND m.status = 'active'
-                        WHERE p.status = 'active' AND o.status = 'active'
-                          AND (
-                              m.role = 'owner'
-                              OR EXISTS (
-                                  SELECT 1 FROM app.resource_grants g
-                                  WHERE g.org_id = p.org_id AND g.identity = %s
-                                    AND g.scope_type = 'project'
-                                    AND g.scope_id = p.id
-                                    AND g.capability IN ('view', 'edit', 'manage')
-                              )
-                          )
-                        ORDER BY p.name ASC
-                        """,
-                        (identity, identity),
-                    )
-                else:
-                    cur.execute(
-                        """
-                        SELECT id, name, slug, status, currency, timezone,
-                               org_id, created_at, updated_at
-                        FROM app.projects
-                        WHERE status = 'active'
-                        ORDER BY name ASC
-                        """
-                    )
-                cols = [d[0] for d in cur.description]
-                projects = [_project_row_to_dict(cols, r) for r in cur.fetchall()]
-    except Exception as exc:
-        logger.error("admin_api: list_projects db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-    return JSONResponse({"projects": projects}, status_code=200)
-
-
-async def _get_project(request: Request) -> Response:
-    """GET /api/projects/{project_id} -- single project; 404 if not found (AC3)."""
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    project_id = request.path_params["project_id"]
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            from core.project_access import identity_can_access_project_in_org
-
-            actor = identity or "anonymous"
-            if not identity_can_access_project_in_org(project_id, actor, conn):
-                return _deny_project_scope(actor, project_id, "get_project")
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id, name, slug, status, currency, timezone,
-                           created_at, updated_at, archived_at
-                    FROM app.projects WHERE id = %s
-                    """,
-                    (project_id,),
-                )
-                row = cur.fetchone()
-                if row is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "Project not found"},
-                        status_code=404,
-                    )
-                cols = [d[0] for d in cur.description]
-                project = _project_row_to_dict(cols, row)
-            # Story 17.1: enrichir la réponse avec les préférences source de vérification.
-            vsprefs = _fetch_verification_prefs(project_id, conn)
-            project.update(vsprefs)
-            geographic_posture = _fetch_geographic_prefs(project_id, conn)
-            project.update(geographic_posture.as_dict())
-    except CountryVocabularyError:
-        return _country_vocabulary_error()
-    except Exception as exc:
-        logger.error("admin_api: get_project db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-    return JSONResponse(project, status_code=200)
-
-
-async def _patch_project(request: Request) -> Response:
-    """PATCH /api/projects/{project_id} -- update mutable fields (AC3).
-
-    Body: {"name": str?, "currency": str?, "timezone": str?,
-           "verification_source_type": str?, "verification_source_id": str?,
-           "lead_event_name": str?}
-    id and slug are immutable. Updates updated_at.
-
-    Story 17.1: accepte les 3 champs source de vérification.
-    Écrits dans app.project_preferences (AD-8). Un type='ga4' sans lead_event_name
-    dans le state final (existant + patch) → 422 (message français).
-    Dénégation cross-projet pour verification_source_id : l'id doit appartenir au
-    projet patché (vérifié via app.datastreams, AD-5).
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    project_id = request.path_params["project_id"]
-    try:
-        body: dict = json.loads(await request.body())
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
-            status_code=400,
-        )
-
-    set_clauses: list[str] = []
-    params: list = []
-    if "name" in body:
-        name = (body.get("name") or "").strip()
-        if not name or len(name) > 100:
-            return JSONResponse(
-                {"code": "invalid_input", "message": "name must be 1..100 chars"},
-                status_code=422,
-            )
-        set_clauses.append("name = %s")
-        params.append(name)
-    if "currency" in body:
-        currency = (body.get("currency") or "").strip().upper()
-        if currency not in _PROJECT_CURRENCIES:
-            return JSONResponse(
-                {"code": "invalid_input", "message": f"unsupported currency: {currency}"},
-                status_code=422,
-            )
-        set_clauses.append("currency = %s")
-        params.append(currency)
-    if "timezone" in body:
-        timezone_str = (body.get("timezone") or "").strip()
-        if not _valid_timezone(timezone_str):
-            return JSONResponse(
-                {"code": "invalid_input", "message": f"invalid timezone: {timezone_str}"},
-                status_code=422,
-            )
-        set_clauses.append("timezone = %s")
-        params.append(timezone_str)
-
-    # Story 17.1: valider les champs source de vérification.
-    vsfields, vs_err = _validate_verification_source_fields(body)
-    if vs_err is not None:
-        return vs_err
-
-    has_project_fields = bool(set_clauses)
-    has_vs_fields = bool(vsfields)
-    has_geo_fields = any(
-        key in body for key in ("geographic_mode", "local_market_country_codes", "local_markets")
-    )
-
-    if not has_project_fields and not has_vs_fields and not has_geo_fields:
-        return JSONResponse(
-            {"code": "invalid_input", "message": "no updatable fields provided"},
-            status_code=422,
-        )
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            from core.project_access import identity_can_access_project_in_org
-
-            actor = identity or "anonymous"
-            if not identity_can_access_project_in_org(project_id, actor, conn):
-                return _deny_project_scope(actor, project_id, "patch_project")
-            previous_geography = _fetch_geographic_prefs(
-                project_id, conn, for_update=has_geo_fields
-            )
-            try:
-                geographic_posture = (
-                    merge_geographic_patch(previous_geography, body, _country_codes())
-                    if has_geo_fields
-                    else previous_geography
-                )
-            except InvalidGeographicPosture as exc:
-                return _geographic_error(exc)
-            if has_geo_fields and geographic_posture != previous_geography:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        SELECT COUNT(*)
-                        FROM app.datastreams
-                        WHERE project_id = %s
-                          AND archived_at IS NULL
-                          AND current_plan_version_id IS NOT NULL
-                        """,
-                        (project_id,),
-                    )
-                    governed_count = int(cur.fetchone()[0])
-                if governed_count:
-                    return JSONResponse(
-                        {
-                            "code": "geographic_preview_required",
-                            "message": (
-                                "This geographic change affects governed Datastream plans; "
-                                "create and confirm an impact preview first."
-                            ),
-                            "details": {"affected_datastream_count": governed_count},
-                        },
-                        status_code=409,
-                    )
-            # Story 17.1 AD-5: vérifier que verification_source_id appartient bien
-            # à ce projet (cross-project scope denial).
-            if vsfields and vsfields.get("verification_source_id"):
-                vs_id = vsfields["verification_source_id"]
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT project_id FROM app.datastreams WHERE id = %s",
-                        (vs_id,),
-                    )
-                    ds_row = cur.fetchone()
-                # On accepte aussi qu'un id ne soit pas dans app.datastreams
-                # (peut être un profil GA4 ou une connexion non encore migrée).
-                # Mais si le datastream existe et appartient à un AUTRE projet : refus.
-                if ds_row is not None and ds_row[0] != project_id:
-                    # review-17-1 F-3 (AD-5/FR12): every cross-scope refusal is AUDITED,
-                    # like the notebook/datastream refusals in this file.
-                    write_audit_row(
-                        identity=identity or "anonymous",
-                        action=ACTION_CROSS_SCOPE_ATTEMPT,
-                        provider_account="",
-                        connection_ref="",
-                        metadata={
-                            "claimed_project_id": project_id,
-                            "datastream_id": vs_id,
-                            "datastream_project_id": ds_row[0],
-                            "operation": "patch_project_verification_source",
-                        },
-                    )
-                    logger.warning(
-                        "admin_api: cross_project_vsid project=%s claimed_ds=%s ds_project=%s",
-                        project_id,
-                        vs_id,
-                        ds_row[0],
-                    )
-                    return JSONResponse(
-                        {
-                            "code": "forbidden",
-                            "message": (
-                                "Le flux de données désigné comme source de vérification "
-                                "n'appartient pas à ce projet."
-                            ),
-                        },
-                        status_code=403,
-                    )
-
-            # Si verification_source_type='ga4' dans le PATCH mais pas lead_event_name,
-            # lire l'état courant pour vérifier la cohérence finale.
-            if (
-                vsfields
-                and vsfields.get("verification_source_type") == "ga4"
-                and "lead_event_name" not in body
-            ):
-                current_prefs = _fetch_verification_prefs(project_id, conn)
-                coherence_err = _validate_verification_source_complete(
-                    "ga4", current_prefs.get("lead_event_name")
-                )
-                if coherence_err is not None:
-                    return coherence_err
-
-            updated: dict = {}
-            if has_project_fields:
-                set_clauses.append("updated_at = NOW()")
-                params.append(project_id)
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "UPDATE app.projects SET " + ", ".join(set_clauses) + " WHERE id = %s "
-                        "RETURNING id, name, slug, status, currency, timezone, "
-                        "created_at, updated_at",
-                        params,
-                    )
-                    row = cur.fetchone()
-                    if row is None:
-                        return JSONResponse(
-                            {"code": "not_found", "message": "Project not found"},
-                            status_code=404,
-                        )
-                    cols = [d[0] for d in cur.description]
-                    updated = _project_row_to_dict(cols, row)
-            else:
-                # Seuls des champs vs ont été fournis : vérifier que le projet existe.
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT id, name, slug, status, currency, timezone, "
-                        "created_at, updated_at FROM app.projects WHERE id = %s",
-                        (project_id,),
-                    )
-                    row = cur.fetchone()
-                    if row is None:
-                        return JSONResponse(
-                            {"code": "not_found", "message": "Project not found"},
-                            status_code=404,
-                        )
-                    cols = [d[0] for d in cur.description]
-                    updated = _project_row_to_dict(cols, row)
-
-            # Story 17.1: persister les préférences source de vérification.
-            if has_vs_fields:
-                # review-17-1 F-6: si le type est explicitement remis à NULL, nettoyer
-                # aussi l'id et le lead_event_name (pas de préférences orphelines en DB).
-                if (
-                    "verification_source_type" in vsfields
-                    and vsfields["verification_source_type"] is None
-                ):
-                    vsfields.setdefault("verification_source_id", None)
-                    vsfields.setdefault("lead_event_name", None)
-                _upsert_verification_prefs(project_id, vsfields, conn)
-            if has_geo_fields:
-                _upsert_geographic_prefs(project_id, geographic_posture, conn)
-                insert_audit_row(
-                    conn,
-                    identity=actor,
-                    action=ACTION_PROJECT_GEOGRAPHIC_POSTURE_UPDATED,
-                    provider_account="",
-                    connection_ref="",
-                    metadata={
-                        "project_id": project_id,
-                        "previous": previous_geography.as_dict(),
-                        "new": geographic_posture.as_dict(),
-                        # Story 37.8: the audited diff is a MARKET diff, not
-                        # merely a set of added/removed country codes.
-                        "market_diff": market_diff(previous_geography, geographic_posture),
-                    },
-                )
-
-            # Lire l'état final des préférences pour la réponse.
-            final_prefs = _fetch_verification_prefs(project_id, conn)
-
-            # review-17-1 F-2: la cohérence se valide sur l'ÉTAT FINAL (existant + patch),
-            # pas seulement sur le body — un PATCH {"lead_event_name": ""} seul sur un
-            # projet déjà en type='ga4' produirait sinon un état ga4 + NULL incohérent.
-            coherence_err = _validate_verification_source_complete(
-                final_prefs.get("verification_source_type"),
-                final_prefs.get("lead_event_name"),
-            )
-            if coherence_err is not None:
-                conn.rollback()
-                return coherence_err
-
-            updated.update(final_prefs)
-            updated.update(geographic_posture.as_dict())
-
-            conn.commit()
-    except CountryVocabularyError:
-        return _country_vocabulary_error()
-    except Exception as exc:
-        logger.error("admin_api: patch_project db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-    return JSONResponse(updated, status_code=200)
-
-
-async def _delete_project(request: Request) -> Response:
-    """DELETE /api/projects/{project_id} -- archive + revoke connections (AC4).
-
-    NEVER hard-deletes. Sets status='archived', archived_at=NOW(). Marks every
-    non-revoked connection_ref for the project as revoked, writes an audit row,
-    and returns {"status": "archived", "connections_revoked": N}.
-    404 if not found; 409 if already archived.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-    project_id = request.path_params["project_id"]
-    subject = identity or "anonymous"
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                # 1. Verify exists + active (single transaction; row-lock).
-                cur.execute(
-                    "SELECT status FROM app.projects WHERE id = %s FOR UPDATE",
-                    (project_id,),
-                )
-                prow = cur.fetchone()
-                if prow is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "Project not found"},
-                        status_code=404,
-                    )
-                if prow[0] == "archived":
-                    return JSONResponse(
-                        {"code": "conflict", "message": "Project already archived"},
-                        status_code=409,
-                    )
-
-                # 2. Archive the project (soft-delete; data remains readable).
-                cur.execute(
-                    "UPDATE app.projects "
-                    "SET status = 'archived', archived_at = NOW(), updated_at = NOW() "
-                    "WHERE id = %s",
-                    (project_id,),
-                )
-
-                # 3. Revoke every still-active connection for the project.
-                cur.execute(
-                    "UPDATE app.connection_ref "
-                    "SET status = 'revoked', revoked_at = NOW(), updated_at = NOW() "
-                    "WHERE project_id = %s AND status != 'revoked' "
-                    "RETURNING id, provider, nango_connection_id",
-                    (project_id,),
-                )
-                revoked = cur.fetchall()
-            from core.account_topology import invalidate_credential_exposures  # noqa: PLC0415
-
-            for revoked_id, _provider, _nango_id in revoked:
-                invalidate_credential_exposures(revoked_id, "revocation", conn)
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: delete_project db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    connections_revoked = len(revoked)
-
-    # 3b. Best-effort Nango token revocation per connection. Failure logs a
-    # structured warning but never blocks the archive (AC4 step 3).
-    # AI-41: on revocation failure, emit a type='nango_revoke_failed' infra firing
-    # so the event is surfaced by the normal alert pipeline.  Never raises; archival
-    # outcome is unchanged (best-effort semantics preserved).
-    for conn_id, provider, nango_conn_id in revoked:
-        try:
-            nango_client.revoke_connection(provider, nango_conn_id)
-        except AttributeError:
-            # No revoke helper in nango_client at P3-dev: DB revoke is the record
-            # of truth; token cleanup is a Phase B concern. Log once per conn.
-            logger.warning(
-                "delete_project: nango_revoke_unavailable conn=%s provider=%s",
-                conn_id,
-                provider,
-            )
-        except Exception as exc:
-            logger.warning(
-                "delete_project: nango_revoke_failed conn=%s provider=%s err=%s",
-                conn_id,
-                provider,
-                exc,
-            )
-            # AI-41: emit infra firing so the failure is observable via alert delivery.
-            try:
-                from core import infra_alerts as _ia  # noqa: PLC0415
-
-                _ia.write_infra_firing(
-                    alert_type="nango_revoke_failed",
-                    project_id=project_id,
-                    metric="nango_revoke",
-                    severity="error",
-                    message=(
-                        f"Nango token revocation failed during project archival: "
-                        f"conn={conn_id} provider={provider}"
-                    ),
-                    metadata={
-                        "project_id": project_id,
-                        "connection_ref_id": conn_id,
-                        "nango_connection_id": nango_conn_id,
-                        "provider": provider,
-                        "error": str(exc),
-                    },
-                )
-            except Exception as fire_exc:  # noqa: BLE001
-                logger.debug(
-                    "delete_project: nango_revoke_failed_firing_error conn=%s: %s",
-                    conn_id,
-                    fire_exc,
-                )
-
-    # 3c. Story 7.3 (AC4, T5): delete tenant key after all connections are revoked.
-    # Failure logs a warning but DOES NOT abort the archive (graceful degradation).
-    try:
-        from core.tenant_keys import get_tenant_key_backend, write_key_audit_row  # noqa: PLC0415
-
-        backend = get_tenant_key_backend()
-        backend.delete_key(project_id)
-        write_key_audit_row(
-            project_id=project_id,
-            action="key_deleted",
-            performed_by=subject,
-            details={
-                "backend": os.environ.get("TENANT_KEY_BACKEND", "local"),
-                "via": "project_archive",
-            },
-        )
-        write_audit_row(
-            identity=subject,
-            action=ACTION_KEY_DELETED,
-            provider_account="",
-            connection_ref="",
-            metadata={"project_id": project_id, "via": "project_archive"},
-        )
-    except Exception as exc:
-        logger.warning(
-            "delete_project: key_deletion_failed project=%s err=%s",
-            project_id,
-            exc,
-        )
-
-    # 4. Audit row (AC4 step 4). Attach a revoked connection_ref when present so
-    # the row satisfies the audit_log FK; falls back to "" like other project-
-    # scoped audit events (context_events / notebooks) when no connection exists.
-    audit_conn_ref = revoked[0][0] if revoked else ""
-    write_audit_row(
-        identity=subject,
-        action=ACTION_PROJECT_ARCHIVED,
-        provider_account="",
-        connection_ref=audit_conn_ref,
-        metadata={"project_id": project_id, "connections_revoked": connections_revoked},
-    )
-
-    return JSONResponse(
-        {"status": "archived", "connections_revoked": connections_revoked},
-        status_code=200,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -11218,165 +1536,10 @@ async def _delete_project(request: Request) -> Response:
 # ---------------------------------------------------------------------------
 
 
-async def _revoke_connection(request: Request) -> Response:
-    """POST /api/projects/{project_id}/connections/{connection_id}/revoke.
 
-    Per-connection revocation endpoint (Story 7.3, AC4).
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
 
-    project_id = request.path_params.get("project_id", "")
-    connection_id = request.path_params.get("connection_id", "")
-    subject = identity or "anonymous"
 
-    if not project_id or not connection_id:
-        return JSONResponse(
-            {"code": "missing_id", "message": "project_id and connection_id are required"},
-            status_code=400,
-        )
 
-    # Step 1: enforce the requested project and credential-owner scopes before mutation.
-    try:
-        from core.db import get_connection, set_local_access_context  # noqa: PLC0415
-        from core.project_access import (  # noqa: PLC0415
-            epic36_production_access_enabled,
-            identity_can_access_project_in_org,
-            identity_can_manage_org,
-            resolve_strict_resource_access,
-        )
-
-        with get_connection() as conn:
-            strict_gate = epic36_production_access_enabled()
-            if strict_gate:
-                set_local_access_context(conn, subject, enforce_epic36=True)
-                project_allowed = resolve_strict_resource_access(
-                    subject, conn, project_id=project_id, minimum_capability="manage"
-                ).allowed
-            else:
-                project_allowed = identity_can_access_project_in_org(project_id, subject, conn)
-            if not project_allowed:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Connection not found"},
-                    status_code=404 if strict_gate else 403,
-                )
-
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT r.id, r.nango_connection_id, r.provider, r.status,
-                           r.owner_org_id, p.org_id
-                    FROM app.connection_ref r
-                    JOIN app.projects p ON p.id = %s AND p.status = 'active'
-                    WHERE r.id = %s
-                    """,
-                    (project_id, connection_id),
-                )
-                row = cur.fetchone()
-            if row is None:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Connection not found"},
-                    status_code=404,
-                )
-            (
-                _conn_id,
-                nango_connection_id,
-                provider,
-                current_status,
-                owner_org_id,
-                project_org_id,
-            ) = row
-            if owner_org_id != project_org_id or not identity_can_manage_org(
-                owner_org_id, subject, conn
-            ):
-                return JSONResponse(
-                    {
-                        "code": "forbidden",
-                        "message": "Only the credential owner organization can revoke it",
-                    },
-                    status_code=403,
-                )
-    except Exception as exc:
-        logger.error("admin_api: revoke_connection db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    # Step 2: Call Nango API to delete the connection (best-effort).
-    nango_deleted = False
-    try:
-        nango_deleted = nango_client.delete_connection(nango_connection_id, provider)
-    except Exception as exc:
-        logger.warning(
-            "admin_api: revoke_connection nango_delete_failed conn=%s err=%s",
-            connection_id,
-            exc,
-        )
-
-    # Step 3: Purge health poller cache (health row + in-memory).
-    try:
-        from core.health_poller import purge_connection_cache  # noqa: PLC0415
-
-        purge_connection_cache(connection_id)
-    except Exception as exc:
-        logger.warning(
-            "admin_api: revoke_connection cache_purge_failed conn=%s err=%s",
-            connection_id,
-            exc,
-        )
-
-    # Also clear admin_api rate-limit cache entry for this connection.
-    _refresh_health_last.pop(connection_id, None)
-
-    # Step 4: Mark connection_ref as revoked.
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE app.connection_ref
-                    SET status = 'revoked', revoked_at = NOW(), updated_at = NOW()
-                    WHERE id = %s
-                    """,
-                    (connection_id,),
-                )
-            from core.account_topology import invalidate_credential_exposures  # noqa: PLC0415
-
-            invalidate_credential_exposures(connection_id, "revocation", conn)
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: revoke_connection update_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error on revoke: {exc}"},
-            status_code=500,
-        )
-
-    # Step 5: Write audit row.
-    write_audit_row(
-        identity=subject,
-        action=ACTION_CONNECTION_REVOKED,
-        provider_account=provider or "",
-        connection_ref=connection_id,
-        metadata={
-            "project_id": project_id,
-            "connection_id": connection_id,
-            "via": "manual_revoke",
-            "nango_deleted": nango_deleted,
-        },
-    )
-
-    # Step 6: Return result.
-    return JSONResponse(
-        {"status": "revoked", "nango_deleted": nango_deleted},
-        status_code=200,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -11391,83 +1554,6 @@ async def _revoke_connection(request: Request) -> Response:
 # ---------------------------------------------------------------------------
 
 
-async def _rotate_project_key(request: Request) -> Response:
-    """POST /api/projects/{project_id}/rotate-key -- rotate per-tenant encryption key.
-
-    Story 7.3, AC5. Rotation does NOT require re-encrypting stored data (Phase A
-    does not encrypt connection_ref payloads -- the OAuth tokens live in Nango under
-    Nango's global key). The new key replaces the old one for future operations.
-    """
-    from datetime import datetime, timezone  # noqa: PLC0415
-
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
-        )
-
-    project_id = request.path_params.get("project_id", "")
-    subject = identity or "anonymous"
-
-    if not project_id:
-        return JSONResponse(
-            {"code": "missing_id", "message": "project_id is required"},
-            status_code=400,
-        )
-
-    # Verify project exists
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT id FROM app.projects WHERE id = %s AND status = 'active'",
-                    (project_id,),
-                )
-                if cur.fetchone() is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "Project not found or archived"},
-                        status_code=404,
-                    )
-    except Exception as exc:
-        logger.error("admin_api: rotate_key db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Database error: {exc}"},
-            status_code=500,
-        )
-
-    try:
-        from core.tenant_keys import get_tenant_key_backend, write_key_audit_row  # noqa: PLC0415
-
-        backend = get_tenant_key_backend()
-        backend.rotate_key(project_id)
-        rotated_at = datetime.now(tz=timezone.utc).isoformat()
-        write_key_audit_row(
-            project_id=project_id,
-            action="key_rotated",
-            performed_by=subject,
-            details={"backend": os.environ.get("TENANT_KEY_BACKEND", "local")},
-        )
-        write_audit_row(
-            identity=subject,
-            action=ACTION_KEY_ROTATED,
-            provider_account="",
-            connection_ref="",
-            metadata={"project_id": project_id},
-        )
-    except Exception as exc:
-        logger.error("admin_api: rotate_key failed project=%s err=%s", project_id, exc)
-        return JSONResponse(
-            {"code": "rotate_key_failed", "message": f"Key rotation failed: {exc}"},
-            status_code=500,
-        )
-
-    return JSONResponse(
-        {"status": "rotated", "rotated_at": rotated_at},
-        status_code=200,
-    )
 
 
 # ===========================================================================
@@ -11489,6 +1575,28 @@ async def _rotate_project_key(request: Request) -> Response:
 # ===========================================================================
 
 
+def require_datastream_in_project(conn, *, datastream_id: str, project_id: str) -> bool:
+    """Is THIS Datastream in THIS project? One statement, both columns (AI-219).
+
+    Read-then-compare in Python was the shape most callers used, and it is one
+    statement too many: it re-opens the window between the read and the use, and
+    it tempts a second, distinguishable refusal envelope for "wrong project" that
+    would let a caller enumerate stream ids by comparing answers.
+
+    No `archived_at` / `enabled` filter on purpose. Membership is not liveness --
+    an archived Datastream still belongs to its project, and the surfaces that
+    read one (the detail page, the run history) must keep answering.
+    """
+    if not datastream_id or not project_id:
+        return False
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT 1 FROM app.datastreams WHERE id = %s AND project_id = %s",
+            (datastream_id, project_id),
+        )
+        return cur.fetchone() is not None
+
+
 def _require_datastream_role(
     project_id: str,
     identity: str,
@@ -11496,14 +1604,39 @@ def _require_datastream_role(
     conn,
     *,
     datastream_id: str | None = None,
+    pair_proven_by_read: bool = False,
 ) -> Response | None:
-    """Enforce strict Viewer/Member/Owner access for Datastream surfaces."""
+    """Enforce strict Viewer/Member/Owner access for Datastream surfaces.
+
+    AI-219: the `datastream_id` used to reach this function ONLY to decorate the
+    audit row. Every one of the 43 call sites that passes one takes it straight
+    from the URL path, so a member of project A naming a stream of project B
+    passed the role check and the handler read the foreign row. The id now
+    decides: proven role, THEN proven membership, and both failures return the
+    one envelope an absent stream returns.
+
+    A caller with no stream to name (list, create) passes no `datastream_id` and
+    is unaffected -- there is no project-less legitimate caller to weaken this for.
+
+    ``pair_proven_by_read`` IS NOT A WAY OUT, IT IS AN ACCOUNTING RULE. A reader
+    whose own statement already says ``d.id = %s AND d.project_id = %s`` has
+    proven the pair; making the guard prove it again is a second round trip that
+    establishes nothing. That is affordable on a detail page opened by a click
+    and is not affordable on `datastream_progress_api`, the one route in the
+    product built to be polled -- measured 2026-08-06 at the ASGI seal, the extra
+    statement took its tick from 2 to 3 and its worst case from 3 to 4, against
+    an acceptance bought at 9 for the `overview` call it replaces. So the claim
+    is allowed, and it is CHECKED: `tests/conformance/
+    test_datastream_readers_carry_project_scope.py` resolves every call site that
+    makes it and fails if that reader's SQL does not in fact carry both columns.
+    """
 
     from core.project_access import (  # noqa: PLC0415
         ProjectAccessUnavailable,
         identity_has_project_role,
     )
 
+    reason = "insufficient_project_role"
     try:
         allowed = identity_has_project_role(
             project_id,
@@ -11511,6 +1644,12 @@ def _require_datastream_role(
             minimum_role,
             conn,
         )
+        if allowed and datastream_id and not pair_proven_by_read:
+            allowed = require_datastream_in_project(
+                conn, datastream_id=datastream_id, project_id=project_id
+            )
+            if not allowed:
+                reason = "datastream_outside_project"
     except ProjectAccessUnavailable:
         return JSONResponse(
             {"code": "unavailable", "message": "Verification des droits indisponible"},
@@ -11528,7 +1667,10 @@ def _require_datastream_role(
             "project_id": project_id,
             "datastream_id": datastream_id,
             "minimum_role": minimum_role,
-            "reason": "insufficient_project_role",
+            # The AUDIT separates the two refusals; the RESPONSE never does.
+            # Which one it was belongs to the operator reading the log, not to
+            # the caller comparing two 404s.
+            "reason": reason,
             "operation": "datastream_access",
         },
     )
@@ -11612,57 +1754,60 @@ def _resolve_datastream_route_scope(
 # ---------------------------------------------------------------------------
 
 
-async def _datastream_sample(request: Request) -> Response:
-    """GET /api/datastreams/{id}/sample -- deterministic masked daily sample (12.19).
 
-    Query params:
-      stage      -- collected|mapped|processed|published (default: processed)
-      date_from  -- inclusive ISO day (required)
-      date_to    -- inclusive ISO day (required)
-      limit      -- per-day row cap (default 5, hard-capped at 20)
-      project_id -- required route-project scope (the Datastream may be shared)
 
-    Errors: 400 (bad params/range/stage), 401 (unauthorized), 404 (unknown/cross-
-    scope datastream), 502 (warehouse unreachable / marts absent backend), 500 (DB).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+async def _publish_datastream_first_publication(request: Request) -> Response:
+    """RETIREE. La publication gouvernee repond a cette question depuis
+    `POST /api/projects/{project_id}/datastreams/{datastream_id}/executions/
+    {execution_id}/publish-activate` (et `/publish-confirmations`), monte par
+    `core.datastream_preconfiguration_api`. Ce handler n'est monte par rien et
+    appele par rien -- mesure 2026-08-12, AD-43. Il est GARDE plutot que
+    supprime, comme `_create_datastream_mapping_version` (arbitrage `e6e33d1`) :
+    supprime, le retrait ne laisse aucune trace et le prochain lecteur remonte
+    la route. `tests/conformance/test_retired_admin_routes.py` refuse ce
+    remontage.
+
+    POST /api/projects/{project_id}/datastreams/{ds_id}/publish
+
+    Story 43.17: First Publication promotion seam. Promotes candidate version
+    pointer to published version pointer in app.datastreams with audit row.
     """
     authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
-            {"code": "unauthorized", "message": "Token d'acces requis"},
-            status_code=401,
+            {"code": "unauthorized", "message": "Token d'acces requis"}, status_code=401
         )
 
-    ds_id = request.path_params.get("id", "")
-    stage = (request.query_params.get("stage") or "processed").strip().lower()
-    date_from = (request.query_params.get("date_from") or "").strip()
-    date_to = (request.query_params.get("date_to") or "").strip()
-    claimed_project_id = (request.query_params.get("project_id") or "").strip()
-    if not claimed_project_id or not date_from or not date_to:
+    project_id = request.path_params.get("project_id", "").strip()
+    ds_id = request.path_params.get("ds_id", "").strip()
+
+    if not project_id or not ds_id:
         return JSONResponse(
-            {
-                "code": "missing_param",
-                "message": "project_id, date_from et date_to sont requis",
-            },
+            {"code": "missing_param", "message": "project_id et ds_id sont requis"},
             status_code=400,
         )
 
     try:
-        limit = int(request.query_params.get("limit") or "5")
-    except (TypeError, ValueError):
-        return JSONResponse(
-            {"code": "invalid_param", "message": "limit doit etre un entier"},
-            status_code=400,
-        )
-
-    try:
-        from core.cache_warehouse import SampleReadError, read_datastream_sample  # noqa: PLC0415
         from core.db import get_connection  # noqa: PLC0415
-
         with get_connection() as conn:
             role_error = _require_datastream_role(
-                claimed_project_id,
+                project_id,
                 identity,
-                "viewer",
+                "member",
                 conn,
                 datastream_id=ds_id,
             )
@@ -11672,105 +1817,68 @@ async def _datastream_sample(request: Request) -> Response:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT ds.project_id, ds.module_name, ds.source_kind,
-                           ds.name, ds.enabled
-                    FROM app.datastreams ds
-                    JOIN app.project_flux pf
-                      ON pf.flux_id = ds.id AND pf.org_id = ds.org_id
-                    WHERE ds.id = %s AND pf.project_id = %s
-                      AND ds.archived_at IS NULL
+                    SELECT candidate_version_id, published_version_id
+                    FROM app.datastreams
+                    WHERE id = %s AND project_id = %s AND archived_at IS NULL
                     """,
-                    (ds_id, claimed_project_id),
+                    (ds_id, project_id),
                 )
                 row = cur.fetchone()
-            if row is None:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Flux de donnees introuvable"},
-                    status_code=404,
-                )
-
-            data_project_id = row[0]
-            module_name = row[1]
-            source_kind = row[2]
-            datastream_name = row[3]
-            collection_expected = bool(row[4])
-            connector = module_name or ""
-
-            # fact_daily_kpi has no Datastream discriminator. More than one
-            # Datastream for the same owner-project/connector is therefore
-            # ambiguous and must fail closed rather than mix their rows.
-            if connector:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        SELECT COUNT(*)
-                        FROM app.datastreams
-                        WHERE project_id = %s AND module_name = %s
-                          AND archived_at IS NULL
-                        """,
-                        (data_project_id, connector),
-                    )
-                    same_connector_count = int(cur.fetchone()[0])
-                if same_connector_count != 1:
+                if not row:
                     return JSONResponse(
-                        {
-                            "code": "ambiguous_materialization",
-                            "message": (
-                                "No Datastream-scoped sample materialisation is available "
-                                "for this connector."
-                            ),
-                        },
-                        status_code=409,
+                        {"code": "not_found", "message": "Datastream introuvable."},
+                        status_code=404,
                     )
+                candidate_id, published_id = row
+                target_version = candidate_id or f"ver_{ds_id}_1"
 
-            try:
-                sample = read_datastream_sample(
-                    project_id=data_project_id,
-                    connector=connector,
-                    stage=stage,
-                    date_from=date_from,
-                    date_to=date_to,
-                    limit=limit,
+                cur.execute(
+                    """
+                    UPDATE app.datastreams
+                    SET published_version_id = %s, updated_at = NOW()
+                    WHERE id = %s AND project_id = %s
+                    """,
+                    (target_version, ds_id, project_id),
                 )
-            except SampleReadError as exc:
-                status = 502 if exc.code == "warehouse_unavailable" else 400
-                return JSONResponse({"code": exc.code, "message": str(exc)}, status_code=status)
+            conn.commit()
+
+            write_audit_row(
+                identity=identity or "anonymous",
+                action=ACTION_DATASTREAM_UPDATED,
+                provider_account="datastream",
+                connection_ref=ds_id,
+                metadata={
+                    "project_id": project_id,
+                    "datastream_id": ds_id,
+                    "event": "first_publication_promoted",
+                    "published_version_id": target_version,
+                },
+            )
     except Exception as exc:
-        logger.error("admin_api: datastream_sample_error: %s", exc)
+        logger.error("admin_api: publish_datastream db_error: %s", exc)
         return JSONResponse(
-            {"code": "db_error", "message": "Erreur base de donnees"},
-            status_code=500,
+            {"code": "db_error", "message": "Erreur base de donnees."}, status_code=500
         )
 
     return JSONResponse(
         {
+            "status": "published",
             "datastream_id": ds_id,
-            "project_id": claimed_project_id,
-            "stage": stage,
-            "served_stage": sample["served_stage"],
-            "stage_note": sample["stage_note"],
-            "datastream": {
-                "id": ds_id,
-                "name": datastream_name,
-                "module_name": module_name,
-                "source_kind": source_kind,
-            },
-            "collection_expected": collection_expected,
-            "materialization_available": sample["materialization_available"],
-            "sample_watermark": sample["sample_watermark"],
-            "date_from": date_from,
-            "date_to": date_to,
-            "limit": max(1, min(limit, 20)),
-            "masked_fields": sample["masked_fields"],
-            "masked_value_count": sample["masked_value_count"],
-            "version_binding_available": False,
-            "days": sample["days"],
+            "published_version_id": target_version,
         }
     )
 
 
 def _overlay_rejection_counts(days: list[dict], ds_id: str, project_id: str, conn) -> None:
-    """Set each day's ``rejection_count`` from the managed-feed rejected-row store.
+    """RETIRE -- le compte de rejets se lit ou les jours sont construits.
+
+    Annotait APRES coup une liste de jours deja batie. Le compte se lit
+    aujourd'hui dans le decoupage journalier lui-meme (`datastreams_api`), ce qui
+    supprime le second passage sur la meme table. Garde en place, appele par
+    rien -- voir `tests/conformance/test_retired_admin_routes.py`.
+
+    Ce qu'elle faisait : set each day's ``rejection_count`` from the managed-feed
+    rejected-row store.
 
     Groups app.managed_feed_rejected_rows by the rejected row's day for this
     project-scoped datastream, then annotates the matching sample day. Days with no
@@ -11801,393 +1909,44 @@ def _overlay_rejection_counts(days: list[dict], ds_id: str, project_id: str, con
             day["rejection_count"] = counts[day["date"]]
 
 
-async def _list_datastreams(request: Request) -> Response:
-    """GET /api/datastreams?project_id=<id> -- list datastreams for a project.
-
-    Response (200): [{"id", "project_id", "name", "module_name", ...}]
-    Error:
-        400 -- missing project_id
-        401 -- unauthorized
-        500 -- DB error
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Token d'acces requis"},
-            status_code=401,
-        )
-
-    project_id = (request.query_params.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse(
-            {"code": "missing_param", "message": "project_id est requis"},
-            status_code=400,
-        )
-
-    try:
-        from core.datastreams import list_datastreams  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(project_id, identity, "viewer", conn)
-            if role_error is not None:
-                return role_error
-            rows = list_datastreams(project_id, conn)
-    except Exception as exc:
-        logger.error("admin_api: list_datastreams_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Erreur base de donnees: {exc}"},
-            status_code=500,
-        )
-
-    return JSONResponse(rows)
 
 
-async def _create_datastream(request: Request) -> Response:
-    """POST /api/datastreams -- create a legacy row or versioned intent draft."""
-
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Token d'acces requis"},
-            status_code=401,
-        )
-
-    try:
-        body: dict = json.loads(await request.body())
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Corps JSON invalide: {exc}"},
-            status_code=400,
-        )
-
-    project_id = (body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse(
-            {"code": "missing_field", "message": "project_id est requis"},
-            status_code=422,
-        )
-
-    versioned = isinstance(body.get("intent"), dict)
-    idempotency_key = (request.headers.get("Idempotency-Key") or "").strip()
-    if versioned and not idempotency_key:
-        return JSONResponse(
-            {
-                "code": "missing_idempotency_key",
-                "message": "Idempotency-Key est requis pour creer une version.",
-            },
-            status_code=400,
-        )
-
-    created_by = identity or "anonymous"
-    try:
-        from core.datastreams import create_datastream  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            minimum_role = (
-                "owner"
-                if versioned
-                and body["intent"].get("destination", {}).get("policy") == "external_read_only"
-                else "member"
-            )
-            role_error = _require_datastream_role(project_id, created_by, minimum_role, conn)
-            if role_error is not None:
-                return role_error
-
-            if versioned:
-                from core.flows import upsert_flow  # noqa: PLC0415
-                from core.main import get_loaded_modules  # noqa: PLC0415
-
-                definition = {
-                    "schema_version": "2",
-                    "kind": "datastream",
-                    "project_id": project_id,
-                    "name": (body.get("name") or "").strip(),
-                    "intent": body["intent"],
-                    "idempotency_key": idempotency_key,
-                    "reason": body.get("reason", "rest_draft_created"),
-                    "trace_id": request.headers.get("traceparent"),
-                }
-                result = upsert_flow(
-                    project_id,
-                    definition,
-                    created_by,
-                    conn,
-                    loaded_modules=get_loaded_modules(),
-                )
-                response = dict(result["flow"])
-                response["plan_version"] = result["plan_version"]
-                return JSONResponse(response, status_code=201)
-
-            row = create_datastream(body, project_id, created_by, conn)
-            conn.commit()
-    except ValueError as exc:
-        return JSONResponse({"code": "invalid_input", "message": str(exc)}, status_code=422)
-    except Exception as exc:
-        # Story 34.2: trial datastream cap reached -- typed 409, no partial state.
-        # (Lazy isinstance check keeps the import out of the sorted top block.)
-        from core.trial_enforcement import TrialDatastreamLimitError  # noqa: PLC0415
-
-        if isinstance(exc, TrialDatastreamLimitError):
-            return JSONResponse(exc.to_dict(), status_code=409)
-        from core.flows import (  # noqa: PLC0415
-            FlowConflictError,
-            FlowScopeError,
-            FlowUnavailableError,
-            FlowValidationError,
-        )
-
-        if isinstance(exc, FlowValidationError):
-            return JSONResponse(
-                {"code": "validation_error", "message": str(exc), "errors": exc.errors},
-                status_code=422,
-            )
-        if isinstance(exc, FlowScopeError):
-            return JSONResponse(
-                {"code": "not_found", "message": "Flux de donnees introuvable"},
-                status_code=404,
-            )
-        if isinstance(exc, FlowConflictError) or "UniqueViolation" in type(exc).__name__:
-            return JSONResponse({"code": "conflict", "message": str(exc)}, status_code=409)
-        if isinstance(exc, FlowUnavailableError):
-            return JSONResponse({"code": "unavailable", "message": str(exc)}, status_code=503)
-        logger.error("admin_api: create_datastream_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": "Erreur base de donnees"},
-            status_code=500,
-        )
-
-    write_audit_row(
-        identity=created_by,
-        action=ACTION_DATASTREAM_CREATED,
-        provider_account="",
-        connection_ref="",
-        metadata={
-            "datastream_id": row["id"],
-            "project_id": project_id,
-            "name": row["name"],
-            "module_name": row["module_name"],
-        },
-    )
-    return JSONResponse(row, status_code=201)
 
 
-async def _list_datastream_versions(request: Request) -> Response:
-    """GET immutable intent versions for one project-scoped Datastream."""
-
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    project_id = (request.query_params.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_param", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    try:
-        from core.datastream_intents import list_intent_versions  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "viewer", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            versions = list_intent_versions(ds_id, project_id, conn)
-    except Exception as exc:
-        logger.error("admin_api: datastream_versions_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Versions indisponibles"}, 503)
-    return JSONResponse({"versions": versions})
 
 
-async def _validate_datastream_intent(request: Request) -> Response:
-    """Validate a draft intent without provider calls, queueing, or writes."""
-
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    try:
-        body_bytes = await request.body()
-        body = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse({"code": "invalid_body", "message": str(exc)}, 400)
-    project_id = (body.get("project_id") or "").strip()
-    intent = body.get("intent")
-    if not project_id or not isinstance(intent, dict):
-        return JSONResponse(
-            {"code": "missing_field", "message": "project_id et intent sont requis"}, 400
-        )
-    ds_id = request.path_params.get("id", "")
-    try:
-        from core.datastream_intents import (  # noqa: PLC0415
-            DatastreamIntentStructuralError,
-            validate_intent,
-        )
-        from core.datastreams import get_datastream  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "member", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            if get_datastream(ds_id, project_id, conn) is None:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Datastream not found"}, 404
-                )
-            capabilities = None
-            source = intent.get("source", {})
-            if source.get("kind") == "connector_pull":
-                from core.main import get_loaded_modules  # noqa: PLC0415
-                from core.source_capabilities import (  # noqa: PLC0415
-                    SourceCapabilitiesNotFound,
-                    SourceCapabilitiesUnavailable,
-                    get_scoped_source_capabilities,
-                )
-
-                try:
-                    capabilities = get_scoped_source_capabilities(
-                        project_id=project_id,
-                        connection_ref_id=source.get("connection_ref_id", ""),
-                        identity=identity or "anonymous",
-                        loaded_modules=get_loaded_modules(),
-                        conn=conn,
-                    )
-                except SourceCapabilitiesNotFound:
-                    return JSONResponse({"code": "not_found", "message": "Source introuvable"}, 404)
-                except SourceCapabilitiesUnavailable:
-                    return JSONResponse(
-                        {"code": "unavailable", "message": "Catalogue indisponible"}, 503
-                    )
-            result = validate_intent(intent, capabilities=capabilities)
-    except DatastreamIntentStructuralError as exc:
-        return JSONResponse(
-            {"code": "invalid_intent", "issues": [item.as_dict() for item in exc.issues]},
-            422,
-        )
-    except Exception as exc:
-        logger.error("admin_api: validate_datastream_intent_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Validation indisponible"}, 503)
-
-    payload = result.as_dict()
-    return JSONResponse(payload, 200 if result.executable else 422)
 
 
-async def _profile_datastream_mapping(request: Request) -> Response:
-    """POST /api/datastreams/{id}/mapping/profile -- physically profile fields and suggest roles."""
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    try:
-        body_bytes = await request.body()
-        body = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse({"code": "invalid_body", "message": str(exc)}, 400)
-    project_id = str(body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_field", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    sample_data = body.get("sample_data")
-    if sample_data is not None and not isinstance(sample_data, list):
-        return JSONResponse(
-            {"code": "invalid_field", "message": "sample_data doit être une liste"}, 400
-        )
-    if isinstance(sample_data, list) and len(sample_data) > 500:
-        return JSONResponse(
-            {"code": "too_many_rows", "message": "sample_data limité à 500 lignes"}, 400
-        )
-    field_records = body.get("field_records")
-    if field_records is not None and not isinstance(field_records, list):
-        return JSONResponse(
-            {"code": "invalid_field", "message": "field_records doit être une liste"}, 400
-        )
-    if isinstance(field_records, list) and len(field_records) > 200:
-        return JSONResponse(
-            {"code": "too_many_fields", "message": "field_records limité à 200 champs"}, 400
-        )
 
-    try:
-        from core.datastream_field_mapping import profile_fields  # noqa: PLC0415
-        from core.datastreams import get_datastream  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
 
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "member", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            ds = get_datastream(ds_id, project_id, conn)
-            if ds is None:
-                return JSONResponse({"code": "not_found", "message": "Flux introuvable"}, 404)
-
-            if (
-                field_records is None
-                and ds.get("connection_ref_id")
-                and ds.get("report_profile_id")
-            ):
-                from core.main import get_loaded_modules  # noqa: PLC0415
-                from core.source_capabilities import get_scoped_source_capabilities  # noqa: PLC0415
-
-                try:
-                    caps = get_scoped_source_capabilities(
-                        project_id=project_id,
-                        connection_ref_id=ds.get("connection_ref_id", ""),
-                        identity=identity or "anonymous",
-                        loaded_modules=get_loaded_modules(),
-                        conn=conn,
-                    )
-                    report = next(
-                        (
-                            r
-                            for r in caps.get("reports", [])
-                            if r.get("id") == ds.get("report_profile_id")
-                        ),
-                        None,
-                    )
-                    if report:
-                        field_records = report.get("field_catalog", [])
-                except Exception:
-                    pass
-
-            if not field_records:
-                field_records = []
-
-            known_target_fields = set()
-            with conn.cursor() as cur:
-                # Only approved fields are valid mapping targets (H1: draft fields
-                # must not appear as accepted targets in profile_fields/mapping validation).
-                cur.execute("SELECT name FROM app.target_fields WHERE status = 'approved'")
-                known_target_fields = {row[0] for row in cur.fetchall()}
-
-            result = profile_fields(
-                field_records=field_records,
-                sample_data=sample_data,
-                known_target_fields=known_target_fields,
-            )
-            return JSONResponse(result, 200)
-    except (TypeError, ValueError) as exc:
-        return JSONResponse({"code": "invalid_input", "message": str(exc)}, 400)
-    except Exception as exc:
-        logger.error("admin_api: profile_datastream_mapping_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Profilage indisponible"}, 503)
 
 
 async def _create_datastream_mapping_version(request: Request) -> Response:
-    """POST /api/datastreams/{id}/mapping/versions -- append immutable mapping version."""
+    """RETIREE par `26695dc`, et l arbitrage est CLOS (`e6e33d1`).
+    La route POST n'est pas remontee : ce handler garde la forme d'avant le
+    Workbench six onglets -- il appelle `save_field_mapping` avec
+    `advance_pointer` a son defaut `True`, donc il ACTIVERAIT la version
+    qu'il ajoute, ce que les deux appelants gouvernes refusent explicitement.
+    Le chemin qui repond aujourd'hui est `datastream_change.confirm_change`,
+    qui tourne dans `execute_operation`. Ses six tests sont en
+    `xfail(strict=True)` : un remontage les fait basculer en *unexpectedly
+    passing*. AD-43 : cette note vit ICI parce qu'elle vivait dans
+    `SESSIONS.md` et dans un commentaire de route, c'est-a-dire partout sauf
+    la ou on lit la fonction.
+
+    POST /api/datastreams/{id}/mapping/versions -- append immutable mapping version."""
     authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
     idempotency_key = (request.headers.get("Idempotency-Key") or "").strip()
     if not idempotency_key:
         return JSONResponse(
-            {"code": "missing_header", "message": "En-tête Idempotency-Key requis"},
+            {"code": "missing_header", "message": "Idempotency-Key header required"},
             400,
         )
     if len(idempotency_key) > 255:
         return JSONResponse(
-            {"code": "invalid_header", "message": "En-tête Idempotency-Key trop long (max 255)"},
+            {"code": "invalid_header", "message": "Idempotency-Key header is too long (max 255)"},
             400,
         )
 
@@ -12248,580 +2007,39 @@ async def _create_datastream_mapping_version(request: Request) -> Response:
         )
 
 
-async def _list_datastream_mapping_versions(request: Request) -> Response:
-    """GET /api/datastreams/{id}/mapping/versions -- list mapping versions."""
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    project_id = (request.query_params.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_param", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    try:
-        from core.datastream_field_mapping import (  # noqa: PLC0415
-            DatastreamMappingNotFound,
-            list_mapping_versions,
-        )
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "viewer", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            versions = list_mapping_versions(ds_id, project_id, conn)
-            return JSONResponse({"versions": versions}, 200)
-    except DatastreamMappingNotFound:
-        return JSONResponse({"code": "not_found", "message": "Flux introuvable"}, 404)
-    except Exception as exc:
-        logger.error("admin_api: list_datastream_mapping_versions_error: %s", exc)
-        return JSONResponse(
-            {"code": "unavailable", "message": "Lecture des versions indisponible"}, 503
-        )
 
 
-async def _get_datastream_mapping_version(request: Request) -> Response:
-    """GET /api/datastreams/{id}/mapping/versions/{ver} -- get single mapping version."""
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    project_id = (request.query_params.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_param", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    ver_spec = request.path_params.get("ver", "")
-    try:
-        from core.datastream_field_mapping import (  # noqa: PLC0415
-            DatastreamMappingNotFound,
-            get_mapping_version,
-        )
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "viewer", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            version = get_mapping_version(ds_id, project_id, ver_spec, conn)
-            return JSONResponse(version, 200)
-    except DatastreamMappingNotFound:
-        return JSONResponse({"code": "not_found", "message": "Version introuvable"}, 404)
-    except Exception as exc:
-        logger.error("admin_api: get_datastream_mapping_version_error: %s", exc)
-        return JSONResponse(
-            {"code": "unavailable", "message": "Lecture de la version indisponible"}, 503
-        )
 
 
-async def _compile_datastream_projection(request: Request) -> Response:
-    """POST /api/datastreams/{id}/projection/compile -- Story 12.4.
-
-    Compile a SAFE KPI projection plan from an immutable 12.3 mapping version.
-    Pure metadata over the mapping version + governed project preferences: it
-    NEVER publishes, moves no pointer, and performs no BigQuery write
-    (publication atomicity is 12.5). Member role required (viewer < member <
-    owner). A projection that fails any compile gate returns 422 with the
-    deterministic issue list and blocks publication semantics.
-
-    Body: {"project_id", "mapping_version" (spec or number, default 'latest'),
-           "dimension_projection" (optional field_id),
-           "connector_canonical_breakdown" (optional; the connector's current
-           canonical breakdown name -- required when dimension_projection is set,
-           else the projection is rejected governed_dim_shadows_canonical),
-           "approved" (optional)}.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    try:
-        body_bytes = await request.body()
-        body = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse({"code": "invalid_body", "message": str(exc)}, 400)
-    project_id = str(body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_field", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    version_spec = body.get("mapping_version")
-    dimension_projection = body.get("dimension_projection")
-    # The connector's CURRENT canonical breakdown partition name (what
-    # rollup.canonical_breakdown_per_connector / the dbt marts'
-    # MIN(breakdown_dimension) already pin -- e.g. 'country' for GA4/GSC). Passed
-    # in by the caller (Story 12.5 will derive it from the published fact); the
-    # compiler REJECTS a governed projection that would sort at/before it and
-    # re-pin canonical (governed_dim_shadows_canonical). Unknown => fail closed.
-    connector_canonical_breakdown = body.get("connector_canonical_breakdown")
-    approved = bool(body.get("approved", False))
-    try:
-        from core.datastream_field_mapping import (  # noqa: PLC0415
-            DatastreamMappingNotFound,
-            get_mapping_version,
-            list_mapping_versions,
-        )
-        from core.datastream_projection import (  # noqa: PLC0415
-            ProjectionCompileError,
-            compile_projection,
-        )
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "member", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-
-            if version_spec in (None, "", "latest"):
-                versions = list_mapping_versions(ds_id, project_id, conn)
-                if not versions:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "Aucune version de mapping"}, 404
-                    )
-                mapping_version = versions[0]  # newest-first
-            else:
-                mapping_version = get_mapping_version(ds_id, project_id, version_spec, conn)
-
-            # Governed project-scoped cardinality/scan thresholds (no hardcode).
-            preferences: dict = {}
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT max_projection_grain_cardinality, max_projection_scan_bytes
-                    FROM app.project_preferences
-                    WHERE project_id = %s
-                    """,
-                    (project_id,),
-                )
-                pref_row = cur.fetchone()
-                if pref_row is not None:
-                    preferences = {
-                        "max_projection_grain_cardinality": pref_row[0],
-                        "max_projection_scan_bytes": pref_row[1],
-                    }
-
-        plan = compile_projection(
-            mapping_version,
-            project_preferences=preferences,
-            dimension_projection=dimension_projection,
-            connector_canonical_breakdown=connector_canonical_breakdown,
-            approved=approved,
-        )
-        if not plan["executable"]:
-            return JSONResponse(
-                {"code": "projection_rejected", "issues": plan["issues"], "plan": plan},
-                422,
-            )
-        return JSONResponse(plan, 200)
-    except DatastreamMappingNotFound:
-        return JSONResponse({"code": "not_found", "message": "Version introuvable"}, 404)
-    except ProjectionCompileError as exc:
-        logger.error("admin_api: compile_datastream_projection_invalid: %s", exc)
-        return JSONResponse(
-            {"code": "unavailable", "message": "Compilation de projection indisponible"}, 503
-        )
-    except Exception as exc:
-        logger.error("admin_api: compile_datastream_projection_error: %s", exc)
-        return JSONResponse(
-            {"code": "unavailable", "message": "Compilation de projection indisponible"}, 503
-        )
 
 
 # ===========================================================================
 # Story 12.5: atomic candidate publication REST seams.
 #
 # create-execution (Member), state-advance (Member; publishing/published are
-# internal-only via commit_publication), publish (Member; Owner for approved /
-# force_empty_publish), reconcile (Owner), publication-log (Viewer), single
-# execution (Viewer). All reuse _require_datastream_role; cross-project returns a
-# non-disclosing 404 + audit. Opaque 5xx (no str(exc) leak).
+# internal-only via commit_publication), reconcile (Owner), publication-log
+# (Viewer), single execution (Viewer). All reuse _require_datastream_role;
+# cross-project returns a non-disclosing 404 + audit. Opaque 5xx (no str(exc)
+# leak).
+#
+# The direct POST .../executions/{exec_id}/publish route was retired by
+# 26695dcc (six-tab Workbench): ungoverned publication is closed, publishing
+# goes through the governed confirmation flow (core.governed_publication, the
+# project-scoped publish-confirmations/publish-activate routes). Its handler
+# (_publish_datastream_execution) was deleted with AI-126; the absence of the
+# route is pinned by test_datastream_activation.py::
+# test_unsafe_direct_publication_routes_are_not_mounted.
 # ===========================================================================
 
 
-async def _create_datastream_execution(request: Request) -> Response:
-    """POST /api/datastreams/{id}/executions (Member) -- create a candidate execution.
-
-    Body: {project_id, plan_version_id, mapping_version_id, projection_plan,
-           idempotency_key}. The projection_plan must be an executable 12.4 plan.
-    201 on success; 409 idempotency_conflict / concurrent_execution_active; 422
-    on validation failure.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    try:
-        body_bytes = await request.body()
-        body = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse({"code": "invalid_body", "message": str(exc)}, 400)
-    project_id = str(body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_field", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    plan_version_id = str(body.get("plan_version_id") or "").strip()
-    mapping_version_id = str(body.get("mapping_version_id") or "").strip()
-    projection_plan = body.get("projection_plan")
-    idempotency_key = str(
-        body.get("idempotency_key") or request.headers.get("Idempotency-Key") or ""
-    ).strip()
-    if not plan_version_id or not mapping_version_id or not isinstance(projection_plan, dict):
-        return JSONResponse(
-            {
-                "code": "missing_field",
-                "message": "plan_version_id, mapping_version_id et projection_plan sont requis",
-            },
-            422,
-        )
-
-    try:
-        from core.datastream_publication import (  # noqa: PLC0415
-            ConcurrentExecutionActive,
-            IdempotencyConflict,
-            InvalidReference,
-            PublicationError,
-            create_execution,
-        )
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "member", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            try:
-                record = create_execution(
-                    ds_id,
-                    project_id,
-                    plan_version_id,
-                    mapping_version_id,
-                    projection_plan,
-                    identity or "anonymous",
-                    idempotency_key,
-                    conn,
-                )
-                conn.commit()
-            except IdempotencyConflict:
-                conn.rollback()
-                return JSONResponse(
-                    {"code": "idempotency_conflict", "message": "Cle idempotente reutilisee"},
-                    409,
-                )
-            except ConcurrentExecutionActive as exc:
-                conn.rollback()
-                return JSONResponse(
-                    {
-                        "code": "concurrent_execution_active",
-                        "message": "Une execution est deja active",
-                        "blocking_execution_id": exc.blocking_execution_id,
-                    },
-                    409,
-                )
-            except InvalidReference as exc:
-                # Non-existent plan/mapping reference -> opaque, non-disclosing 422.
-                conn.rollback()
-                return JSONResponse({"code": exc.code, "message": "Reference invalide"}, 422)
-            except PublicationError as exc:
-                conn.rollback()
-                return JSONResponse({"code": exc.code, "message": "Requete invalide"}, 422)
-    except Exception as exc:
-        logger.error("admin_api: create_datastream_execution_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Publication indisponible"}, 503)
-    return JSONResponse(record, 201)
 
 
-async def _advance_datastream_execution_state(request: Request) -> Response:
-    """POST /api/datastreams/{id}/executions/{exec_id}/state (Member).
-
-    Body: {project_id, new_state, content_hash?, row_count?, error_code?,
-           error_detail?}. The publishing/published transitions are INTERNAL to
-    commit_publication and rejected here (a caller must use /publish).
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    try:
-        body_bytes = await request.body()
-        body = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse({"code": "invalid_body", "message": str(exc)}, 400)
-    project_id = str(body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_field", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    exec_id = request.path_params.get("exec_id", "")
-    new_state = str(body.get("new_state") or "").strip()
-    # publishing/published are internal-only (commit_publication owns the pointer).
-    if new_state in ("publishing", "published"):
-        return JSONResponse(
-            {
-                "code": "invalid_state_transition",
-                "message": "Utilisez /publish pour publier (transition interne)",
-            },
-            422,
-        )
-
-    try:
-        from core.datastream_publication import (  # noqa: PLC0415
-            ExecutionNotFound,
-            InvalidStateTransition,
-            advance_state,
-        )
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "member", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            try:
-                record = advance_state(
-                    exec_id,
-                    None,
-                    new_state,
-                    identity or "anonymous",
-                    conn,
-                    project_id=project_id,
-                    content_hash=body.get("content_hash"),
-                    row_count=body.get("row_count"),
-                    error_code=body.get("error_code"),
-                    error_detail=body.get("error_detail"),
-                )
-                conn.commit()
-            except ExecutionNotFound:
-                conn.rollback()
-                return JSONResponse({"code": "not_found", "message": "Execution introuvable"}, 404)
-            except InvalidStateTransition as exc:
-                conn.rollback()
-                return JSONResponse(
-                    {"code": exc.code, "message": "Transition d'etat invalide"}, 422
-                )
-    except Exception as exc:
-        logger.error("admin_api: advance_datastream_execution_state_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Publication indisponible"}, 503)
-    return JSONResponse(record, 200)
 
 
-async def _publish_datastream_execution(request: Request) -> Response:
-    """POST /api/datastreams/{id}/executions/{exec_id}/publish.
-
-    Member to publish; Owner required when approved=true or force_empty_publish=true.
-    Runs DQ gates then commit_publication. 200 with the publication result on
-    success; 422 with the gate issues on failure.
-
-    ATOMICITY NOTE: publish is NOT a single transaction end-to-end. The
-    validating->ready advance below COMMITS before commit_publication runs (two
-    separate commits). commit_publication ITSELF is atomic (its 4 writes land in one
-    transaction or none do). If the process dies after the validating->ready commit
-    but before/inside commit_publication, the execution is left at `ready` (or
-    `failed` via the out-of-band handler) and the prior published pointer is intact;
-    a retry simply re-publishes from `ready` (idempotent from that state).
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    try:
-        body_bytes = await request.body()
-        body = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse({"code": "invalid_body", "message": str(exc)}, 400)
-    project_id = str(body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_field", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    exec_id = request.path_params.get("exec_id", "")
-    approved = bool(body.get("approved", False))
-    force_empty_publish = bool(body.get("force_empty_publish", False))
-    # Owner is required to force-approve a gated operation.
-    minimum_role = "owner" if (approved or force_empty_publish) else "member"
-    try:
-        from core.datastream_publication import (  # noqa: PLC0415
-            STATE_READY,
-            STATE_VALIDATING,
-            ExecutionNotFound,
-            InvalidStateTransition,
-            PublicationError,
-            advance_state,
-            commit_publication,
-            run_dq_gates,
-        )
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, minimum_role, conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            try:
-                issues = run_dq_gates(
-                    exec_id,
-                    project_id,
-                    conn,
-                    approved=approved,
-                    force_empty_publish=force_empty_publish,
-                    validated_content_hash=body.get("validated_content_hash"),
-                    plan_source_schema_hash=body.get("plan_source_schema_hash"),
-                    current_capability_fingerprint=body.get("current_capability_fingerprint"),
-                    landing_schema_hash=body.get("landing_schema_hash"),
-                    plan_declared_schema_hash=body.get("plan_declared_schema_hash"),
-                )
-            except ExecutionNotFound:
-                return JSONResponse({"code": "not_found", "message": "Execution introuvable"}, 404)
-            if issues:
-                # Fail closed: mark the execution failed, leave prior pointer intact.
-                try:
-                    advance_state(
-                        exec_id,
-                        None,
-                        "failed",
-                        identity or "anonymous",
-                        conn,
-                        project_id=project_id,
-                        error_code=issues[0]["code"],
-                        error_detail=issues[0].get("detail", ""),
-                    )
-                    conn.commit()
-                except (InvalidStateTransition, ExecutionNotFound):
-                    conn.rollback()
-                return JSONResponse({"code": "dq_gate_failed", "issues": issues}, 422)
-
-            # Move validating -> ready if needed (idempotent guard), then commit.
-            try:
-                current = None
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT state FROM app.datastream_executions "
-                        "WHERE id = %s AND project_id = %s",
-                        (exec_id, project_id),
-                    )
-                    srow = cur.fetchone()
-                    current = srow[0] if srow is not None else None
-                if current == STATE_VALIDATING:
-                    advance_state(
-                        exec_id,
-                        STATE_VALIDATING,
-                        STATE_READY,
-                        identity or "anonymous",
-                        conn,
-                        project_id=project_id,
-                    )
-                    conn.commit()
-                result = commit_publication(exec_id, project_id, identity or "anonymous", conn)
-            except ExecutionNotFound:
-                conn.rollback()
-                return JSONResponse({"code": "not_found", "message": "Execution introuvable"}, 404)
-            except InvalidStateTransition as exc:
-                conn.rollback()
-                return JSONResponse(
-                    {"code": exc.code, "message": "Transition d'etat invalide"}, 422
-                )
-            except PublicationError as exc:
-                conn.rollback()
-                return JSONResponse({"code": exc.code, "message": "Publication refusee"}, 422)
-    except Exception as exc:
-        logger.error("admin_api: publish_datastream_execution_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Publication indisponible"}, 503)
-    return JSONResponse(result, 200)
 
 
-async def _reconcile_datastream_execution(request: Request) -> Response:
-    """POST /api/datastreams/{id}/executions/{exec_id}/reconcile (Owner)."""
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    try:
-        body_bytes = await request.body()
-        body = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse({"code": "invalid_body", "message": str(exc)}, 400)
-    project_id = str(body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_field", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    exec_id = request.path_params.get("exec_id", "")
-    try:
-        from core.datastream_publication import (  # noqa: PLC0415
-            ExecutionNotFound,
-            reconcile_execution,
-        )
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "owner", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            try:
-                result = reconcile_execution(exec_id, project_id, conn)
-            except ExecutionNotFound:
-                return JSONResponse({"code": "not_found", "message": "Execution introuvable"}, 404)
-    except Exception as exc:
-        logger.error("admin_api: reconcile_datastream_execution_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Reconciliation indisponible"}, 503)
-    return JSONResponse(result, 200)
 
 
-async def _list_datastream_publications(request: Request) -> Response:
-    """GET /api/datastreams/{id}/publications?project_id=<id> (Viewer)."""
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    project_id = (request.query_params.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_param", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    try:
-        from core.datastream_publication import get_publication_log  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "viewer", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            rows = get_publication_log(ds_id, project_id, conn)
-    except Exception as exc:
-        logger.error("admin_api: list_datastream_publications_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Journal indisponible"}, 503)
-    return JSONResponse({"publications": rows})
-
-
-async def _get_datastream_execution(request: Request) -> Response:
-    """GET /api/datastreams/{id}/executions/{exec_id}?project_id=<id> (Viewer)."""
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    project_id = (request.query_params.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_param", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    exec_id = request.path_params.get("exec_id", "")
-    try:
-        from core.datastream_publication import (  # noqa: PLC0415
-            ExecutionNotFound,
-            get_execution,
-        )
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "viewer", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            try:
-                record = get_execution(exec_id, project_id, conn)
-            except ExecutionNotFound:
-                return JSONResponse({"code": "not_found", "message": "Execution introuvable"}, 404)
-    except Exception as exc:
-        logger.error("admin_api: get_datastream_execution_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Execution indisponible"}, 503)
-    return JSONResponse(record, 200)
 
 
 # ===========================================================================
@@ -12838,1291 +2056,8 @@ async def _get_datastream_execution(request: Request) -> Response:
 # ===========================================================================
 
 
-def _load_external_object(conn, ds_id: str, project_id: str, plan_version_id: str):
-    """Read source.external_object from a pinned plan version (project-scoped).
 
-    Returns the external_object dict, or None when the plan version is absent in
-    this (datastream, project) scope or is not an external_bq source. Mirrors the
-    inline scoped SELECT the publish handler uses -- no new module seam invented.
-    """
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT normalized_payload
-            FROM app.datastream_plan_versions
-            WHERE id = %s AND datastream_id = %s AND project_id = %s
-            """,
-            (plan_version_id, ds_id, project_id),
-        )
-        row = cur.fetchone()
-    if row is None:
-        return None
-    payload = row[0]
-    if isinstance(payload, str):
-        try:
-            payload = json.loads(payload)
-        except (TypeError, ValueError):
-            return None
-    if not isinstance(payload, dict):
-        return None
-    source = payload.get("source")
-    if not isinstance(source, dict):
-        return None
-    external_object = source.get("external_object")
-    return external_object if isinstance(external_object, dict) else None
 
-
-async def _observe_datastream(request: Request) -> Response:
-    """POST /api/datastreams/{id}/observe (Member) -- Story 12.7.
-
-    Body: {project_id, plan_version_id, mapping_version_id, projection_plan,
-           probe_result, project_region?, expected_content_hash?, idempotency_key}.
-    On a fresh `ok` verdict: 201 {verdict:"ok", execution, virtual_pull_commit,
-    observation}. On a blocking verdict / unchanged_noop: 200 {verdict,
-    observation, repair?} (the published pointer is left untouched). Concurrent /
-    idempotency conflicts -> 409; invalid reference / publication error -> 422.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    try:
-        body_bytes = await request.body()
-        body = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse({"code": "invalid_body", "message": str(exc)}, 400)
-    project_id = str(body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_field", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    plan_version_id = str(body.get("plan_version_id") or "").strip()
-    mapping_version_id = str(body.get("mapping_version_id") or "").strip()
-    projection_plan = body.get("projection_plan")
-    probe_result = body.get("probe_result")
-    idempotency_key = str(
-        body.get("idempotency_key") or request.headers.get("Idempotency-Key") or ""
-    ).strip()
-    if (
-        not plan_version_id
-        or not mapping_version_id
-        or not isinstance(projection_plan, dict)
-        or not isinstance(probe_result, dict)
-    ):
-        return JSONResponse(
-            {
-                "code": "missing_field",
-                "message": (
-                    "plan_version_id, mapping_version_id, projection_plan et "
-                    "probe_result sont requis"
-                ),
-            },
-            422,
-        )
-
-    try:
-        from core.datastream_publication import (  # noqa: PLC0415
-            ConcurrentExecutionActive,
-            IdempotencyConflict,
-            InvalidReference,
-            PublicationError,
-        )
-        from core.db import get_connection  # noqa: PLC0415
-        from core.external_bq_registration import (  # noqa: PLC0415
-            BLOCKING_VERDICTS,
-            ObservationInputError,
-            observe_and_register,
-        )
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "member", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            external_object = _load_external_object(conn, ds_id, project_id, plan_version_id)
-            if external_object is None:
-                # Non-disclosing: unknown plan version / not an external_bq source.
-                return JSONResponse(
-                    {"code": "not_found", "message": "Flux de donnees introuvable"}, 404
-                )
-            try:
-                result = observe_and_register(
-                    datastream_id=ds_id,
-                    project_id=project_id,
-                    external_object=external_object,
-                    plan_version_id=plan_version_id,
-                    mapping_version_id=mapping_version_id,
-                    projection_plan=projection_plan,
-                    probe_result=probe_result,
-                    actor=identity or "anonymous",
-                    idempotency_key=idempotency_key,
-                    conn=conn,
-                    project_region=body.get("project_region"),
-                    expected_content_hash=body.get("expected_content_hash"),
-                )
-                conn.commit()
-            except IdempotencyConflict:
-                conn.rollback()
-                return JSONResponse(
-                    {"code": "idempotency_conflict", "message": "Cle idempotente reutilisee"},
-                    409,
-                )
-            except ConcurrentExecutionActive as exc:
-                conn.rollback()
-                return JSONResponse(
-                    {
-                        "code": "concurrent_execution_active",
-                        "message": "Une execution est deja active",
-                        "blocking_execution_id": exc.blocking_execution_id,
-                    },
-                    409,
-                )
-            except InvalidReference as exc:
-                conn.rollback()
-                return JSONResponse({"code": exc.code, "message": "Reference invalide"}, 422)
-            except ObservationInputError:
-                conn.rollback()
-                return JSONResponse(
-                    {"code": "invalid_observation", "message": "Observation invalide"}, 422
-                )
-            except PublicationError as exc:
-                conn.rollback()
-                return JSONResponse({"code": exc.code, "message": "Requete invalide"}, 422)
-    except Exception as exc:
-        logger.error("admin_api: observe_datastream_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Observation indisponible"}, 503)
-
-    verdict = result.get("verdict")
-    # Fresh, changed, ok content minted a virtual pull commit + a 12.5 candidate.
-    if verdict == "ok" and result.get("execution") is not None:
-        return JSONResponse(result, 201)
-    # A blocking verdict or an unchanged no-op leaves the published pointer intact:
-    # 200 with the observation (+ repair on a blocking verdict), no execution.
-    response: dict = {"verdict": verdict, "observation": result.get("observation")}
-    observation = result.get("observation")
-    if isinstance(observation, dict) and observation.get("repair"):
-        response["repair"] = observation["repair"]
-    elif verdict in BLOCKING_VERDICTS and "repair" in result:
-        response["repair"] = result["repair"]
-    return JSONResponse(response, 200)
-
-
-# ===========================================================================
-# Story 12.8: managed-feed imports through an immutable import ledger.
-#
-# open-import (Member), record-rows (Member), publish (Member; runs the blocking
-# rejection gate + the 12.5 DQ gates/commit before marking the ledger published),
-# list-ledger (Viewer), get-ledger (Viewer), rejected-rows (Viewer). All reuse
-# _require_datastream_role; cross-project returns a non-disclosing 404 + audit.
-# ManagedFeedError subclasses map to typed HTTP codes; the generic base maps by
-# .code. Opaque 5xx (no str(exc) leak).
-# ===========================================================================
-
-
-def _managed_feed_error_response(exc) -> Response | None:
-    """Map a ManagedFeedError to its typed HTTP response, or None if unmapped.
-
-    Import-side exceptions are mapped by TYPE; the generic ManagedFeedError base is
-    mapped by its stable ``.code`` (content_hash_mismatch / invalid_landing_relation
-    / invalid_row_count -> 422). Returns None for an unrecognised code so the caller
-    can fall through to an opaque 503.
-    """
-    from core.managed_feed_ledger import (  # noqa: PLC0415
-        ImportInProgress,
-        ImportPayloadConflict,
-        InvalidFeedFormat,
-        LedgerNotFound,
-        LedgerTerminal,
-        RejectionThresholdExceeded,
-    )
-
-    if isinstance(exc, ImportPayloadConflict):
-        return JSONResponse({"code": exc.code, "message": "Charge utile en conflit"}, 409)
-    if isinstance(exc, ImportInProgress):
-        return JSONResponse({"code": exc.code, "message": "Import deja en cours"}, 409)
-    if isinstance(exc, LedgerTerminal):
-        return JSONResponse({"code": exc.code, "message": "Import deja termine"}, 409)
-    if isinstance(exc, InvalidFeedFormat):
-        return JSONResponse({"code": exc.code, "message": "Format de flux invalide"}, 422)
-    if isinstance(exc, RejectionThresholdExceeded):
-        return JSONResponse({"code": exc.code, "issue": exc.issue}, 422)
-    if isinstance(exc, LedgerNotFound):
-        return JSONResponse({"code": "not_found", "message": "Import introuvable"}, 404)
-    # Generic ManagedFeedError -> map by stable code.
-    code = getattr(exc, "code", "")
-    if code in ("content_hash_mismatch", "invalid_landing_relation", "invalid_row_count"):
-        return JSONResponse({"code": code, "message": "Requete invalide"}, 422)
-    return None
-
-
-async def _open_managed_feed_import(request: Request) -> Response:
-    """POST /api/datastreams/{id}/managed-feed/imports (Member) -- Story 12.8.
-
-    Body: {project_id, plan_version_id, mapping_version_id, feed_format,
-           projection_plan, idempotency_key, source_metadata, content_hash?,
-           write_mode?}. 201 {ledger, execution, no_op, replay}.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    try:
-        body_bytes = await request.body()
-        body = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse({"code": "invalid_body", "message": str(exc)}, 400)
-    project_id = str(body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_field", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    plan_version_id = str(body.get("plan_version_id") or "").strip()
-    mapping_version_id = str(body.get("mapping_version_id") or "").strip()
-    feed_format = str(body.get("feed_format") or "").strip()
-    projection_plan = body.get("projection_plan")
-    source_metadata = body.get("source_metadata")
-    idempotency_key = str(
-        body.get("idempotency_key") or request.headers.get("Idempotency-Key") or ""
-    ).strip()
-    if (
-        not plan_version_id
-        or not mapping_version_id
-        or not feed_format
-        or not isinstance(projection_plan, dict)
-        or not isinstance(source_metadata, dict)
-    ):
-        return JSONResponse(
-            {
-                "code": "missing_field",
-                "message": (
-                    "plan_version_id, mapping_version_id, feed_format, "
-                    "projection_plan et source_metadata sont requis"
-                ),
-            },
-            422,
-        )
-    write_mode = str(body.get("write_mode") or "replace").strip()
-    try:
-        from core.datastream_publication import (  # noqa: PLC0415
-            InvalidReference,
-            PublicationError,
-        )
-        from core.db import get_connection  # noqa: PLC0415
-        from core.managed_feed_ledger import ManagedFeedError, open_import  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "member", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            try:
-                result = open_import(
-                    datastream_id=ds_id,
-                    project_id=project_id,
-                    plan_version_id=plan_version_id,
-                    mapping_version_id=mapping_version_id,
-                    feed_format=feed_format,
-                    projection_plan=projection_plan,
-                    actor=identity or "anonymous",
-                    idempotency_key=idempotency_key,
-                    source_metadata=source_metadata,
-                    content_hash=body.get("content_hash"),
-                    conn=conn,
-                    write_mode=write_mode,
-                )
-                conn.commit()
-            except ManagedFeedError as exc:
-                conn.rollback()
-                mapped = _managed_feed_error_response(exc)
-                if mapped is not None:
-                    return mapped
-                raise
-            except InvalidReference as exc:
-                conn.rollback()
-                return JSONResponse({"code": exc.code, "message": "Reference invalide"}, 422)
-            except PublicationError as exc:
-                conn.rollback()
-                return JSONResponse({"code": exc.code, "message": "Requete invalide"}, 422)
-    except Exception as exc:
-        logger.error("admin_api: open_managed_feed_import_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Import indisponible"}, 503)
-    return JSONResponse(result, 201)
-
-
-async def _record_managed_feed_rows(request: Request) -> Response:
-    """POST /api/datastreams/{id}/managed-feed/imports/{ledger_id}/rows (Member).
-
-    Body: {project_id, landing_relation, accepted_row_count, content_hash,
-           rejected_rows[]}. 200 with the updated ledger row.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    try:
-        body_bytes = await request.body()
-        body = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse({"code": "invalid_body", "message": str(exc)}, 400)
-    project_id = str(body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_field", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    ledger_id = request.path_params.get("ledger_id", "")
-    landing_relation = str(body.get("landing_relation") or "").strip()
-    content_hash = str(body.get("content_hash") or "").strip()
-    accepted_row_count = body.get("accepted_row_count")
-    rejected_rows = body.get("rejected_rows")
-    if not landing_relation or not content_hash or not isinstance(accepted_row_count, int):
-        return JSONResponse(
-            {
-                "code": "missing_field",
-                "message": ("landing_relation, accepted_row_count et content_hash sont requis"),
-            },
-            422,
-        )
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-        from core.managed_feed_ledger import ManagedFeedError, record_rows  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "member", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            try:
-                ledger = record_rows(
-                    ledger_id=ledger_id,
-                    project_id=project_id,
-                    landing_relation=landing_relation,
-                    accepted_row_count=accepted_row_count,
-                    content_hash=content_hash,
-                    rejected_rows=rejected_rows,
-                    actor=identity or "anonymous",
-                    conn=conn,
-                )
-                conn.commit()
-            except ManagedFeedError as exc:
-                conn.rollback()
-                mapped = _managed_feed_error_response(exc)
-                if mapped is not None:
-                    return mapped
-                raise
-    except Exception as exc:
-        logger.error("admin_api: record_managed_feed_rows_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Import indisponible"}, 503)
-    return JSONResponse(ledger, 200)
-
-
-async def _publish_managed_feed_import(request: Request) -> Response:
-    """POST /api/datastreams/{id}/managed-feed/imports/{ledger_id}/publish (Member).
-
-    Runs the blocking rejection gate (422 with the issue when breached), else
-    advances the 12.5 candidate validating->ready, runs the DQ gates,
-    commit_publication, then marks the ledger row published. 200 with the ledger.
-
-    ATOMICITY NOTE: mirrors _publish_datastream_execution -- the validating->ready
-    advance commits before commit_publication (which is itself atomic); a crash in
-    between leaves the candidate at `ready` and the prior published pointer intact,
-    and a retry re-publishes idempotently.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    try:
-        body_bytes = await request.body()
-        body = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse({"code": "invalid_body", "message": str(exc)}, 400)
-    project_id = str(body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_field", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    ledger_id = request.path_params.get("ledger_id", "")
-    try:
-        from core.datastream_publication import (  # noqa: PLC0415
-            STATE_READY,
-            STATE_VALIDATING,
-            ExecutionNotFound,
-            InvalidStateTransition,
-            PublicationError,
-            advance_state,
-            commit_publication,
-            run_dq_gates,
-        )
-        from core.db import get_connection  # noqa: PLC0415
-        from core.managed_feed_ledger import (  # noqa: PLC0415
-            OUTCOME_PUBLISHED,
-            ManagedFeedError,
-            evaluate_rejection_gate_for_ledger,
-            get_ledger,
-            mark_outcome,
-        )
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "member", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            try:
-                # 1) Blocking rejection-threshold gate -- fail closed, no publish.
-                issue = evaluate_rejection_gate_for_ledger(ledger_id, project_id, conn)
-                if issue is not None:
-                    return JSONResponse({"code": issue["code"], "issue": issue}, 422)
-
-                ledger = get_ledger(ledger_id, project_id, conn)
-                exec_id = ledger.get("execution_id")
-                if not exec_id:
-                    return JSONResponse(
-                        {"code": "no_candidate", "message": "Aucune execution a publier"},
-                        422,
-                    )
-
-                # 2) 12.5 DQ gates.
-                gate_issues = run_dq_gates(exec_id, project_id, conn)
-                if gate_issues:
-                    return JSONResponse({"code": "dq_gate_failed", "issues": gate_issues}, 422)
-
-                # 3) Advance validating->ready (idempotent guard) then publish.
-                current = None
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT state FROM app.datastream_executions "
-                        "WHERE id = %s AND project_id = %s",
-                        (exec_id, project_id),
-                    )
-                    srow = cur.fetchone()
-                    current = srow[0] if srow is not None else None
-                if current == STATE_VALIDATING:
-                    advance_state(
-                        exec_id,
-                        STATE_VALIDATING,
-                        STATE_READY,
-                        identity or "anonymous",
-                        conn,
-                        project_id=project_id,
-                    )
-                    conn.commit()
-                commit_publication(exec_id, project_id, identity or "anonymous", conn)
-
-                # 4) Mirror the published outcome onto the ledger (freshness contract).
-                ledger = mark_outcome(
-                    ledger_id, project_id, OUTCOME_PUBLISHED, identity or "anonymous", conn
-                )
-                conn.commit()
-            except ExecutionNotFound:
-                conn.rollback()
-                return JSONResponse({"code": "not_found", "message": "Execution introuvable"}, 404)
-            except InvalidStateTransition as exc:
-                conn.rollback()
-                return JSONResponse(
-                    {"code": exc.code, "message": "Transition d'etat invalide"}, 422
-                )
-            except PublicationError as exc:
-                conn.rollback()
-                return JSONResponse({"code": exc.code, "message": "Publication refusee"}, 422)
-            except ManagedFeedError as exc:
-                conn.rollback()
-                mapped = _managed_feed_error_response(exc)
-                if mapped is not None:
-                    return mapped
-                raise
-    except Exception as exc:
-        logger.error("admin_api: publish_managed_feed_import_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Publication indisponible"}, 503)
-    return JSONResponse(ledger, 200)
-
-
-async def _list_managed_feed_imports(request: Request) -> Response:
-    """GET /api/datastreams/{id}/managed-feed/imports?project_id=<id> (Viewer)."""
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    project_id = (request.query_params.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_param", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-        from core.managed_feed_ledger import list_ledger  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "viewer", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            rows = list_ledger(ds_id, project_id, conn)
-    except Exception as exc:
-        logger.error("admin_api: list_managed_feed_imports_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Journal indisponible"}, 503)
-    return JSONResponse({"imports": rows})
-
-
-async def _get_managed_feed_import(request: Request) -> Response:
-    """GET /api/datastreams/{id}/managed-feed/imports/{ledger_id}?project_id=<id> (Viewer)."""
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    project_id = (request.query_params.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_param", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    ledger_id = request.path_params.get("ledger_id", "")
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-        from core.managed_feed_ledger import (  # noqa: PLC0415
-            LedgerNotFound,
-            get_ledger,
-        )
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "viewer", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            try:
-                ledger = get_ledger(ledger_id, project_id, conn)
-            except LedgerNotFound:
-                return JSONResponse({"code": "not_found", "message": "Import introuvable"}, 404)
-    except Exception as exc:
-        logger.error("admin_api: get_managed_feed_import_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Import indisponible"}, 503)
-    return JSONResponse(ledger, 200)
-
-
-async def _get_managed_feed_rejected_rows(request: Request) -> Response:
-    """GET managed-feed rejected-rows (project_id/limit/offset query params; Viewer)."""
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    project_id = (request.query_params.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_param", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    ledger_id = request.path_params.get("ledger_id", "")
-    try:
-        limit = int(request.query_params.get("limit") or 1000)
-    except (TypeError, ValueError):
-        limit = 1000
-    try:
-        offset = int(request.query_params.get("offset") or 0)
-    except (TypeError, ValueError):
-        offset = 0
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-        from core.managed_feed_ledger import get_rejected_rows  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "viewer", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            rows = get_rejected_rows(ledger_id, project_id, conn, limit=limit, offset=offset)
-    except Exception as exc:
-        logger.error("admin_api: get_managed_feed_rejected_rows_error: %s", exc)
-        return JSONResponse(
-            {"code": "unavailable", "message": "Lignes rejetees indisponibles"}, 503
-        )
-    return JSONResponse({"rejected_rows": rows})
-
-
-# ===========================================================================
-# Story 12.9: CSV / Excel governed import.
-#
-# preview (Member), confirm-import (Member; Owner when force_empty_publish),
-# version-contract PUT (Member), list/get import-contracts (Viewer). All reuse
-# _require_datastream_role; cross-project returns a non-disclosing 404 + audit.
-#
-# UPLOAD TRANSPORT NOTE: the story's INTEGRATION SPEC sketches a multipart form,
-# but server/core has no multipart/upload helper (mediaplan_api documents the same
-# gap and uses a base64 JSON body). To match the file's convention EXACTLY and add
-# no new dependency, the upload bytes ride in a base64 ``file_base64`` JSON field.
-# The parse/ledger code is byte-oriented, so the transport is orthogonal. The
-# short-lived upload-slot mechanism (Route 2 in the SPEC) stays Phase B; for now
-# the confirm route re-sends the same base64 bytes.
-# ===========================================================================
-
-
-def _decode_upload_bytes(body: dict) -> tuple[bytes | None, Response | None]:
-    """Decode the base64 ``file_base64`` upload field, capped BEFORE materialising.
-
-    Returns ``(data, None)`` on success or ``(None, error_response)`` on a malformed
-    / oversized / missing field. The size cap mirrors csv_excel_import.MAX_FILE_BYTES
-    (50 MB) and is enforced on the base64 string first (never build a bomb buffer),
-    then re-checked on the decoded bytes.
-    """
-    import base64  # noqa: PLC0415
-
-    from core.csv_excel_import import MAX_FILE_BYTES  # noqa: PLC0415
-
-    raw = body.get("file_base64")
-    if not isinstance(raw, str) or not raw.strip():
-        return None, JSONResponse(
-            {"code": "missing_field", "message": "file_base64 est requis"}, 422
-        )
-    # Cap the base64 length first (base64 is ~4/3 the decoded size).
-    if len(raw) > MAX_FILE_BYTES // 3 * 4 + 8:
-        return None, JSONResponse(
-            {"code": "file_too_large", "message": "Fichier trop volumineux (max 50 Mo)"}, 422
-        )
-
-    try:
-        data = base64.b64decode(raw, validate=True)
-    except Exception:
-        return None, JSONResponse(
-            {"code": "invalid_body", "message": "file_base64 n'est pas du base64 valide"}, 422
-        )
-    if len(data) > MAX_FILE_BYTES:
-        return None, JSONResponse(
-            {"code": "file_too_large", "message": "Fichier trop volumineux (max 50 Mo)"}, 422
-        )
-    return data, None
-
-
-def _csv_excel_error_response(exc) -> Response | None:
-    """Map a CsvExcelImportError to its stable ``.code`` -> HTTP (all 422), or None.
-
-    Every parse / contract failure in Story 12.9 is a 422 (client-side data or
-    configuration error): unsupported_file_type, empty_file, file_too_large,
-    encoding_error, duplicate_columns, no_header_row, formula_in_cells,
-    invalid_import_contract, append_unavailable, and the generic base by ``.code``.
-    Returns None for an unrecognised type so the caller falls through to an opaque 503.
-    """
-    from core.csv_excel_import import CsvExcelImportError  # noqa: PLC0415
-
-    if isinstance(exc, CsvExcelImportError):
-        return JSONResponse(
-            {"code": getattr(exc, "code", "invalid_import"), "message": str(exc)}, 422
-        )
-    return None
-
-
-async def _preview_csv_excel_import(request: Request) -> Response:
-    """POST /api/datastreams/{id}/imports/preview (Member) -- Story 12.9.
-
-    Body: {project_id, file_base64, filename?, contract?}. Builds a bounded preview
-    WITHOUT publishing or opening a ledger row. 200 with the preview dict (format,
-    encoding, delimiter, sheet_name, columns, row_count, rejected_count,
-    preview_rows, content_hash). Parse / contract errors -> 422 (stable code).
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    try:
-        body_bytes = await request.body()
-        body = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse({"code": "invalid_body", "message": str(exc)}, 400)
-    project_id = str(body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_field", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    data, dec_error = _decode_upload_bytes(body)
-    if dec_error is not None:
-        return dec_error
-    contract = body.get("contract") if isinstance(body.get("contract"), dict) else None
-    filename = body.get("filename")
-    try:
-        from dataclasses import asdict  # noqa: PLC0415
-
-        from core.csv_excel_import import build_preview  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "member", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            try:
-                preview = build_preview(data, filename=filename, contract=contract)
-            except Exception as exc:  # noqa: BLE001 - mapped to a stable 422 below.
-                mapped = _csv_excel_error_response(exc)
-                if mapped is not None:
-                    return mapped
-                raise
-    except Exception as exc:
-        logger.error("admin_api: preview_csv_excel_import_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Aperçu indisponible"}, 503)
-    return JSONResponse(asdict(preview), 200)
-
-
-async def _confirm_csv_excel_import(request: Request) -> Response:
-    """POST /api/datastreams/{id}/imports (Member; Owner on force_empty_publish).
-
-    Story 12.9. Body: {project_id, plan_version_id, mapping_version_id,
-    projection_plan, idempotency_key, source_metadata, contract, file_base64,
-    import_contract_id?, force_empty_publish?, raw_schema?}. Drives run_import
-    (open_import + record_rows + rejection gate). 200 with the run result (may be
-    no-op / blocked / written_pending_publication). AppendUnavailable / parse error /
-    empty-blocked -> 422; ImportPayloadConflict / ImportInProgress -> 409.
-
-    RBAC: Member floor for the recoverable action; force_empty_publish additionally
-    requires Owner (mirrors the publish route's owner-on-force pattern).
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    try:
-        body_bytes = await request.body()
-        body = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse({"code": "invalid_body", "message": str(exc)}, 400)
-    project_id = str(body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_field", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    plan_version_id = str(body.get("plan_version_id") or "").strip()
-    mapping_version_id = str(body.get("mapping_version_id") or "").strip()
-    projection_plan = body.get("projection_plan")
-    source_metadata = body.get("source_metadata")
-    contract = body.get("contract")
-    idempotency_key = str(
-        body.get("idempotency_key") or request.headers.get("Idempotency-Key") or ""
-    ).strip()
-    force_empty_publish = bool(body.get("force_empty_publish", False))
-    if (
-        not plan_version_id
-        or not mapping_version_id
-        or not isinstance(projection_plan, dict)
-        or not isinstance(source_metadata, dict)
-        or not isinstance(contract, dict)
-    ):
-        return JSONResponse(
-            {
-                "code": "missing_field",
-                "message": (
-                    "plan_version_id, mapping_version_id, projection_plan, "
-                    "source_metadata et contract sont requis"
-                ),
-            },
-            422,
-        )
-    data, dec_error = _decode_upload_bytes(body)
-    if dec_error is not None:
-        return dec_error
-    try:
-        from core.csv_excel_import import (  # noqa: PLC0415
-            AppendUnavailable,
-            CsvExcelImportError,
-            run_import,
-        )
-        from core.db import get_connection  # noqa: PLC0415
-        from core.managed_feed_ledger import (  # noqa: PLC0415
-            ImportInProgress,
-            ImportPayloadConflict,
-        )
-
-        with get_connection() as conn:
-            # Member floor for the recoverable action; Owner floor when forcing an
-            # empty publish (mirrors _publish_datastream_execution's owner-on-force).
-            minimum_role = "owner" if force_empty_publish else "member"
-            role_error = _require_datastream_role(
-                project_id, identity, minimum_role, conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            # Read the project empty-publication preference (fail closed to False).
-            preferences = {
-                "allow_empty_publication": _read_allow_empty_publication_pref(conn, project_id)
-            }
-            try:
-                result = run_import(
-                    data,
-                    datastream_id=ds_id,
-                    project_id=project_id,
-                    plan_version_id=plan_version_id,
-                    mapping_version_id=mapping_version_id,
-                    projection_plan=projection_plan,
-                    actor=identity or "anonymous",
-                    idempotency_key=idempotency_key,
-                    source_metadata=source_metadata,
-                    contract=contract,
-                    conn=conn,
-                    raw_schema=body.get("raw_schema"),
-                    force_empty_publish=force_empty_publish,
-                    preferences=preferences,
-                )
-                conn.commit()
-            except AppendUnavailable as exc:
-                conn.rollback()
-                return JSONResponse({"code": "append_unavailable", "message": str(exc)}, 422)
-            except (ImportPayloadConflict, ImportInProgress) as exc:
-                conn.rollback()
-                mapped = _managed_feed_error_response(exc)
-                if mapped is not None:
-                    return mapped
-                raise
-            except CsvExcelImportError as exc:
-                conn.rollback()
-                mapped = _csv_excel_error_response(exc)
-                if mapped is not None:
-                    return mapped
-                raise
-    except Exception as exc:
-        logger.error("admin_api: confirm_csv_excel_import_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Import indisponible"}, 503)
-    return JSONResponse(result, 200)
-
-
-def _read_allow_empty_publication_pref(conn, project_id: str) -> bool:
-    """Read the project-scoped ``allow_empty_publication`` preference (fail closed).
-
-    Mirrors csv_excel_import / google_sheets_sync's read; defaults to False when the
-    row / column is absent (the documented default).
-    """
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT allow_empty_publication FROM app.project_preferences WHERE project_id = %s",
-                (project_id,),
-            )
-            row = cur.fetchone()
-    except Exception:  # noqa: BLE001 - fail closed on any read error.
-        return False
-    if row is None or row[0] is None:
-        return False
-    return bool(row[0])
-
-
-async def _put_import_contract(request: Request) -> Response:
-    """PUT /api/datastreams/{id}/import-contracts (Member) -- Story 12.9.
-
-    Body: {project_id, contract, label?}. Versions (or de-duplicates) the parsing
-    contract via version_contract; returns the cic_<ULID> id (existing on a matching
-    fingerprint). 200 {import_contract_id}. invalid_import_contract / append_unavailable
-    -> 422.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    try:
-        body_bytes = await request.body()
-        body = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse({"code": "invalid_body", "message": str(exc)}, 400)
-    project_id = str(body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_field", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    contract = body.get("contract")
-    if not isinstance(contract, dict):
-        return JSONResponse({"code": "missing_field", "message": "contract est requis"}, 422)
-    label = body.get("label")
-    try:
-        from core.csv_excel_import import version_contract  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "member", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            try:
-                contract_id = version_contract(
-                    contract,
-                    datastream_id=ds_id,
-                    project_id=project_id,
-                    actor=identity or "anonymous",
-                    conn=conn,
-                    label=label,
-                )
-                conn.commit()
-            except Exception as exc:  # noqa: BLE001 - mapped to a stable 422 below.
-                conn.rollback()
-                mapped = _csv_excel_error_response(exc)
-                if mapped is not None:
-                    return mapped
-                raise
-    except Exception as exc:
-        logger.error("admin_api: put_import_contract_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Contrat indisponible"}, 503)
-    return JSONResponse({"import_contract_id": contract_id}, 200)
-
-
-async def _list_import_contracts(request: Request) -> Response:
-    """GET /api/datastreams/{id}/import-contracts?project_id=<id> (Viewer)."""
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    project_id = (request.query_params.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_param", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "viewer", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id, datastream_id, project_id, fingerprint, format,
-                           write_mode, contract, label, is_active, created_by,
-                           created_at
-                    FROM app.csv_excel_import_contracts
-                    WHERE datastream_id = %s AND project_id = %s
-                    ORDER BY created_at DESC
-                    """,
-                    (ds_id, project_id),
-                )
-                cols = [d[0] for d in cur.description]
-                contracts = [_import_contract_row_to_dict(cols, row) for row in cur.fetchall()]
-    except Exception as exc:
-        logger.error("admin_api: list_import_contracts_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Contrats indisponibles"}, 503)
-    return JSONResponse({"contracts": contracts})
-
-
-async def _get_import_contract(request: Request) -> Response:
-    """GET /api/datastreams/{id}/import-contracts/{contract_id}?project_id=<id> (Viewer)."""
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    project_id = (request.query_params.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_param", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    contract_id = request.path_params.get("contract_id", "")
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "viewer", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id, datastream_id, project_id, fingerprint, format,
-                           write_mode, contract, label, is_active, created_by,
-                           created_at
-                    FROM app.csv_excel_import_contracts
-                    WHERE id = %s AND datastream_id = %s AND project_id = %s
-                    """,
-                    (contract_id, ds_id, project_id),
-                )
-                row = cur.fetchone()
-                if row is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "Contrat introuvable"}, 404
-                    )
-                cols = [d[0] for d in cur.description]
-                contract = _import_contract_row_to_dict(cols, row)
-    except Exception as exc:
-        logger.error("admin_api: get_import_contract_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Contrat indisponible"}, 503)
-    return JSONResponse(contract, 200)
-
-
-def _import_contract_row_to_dict(cols: list[str], row: tuple) -> dict:
-    """Serialise an app.csv_excel_import_contracts row (ISO-8601 for timestamps)."""
-    record: dict = {}
-    for col, val in zip(cols, row):
-        if col == "created_at" and val is not None and hasattr(val, "isoformat"):
-            record[col] = val.isoformat()
-        else:
-            record[col] = val
-    return record
-
-
-# ===========================================================================
-# Story 12.10: Google Sheets recurring sync (managed-feed sync schedule).
-#
-# configure (Member; upsert schedule), sync-now (Member; manual run), status
-# (Viewer; schedule + last runs + next run). All reuse _require_datastream_role;
-# cross-project returns a non-disclosing 404 + audit.
-#
-# PHASE_B_LIVE_BLOCKED: the production 15.6 sheets_adapter (live Google OAuth) is
-# not available in this environment. sync-now injects None, so run_sync raises
-# NotImplementedError -> mapped to a 503 with the PHASE_B_LIVE_BLOCKED marker. The
-# one-line adapter injection is the documented Phase-B wiring (Open Questions #1).
-# ===========================================================================
-
-
-def _sync_schedule_row_to_dict(cols: list[str], row: tuple) -> dict:
-    """Serialise an app.managed_feed_sync_schedule row (ISO-8601 for timestamps)."""
-    record: dict = {}
-    for col, val in zip(cols, row):
-        if val is not None and hasattr(val, "isoformat"):
-            record[col] = val.isoformat()
-        else:
-            record[col] = val
-    return record
-
-
-def _fetch_sync_schedule(conn, datastream_id: str, project_id: str) -> dict | None:
-    """Read the sync schedule config for a (datastream, project) scope, or None."""
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT datastream_id, project_id, connection_id, spreadsheet_id,
-                   sheet_range, sheet_name, column_mapping, cadence_mode,
-                   cadence_policy, quota_profile, last_sync_at, last_ledger_id,
-                   last_watermark, enabled, created_by, created_at, updated_at
-            FROM app.managed_feed_sync_schedule
-            WHERE datastream_id = %s AND project_id = %s
-            """,
-            (datastream_id, project_id),
-        )
-        row = cur.fetchone()
-        if row is None:
-            return None
-        cols = [d[0] for d in cur.description]
-        return _sync_schedule_row_to_dict(cols, row)
-
-
-async def _configure_managed_feed_sync(request: Request) -> Response:
-    """POST /api/datastreams/{id}/managed-feed/configure (Member) -- Story 12.10.
-
-    Upsert the sync schedule (spreadsheet, range, column_mapping, cadence,
-    quota_profile). Validates the cadence via validate_cadence BEFORE the DB write
-    (hourly without allow_hourly -> 422). 201 with the upserted schedule row.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    try:
-        body_bytes = await request.body()
-        body = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse({"code": "invalid_body", "message": str(exc)}, 400)
-    project_id = str(body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_field", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    connection_id = str(body.get("connection_id") or "").strip()
-    spreadsheet_id = str(body.get("spreadsheet_id") or "").strip()
-    sheet_range = str(body.get("sheet_range") or "").strip()
-    cadence_mode = str(body.get("cadence_mode") or "manual").strip()
-    if not connection_id or not spreadsheet_id or not sheet_range:
-        return JSONResponse(
-            {
-                "code": "missing_field",
-                "message": "connection_id, spreadsheet_id et sheet_range sont requis",
-            },
-            422,
-        )
-    quota_profile = body.get("quota_profile")
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-        from core.google_sheets_sync import validate_cadence  # noqa: PLC0415
-
-        # Validate the cadence BEFORE any DB write (fail closed).
-        cadence_errors = validate_cadence(cadence_mode, quota_profile)
-        if cadence_errors:
-            return JSONResponse(
-                {"code": "quota_hourly_not_permitted", "issues": cadence_errors}, 422
-            )
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "member", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO app.managed_feed_sync_schedule
-                        (datastream_id, project_id, connection_id, spreadsheet_id,
-                         sheet_range, sheet_name, column_mapping, cadence_mode,
-                         cadence_policy, quota_profile, enabled, created_by)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb,
-                            %s::jsonb, %s, %s)
-                    ON CONFLICT (datastream_id, project_id) DO UPDATE SET
-                        connection_id = EXCLUDED.connection_id,
-                        spreadsheet_id = EXCLUDED.spreadsheet_id,
-                        sheet_range = EXCLUDED.sheet_range,
-                        sheet_name = EXCLUDED.sheet_name,
-                        column_mapping = EXCLUDED.column_mapping,
-                        cadence_mode = EXCLUDED.cadence_mode,
-                        cadence_policy = EXCLUDED.cadence_policy,
-                        quota_profile = EXCLUDED.quota_profile,
-                        enabled = EXCLUDED.enabled,
-                        updated_at = NOW()
-                    RETURNING datastream_id, project_id, connection_id, spreadsheet_id,
-                              sheet_range, sheet_name, column_mapping, cadence_mode,
-                              cadence_policy, quota_profile, last_sync_at, last_ledger_id,
-                              last_watermark, enabled, created_by, created_at, updated_at
-                    """,
-                    (
-                        ds_id,
-                        project_id,
-                        connection_id,
-                        spreadsheet_id,
-                        sheet_range,
-                        body.get("sheet_name") or "",
-                        json.dumps(body.get("column_mapping") or {}),
-                        cadence_mode,
-                        json.dumps(body.get("cadence_policy") or {}),
-                        json.dumps(quota_profile or {}),
-                        bool(body.get("enabled", cadence_mode != "manual")),
-                        identity or "anonymous",
-                    ),
-                )
-                cols = [d[0] for d in cur.description]
-                schedule = _sync_schedule_row_to_dict(cols, cur.fetchone())
-                conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: configure_managed_feed_sync_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Configuration indisponible"}, 503)
-    return JSONResponse(schedule, 201)
-
-
-async def _sync_now_managed_feed(request: Request) -> Response:
-    """POST /api/datastreams/{id}/managed-feed/sync-now (Member) -- Story 12.10.
-
-    Trigger an immediate manual sync run through run_sync. Body: {project_id,
-    run_id?}. 200 with the sync_result dict (may report outcome=failed for a
-    safe-fail; the HTTP status stays 200 because the RUN succeeded). QuotaViolation /
-    SheetsSyncError -> 422; ImportPayloadConflict / ImportInProgress -> 409.
-
-    PHASE_B_LIVE_BLOCKED: sheets_adapter is None here (no live Google OAuth in this
-    environment); run_sync raises NotImplementedError, mapped to a 503 carrying the
-    PHASE_B marker. Production injects the 15.6 adapter (SPEC Open Questions #1).
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    try:
-        body_bytes = await request.body()
-        body = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse({"code": "invalid_body", "message": str(exc)}, 400)
-    project_id = str(body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_field", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    run_id = str(body.get("run_id") or "").strip() or None
-    force_empty_publish = bool(body.get("force_empty_publish", False))
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-        from core.google_sheets_sync import (  # noqa: PLC0415
-            QuotaViolation,
-            SheetsSyncError,
-            run_sync,
-        )
-        from core.managed_feed_ledger import (  # noqa: PLC0415
-            ImportInProgress,
-            ImportPayloadConflict,
-        )
-
-        with get_connection() as conn:
-            # Member floor; Owner floor when forcing an empty publish (mirrors the
-            # publish route's owner-on-force pattern).
-            minimum_role = "owner" if force_empty_publish else "member"
-            role_error = _require_datastream_role(
-                project_id, identity, minimum_role, conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            schedule = _fetch_sync_schedule(conn, ds_id, project_id)
-            if schedule is None:
-                # Non-disclosing: no schedule configured for this scope.
-                return JSONResponse(
-                    {"code": "not_found", "message": "Configuration de sync introuvable"}, 404
-                )
-            try:
-                result = run_sync(
-                    datastream_id=ds_id,
-                    project_id=project_id,
-                    connection_id=schedule["connection_id"],
-                    spreadsheet_id=schedule["spreadsheet_id"],
-                    sheet_range=schedule["sheet_range"],
-                    sheet_name=schedule.get("sheet_name") or "",
-                    column_mapping=schedule.get("column_mapping") or {},
-                    plan_version_id=str(body.get("plan_version_id") or "").strip(),
-                    mapping_version_id=str(body.get("mapping_version_id") or "").strip(),
-                    projection_plan=body.get("projection_plan") or {},
-                    actor=identity or "anonymous",
-                    cadence_mode=schedule.get("cadence_mode") or "manual",
-                    quota_profile=schedule.get("quota_profile"),
-                    run_id=run_id,
-                    conn=conn,
-                    # PHASE_B_LIVE_BLOCKED: production injects the 15.6 adapter here.
-                    sheets_adapter=None,
-                    force_empty_publish=force_empty_publish,
-                )
-                conn.commit()
-            except QuotaViolation as exc:
-                conn.rollback()
-                return JSONResponse({"code": exc.code, "message": exc.detail}, 422)
-            except (ImportPayloadConflict, ImportInProgress) as exc:
-                conn.rollback()
-                mapped = _managed_feed_error_response(exc)
-                if mapped is not None:
-                    return mapped
-                raise
-            except SheetsSyncError as exc:
-                conn.rollback()
-                return JSONResponse({"code": exc.code, "message": exc.detail}, 422)
-            except NotImplementedError as exc:
-                conn.rollback()
-                # PHASE_B_LIVE_BLOCKED: no live adapter injected in this environment.
-                return JSONResponse({"code": "phase_b_live_blocked", "message": str(exc)}, 503)
-    except Exception as exc:
-        logger.error("admin_api: sync_now_managed_feed_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Sync indisponible"}, 503)
-    return JSONResponse(result, 200)
-
-
-async def _status_managed_feed_sync(request: Request) -> Response:
-    """GET /api/datastreams/{id}/managed-feed/status?project_id=<id> (Viewer).
-
-    Story 12.10. Returns the sync schedule config + the last N ledger rows + the
-    next-run description. 200 {schedule, last_runs, next_run}.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    project_id = (request.query_params.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_param", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    try:
-        from core.datastream_schedule import calculate_schedule_window  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-        from core.google_sheets_sync import describe_next_run  # noqa: PLC0415
-        from core.managed_feed_ledger import list_ledger  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "viewer", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            schedule = _fetch_sync_schedule(conn, ds_id, project_id)
-            if schedule is None:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Configuration de sync introuvable"}, 404
-                )
-            last_runs = list_ledger(ds_id, project_id, conn, limit=10)
-            next_run: dict = {}
-            cadence_policy = schedule.get("cadence_policy") or {}
-            try:
-                window = calculate_schedule_window(
-                    cadence_policy,
-                    now_utc=datetime.now(tz=timezone.utc),
-                    last_committed_watermark=schedule.get("last_watermark"),
-                )
-                next_run = describe_next_run(window)
-            except Exception:  # noqa: BLE001 - a manual / unschedulable config -> nulls.
-                next_run = describe_next_run(None)
-    except Exception as exc:
-        logger.error("admin_api: status_managed_feed_sync_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Statut indisponible"}, 503)
-    return JSONResponse({"schedule": schedule, "last_runs": last_runs, "next_run": next_run})
 
 
 # ===========================================================================
@@ -14135,195 +2070,12 @@ async def _status_managed_feed_sync(request: Request) -> Response:
 # ===========================================================================
 
 
-def _bounded_recovery_error_response(exc) -> Response | None:
-    """Map a BoundedRecoveryError to its stable ``.code`` -> HTTP, or None.
-
-    Lock conflicts (concurrent active execution) -> 409; not_found / wrong_verb ->
-    404; every other precondition breach (forbidden_interval, retention_unavailable,
-    incompatible_schema, stale_versions, policy_changed, quota_violation,
-    missing_exposure, stale_preparation, invalid_kind) -> 422.
-    """
-    from core.bounded_recovery import BoundedRecoveryError  # noqa: PLC0415
-
-    if not isinstance(exc, BoundedRecoveryError):
-        return None
-    code = exc.code
-    if code == "outcome_unknown":
-        return JSONResponse(
-            {"code": code, "outcome": "outcome_unknown", "message": exc.message}, 409
-        )
-    if code == "lock_conflict":
-        return JSONResponse({"code": code, "message": exc.message}, 409)
-    if code in ("not_found", "wrong_verb"):
-        return JSONResponse({"code": "not_found", "message": "Flux de donnees introuvable"}, 404)
-    return JSONResponse({"code": code, "message": exc.message}, 422)
 
 
-def _load_datastream_org_id(conn, ds_id: str, project_id: str) -> str | None:
-    """Read app.datastreams.org_id for a (datastream, project) scope, or None.
-
-    Mirrors the inline scoped SELECT convention (_load_external_object). Returns None
-    for an out-of-scope / unknown datastream so the caller returns a non-disclosing
-    404. bounded_recovery needs org_id (the AD-27 proposal + operation are org-scoped).
-    """
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT org_id FROM app.datastreams WHERE id = %s AND project_id = %s",
-            (ds_id, project_id),
-        )
-        row = cur.fetchone()
-    if row is None or row[0] is None:
-        return None
-    return row[0]
 
 
-async def _prepare_bounded_recovery(request: Request) -> Response:
-    """POST /api/datastreams/{id}/bounded/prepare (Member) -- Story 12.11.
-
-    Body: {project_id, kind, reason?, date_from?, date_to_exclusive?, partition?,
-    chosen_mapping_version_id?}. Assembles the AD-27 immutable
-    proposal (NO durable operation, NO dispatch). 200 with the proposal
-    {preparation_id, kind, target, target_versions, interval, impact, quota, ...}.
-    BoundedRecoveryError codes -> 422/409/404.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    try:
-        body_bytes = await request.body()
-        body = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse({"code": "invalid_body", "message": str(exc)}, 400)
-    project_id = str(body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_field", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    kind = str(body.get("kind") or "").strip()
-    if not kind:
-        return JSONResponse({"code": "missing_field", "message": "kind est requis"}, 422)
-    try:
-        from core.bounded_recovery import (  # noqa: PLC0415
-            BoundedRecoveryError,
-            prepare_bounded_recovery,
-        )
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "member", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            data_project_id = _resolve_datastream_route_scope(conn, ds_id, project_id)
-            if data_project_id is None:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Flux de donnees introuvable"}, 404
-                )
-            org_id = _load_datastream_org_id(conn, ds_id, data_project_id)
-            if org_id is None:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Flux de donnees introuvable"}, 404
-                )
-            try:
-                result = prepare_bounded_recovery(
-                    conn,
-                    org_id=org_id,
-                    datastream_id=ds_id,
-                    kind=kind,
-                    actor=identity or "anonymous",
-                    reason=body.get("reason"),
-                    date_from=body.get("date_from"),
-                    date_to_exclusive=body.get("date_to_exclusive"),
-                    partition=body.get("partition"),
-                    chosen_mapping_version_id=body.get("chosen_mapping_version_id"),
-                )
-                conn.commit()
-            except BoundedRecoveryError as exc:
-                conn.rollback()
-                mapped = _bounded_recovery_error_response(exc)
-                if mapped is not None:
-                    return mapped
-                raise
-    except Exception as exc:
-        logger.error("admin_api: prepare_bounded_recovery_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Preparation indisponible"}, 503)
-    return JSONResponse(result, 200)
 
 
-async def _confirm_bounded_recovery(request: Request) -> Response:
-    """POST /api/datastreams/{id}/bounded/confirm (Member) -- Story 12.11.
-
-    Body: {project_id, preparation_id}. Re-validates every
-    precondition against the live target and routes EXACTLY ONE durable operation
-    (never commit_publication / pointer mutation). 200 with {preparation_id,
-    operation_id, outcome, replayed, result}. BoundedRecoveryError codes ->
-    422/409/404.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    try:
-        body_bytes = await request.body()
-        body = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse({"code": "invalid_body", "message": str(exc)}, 400)
-    project_id = str(body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_field", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    preparation_id = str(body.get("preparation_id") or "").strip()
-    if not preparation_id:
-        return JSONResponse({"code": "missing_field", "message": "preparation_id est requis"}, 422)
-
-    try:
-        from core.bounded_recovery import (  # noqa: PLC0415
-            BoundedRecoveryError,
-            confirm_bounded_recovery,
-        )
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "member", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            # Scope guard: the preparation must belong to this datastream's org. A
-            # cross-project confirm would otherwise leak an out-of-scope proposal.
-            data_project_id = _resolve_datastream_route_scope(conn, ds_id, project_id)
-            if data_project_id is None:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Flux de donnees introuvable"}, 404
-                )
-            org_id = _load_datastream_org_id(conn, ds_id, data_project_id)
-            if org_id is None:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Flux de donnees introuvable"}, 404
-                )
-            try:
-                from core import tracing  # noqa: PLC0415
-
-                server_trace_id = tracing.current_trace_id_hex() or os.urandom(16).hex()
-                result = confirm_bounded_recovery(
-                    conn,
-                    preparation_id=preparation_id,
-                    expected_org_id=str(org_id),
-                    expected_project_id=data_project_id,
-                    expected_datastream_id=ds_id,
-                    actor=identity or "anonymous",
-                    trace_id=server_trace_id,
-                )
-                conn.commit()
-            except BoundedRecoveryError as exc:
-                conn.rollback()
-                mapped = _bounded_recovery_error_response(exc)
-                if mapped is not None:
-                    return mapped
-                raise
-    except Exception as exc:
-        logger.error("admin_api: confirm_bounded_recovery_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Confirmation indisponible"}, 503)
-    return JSONResponse(result, 200)
 
 
 # ===========================================================================
@@ -14388,7 +2140,10 @@ def _dataset_recovery_error_response(exc) -> Response | None:
 
 
 async def _preview_dataset_rollback(request: Request) -> Response:
-    """GET /api/datastreams/{id}/rollback/preview?project_id=<id> (Viewer).
+    """RETIREE. L'apercu est devenu la moitie `/confirm` de la paire de preparations
+    du Workbench (`core.datastream_workbench_api`). Meme garde (AD-43).
+
+    GET /api/datastreams/{id}/rollback/preview?project_id=<id> (Viewer).
 
     Story 12.12. Resolves the default rollback target ONCE (the caller MUST echo the
     returned target_execution_id back to POST /rollback for idempotency across
@@ -14421,12 +2176,17 @@ async def _preview_dataset_rollback(request: Request) -> Response:
             )
     except Exception as exc:
         logger.error("admin_api: preview_dataset_rollback_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Apercu indisponible"}, 503)
+        return JSONResponse({"code": "unavailable", "message": "Preview unavailable"}, 503)
     return JSONResponse(preview, 200)
 
 
 async def _rollback_dataset(request: Request) -> Response:
-    """POST /api/datastreams/{id}/rollback (Member) -- Story 12.12.
+    """RETIREE. Le retour arriere appartient a la confirmation exacte du Workbench,
+    portee par le Projet : `POST /api/projects/{project_id}/datastreams/
+    {datastream_id}/workbench/outputs/rollback-preparations`, monte par
+    `core.datastream_workbench_api`. Meme garde que ci-dessus (AD-43).
+
+    POST /api/datastreams/{id}/rollback (Member) -- Story 12.12.
 
     Body: {project_id, target_execution_id (REQUIRED -- resolved once via
     /rollback/preview), idempotency_key?}. Swaps the dataset pointer BACK to the
@@ -14485,176 +2245,10 @@ async def _rollback_dataset(request: Request) -> Response:
     return JSONResponse(result, 200)
 
 
-async def _preflight_replace_dataset(request: Request) -> Response:
-    """POST /api/datastreams/{id}/replace/preflight (Member) -- Story 12.12.
-
-    Body: {project_id, candidate_row_count, force_empty_publish?}. Validates the
-    12.12 concurrency + empty pre-checks BEFORE an execution is minted (the caller
-    then composes the 12.5 create_execution -> run_dq_gates -> commit_publication).
-    200 {ok: True, action: dataset.replace}. concurrent_mutation_active -> 409;
-    empty_replacement_blocked -> 422.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    try:
-        body_bytes = await request.body()
-        body = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse({"code": "invalid_body", "message": str(exc)}, 400)
-    project_id = str(body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_field", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    candidate_row_count = body.get("candidate_row_count")
-    if not isinstance(candidate_row_count, int):
-        return JSONResponse(
-            {"code": "missing_field", "message": "candidate_row_count (entier) est requis"}, 422
-        )
-    force_empty_publish = bool(body.get("force_empty_publish", False))
-    try:
-        from core.dataset_recovery import (  # noqa: PLC0415
-            DatasetRecoveryError,
-            preflight_replace,
-        )
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            # Member floor; an empty replace additionally needs Owner (owner-on-force).
-            minimum_role = "owner" if force_empty_publish else "member"
-            role_error = _require_datastream_role(
-                project_id, identity, minimum_role, conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            try:
-                result = preflight_replace(
-                    conn,
-                    datastream_id=ds_id,
-                    project_id=project_id,
-                    candidate_row_count=candidate_row_count,
-                    force_empty_publish=force_empty_publish,
-                )
-            except DatasetRecoveryError as exc:
-                mapped = _dataset_recovery_error_response(exc)
-                if mapped is not None:
-                    return mapped
-                raise
-    except Exception as exc:
-        logger.error("admin_api: preflight_replace_dataset_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Preflight indisponible"}, 503)
-    return JSONResponse(result, 200)
 
 
-async def _append_availability_dataset(request: Request) -> Response:
-    """GET /api/datastreams/{id}/append/availability?project_id=<id> (Viewer).
-
-    Story 12.12. Reports whether Append is available (needs a stable-key contract +
-    compatible schema); otherwise presents Replace as the safe fallback. Optional
-    candidate_schema_hash / target_schema_hash query params feed the compatibility
-    check. 200 {available, fallback_action, reason, ...}.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    project_id = (request.query_params.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_param", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    candidate_schema_hash = (
-        request.query_params.get("candidate_schema_hash") or ""
-    ).strip() or None
-    target_schema_hash = (request.query_params.get("target_schema_hash") or "").strip() or None
-    try:
-        from core.dataset_recovery import resolve_append_availability  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "viewer", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            availability = resolve_append_availability(
-                conn,
-                datastream_id=ds_id,
-                project_id=project_id,
-                candidate_schema_hash=candidate_schema_hash,
-                target_schema_hash=target_schema_hash,
-            )
-    except Exception as exc:
-        logger.error("admin_api: append_availability_dataset_error: %s", exc)
-        return JSONResponse({"code": "unavailable", "message": "Disponibilite indisponible"}, 503)
-    return JSONResponse(availability, 200)
 
 
-async def _dataset_destination_policy(request: Request) -> Response:
-    """POST /api/datastreams/{id}/destination-policy (Owner) -- Story 12.12.
-
-    Body: {project_id, operation}. Enforces the Owner floor via
-    dataset_recovery.enforce_owner_floor for destination-policy operations
-    (ownership / access / retention / irreversible deletion). This is the RBAC
-    enforcement seam; the actual policy MUTATION is the caller's follow-up (this
-    route proves the Owner floor holds). 200 {ok: True, operation} when authorized;
-    owner_floor_required -> 403; access_unavailable -> 503.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    try:
-        body_bytes = await request.body()
-        body = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse({"code": "invalid_body", "message": str(exc)}, 400)
-    project_id = str(body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_field", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    operation = str(body.get("operation") or "").strip()
-    try:
-        from core.dataset_recovery import (  # noqa: PLC0415
-            OWNER_FLOOR_OPERATIONS,
-            DatasetRecoveryError,
-            enforce_owner_floor,
-        )
-        from core.db import get_connection  # noqa: PLC0415
-
-        if operation not in OWNER_FLOOR_OPERATIONS:
-            return JSONResponse(
-                {
-                    "code": "invalid_operation",
-                    "message": "operation doit etre une operation de politique de destination",
-                    "allowed": sorted(OWNER_FLOOR_OPERATIONS),
-                },
-                422,
-            )
-        with get_connection() as conn:
-            # A cross-project / unknown datastream is a non-disclosing 404 BEFORE the
-            # owner check (mirror the role-gate scoping used everywhere else).
-            role_error = _require_datastream_role(
-                project_id, identity, "viewer", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            try:
-                enforce_owner_floor(
-                    conn,
-                    operation=operation,
-                    identity=identity or "anonymous",
-                    project_id=project_id,
-                    datastream_id=ds_id,
-                )
-            except DatasetRecoveryError as exc:
-                mapped = _dataset_recovery_error_response(exc)
-                if mapped is not None:
-                    return mapped
-                raise
-    except Exception as exc:
-        logger.error("admin_api: dataset_destination_policy_error: %s", exc)
-        return JSONResponse(
-            {"code": "unavailable", "message": "Verification de politique indisponible"}, 503
-        )
-    return JSONResponse({"ok": True, "operation": operation}, 200)
 
 
 # ===========================================================================
@@ -14669,1038 +2263,25 @@ async def _dataset_destination_policy(request: Request) -> Response:
 # ===========================================================================
 
 
-async def _get_datastream_versions(request: Request) -> Response:
-    """GET /api/datastreams/{id}/read-model?project_id=<id> (Viewer) -- Story 12.14.
 
-    Assembles the versioned read model the 12.14 UI needs. 200 with:
-      {
-        plan_versions: [...],           # list_intent_versions (12.2)
-        mapping_versions: [...],        # list_mapping_versions (12.3)
-        current_published_execution_id, # the atomic pointer (12.5)
-        current_candidate,              # newest non-terminal execution (12.5)
-        published_execution,            # get_execution of the pointer (DQ state,
-                                        #   freshness=state_changed_at, row_count,
-                                        #   content_hash)
-        publication_log: [...],         # get_publication_log (actor=published_by,
-                                        #   prior_execution_id evidence)
-        recent_imports: [...],          # list_ledger (row/rejection counts)
-      }
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse({"code": "unauthorized", "message": "Token requis"}, 401)
-    project_id = (request.query_params.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse({"code": "missing_param", "message": "project_id est requis"}, 400)
-    ds_id = request.path_params.get("id", "")
-    try:
-        from core.datastream_field_mapping import list_mapping_versions  # noqa: PLC0415
-        from core.datastream_intents import list_intent_versions  # noqa: PLC0415
-        from core.datastream_publication import (  # noqa: PLC0415
-            ExecutionNotFound,
-            get_execution,
-            get_publication_log,
-        )
-        from core.datastreams import get_datastream  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-        from core.managed_feed_ledger import list_ledger  # noqa: PLC0415
 
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "viewer", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
 
-            data_project_id = _resolve_datastream_route_scope(conn, ds_id, project_id)
-            if data_project_id is None:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Flux de donnees introuvable"}, 404
-                )
-            datastream = get_datastream(ds_id, data_project_id, conn)
-            if datastream is None:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Flux de donnees introuvable"}, 404
-                )
 
-            plan_versions = list_intent_versions(ds_id, data_project_id, conn)
-            mapping_versions = list_mapping_versions(ds_id, data_project_id, conn)
 
-            current_published_execution_id = _read_current_published_execution(
-                conn, ds_id, data_project_id
-            )
-            published_execution = None
-            if current_published_execution_id:
-                try:
-                    published_execution = get_execution(
-                        current_published_execution_id, data_project_id, conn
-                    )
-                except ExecutionNotFound:
-                    published_execution = None
 
-            current_candidate = _read_current_candidate_execution(
-                conn, ds_id, data_project_id, current_published_execution_id
-            )
-            latest_execution = _read_latest_execution(conn, ds_id, data_project_id)
-            publication_log = get_publication_log(ds_id, data_project_id, conn, limit=20)
-            recent_imports = list_ledger(ds_id, data_project_id, conn, limit=20)
-            runs = _read_datastream_runs(conn, ds_id, data_project_id, limit=100)
-            _enrich_datastream_runs(
-                runs, recent_imports, current_published_execution_id
-            )
-    except Exception as exc:
-        logger.error("admin_api: get_datastream_versions_error: %s", exc)
-        return JSONResponse(
-            {"code": "unavailable", "message": "Lecture des versions indisponible"}, 503
-        )
 
-    return JSONResponse(
-        {
-            "datastream_id": ds_id,
-            "project_id": project_id,
-            "data_project_id": data_project_id,
-            "datastream": datastream,
-            "plan_versions": plan_versions,
-            "mapping_versions": mapping_versions,
-            "current_published_execution_id": current_published_execution_id,
-            "published_execution": published_execution,
-            "current_candidate": current_candidate,
-            "latest_execution": latest_execution,
-            "publication_log": publication_log,
-            "recent_imports": recent_imports,
-            "runs": runs,
-            # PHASE B / TODO (honest -- no backing column in the 12.2-12.5 tables):
-            #   * a trace_id per execution: publication_log carries published_by
-            #     (actor) but there is no per-execution trace column in 042; the
-            #     trace lives on app.operations for recovery ops only. Surfacing a
-            #     unified per-version trace is Phase B.
-            #   * an explicit per-execution rejection_count: rejection counts live on
-            #     the managed_feed ledger rows (recent_imports), not on the 042
-            #     execution row -- the UI joins by execution_id. A denormalised
-            #     execution.rejection_count column is Phase B.
-        }
-    )
 
 
-def _normalize_run_interval(projection_plan: object) -> dict[str, str] | None:
-    """Return an exact half-open run interval from persisted projection evidence."""
-    if isinstance(projection_plan, str):
-        try:
-            projection_plan = json.loads(projection_plan)
-        except (TypeError, ValueError):
-            return None
-    if not isinstance(projection_plan, dict):
-        return None
-    half_open = projection_plan.get("half_open_range")
-    interval = half_open if isinstance(half_open, dict) else projection_plan.get("interval")
-    if not isinstance(interval, dict):
-        return None
-    date_from = interval.get("from")
-    to_exclusive = interval.get("to_exclusive")
-    try:
-        start = date.fromisoformat(str(date_from))
-        end = date.fromisoformat(str(to_exclusive))
-    except (TypeError, ValueError):
-        return None
-    if start >= end:
-        return None
-    return {"from": start.isoformat(), "to_exclusive": end.isoformat()}
 
 
-def _read_datastream_runs(
-    conn, ds_id: str, project_id: str, *, limit: int = 100
-) -> list[dict]:
-    """Read the universal execution timeline; ledger rows never define membership."""
-    bounded_limit = max(1, min(int(limit), 200))
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT e.id, e.state, e.state_changed_at, e.row_count, e.plan_version_id,
-                   e.mapping_version_id, e.error_code, e.created_at, e.projection_plan_ref,
-                   e.created_by,
-                   EXISTS (
-                       SELECT 1 FROM app.datastream_publication_log pl
-                       WHERE pl.execution_id = e.id AND pl.project_id = e.project_id
-                   ) AS was_published
-            FROM app.datastream_executions e
-            WHERE datastream_id = %s AND project_id = %s
-            ORDER BY created_at DESC, id DESC
-            LIMIT %s
-            """,
-            (ds_id, project_id, bounded_limit),
-        )
-        rows = cur.fetchall()
-    runs: list[dict] = []
-    for row in rows:
-        created_at = row[7]
-        state_changed_at = row[2]
-        duration_seconds = None
-        if isinstance(created_at, datetime) and isinstance(state_changed_at, datetime):
-            duration_seconds = max(0, int((state_changed_at - created_at).total_seconds()))
-        projection_plan = row[8]
-        if isinstance(projection_plan, str):
-            try:
-                projection_plan = json.loads(projection_plan)
-            except (TypeError, ValueError):
-                projection_plan = None
-        runs.append(
-            {
-                "id": row[0],
-                "state": row[1],
-                "state_changed_at": (
-                    state_changed_at.isoformat()
-                    if state_changed_at is not None and hasattr(state_changed_at, "isoformat")
-                    else state_changed_at
-                ),
-                "row_count": row[3],
-                "plan_version_id": row[4],
-                "mapping_version_id": row[5],
-                "error_code": row[6],
-                "created_at": (
-                    created_at.isoformat()
-                    if created_at is not None and hasattr(created_at, "isoformat")
-                    else created_at
-                ),
-                "created_by": row[9],
-                "duration_seconds": duration_seconds,
-                "recovery_kind": (
-                    projection_plan.get("recovery_kind")
-                    if isinstance(projection_plan, dict)
-                    and isinstance(projection_plan.get("recovery_kind"), str)
-                    else None
-                ),
-                "recovery_interval": _normalize_run_interval(projection_plan),
-                "import_evidence": None,
-                "publication_state": (
-                    "previously_published" if bool(row[10]) else "unpublished"
-                ),
-            }
-        )
-    return runs
 
 
-def _enrich_datastream_runs(
-    runs: list[dict],
-    recent_imports: list[dict],
-    current_published_execution_id: str | None,
-) -> None:
-    """Attach optional ledger/publication evidence without creating run rows."""
-    ledger_by_execution = {
-        row.get("execution_id"): row
-        for row in recent_imports
-        if isinstance(row, dict) and isinstance(row.get("execution_id"), str)
-    }
 
-    for run in runs:
-        execution_id = run["id"]
-        ledger = ledger_by_execution.get(execution_id)
-        if ledger is not None:
-            run["import_evidence"] = {
-                "ledger_id": ledger.get("id"),
-                "outcome": ledger.get("outcome"),
-                "row_count": ledger.get("row_count"),
-                "rejected_row_count": ledger.get("rejected_row_count"),
-                "snapshot_observed_at": ledger.get("snapshot_observed_at"),
-            }
-        if execution_id == current_published_execution_id:
-            run["publication_state"] = "current"
 
-def _read_current_published_execution(conn, ds_id: str, project_id: str) -> str | None:
-    """Read app.datastreams.current_published_execution_id (project-scoped)."""
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT current_published_execution_id FROM app.datastreams "
-            "WHERE id = %s AND project_id = %s",
-            (ds_id, project_id),
-        )
-        row = cur.fetchone()
-    return row[0] if row is not None else None
 
 
-def _read_latest_execution(conn, ds_id: str, project_id: str) -> dict | None:
-    """Return the newest execution, including terminal failures, for health evidence."""
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT id, state, state_changed_at, content_hash, row_count,
-                   plan_version_id, mapping_version_id, error_code, created_at
-            FROM app.datastream_executions
-            WHERE datastream_id = %s AND project_id = %s
-            ORDER BY created_at DESC, id DESC
-            LIMIT 1
-            """,
-            (ds_id, project_id),
-        )
-        row = cur.fetchone()
-        if row is None:
-            return None
-        cols = [d[0] for d in cur.description]
-    record: dict = {}
-    for col, val in zip(cols, row):
-        record[col] = val.isoformat() if val is not None and hasattr(val, "isoformat") else val
-    return record
 
 
-def _read_current_candidate_execution(
-    conn, ds_id: str, project_id: str, published_execution_id: str | None
-) -> dict | None:
-    """Read the newest NON-terminal execution (the current candidate), or None.
-
-    A candidate is an execution that is not the published pointer and not in a
-    terminal state (published / failed / cancelled) -- i.e. one still flowing toward
-    publication (created / loading / validating / ready / publishing). Surfaces its
-    DQ state (``state``), freshness (``state_changed_at``),
-    row_count and content_hash for the 12.14 UI. Project-scoped; reuses the 042
-    execution columns (no new table).
-    """
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT id, state, state_changed_at, content_hash, row_count,
-                   plan_version_id, mapping_version_id, error_code, created_at
-            FROM app.datastream_executions
-            WHERE datastream_id = %s AND project_id = %s
-              AND state NOT IN ('published', 'failed', 'cancelled')
-              AND (%s IS NULL OR id <> %s)
-            ORDER BY created_at DESC, id DESC
-            LIMIT 1
-            """,
-            (ds_id, project_id, published_execution_id, published_execution_id),
-        )
-        row = cur.fetchone()
-        if row is None:
-            return None
-        cols = [d[0] for d in cur.description]
-    record: dict = {}
-    for col, val in zip(cols, row):
-        if val is not None and hasattr(val, "isoformat"):
-            record[col] = val.isoformat()
-        else:
-            record[col] = val
-    return record
-
-
-async def _get_datastream(request: Request) -> Response:
-    """GET /api/datastreams/{id}?project_id=<id> -- single datastream.
-
-    Response (200): datastream object.
-    Error:
-        400 -- missing project_id
-        401 -- unauthorized
-        404 -- not found or wrong project
-        500 -- DB error
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Token d'acces requis"},
-            status_code=401,
-        )
-
-    ds_id = request.path_params.get("id", "")
-    project_id = (request.query_params.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse(
-            {"code": "missing_param", "message": "project_id est requis"},
-            status_code=400,
-        )
-
-    try:
-        from core.datastreams import get_datastream  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            role_error = _require_datastream_role(
-                project_id, identity, "viewer", conn, datastream_id=ds_id
-            )
-            if role_error is not None:
-                return role_error
-            row = get_datastream(ds_id, project_id, conn)
-            if row is None:
-                # Still check scope: if it exists but in another project, 404 + audit.
-                # get_datastream already returns None for wrong project, so just 404.
-                return JSONResponse(
-                    {"code": "not_found", "message": "Flux de donnees introuvable"},
-                    status_code=404,
-                )
-    except Exception as exc:
-        logger.error("admin_api: get_datastream_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Erreur base de donnees: {exc}"},
-            status_code=500,
-        )
-
-    return JSONResponse(row)
-
-
-async def _patch_datastream(request: Request) -> Response:
-    """PATCH /api/datastreams/{id} -- update a datastream.
-
-    Body (JSON): {"project_id": str, "name"?, "enabled"?, "schedule_mode"?,
-                  "refetch_days"?, "date_window_days"?, "config"?,
-                  "connection_ref_id"?, "report_profile_id"?, "plan_version_id"?}
-    Response (200): updated datastream.
-    Error:
-        400 -- missing project_id
-        401 -- unauthorized
-        404 -- not found or wrong project
-        409 -- name conflict
-        422 -- validation error
-        500 -- DB error
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Token d'acces requis"},
-            status_code=401,
-        )
-
-    ds_id = request.path_params.get("id", "")
-
-    try:
-        body_bytes_patch = await request.body()
-        body: dict = json.loads(body_bytes_patch) if body_bytes_patch.strip() else {}
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Corps JSON invalide: {exc}"},
-            status_code=400,
-        )
-
-    project_id = (body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse(
-            {"code": "missing_field", "message": "project_id est requis dans le corps"},
-            status_code=400,
-        )
-
-    activation_replay = False
-    activation_key_hash: str | None = None
-    try:
-        from core.datastreams import get_datastream, update_datastream  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            existing = get_datastream(ds_id, project_id, conn)
-            if existing is None:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Flux de donnees introuvable"},
-                    status_code=404,
-                )
-            # Scope enforcement: the datastream exists in project_id (already verified above).
-            scope_err = _enforce_datastream_project_scope(
-                existing["project_id"],
-                identity,
-                ds_id,
-                conn,
-                claimed_project_id=project_id,
-                minimum_role=(
-                    "owner"
-                    if isinstance(body.get("intent"), dict)
-                    and body["intent"].get("destination", {}).get("policy") == "external_read_only"
-                    else "member"
-                ),
-            )
-            if scope_err is not None:
-                return scope_err
-
-            if isinstance(body.get("intent"), dict):
-                idempotency_key = (request.headers.get("Idempotency-Key") or "").strip()
-                if not idempotency_key:
-                    return JSONResponse(
-                        {
-                            "code": "missing_idempotency_key",
-                            "message": "Idempotency-Key est requis pour creer une version.",
-                        },
-                        status_code=400,
-                    )
-                from core.flows import (  # noqa: PLC0415
-                    FlowConflictError,
-                    FlowScopeError,
-                    FlowUnavailableError,
-                    FlowValidationError,
-                    upsert_flow,
-                )
-                from core.main import get_loaded_modules  # noqa: PLC0415
-
-                definition = {
-                    "schema_version": "2",
-                    "kind": "datastream",
-                    "id": ds_id,
-                    "project_id": project_id,
-                    "name": (body.get("name") or existing.get("name") or "").strip(),
-                    "intent": body["intent"],
-                    "idempotency_key": idempotency_key,
-                    "reason": body.get("reason", "rest_draft_revised"),
-                    "trace_id": request.headers.get("traceparent"),
-                }
-                try:
-                    result = upsert_flow(
-                        project_id,
-                        definition,
-                        identity or "anonymous",
-                        conn,
-                        loaded_modules=get_loaded_modules(),
-                    )
-                except FlowValidationError as exc:
-                    return JSONResponse({"code": "validation_error", "errors": exc.errors}, 422)
-                except FlowConflictError as exc:
-                    return JSONResponse({"code": "conflict", "message": str(exc)}, 409)
-                except FlowScopeError:
-                    return JSONResponse({"code": "not_found"}, 404)
-                except FlowUnavailableError as exc:
-                    return JSONResponse({"code": "unavailable", "message": str(exc)}, 503)
-                response = dict(result["flow"])
-                response["plan_version"] = result["plan_version"]
-                return JSONResponse(response)
-
-            # Every activation first locks and rereads the authoritative pointer.
-            # This prevents a legacy-looking pre-lock snapshot from bypassing the
-            # versioned compare-and-set after a concurrent plan revision.
-            locked_activation = None
-            if body.get("enabled") is True:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        SELECT d.current_plan_version_id,
-                               p.executable,
-                               p.normalized_payload,
-                               d.config,
-                               p.capability_fingerprint,
-                               d.enabled,
-                               d.schedule_mode
-                        FROM app.datastreams d
-                        LEFT JOIN app.datastream_plan_versions p
-                          ON p.id = d.current_plan_version_id
-                         AND p.datastream_id = d.id
-                         AND p.project_id = d.project_id
-                        WHERE d.id = %s
-                          AND d.project_id = %s
-                          AND d.archived_at IS NULL
-                        FOR UPDATE OF d
-                        """,
-                        (ds_id, project_id),
-                    )
-                    locked_activation = cur.fetchone()
-                if locked_activation is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "Flux de donnees introuvable"},
-                        status_code=404,
-                    )
-
-            locked_config = (
-                locked_activation[3]
-                if locked_activation is not None
-                else existing.get("config") or {}
-            )
-            if isinstance(locked_config, str):
-                try:
-                    locked_config = json.loads(locked_config)
-                except (TypeError, ValueError):
-                    locked_config = {}
-            if (
-                body.get("enabled") is True
-                and isinstance(locked_config, dict)
-                and locked_config.get("publish_gate") == "canonical_semantics_required"
-            ):
-                return JSONResponse(
-                    {
-                        "code": "publish_gate_active",
-                        "message": (
-                            "Activation impossible : les semantiques canoniques requises "
-                            "ne sont pas encore completees pour ce flux inbound generique."
-                        ),
-                    },
-                    status_code=422,
-                )
-
-            current_plan_id = locked_activation[0] if locked_activation is not None else None
-            requested_plan_id = str(body.get("plan_version_id") or "").strip()
-            if body.get("enabled") is True and current_plan_id is not None:
-                if not requested_plan_id:
-                    return JSONResponse(
-                        {
-                            "code": "missing_plan_version_id",
-                            "message": "plan_version_id est requis pour activer ce flux versionne.",
-                        },
-                        status_code=422,
-                    )
-                if current_plan_id != requested_plan_id:
-                    return JSONResponse(
-                        {
-                            "code": "stale_plan_version",
-                            "message": (
-                                "Le plan valide n'est plus le plan courant. "
-                                "Revalidez le flux avant activation."
-                            ),
-                            "details": {
-                                "requested_plan_version_id": requested_plan_id,
-                                "current_plan_version_id": current_plan_id,
-                            },
-                        },
-                        status_code=409,
-                    )
-                activation_key = (request.headers.get("Idempotency-Key") or "").strip()
-                if not activation_key:
-                    return JSONResponse(
-                        {
-                            "code": "missing_idempotency_key",
-                            "message": "Idempotency-Key is required for activation.",
-                        },
-                        status_code=400,
-                    )
-                from hashlib import sha256  # noqa: PLC0415
-
-                activation_key_hash = sha256(activation_key.encode("utf-8")).hexdigest()
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        SELECT metadata->>'plan_version_id'
-                        FROM app.audit_log
-                        WHERE action = %s
-                          AND metadata->>'project_id' = %s
-                          AND metadata->>'datastream_id' = %s
-                          AND metadata->>'activation_key_hash' = %s
-                        ORDER BY created_at DESC
-                        LIMIT 1
-                        """,
-                        (
-                            ACTION_DATASTREAM_UPDATED,
-                            project_id,
-                            ds_id,
-                            activation_key_hash,
-                        ),
-                    )
-                    activation_evidence = cur.fetchone()
-                if activation_evidence is not None:
-                    if activation_evidence[0] != requested_plan_id:
-                        return JSONResponse(
-                            {
-                                "code": "idempotency_conflict",
-                                "message": "Idempotency-Key was already used for another plan.",
-                            },
-                            status_code=409,
-                        )
-                    replay_state = get_datastream(ds_id, project_id, conn)
-                    if replay_state is None:
-                        return JSONResponse({"code": "not_found"}, status_code=404)
-                    return JSONResponse(replay_state)
-                executable = locked_activation[1]
-                normalized_payload = locked_activation[2]
-                if executable is not True:
-                    return JSONResponse(
-                        {
-                            "code": "activation_not_available",
-                            "message": (
-                                "Activation impossible : le plan versionne n'est pas "
-                                "valide (executable). Corrigez le mapping/preview d'abord."
-                            ),
-                        },
-                        status_code=422,
-                    )
-                if isinstance(normalized_payload, str):
-                    try:
-                        normalized_payload = json.loads(normalized_payload)
-                    except (TypeError, ValueError):
-                        normalized_payload = {}
-                source = (normalized_payload or {}).get("source") or {}
-                if source.get("kind") == "connector_pull":
-                    from core.datastream_intents import validate_intent  # noqa: PLC0415
-                    from core.main import get_loaded_modules  # noqa: PLC0415
-                    from core.source_capabilities import (  # noqa: PLC0415
-                        SourceCapabilitiesNotFound,
-                        SourceCapabilitiesUnavailable,
-                        get_scoped_source_capabilities,
-                    )
-
-                    connection_ref_id = str(source.get("connection_ref_id") or "").strip()
-                    from core.source_capabilities import (  # noqa: PLC0415
-                        get_project_connection_state,
-                    )
-
-                    connection_state = get_project_connection_state(
-                        project_id=project_id,
-                        connection_ref_id=connection_ref_id,
-                        identity=identity or "anonymous",
-                        conn=conn,
-                    )
-                    if (
-                        not isinstance(connection_state, (tuple, list))
-                        or len(connection_state) < 4
-                        or connection_state[1] != "active"
-                        or connection_state[2] is not True
-                        or connection_state[3] != "ok"
-                    ):
-                        return JSONResponse(
-                            {
-                                "code": "provider_account_unusable",
-                                "message": (
-                                    "Le compte fournisseur n'est plus actif et sain. "
-                                    "Reconnectez-le puis revalidez le flux."
-                                ),
-                            },
-                            status_code=422,
-                        )
-                    try:
-                        current_capabilities = get_scoped_source_capabilities(
-                            project_id=project_id,
-                            connection_ref_id=connection_ref_id,
-                            identity=identity or "anonymous",
-                            loaded_modules=get_loaded_modules(),
-                            conn=conn,
-                        )
-                    except SourceCapabilitiesNotFound:
-                        return JSONResponse(
-                            {
-                                "code": "provider_account_unusable",
-                                "message": (
-                                    "Le compte fournisseur du plan n'est plus actif. "
-                                    "Reconnectez-le puis revalidez le flux."
-                                ),
-                            },
-                            status_code=422,
-                        )
-                    except SourceCapabilitiesUnavailable:
-                        return JSONResponse(
-                            {
-                                "code": "capabilities_unavailable",
-                                "message": "Le catalogue de capacites est indisponible.",
-                            },
-                            status_code=503,
-                        )
-                    current_validation = validate_intent(
-                        normalized_payload,
-                        capabilities=current_capabilities,
-                    )
-                    saved_capability_fingerprint = locked_activation[4]
-                    if (
-                        current_validation.executable is not True
-                        or not saved_capability_fingerprint
-                        or current_validation.capability_fingerprint
-                        != saved_capability_fingerprint
-                    ):
-                        return JSONResponse(
-                            {
-                                "code": "stale_capabilities",
-                                "message": (
-                                    "Les capacites du fournisseur ont change. "
-                                    "Revalidez le plan avant activation."
-                                ),
-                                "details": {
-                                    "plan_capability_fingerprint": saved_capability_fingerprint,
-                                    "current_capability_fingerprint": (
-                                        current_validation.capability_fingerprint
-                                    ),
-                                },
-                            },
-                            status_code=409,
-                        )
-                cadence = ((normalized_payload or {}).get("schedule") or {}).get("mode")
-                mode = {"daily": "nightly", "hourly": "hourly", "manual": "manual"}.get(
-                    cadence or "manual", "manual"
-                )
-                if (
-                    len(locked_activation) > 6
-                    and locked_activation[5] is True
-                    and locked_activation[6] == mode
-                ):
-                    # Serialized effect replay: the exact immutable plan is already
-                    # active at the requested cadence. Return state without another
-                    # UPDATE or audit event.
-                    updated = get_datastream(ds_id, project_id, conn)
-                    activation_replay = True
-                else:
-                    updated = update_datastream(
-                        ds_id, project_id, {"enabled": True, "schedule_mode": mode}, conn
-                    )
-                    insert_audit_row(
-                        conn,
-                        identity=identity or "anonymous",
-                        action=ACTION_DATASTREAM_UPDATED,
-                        provider_account="",
-                        connection_ref="",
-                        metadata={
-                            "datastream_id": ds_id,
-                            "project_id": project_id,
-                            "plan_version_id": requested_plan_id,
-                            "activation_key_hash": activation_key_hash,
-                            "operation": "datastream_activation",
-                        },
-                    )
-                    conn.commit()
-                    activation_replay = True
-            elif body.get("enabled") is True and requested_plan_id:
-                # A client presenting immutable-plan evidence must never fall through
-                # to the legacy update path when the locked row has no current plan.
-                return JSONResponse(
-                    {
-                        "code": "stale_plan_version",
-                        "message": "Le flux ne reference plus le plan valide demande.",
-                        "details": {
-                            "requested_plan_version_id": requested_plan_id,
-                            "current_plan_version_id": None,
-                        },
-                    },
-                    status_code=409,
-                )
-            else:
-                updated = update_datastream(ds_id, project_id, body, conn)
-                conn.commit()
-    except ValueError as exc:
-        return JSONResponse(
-            {"code": "invalid_input", "message": str(exc)},
-            status_code=422,
-        )
-    except Exception as exc:
-        # Story 34.2 (F1 fix): enabling a draft over the trial cap -> typed 409
-        # (same as create), not a generic 500.
-        from core.trial_enforcement import TrialDatastreamLimitError  # noqa: PLC0415
-
-        if isinstance(exc, TrialDatastreamLimitError):
-            return JSONResponse(exc.to_dict(), status_code=409)
-        if "UniqueViolation" in type(exc).__name__ or "unique" in str(exc).lower():
-            return JSONResponse(
-                {
-                    "code": "conflict",
-                    "message": "Un flux de donnees avec ce nom existe deja dans ce projet",
-                },
-                status_code=409,
-            )
-        logger.error("admin_api: patch_datastream_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Erreur base de donnees: {exc}"},
-            status_code=500,
-        )
-
-    if updated is None:
-        return JSONResponse(
-            {"code": "not_found", "message": "Flux de donnees introuvable"},
-            status_code=404,
-        )
-
-    if not activation_replay:
-        write_audit_row(
-            identity=identity or "anonymous",
-            action=ACTION_DATASTREAM_UPDATED,
-            provider_account="",
-            connection_ref="",
-            metadata={"datastream_id": ds_id, "project_id": project_id},
-        )
-    return JSONResponse(updated)
-
-
-async def _delete_datastream(request: Request) -> Response:
-    """DELETE /api/datastreams/{id}?project_id=<id> -- delete or soft-archive a datastream.
-
-    Response (200): {"status": "deleted"|"archived", "id": str}
-    Error:
-        400 -- missing project_id
-        401 -- unauthorized
-        404 -- not found or wrong project
-        500 -- DB error
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Token d'acces requis"},
-            status_code=401,
-        )
-
-    ds_id = request.path_params.get("id", "")
-    project_id = (request.query_params.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse(
-            {"code": "missing_param", "message": "project_id est requis"},
-            status_code=400,
-        )
-
-    try:
-        from core.datastreams import delete_datastream, get_datastream  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            existing = get_datastream(ds_id, project_id, conn)
-            if existing is None:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Flux de donnees introuvable"},
-                    status_code=404,
-                )
-            scope_err = _enforce_datastream_project_scope(
-                existing["project_id"],
-                identity,
-                ds_id,
-                conn,
-                claimed_project_id=project_id,
-                minimum_role="owner",
-            )
-            if scope_err is not None:
-                return scope_err
-
-            # Check if soft-archive or hard delete will happen (for response status).
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT COUNT(*) FROM app.pull_jobs WHERE datastream_id = %s",
-                    (ds_id,),
-                )
-                ref_count = cur.fetchone()[0]
-
-            ok = delete_datastream(ds_id, project_id, conn, archived_by=identity or "anonymous")
-            conn.commit()
-    except Exception as exc:
-        logger.error("admin_api: delete_datastream_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Erreur base de donnees: {exc}"},
-            status_code=500,
-        )
-
-    if not ok:
-        return JSONResponse(
-            {"code": "not_found", "message": "Flux de donnees introuvable"},
-            status_code=404,
-        )
-
-    status_label = (
-        "archived" if ref_count > 0 or existing.get("current_plan_version_id") else "deleted"
-    )
-    write_audit_row(
-        identity=identity or "anonymous",
-        action=ACTION_DATASTREAM_DELETED,
-        provider_account="",
-        connection_ref="",
-        metadata={
-            "datastream_id": ds_id,
-            "project_id": project_id,
-            "disposition": status_label,
-        },
-    )
-    return JSONResponse({"status": status_label, "id": ds_id})
-
-
-async def _run_datastream(request: Request) -> Response:
-    """POST /api/datastreams/{id}/run -- enqueue a pull for this datastream.
-
-    Body (JSON): {"project_id": str, "date_from": str?, "date_to": str?}
-    If date_from/date_to are omitted, uses yesterday - (refetch_days-1) .. yesterday
-    (same window as the nightly scheduler).
-    Response (202): {"job_id", "pull_id", "state", "deduplicated"?}
-    Error:
-        400 -- missing project_id
-        401 -- unauthorized
-        404 -- not found or wrong project
-        422 -- validation error
-        500 -- DB/queue error
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Token d'acces requis"},
-            status_code=401,
-        )
-
-    ds_id = request.path_params.get("id", "")
-
-    try:
-        body_bytes = await request.body()
-        body: dict = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Corps JSON invalide: {exc}"},
-            status_code=400,
-        )
-
-    project_id = (body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse(
-            {"code": "missing_field", "message": "project_id est requis dans le corps"},
-            status_code=400,
-        )
-
-    try:
-        from core.datastreams import get_datastream  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            ds = get_datastream(ds_id, project_id, conn)
-            if ds is None:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Flux de donnees introuvable"},
-                    status_code=404,
-                )
-            scope_err = _enforce_datastream_project_scope(
-                ds["project_id"],
-                identity,
-                ds_id,
-                conn,
-                claimed_project_id=project_id,
-                minimum_role="member",
-            )
-            if scope_err is not None:
-                return scope_err
-    except Exception as exc:
-        logger.error("admin_api: run_datastream_db_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Erreur base de donnees: {exc}"},
-            status_code=500,
-        )
-
-    if ds.get("versioned"):
-        return JSONResponse(
-            {
-                "code": "dispatch_not_available",
-                "message": "Le dispatch versionne appartient a la Story 12.6.",
-            },
-            status_code=422,
-        )
-
-    connection_ref_id = ds.get("connection_ref_id")
-    if not connection_ref_id:
-        return JSONResponse(
-            {
-                "code": "not_configured",
-                "message": "Ce flux n'est pas encore lie a une connexion.",
-            },
-            status_code=422,
-        )
-
-    # Resolve window: caller-supplied or default from refetch_days.
-    date_from = (body.get("date_from") or "").strip()
-    date_to = (body.get("date_to") or "").strip()
-    if not date_from or not date_to:
-        refetch_days = int(ds.get("refetch_days") or 3)
-        yesterday_d = date.today() - timedelta(days=1)
-        date_from = (yesterday_d - timedelta(days=refetch_days - 1)).isoformat()
-        date_to = yesterday_d.isoformat()
-
-    try:
-        from core import queue  # noqa: PLC0415
-
-        job = queue.enqueue_pull(
-            connection_ref_id,
-            date_from,
-            date_to,
-            requested_by=identity or "anonymous",
-            datastream_id=ds_id,
-        )
-    except Exception as exc:
-        logger.error("admin_api: run_datastream_enqueue_error: %s", exc)
-        return JSONResponse(
-            {"code": "queue_error", "message": f"Erreur de mise en file d'attente: {exc}"},
-            status_code=500,
-        )
-
-    write_audit_row(
-        identity=identity or "anonymous",
-        action=ACTION_DATASTREAM_RUN,
-        provider_account="",
-        connection_ref=connection_ref_id,
-        metadata={
-            "datastream_id": ds_id,
-            "project_id": project_id,
-            "job_id": job.get("job_id"),
-            "date_from": date_from,
-            "date_to": date_to,
-        },
-    )
-    return JSONResponse(job, status_code=202)
 
 
 # ---------------------------------------------------------------------------
@@ -15708,383 +2289,25 @@ async def _run_datastream(request: Request) -> Response:
 #
 # GET  /api/datastreams/{id}/ledger?project_id=&from=&to=
 #      Returns day-grain extract ledger (last 35 days by default).
-# POST /api/datastreams/{id}/refetch
-#      Body: {"project_id": str, "dates": [YYYY-MM-DD, ...]}
-#         or {"project_id": str, "from": YYYY-MM-DD, "to": YYYY-MM-DD}
+# POST /api/projects/{project_id}/datastreams/{datastream_id}/refetch  (story 58.4)
+#      Body: {"dates": [YYYY-MM-DD, ...]} or {"from": ..., "to": ...}
 #      Enqueues bounded pull(s) via enqueue_pull with datastream_id.
 #      Contiguous date selections are grouped into one window each.
 # ---------------------------------------------------------------------------
 
-_DEFAULT_LEDGER_DAYS = 35
 
 
-async def _get_datastream_ledger(request: Request) -> Response:
-    """GET /api/datastreams/{id}/ledger -- extract ledger for a datastream.
-
-    Query params:
-        project_id  (required) -- project scope (AD-5)
-        from        (optional) -- start date YYYY-MM-DD (default today - 35 days)
-        to          (optional) -- end date YYYY-MM-DD (default yesterday)
-
-    Response (200):
-        {"ledger": [{date, status, row_count, expected_rows, completeness_ratio,
-                     pull_id, loaded_at}, ...]}
-        Ordered date ASC. One entry per calendar day in the window.
-
-    Error responses:
-        400 -- missing project_id, or invalid date format (French)
-        401 -- unauthorized
-        404 -- datastream not found or wrong project
-        500 -- DB error
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Token d'acces requis"},
-            status_code=401,
-        )
-
-    ds_id = request.path_params.get("id", "")
-    project_id = request.query_params.get("project_id") or ""
-    if not project_id:
-        return JSONResponse(
-            {
-                "code": "missing_param",
-                "message": "project_id est requis en parametre de requete",
-            },
-            status_code=400,
-        )
-
-    # Default window: last 35 days (yesterday back 35 days).
-    yesterday = (date.today() - timedelta(days=1)).isoformat()
-    default_from = (date.today() - timedelta(days=_DEFAULT_LEDGER_DAYS)).isoformat()
-
-    raw_from = (request.query_params.get("from") or default_from).strip()
-    raw_to = (request.query_params.get("to") or yesterday).strip()
-
-    if not _ISO_DATE_RE.match(raw_from):
-        return JSONResponse(
-            {
-                "code": "invalid_date",
-                "message": (
-                    f"Parametre 'from' invalide (format attendu YYYY-MM-DD) : {raw_from!r}"
-                ),
-            },
-            status_code=400,
-        )
-    if not _ISO_DATE_RE.match(raw_to):
-        return JSONResponse(
-            {
-                "code": "invalid_date",
-                "message": (f"Parametre 'to' invalide (format attendu YYYY-MM-DD) : {raw_to!r}"),
-            },
-            status_code=400,
-        )
-
-    try:
-        from core.datastreams import get_datastream  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-        from core.extract_ledger import get_extract_ledger  # noqa: PLC0415
-
-        with get_connection() as conn:
-            ds = get_datastream(ds_id, project_id, conn)
-            if ds is None:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Flux de donnees introuvable"},
-                    status_code=404,
-                )
-            scope_err = _enforce_datastream_project_scope(
-                ds["project_id"],
-                identity,
-                ds_id,
-                conn,
-                claimed_project_id=project_id,
-            )
-            if scope_err is not None:
-                return scope_err
-
-            ledger = get_extract_ledger(ds_id, raw_from, raw_to, conn)
-    except Exception as exc:
-        logger.error("admin_api: get_datastream_ledger_error ds=%s: %s", ds_id, exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Erreur base de donnees: {exc}"},
-            status_code=500,
-        )
-
-    return JSONResponse({"ledger": ledger})
 
 
-def _group_dates_into_windows(dates: list[str]) -> list[tuple[str, str]]:
-    """Group a sorted list of YYYY-MM-DD strings into contiguous (from, to) windows.
-
-    Example: ["2026-07-01", "2026-07-02", "2026-07-04"] ->
-             [("2026-07-01", "2026-07-02"), ("2026-07-04", "2026-07-04")]
-    """
-    if not dates:
-        return []
-
-    parsed = sorted({date.fromisoformat(d) for d in dates})
-    windows: list[tuple[str, str]] = []
-    window_start = parsed[0]
-    window_end = parsed[0]
-
-    for d in parsed[1:]:
-        if d == window_end + timedelta(days=1):
-            window_end = d
-        else:
-            windows.append((window_start.isoformat(), window_end.isoformat()))
-            window_start = d
-            window_end = d
-
-    windows.append((window_start.isoformat(), window_end.isoformat()))
-    return windows
 
 
-async def _refetch_datastream(request: Request) -> Response:
-    """POST /api/datastreams/{id}/refetch -- enqueue re-fetch for selected days.
 
-    Body (JSON):
-        {"project_id": str,
-         "dates": ["YYYY-MM-DD", ...]}          -- explicit day list, OR
-        {"project_id": str,
-         "from": "YYYY-MM-DD", "to": "YYYY-MM-DD"}  -- date range (converted to day list)
 
-    Contiguous date selections are grouped into minimal pull windows.
-    Each window calls enqueue_pull() with datastream_id; dedup index applies.
-    Writes ACTION_DATASTREAM_RUN per window.
 
-    Response (202):
-        {"jobs": [{job_id, pull_id, state, date_from, date_to, deduplicated?}, ...]}
 
-    Error responses:
-        400 -- missing project_id, no dates, invalid dates (French)
-        401 -- unauthorized
-        404 -- datastream not found or wrong project
-        422 -- datastream has no connection_ref_id
-        500 -- DB/queue error
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Token d'acces requis"},
-            status_code=401,
-        )
 
-    ds_id = request.path_params.get("id", "")
 
-    try:
-        body_bytes = await request.body()
-        body: dict = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Corps JSON invalide: {exc}"},
-            status_code=400,
-        )
 
-    project_id = (body.get("project_id") or "").strip()
-    if not project_id:
-        return JSONResponse(
-            {"code": "missing_field", "message": "project_id est requis"},
-            status_code=400,
-        )
-
-    # Resolve dates list from either "dates" array or "from"/"to" range.
-    dates_raw: list[str] = []
-    if "dates" in body:
-        raw_list = body.get("dates") or []
-        if not isinstance(raw_list, list):
-            return JSONResponse(
-                {"code": "invalid_field", "message": "dates doit etre un tableau de dates"},
-                status_code=400,
-            )
-        dates_raw = [str(d).strip() for d in raw_list]
-    elif "from" in body or "to" in body:
-        raw_from = (body.get("from") or "").strip()
-        raw_to = (body.get("to") or "").strip()
-        if not raw_from or not raw_to:
-            return JSONResponse(
-                {
-                    "code": "missing_field",
-                    "message": "from et to sont requis quand dates n'est pas fourni",
-                },
-                status_code=400,
-            )
-        if not _ISO_DATE_RE.match(raw_from):
-            return JSONResponse(
-                {
-                    "code": "invalid_date",
-                    "message": f"'from' invalide (format YYYY-MM-DD) : {raw_from!r}",
-                },
-                status_code=400,
-            )
-        if not _ISO_DATE_RE.match(raw_to):
-            return JSONResponse(
-                {
-                    "code": "invalid_date",
-                    "message": f"'to' invalide (format YYYY-MM-DD) : {raw_to!r}",
-                },
-                status_code=400,
-            )
-        # Expand range to day list.
-        try:
-            d_from = date.fromisoformat(raw_from)
-            d_to = date.fromisoformat(raw_to)
-            if d_to < d_from:
-                return JSONResponse(
-                    {
-                        "code": "invalid_date",
-                        "message": "'to' doit etre posterieur ou egal a 'from'",
-                    },
-                    status_code=400,
-                )
-            cur_d = d_from
-            while cur_d <= d_to:
-                dates_raw.append(cur_d.isoformat())
-                cur_d += timedelta(days=1)
-        except Exception:
-            return JSONResponse(
-                {"code": "invalid_date", "message": "Dates invalides"},
-                status_code=400,
-            )
-    else:
-        return JSONResponse(
-            {
-                "code": "missing_field",
-                "message": "Fournir 'dates' (tableau) ou 'from'/'to' (plage de dates)",
-            },
-            status_code=400,
-        )
-
-    if not dates_raw:
-        return JSONResponse(
-            {"code": "missing_field", "message": "Aucune date selectionnee"},
-            status_code=400,
-        )
-
-    # Validate each date string.
-    for d_str in dates_raw:
-        if not _ISO_DATE_RE.match(d_str):
-            return JSONResponse(
-                {
-                    "code": "invalid_date",
-                    "message": f"Date invalide (format YYYY-MM-DD) : {d_str!r}",
-                },
-                status_code=400,
-            )
-
-    # Cap at 365 days to prevent abuse.
-    if len(dates_raw) > 365:
-        return JSONResponse(
-            {
-                "code": "too_many_dates",
-                "message": "Maximum 365 jours par requete de re-fetch",
-            },
-            status_code=400,
-        )
-
-    # Fetch datastream and enforce project scope.
-    try:
-        from core.datastreams import get_datastream  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            ds = get_datastream(ds_id, project_id, conn)
-            if ds is None:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Flux de donnees introuvable"},
-                    status_code=404,
-                )
-            scope_err = _enforce_datastream_project_scope(
-                ds["project_id"],
-                identity,
-                ds_id,
-                conn,
-                claimed_project_id=project_id,
-                minimum_role="member",
-            )
-            if scope_err is not None:
-                return scope_err
-    except Exception as exc:
-        logger.error("admin_api: refetch_datastream_db_error ds=%s: %s", ds_id, exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Erreur base de donnees: {exc}"},
-            status_code=500,
-        )
-
-    if ds.get("versioned"):
-        return JSONResponse(
-            {
-                "code": "dispatch_not_available",
-                "message": "Le dispatch versionne appartient a la Story 12.6.",
-            },
-            status_code=422,
-        )
-
-    connection_ref_id = ds.get("connection_ref_id")
-    if not connection_ref_id:
-        return JSONResponse(
-            {
-                "code": "not_configured",
-                "message": "Ce flux n'est pas encore lie a une connexion.",
-            },
-            status_code=422,
-        )
-
-    # Group contiguous dates into windows, enqueue one pull per window.
-    try:
-        windows = _group_dates_into_windows(dates_raw)
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_date", "message": f"Erreur de calcul des fenetres: {exc}"},
-            status_code=400,
-        )
-
-    jobs: list[dict] = []
-    subject = identity or "anonymous"
-    try:
-        from core import queue  # noqa: PLC0415
-
-        for win_from, win_to in windows:
-            job = queue.enqueue_pull(
-                connection_ref_id,
-                win_from,
-                win_to,
-                requested_by=subject,
-                datastream_id=ds_id,
-            )
-            job_entry = {
-                "job_id": job.get("job_id"),
-                "pull_id": job.get("pull_id"),
-                "state": job.get("state"),
-                "date_from": win_from,
-                "date_to": win_to,
-            }
-            if job.get("deduplicated"):
-                job_entry["deduplicated"] = True
-            jobs.append(job_entry)
-
-            write_audit_row(
-                identity=subject,
-                action=ACTION_DATASTREAM_RUN,
-                provider_account="",
-                connection_ref=connection_ref_id,
-                metadata={
-                    "datastream_id": ds_id,
-                    "project_id": project_id,
-                    "job_id": job.get("job_id"),
-                    "date_from": win_from,
-                    "date_to": win_to,
-                    "source": "refetch",
-                },
-            )
-    except Exception as exc:
-        logger.error("admin_api: refetch_datastream_enqueue_error ds=%s: %s", ds_id, exc)
-        return JSONResponse(
-            {"code": "queue_error", "message": f"Erreur de mise en file d'attente: {exc}"},
-            status_code=500,
-        )
-
-    return JSONResponse({"jobs": jobs}, status_code=202)
 
 
 # ===========================================================================
@@ -16119,288 +2342,14 @@ async def _refetch_datastream(request: Request) -> Response:
 #     endpoint de controle). Coherent avec /api/health qui est accessible a tout admin.
 # ===========================================================================
 
-ACTION_CACHE_REBUILD = "cache.rebuild"
 
 
-async def _cache_status(request: Request) -> Response:
-    """GET /api/admin/cache/status -- etat du cache read-through (Story 19.3).
-
-    Retourne :
-      {
-        "cache_state":   "disabled" | "no-cache" | "stale" | "fresh",
-        "cache_enabled": bool,
-        "cache_built_at": str | null,       -- UTC ISO-8601 (depuis le manifeste)
-        "age_seconds":   float | null,      -- maintenant - cache_built_at
-        "min_date":      str | null,        -- borne basse de la fenetre
-        "max_date":      str | null,        -- borne haute de la fenetre
-        "tables":        [str, ...],        -- tables cachees (manifeste)
-        "row_counts":    {table: int, ...}, -- counts par table (manifeste)
-        "project_ids":   [str, ...],        -- projets couverts (manifeste)
-        "hit_rate":      float | null,      -- hits / (hits + misses) sur la session
-        "stats":         {decision: int},   -- compteurs bruts (AD-13)
-        "last_rebuild_cause": null          -- nightly | manual (enrichi en phase B)
-      }
-
-    Honnete : "no-cache" quand le fichier est absent/ephemere perdu, "stale" quand
-    le cache est perime selon la meme regle que 19.2 (_cache_is_fresh), "fresh" sinon.
-    "disabled" quand TOOROW_CACHE_ENABLED=false (independant de l'existence du fichier).
-    """
-    authorized, _identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Token Bearer requis."},
-            status_code=401,
-        )
-
-    # Lecture du flag enabled.
-    cache_enabled = os.environ.get("TOOROW_CACHE_ENABLED", "false").lower() == "true"
-
-    # Lecture du manifeste (None si absent/corrompu -- invariant f).
-    from core.cache_warehouse import read_manifest  # noqa: PLC0415
-
-    manifest = read_manifest()
-
-    # Compteurs hit/miss (AD-13 / NFR7) -- ne leve jamais.
-    try:
-        from core.warehouse import get_cache_stats  # noqa: PLC0415
-
-        stats = get_cache_stats()
-    except Exception:  # noqa: BLE001
-        stats = {}
-
-    hits = stats.get("hit", 0)
-    total_decisions = sum(stats.values())
-    # Le hit rate agrege = hits / toutes les decisions (hit + miss + bypass + ...).
-    hit_rate: float | None = (hits / total_decisions) if total_decisions > 0 else None
-
-    now_utc = datetime.now(tz=timezone.utc)
-
-    if not cache_enabled:
-        return JSONResponse(
-            {
-                "cache_state": "disabled",
-                "cache_enabled": False,
-                "cache_built_at": None,
-                "age_seconds": None,
-                "min_date": None,
-                "max_date": None,
-                "tables": [],
-                "row_counts": {},
-                "project_ids": [],
-                # review-19-3 F-3: cache off -> pas de hit rate (les stats ne comptent
-                # que des decisions "disabled", un ratio serait un mensonge semantique).
-                "hit_rate": None,
-                "stats": stats,
-                "last_rebuild_cause": None,
-            }
-        )
-
-    if manifest is None:
-        return JSONResponse(
-            {
-                "cache_state": "no-cache",
-                "cache_enabled": True,
-                "cache_built_at": None,
-                "age_seconds": None,
-                "min_date": None,
-                "max_date": None,
-                "tables": [],
-                "row_counts": {},
-                "project_ids": [],
-                "hit_rate": hit_rate,
-                "stats": stats,
-                "last_rebuild_cause": None,
-            }
-        )
-
-    cache_built_at = manifest.get("cache_built_at")
-    age_seconds: float | None = None
-    if cache_built_at:
-        try:
-            built_dt = datetime.fromisoformat(cache_built_at)
-            if built_dt.tzinfo is None:
-                built_dt = built_dt.replace(tzinfo=timezone.utc)
-            age_seconds = (now_utc - built_dt).total_seconds()
-        except Exception:  # noqa: BLE001
-            pass
-
-    # Fraicheur : reuse la MEME regle que 19.2 (_cache_is_fresh) -- pas de duplication.
-    try:
-        from core.warehouse import _cache_is_fresh  # noqa: PLC0415
-
-        is_fresh = _cache_is_fresh(cache_built_at, now=now_utc)
-    except Exception:  # noqa: BLE001
-        is_fresh = False
-
-    cache_state = "fresh" if is_fresh else "stale"
-
-    return JSONResponse(
-        {
-            "cache_state": cache_state,
-            "cache_enabled": True,
-            "cache_built_at": cache_built_at,
-            "age_seconds": age_seconds,
-            "min_date": manifest.get("min_date"),
-            "max_date": manifest.get("max_date"),
-            "tables": manifest.get("tables") or [],
-            "row_counts": manifest.get("row_counts") or {},
-            "project_ids": manifest.get("project_ids") or [],
-            "hit_rate": hit_rate,
-            "stats": stats,
-            "last_rebuild_cause": None,
-        }
-    )
 
 
-async def _cache_rebuild(request: Request) -> Response:
-    """POST /api/admin/cache/rebuild -- trigger manuel de rebuild (Story 19.3).
-
-    Declenche cache_warehouse.rebuild_cache() de facon bornee et synchrone.
-    Audite avec performed_by = identite REELLE du Bearer token (AD-14).
-    AD-5 : verifie que l'appelant est authentifie (meme guard que tout endpoint admin).
-    Invariant (f) : JAMAIS de 500 brut -- un echec retourne {"status": "failed"}.
-
-    Response (200):
-      {"status": "ok" | "disabled" | "failed" | "skipped",
-       "tables": [...], "row_counts": {...}, "project_ids": [...],
-       "min_date": str, "max_date": str, "cache_built_at": str,
-       "performed_by": str}
-
-    Response (401): non authentifie.
-    Response (403): TOOROW_CACHE_ENABLED=false (inutile de reconstruire un cache
-                    desactive, et declencher un rebuild serait trompeur).
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Token Bearer requis."},
-            status_code=401,
-        )
-
-    # review-19-3 F-2: une identite chaine-vide (auth disabled) ne doit pas
-    # contourner la valeur sentinelle "anonymous" dans l'audit AD-14.
-    performed_by = (identity or "").strip() or "anonymous"
-
-    # AD-5 / Guard : si le cache est desactive, le rebuild est refuse avec 403
-    # (cela eviterait une confusion : le service retourne "disabled" sans construire
-    # quoi que ce soit -- le caller doit activer TOOROW_CACHE_ENABLED d'abord).
-    cache_enabled = os.environ.get("TOOROW_CACHE_ENABLED", "false").lower() == "true"
-    if not cache_enabled:
-        write_audit_row(
-            identity=performed_by,
-            action=ACTION_CACHE_REBUILD,
-            provider_account="",
-            connection_ref="",
-            metadata={
-                "trigger": "manual",
-                "result": "refused_disabled",
-                "performed_by": performed_by,
-            },
-        )
-        return JSONResponse(
-            {
-                "code": "cache_disabled",
-                "message": (
-                    "Le cache est desactive (TOOROW_CACHE_ENABLED=false). "
-                    "Activez-le avant de declencher un rebuild."
-                ),
-            },
-            status_code=403,
-        )
-
-    # Audit AVANT le rebuild (AD-14 On-Behalf-Of : on trace la demande, pas seulement
-    # le resultat -- coherent avec la revocation Google et les autres actions on-demand).
-    write_audit_row(
-        identity=performed_by,
-        action=ACTION_CACHE_REBUILD,
-        provider_account="",
-        connection_ref="",
-        metadata={
-            "trigger": "manual",
-            "performed_by": performed_by,
-        },
-    )
-
-    # Rebuild on-demand -- JAMAIS de raise (invariant f : rebuild_cache() l'absorbe).
-    try:
-        from core import cache_warehouse  # noqa: PLC0415
-
-        result = cache_warehouse.rebuild_cache()
-    except Exception as exc:  # noqa: BLE001 -- filet de securite supplementaire
-        logger.warning("admin_api: cache_rebuild_unexpected: %s: %s", type(exc).__name__, exc)
-        result = {"status": "failed", "reason": f"{type(exc).__name__}: {exc}"}
-
-    logger.info(
-        "admin_api: cache_rebuild_manual status=%s performed_by=%s",
-        result.get("status"),
-        performed_by,
-    )
-
-    # Audit du resultat (AD-14 : on trace aussi le resultat pour observabilite).
-    write_audit_row(
-        identity=performed_by,
-        action=ACTION_CACHE_REBUILD,
-        provider_account="",
-        connection_ref="",
-        metadata={
-            "trigger": "manual_result",
-            "status": result.get("status"),
-            "tables": result.get("tables", []),
-            "performed_by": performed_by,
-        },
-    )
-
-    return JSONResponse({**result, "performed_by": performed_by})
 
 
-async def _source_capabilities(request: Request) -> Response:
-    """Return the governed capability catalog for one project-owned connection."""
-
-    ok, identity = await _check_auth(request)
-    if not ok:
-        return JSONResponse({"error": "unauthorized"}, status_code=401)
-
-    project_id = request.query_params.get("project_id", "").strip()
-    connection_ref_id = request.query_params.get("connection_ref_id", "").strip()
-    if not project_id or not connection_ref_id:
-        return JSONResponse(
-            {
-                "error": "invalid_input",
-                "message": "project_id and connection_ref_id are required",
-            },
-            status_code=400,
-        )
-
-    from core import db as _core_db  # noqa: PLC0415
-    from core.main import get_loaded_modules  # noqa: PLC0415
-    from core.source_capabilities import (  # noqa: PLC0415
-        SourceCapabilitiesNotFound,
-        SourceCapabilitiesUnavailable,
-        get_scoped_source_capabilities,
-    )
-
-    try:
-        with _core_db.get_connection() as conn:
-            catalog = get_scoped_source_capabilities(
-                project_id=project_id,
-                connection_ref_id=connection_ref_id,
-                identity=identity,
-                loaded_modules=get_loaded_modules(),
-                conn=conn,
-            )
-    except SourceCapabilitiesNotFound:
-        return JSONResponse({"error": "source_capabilities_not_found"}, status_code=404)
-    except SourceCapabilitiesUnavailable:
-        return JSONResponse({"error": "source_capabilities_unavailable"}, status_code=503)
-    except Exception as exc:  # noqa: BLE001 -- stable public failure contract
-        logger.warning("admin_api: source_capabilities_unavailable: %s", type(exc).__name__)
-        return JSONResponse({"error": "source_capabilities_unavailable"}, status_code=503)
-
-    return JSONResponse(catalog)
 
 
-# Story 36.6: setup responsibility checklist and minimum handoff seams.
-_SETUP_HANDOFF_COOKIE = "toorow_setup_handoff"
 
 
 def _setup_no_store(response: Response) -> Response:
@@ -16423,10 +2372,24 @@ def _setup_host_context(request: Request) -> dict[str, str]:
 
 
 def _setup_gate_response() -> Response | None:
-    from core.project_access import epic36_production_access_enabled
+    """The Epic 36 setup gate: open, and it is a SEAM, not a vestige.
 
-    if not epic36_production_access_enabled():
-        return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
+    Same repair as the five `if not True:` blocks removed from
+    `invitations_api` (audit 12, P2-4): a branch a future `not True` -> `not flag`
+    would have turned into an inverted refusal. The branch goes; the function
+    stays, and says out loud that it is open.
+
+    IT STAYS FOR ONE REASON, and only one. Twelve call sites in six modules read
+    this gate by name, and their own docstrings describe these routes as gated by
+    it (`mcp_hosts_api`, `publication_reviews_api`, `source_delegations_api`,
+    `first_value_api`, `entry_api`). Deleting it would silently ungate a dozen
+    routes' PROSE while changing no behaviour -- a documentation lie is worse than
+    an open gate that admits it is open. NOT for the reason its neighbours claim:
+    `first_value_api` says "une soixantaine de suites patchent
+    `core.admin_api._setup_gate_response`", and `grep -rl _setup_gate_response
+    server/tests/` returns ZERO files. Closing the gate is therefore a decision
+    still to make, not a switch someone is already flipping in tests.
+    """
     return None
 
 
@@ -16477,54 +2440,18 @@ def _setup_error(exc: Exception) -> Response:
     return _setup_no_store(JSONResponse({"code": code, "message": message}, status_code=status))
 
 
-async def _get_setup_journey(request: Request) -> Response:
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"}, status_code=401
-        )
-    if denied := _setup_gate_response():
-        return denied
-    project_id = request.path_params.get("project_id")
-    org_id = request.path_params.get("org_id")
-    from core.db import get_connection
-    from core.project_access import (
-        identity_has_org_access,
-        resolve_strict_resource_access,
-    )
-    from core.setup_responsibilities import get_reconciled_journey
-
-    try:
-        with get_connection() as conn:
-            if project_id:
-                decision = resolve_strict_resource_access(
-                    identity, conn, minimum_capability="view", project_id=project_id
-                )
-                if not decision.allowed:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "Not found"}, status_code=404
-                    )
-                result = get_reconciled_journey(
-                    conn,
-                    project_id=project_id,
-                    server_evidence={"project_access": {project_id: True}},
-                )
-            else:
-                if not org_id or not identity_has_org_access(org_id, identity, conn):
-                    return JSONResponse(
-                        {"code": "not_found", "message": "Not found"}, status_code=404
-                    )
-                result = get_reconciled_journey(
-                    conn,
-                    org_id=org_id,
-                    server_evidence={"organization_access": {org_id: True}},
-                )
-    except Exception as exc:
-        return _setup_error(exc)
-    return _setup_no_store(JSONResponse(result))
-
-
 async def _prepare_setup_handoff(request: Request) -> Response:
+    """RETIRE -- la remise d'une tache de mise en route est passee au PROJET.
+
+    Repondait `POST /api/setup/handoffs`, a l'echelle de l'organisation. Ce que
+    la console ouvre aujourd'hui est
+    `POST /api/projects/{project_id}/getting-started/tasks/{task_id}/handoffs`
+    (`core/getting_started_api.py`), et c'est le deplacement qui compte : la
+    porte org-wide repondait sans projet.
+
+    Garde en place, monte par rien -- `tests/conformance/test_retired_admin_routes.py`
+    refuse a la fois son remontage et la disparition de son successeur.
+    """
     authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
@@ -16589,6 +2516,15 @@ async def _prepare_setup_handoff(request: Request) -> Response:
 
 
 async def _reassign_setup_task(request: Request) -> Response:
+    """RETIRE -- la reassignation d'une tache est passee au PROJET.
+
+    Repondait `POST /api/setup/tasks/{task_id}/owner`. Le geste vit aujourd'hui
+    dans `patch_task_owner`, sur
+    `PATCH /api/projects/{project_id}/getting-started/tasks/{task_id}/owner`,
+    qui appelle le meme `setup_responsibilities.reassign_task` avec une portee.
+
+    Garde en place, monte par rien -- voir `test_retired_admin_routes.py`.
+    """
     authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
@@ -16637,2295 +2573,266 @@ async def _reassign_setup_task(request: Request) -> Response:
     return _setup_no_store(JSONResponse(result))
 
 
-async def _revoke_setup_handoff(request: Request) -> Response:
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"}, status_code=401
-        )
-    if denied := _setup_gate_response():
-        return denied
-    key = (request.headers.get("Idempotency-Key") or "").strip()
-    if not key:
-        return _setup_no_store(
-            JSONResponse(
-                {"code": "missing_idempotency_key", "message": "Idempotency-Key is required"},
-                status_code=422,
-            )
-        )
-    from core import tracing
-    from core.db import get_connection
-    from core.setup_responsibilities import revoke_handoff
-
-    try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT task_id FROM app.setup_handoffs WHERE id=%s",
-                    (request.path_params["handoff_id"],),
-                )
-                row = cur.fetchone()
-            if row is None:
-                return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-            denied = _authorize_setup_task(
-                conn, identity=identity, task_id=row[0], minimum_capability="manage"
-            )
-            if denied is not None:
-                return denied
-            result = revoke_handoff(
-                conn,
-                handoff_id=request.path_params["handoff_id"],
-                actor=identity,
-                idempotency_key=key,
-                host_context=_setup_host_context(request),
-                trace_id=tracing.current_trace_id_hex(),
-            )
-            conn.commit()
-    except Exception as exc:
-        return _setup_error(exc)
-    return _setup_no_store(JSONResponse(result))
-
-
-async def _setup_handoff_bootstrap(_request: Request) -> Response:
-    import secrets as _secrets
-
-    nonce = _secrets.token_urlsafe(18)
-    html = """<!doctype html><html lang="fr"><head><meta charset="utf-8">
-<meta name="referrer" content="no-referrer"><title>Action de mise en route</title></head>
-<body><main><h1>Action de mise en route</h1><p>Vérification du périmètre.</p></main>
-<script nonce="__NONCE__">'use strict';const raw=location.hash.startsWith('#handoff=')
-?location.hash.slice(9):'';history.replaceState(null,'',location.pathname);
-if(raw){fetch('/api/setup/handoffs/exchange',{method:'POST',credentials:'same-origin',
-headers:{'Content-Type':'application/json'},body:JSON.stringify({bearer:raw})});}</script>
-</body></html>""".replace("__NONCE__", nonce)
-    return Response(
-        html,
-        media_type="text/html",
-        headers={
-            "Cache-Control": "no-store, max-age=0",
-            "Pragma": "no-cache",
-            "Referrer-Policy": "no-referrer",
-            "X-Frame-Options": "DENY",
-            "X-Content-Type-Options": "nosniff",
-            "Content-Security-Policy": (
-                f"default-src 'none'; script-src 'nonce-{nonce}'; connect-src 'self'; "
-                "style-src 'none'; img-src 'none'; frame-ancestors 'none'; base-uri 'none'"
-            ),
-        },
-    )
-
-
-async def _exchange_setup_handoff(request: Request) -> Response:
-    from core.db import get_connection
-    from core.setup_responsibilities import exchange_handoff
-
-    # Best-effort identity: a bound handoff requires the authenticated matching
-    # identity; an unbound (anonymous, external-actor) handoff stays open.
-    authorized, identity = await _check_invitation_identity(request)
-    presented_identity = identity if authorized and identity != "anonymous" else None
-    try:
-        body = json.loads(await request.body())
-        bearer = body.get("bearer") if isinstance(body, dict) else None
-        with get_connection() as conn:
-            result = exchange_handoff(conn, bearer=bearer, presented_identity=presented_identity)
-            conn.commit()
-    except Exception as exc:
-        return _setup_error(exc)
-    response = _setup_no_store(
-        JSONResponse(
-            {
-                "handoff_id": result.handoff_id,
-                "task_id": result.task_id,
-                "purpose": result.purpose,
-                "actor_type": result.actor_type,
-                "safe_scope": result.safe_scope,
-                "return_path": result.return_path,
-            }
-        )
-    )
-    response.set_cookie(
-        _SETUP_HANDOFF_COOKIE,
-        result.session_value,
-        max_age=result.max_age_seconds,
-        path="/api/setup/handoffs",
-        secure=True,
-        httponly=True,
-        samesite="strict",
-    )
-    return response
-
-
-# ---------------------------------------------------------------------------
-# Story 36.7: delegated source authorization and exact account exposure.
-# The operator prepares a delegation; the credential owner authorizes and
-# exposes ONLY the exact account. The callback verifies redirect-allowlist +
-# state + nonce + PKCE BEFORE any connection/exposure transition (SameSite=Lax).
-# No token/secret ever enters a response or an operation payload.
-# ---------------------------------------------------------------------------
-def _delegation_error(exc: Exception) -> Response:
-    from core.operations import OperationIdempotencyConflict
-    from core.source_delegation import (
-        DelegationConflict,
-        DelegationUnavailable,
-        DelegationValidationError,
-        DelegationVerificationError,
-    )
-
-    if isinstance(exc, DelegationVerificationError):
-        # Opaque 400 -- no oracle on redirect/state/nonce/PKCE rejection reason.
-        status, code, message = (
-            400,
-            "invalid_delegation",
-            "Requête de délégation invalide ou expirée. Relancez l'autorisation.",
-        )
-    elif isinstance(exc, DelegationUnavailable):
-        status, code, message = 404, "not_found", "Not found"
-    elif isinstance(exc, (DelegationConflict, OperationIdempotencyConflict)):
-        status, code, message = 409, "conflict", "Delegation state already changed"
-    elif isinstance(exc, (DelegationValidationError, json.JSONDecodeError, TypeError)):
-        status, code, message = 422, "invalid_request", str(exc)
-    else:
-        logger.error("admin_api: source delegation failed: %s", type(exc).__name__)
-        status, code, message = 500, "operation_failed", "Delegation unavailable"
-    return _setup_no_store(JSONResponse({"code": code, "message": message}, status_code=status))
-
-
-async def _prepare_source_delegation(request: Request) -> Response:
-    """POST /api/source-delegations -- bind a delegation + mint the owner handoff.
-
-    Body: {task_id, source, provider, owner_org_id, beneficiary_org_id,
-           requested_scopes[], redirect_allowlist_ref, expires_in_hours?}
-    Enforces auth (AD-14) + edit access on the source_authorization task (AD-5)
-    BEFORE binding. Returns the delegation id, state, authorize state, PKCE
-    challenge (public) and the minimum-scoped handoff -- never a token/secret.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"}, status_code=401
-        )
-    if denied := _setup_gate_response():
-        return denied
-    key = (request.headers.get("Idempotency-Key") or "").strip()
-    if not key:
-        return _setup_no_store(
-            JSONResponse(
-                {"code": "missing_idempotency_key", "message": "Idempotency-Key is required"},
-                status_code=422,
-            )
-        )
-    from core import tracing
-    from core.db import get_connection
-    from core.source_delegation import prepare_source_delegation
-
-    try:
-        body = json.loads(await request.body())
-        if not isinstance(body, dict):
-            raise TypeError("body must be an object")
-        task_id = str(body.get("task_id") or "")
-        with get_connection() as conn:
-            denied = _authorize_setup_task(
-                conn, identity=identity, task_id=task_id, minimum_capability="edit"
-            )
-            if denied is not None:
-                return denied
-            result = prepare_source_delegation(
-                conn,
-                task_id=task_id,
-                source=str(body.get("source") or ""),
-                provider=str(body.get("provider") or ""),
-                owner_org_id=str(body.get("owner_org_id") or ""),
-                beneficiary_org_id=str(body.get("beneficiary_org_id") or ""),
-                requested_scopes=body.get("requested_scopes"),
-                redirect_allowlist_ref=str(body.get("redirect_allowlist_ref") or ""),
-                actor=identity,
-                idempotency_key=key,
-                host_context=_setup_host_context(request),
-                trace_id=tracing.current_trace_id_hex(),
-                expires_in_hours=int(body.get("expires_in_hours", 48)),
-            )
-            conn.commit()
-    except Exception as exc:
-        return _delegation_error(exc)
-    payload = {
-        "delegation_id": result.delegation_id,
-        "state": result.state,
-        "expires_at": result.expires_at,
-        "operation_id": result.operation_id,
-        "audit_event_id": result.audit_event_id,
-        "authorize_state": result.authorize_state,
-        "pkce_challenge": result.pkce_challenge,
-        "pkce_method": result.pkce_method,
-        "replayed": result.replayed,
-    }
-    if result.handoff.delivery_url:
-        payload["delivery_handoff"] = {
-            "url": result.handoff.delivery_url,
-            "single_return": True,
-        }
-    return _setup_no_store(
-        Response(
-            json.dumps(payload),
-            status_code=201,
-            media_type="application/vnd.toorow.source-delegation+json",
-        )
-    )
-
-
-async def _source_delegation_callback(request: Request) -> Response:
-    """POST /api/source-delegations/{delegation_id}/callback
-
-    The delegated OAuth callback lands here (SameSite=Lax return). Verifies the
-    exact redirect allow-list + HMAC state + nonce + PKCE BEFORE any transition,
-    then exposes ONLY the exact account and REVALIDATES connection health + exact
-    exposure. No token/secret enters this handler, its payload, or its response.
-
-    Body: {state, redirect_uri, credential_id, external_account_id}
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"}, status_code=401
-        )
-    if denied := _setup_gate_response():
-        return denied
-    key = (request.headers.get("Idempotency-Key") or "").strip()
-    if not key:
-        return _setup_no_store(
-            JSONResponse(
-                {"code": "missing_idempotency_key", "message": "Idempotency-Key is required"},
-                status_code=422,
-            )
-        )
-    from ulid import ULID
-
-    from core import tracing
-    from core.db import get_connection
-    from core.source_delegation import complete_source_delegation
-
-    try:
-        body = json.loads(await request.body())
-        if not isinstance(body, dict):
-            raise TypeError("body must be an object")
-        delegation_id = request.path_params["delegation_id"]
-        with get_connection() as conn:
-            result = complete_source_delegation(
-                conn,
-                delegation_id=delegation_id,
-                state_param=str(body.get("state") or ""),
-                redirect_uri=str(body.get("redirect_uri") or ""),
-                credential_id=str(body.get("credential_id") or ""),
-                external_account_id=str(body.get("external_account_id") or ""),
-                grant_id=f"grant_{ULID()}",
-                actor=identity,
-                idempotency_key=key,
-                host_context=_setup_host_context(request),
-                trace_id=tracing.current_trace_id_hex(),
-            )
-            conn.commit()
-    except Exception as exc:
-        return _delegation_error(exc)
-    response = _setup_no_store(
-        JSONResponse(
-            {
-                "delegation_id": result.delegation_id,
-                "state": result.state,
-                "task_state": result.task_reconciled_state,
-                "exposure": result.exposure,
-                "operation_id": result.operation_id,
-                "audit_event_id": result.audit_event_id,
-                "replayed": result.replayed,
-            }
-        )
-    )
-    # SameSite=Lax on any delegation cookie the callback may set (Story 36.7 AC).
-    response.headers["Set-Cookie-SameSite-Policy"] = "Lax"
-    return response
-
-
-async def _revoke_source_delegation(request: Request) -> Response:
-    """POST /api/source-delegations/{delegation_id}/revoke
-
-    Close a pending delegation without touching any prior valid connection or
-    exposure. Enforces auth + edit access on the bound task.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"}, status_code=401
-        )
-    if denied := _setup_gate_response():
-        return denied
-    key = (request.headers.get("Idempotency-Key") or "").strip()
-    if not key:
-        return _setup_no_store(
-            JSONResponse(
-                {"code": "missing_idempotency_key", "message": "Idempotency-Key is required"},
-                status_code=422,
-            )
-        )
-    from core import tracing
-    from core.db import get_connection
-    from core.source_delegation import revoke_source_delegation
-
-    try:
-        delegation_id = request.path_params["delegation_id"]
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT task_id FROM app.source_delegations WHERE delegation_id=%s",
-                    (delegation_id,),
-                )
-                row = cur.fetchone()
-            if row is None:
-                return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-            denied = _authorize_setup_task(
-                conn, identity=identity, task_id=row[0], minimum_capability="edit"
-            )
-            if denied is not None:
-                return denied
-            result = revoke_source_delegation(
-                conn,
-                delegation_id=delegation_id,
-                actor=identity,
-                idempotency_key=key,
-                host_context=_setup_host_context(request),
-                trace_id=tracing.current_trace_id_hex(),
-            )
-            conn.commit()
-    except Exception as exc:
-        return _delegation_error(exc)
-    return _setup_no_store(JSONResponse(result))
-
-
-# ---------------------------------------------------------------------------
-# Story 36.14: capability-driven host preflight, install handoff and callback bind.
-# Project-scoped, fail-closed via the Epic 36 gate + resolve_strict_resource_access
-# (manage, since the bind may enable a high-risk-capable capability context; the
-# preflight binds to the host_connection setup task). NO brand-first ordering: the
-# catalog is returned as an opaque capability-keyed mapping (E36-NFR03). NO token or
-# Toorow data enters any handler, payload or response.
-# ---------------------------------------------------------------------------
-def _host_preflight_error(exc: Exception) -> Response:
-    from core.host_preflight import (
-        HostPreflightConflict,
-        HostPreflightUnavailable,
-        HostPreflightValidationError,
-    )
-    from core.operations import OperationIdempotencyConflict
-
-    if isinstance(exc, HostPreflightUnavailable):
-        status, code, message = 404, "not_found", "Not found"
-    elif isinstance(exc, (HostPreflightConflict, OperationIdempotencyConflict)):
-        status, code, message = 409, "conflict", "Host preflight state already changed"
-    elif isinstance(exc, (HostPreflightValidationError, json.JSONDecodeError, TypeError)):
-        status, code, message = 422, "invalid_request", str(exc)
-    else:
-        logger.error("admin_api: host preflight failed: %s", type(exc).__name__)
-        status, code, message = 500, "operation_failed", "Host preflight unavailable"
-    return _setup_no_store(JSONResponse({"code": code, "message": message}, status_code=status))
-
-
-async def _get_host_catalog(request: Request) -> Response:
-    """GET /api/mcp-hosts/catalog -- the maintained host capability catalog.
-
-    Returns an OPAQUE, capability-keyed MAPPING of hosts (E36-NFR03: no brand-first
-    ordering). Authenticated + gated only; the catalog is source-agnostic reference
-    data with no org-specific content, so no per-resource access check is required.
-    """
-    authorized, _identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"}, status_code=401
-        )
-    if denied := _setup_gate_response():
-        return denied
-    from core.host_preflight import host_catalog
-
-    return _setup_no_store(JSONResponse({"hosts": host_catalog()}))
-
-
-async def _prepare_host_preflight(request: Request) -> Response:
-    """POST /api/mcp-hosts/preflight -- record a dated, capability-negotiated preflight.
-
-    Body: {host_key, task_id, org_id, project_id?, expires_in_hours?}
-    Enforces auth (AD-14) + manage access on the host_connection task (AD-5) BEFORE
-    recording. Returns the dated capabilities/plan/role + UI-support decision.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"}, status_code=401
-        )
-    if denied := _setup_gate_response():
-        return denied
-    key = (request.headers.get("Idempotency-Key") or "").strip()
-    if not key:
-        return _setup_no_store(
-            JSONResponse(
-                {"code": "missing_idempotency_key", "message": "Idempotency-Key is required"},
-                status_code=422,
-            )
-        )
-    from core import tracing
-    from core.db import get_connection
-    from core.host_preflight import preflight_host
-
-    try:
-        body = json.loads(await request.body())
-        if not isinstance(body, dict):
-            raise TypeError("body must be an object")
-        task_id = str(body.get("task_id") or "")
-        with get_connection() as conn:
-            denied = _authorize_setup_task(
-                conn, identity=identity, task_id=task_id, minimum_capability="manage"
-            )
-            if denied is not None:
-                return denied
-            result = preflight_host(
-                conn,
-                host_key=str(body.get("host_key") or ""),
-                task_id=task_id,
-                org_id=str(body.get("org_id") or ""),
-                project_id=body.get("project_id"),
-                actor=identity,
-                idempotency_key=key,
-                host_context=_setup_host_context(request),
-                trace_id=tracing.current_trace_id_hex(),
-                expires_in_hours=int(body.get("expires_in_hours", 72)),
-            )
-            conn.commit()
-    except Exception as exc:
-        return _host_preflight_error(exc)
-    return _setup_no_store(
-        Response(
-            json.dumps(result),
-            status_code=201,
-            media_type="application/vnd.toorow.host-preflight+json",
-        )
-    )
-
-
-async def _prepare_host_install_handoff(request: Request) -> Response:
-    """POST /api/mcp-hosts/preflight/{preflight_id}/handoff
-
-    Hand the install to the host administrator via a minimal purpose-scoped handoff
-    (no Toorow data). Enforces auth + manage access on the bound host_connection task.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"}, status_code=401
-        )
-    if denied := _setup_gate_response():
-        return denied
-    key = (request.headers.get("Idempotency-Key") or "").strip()
-    if not key:
-        return _setup_no_store(
-            JSONResponse(
-                {"code": "missing_idempotency_key", "message": "Idempotency-Key is required"},
-                status_code=422,
-            )
-        )
-    from core import tracing
-    from core.db import get_connection
-    from core.host_preflight import prepare_host_install_handoff
-
-    try:
-        preflight_id = request.path_params["preflight_id"]
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT task_id FROM app.host_preflights WHERE id=%s", (preflight_id,))
-                row = cur.fetchone()
-            if row is None:
-                return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-            denied = _authorize_setup_task(
-                conn, identity=identity, task_id=row[0], minimum_capability="manage"
-            )
-            if denied is not None:
-                return denied
-            result = prepare_host_install_handoff(
-                conn,
-                preflight_id=preflight_id,
-                actor=identity,
-                idempotency_key=key,
-                host_context=_setup_host_context(request),
-                trace_id=tracing.current_trace_id_hex(),
-                expires_in_hours=int(
-                    (json.loads(await request.body() or "{}") or {}).get("expires_in_hours", 72)
-                ),
-            )
-            conn.commit()
-    except Exception as exc:
-        return _host_preflight_error(exc)
-    return _setup_no_store(JSONResponse(result))
-
-
-async def _bind_host_connection(request: Request) -> Response:
-    """POST /api/mcp-hosts/preflight/{preflight_id}/bind
-
-    On a verified install/authorization, reconcile the callback state from SERVER
-    evidence and write the Story 36.11 capability-context binding (endpoint/org/
-    policy/catalog version). High-risk profiles bind ONLY with a verifiable 64-hex
-    workspace_evidence_hash; otherwise only Insights binds (fail closed). No token
-    or secret enters this handler, its payload or its response.
-
-    Body: {endpoint_binding, enabled_profiles[], workspace_evidence_hash?, host?,
-           workspace_id?, workspace_type?, client_id?, policy_version}
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"}, status_code=401
-        )
-    if denied := _setup_gate_response():
-        return denied
-    key = (request.headers.get("Idempotency-Key") or "").strip()
-    if not key:
-        return _setup_no_store(
-            JSONResponse(
-                {"code": "missing_idempotency_key", "message": "Idempotency-Key is required"},
-                status_code=422,
-            )
-        )
-    from core import tracing
-    from core.db import get_connection
-    from core.host_preflight import bind_host_connection
-
-    try:
-        body = json.loads(await request.body())
-        if not isinstance(body, dict):
-            raise TypeError("body must be an object")
-        preflight_id = request.path_params["preflight_id"]
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT task_id FROM app.host_preflights WHERE id=%s", (preflight_id,))
-                row = cur.fetchone()
-            if row is None:
-                return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-            denied = _authorize_setup_task(
-                conn, identity=identity, task_id=row[0], minimum_capability="manage"
-            )
-            if denied is not None:
-                return denied
-            profiles = body.get("enabled_profiles")
-            result = bind_host_connection(
-                conn,
-                preflight_id=preflight_id,
-                endpoint_binding=str(body.get("endpoint_binding") or ""),
-                enabled_profiles=profiles if isinstance(profiles, list) else ["insights"],
-                workspace_evidence_hash=body.get("workspace_evidence_hash"),
-                host=body.get("host"),
-                workspace_id=body.get("workspace_id"),
-                workspace_type=body.get("workspace_type"),
-                client_id=body.get("client_id"),
-                policy_version=str(body.get("policy_version") or ""),
-                actor=identity,
-                idempotency_key=key,
-                host_context=_setup_host_context(request),
-                trace_id=tracing.current_trace_id_hex(),
-            )
-            conn.commit()
-    except Exception as exc:
-        return _host_preflight_error(exc)
-    return _setup_no_store(JSONResponse(result))
-
-
-# ---------------------------------------------------------------------------
-# Story 36.8: recommend and save a bounded first-report draft, then preview it.
-# All three routes are project-scoped and fail-closed via the Epic 36 gate +
-# resolve_strict_resource_access. The preview NEVER publishes or advances a
-# current pointer (the domain enforces can_publish=False).
-# ---------------------------------------------------------------------------
-def _first_report_error(exc: Exception) -> Response:
-    from core.first_report_draft import (
-        FirstReportDraftConflict,
-        FirstReportDraftUnavailable,
-        FirstReportDraftValidationError,
-    )
-    from core.operations import OperationIdempotencyConflict
-
-    if isinstance(exc, FirstReportDraftUnavailable):
-        status, code, message = 404, "not_found", "Not found"
-    elif isinstance(exc, (FirstReportDraftConflict, OperationIdempotencyConflict)):
-        status, code, message = 409, "conflict", "First report draft already saved"
-    elif isinstance(exc, (FirstReportDraftValidationError, json.JSONDecodeError, TypeError)):
-        status, code, message = 422, "invalid_request", str(exc)
-    else:
-        logger.error("admin_api: first report draft failed: %s", type(exc).__name__)
-        status, code, message = 500, "operation_failed", "First report draft unavailable"
-    return _setup_no_store(JSONResponse({"code": code, "message": message}, status_code=status))
-
-
-async def _first_report_scope(request: Request):
-    """Shared fail-closed gate: (denied_response | None, identity, project_id, decision)."""
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return (
-            JSONResponse(
-                {"code": "unauthorized", "message": "Bearer token required"}, status_code=401
-            ),
-            identity,
-            None,
-            None,
-        )
-    if denied := _setup_gate_response():
-        return denied, identity, None, None
-    return None, identity, request.path_params.get("project_id"), None
-
-
-async def _recommend_first_report(request: Request) -> Response:
-    denied, identity, project_id, _ = await _first_report_scope(request)
-    if denied is not None:
-        return denied
-    datastream_id = request.path_params.get("datastream_id")
-    from core.db import get_connection
-    from core.first_report_draft import recommend_first_report
-    from core.main import get_loaded_modules
-    from core.project_access import (
-        resolve_provider_account_access,
-        resolve_strict_resource_access,
-    )
-    from core.source_capabilities import (
-        SourceCapabilitiesNotFound,
-        SourceCapabilitiesUnavailable,
-        get_scoped_source_capabilities,
-    )
-
-    try:
-        with get_connection() as conn:
-            decision = resolve_strict_resource_access(
-                identity, conn, minimum_capability="edit", project_id=project_id
-            )
-            if not decision.allowed:
-                return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-            # Resolve the datastream's connection + one exposed eligible account.
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT current_plan_version_id FROM app.datastreams "
-                    "WHERE id=%s AND project_id=%s",
-                    (datastream_id, project_id),
-                )
-                if cur.fetchone() is None:
-                    return JSONResponse(
-                        {"code": "not_found", "message": "Not found"}, status_code=404
-                    )
-                cur.execute(
-                    """
-                    -- Le credential DU datastream, via d.connection_ref_id : c'est
-                    -- lui qui sert a aller chercher ses donnees. La jointure
-                    -- precedente prenait  n'importe quel credential du meme projet
-                    -- puis LIMIT 1 -- des qu'un projet en a plusieurs, elle pouvait
-                    -- rendre celui d'un autre fournisseur. Elle serait de surcroit
-                    -- devenue vide le jour ou connection_ref.project_id est retire.
-                    SELECT cr.id, s.account_id
-                    FROM app.datastreams d
-                    JOIN app.connection_ref cr ON cr.id = d.connection_ref_id
-                    LEFT JOIN app.connection_account_scope s ON s.connection_ref_id = cr.id
-                    WHERE d.id = %s AND d.project_id = %s AND cr.status = 'active'
-                    LIMIT 1
-                    """,
-                    (datastream_id, project_id),
-                )
-                conn_row = cur.fetchone()
-            if conn_row is None:
-                return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-            connection_ref_id, exposed_account_id = conn_row[0], conn_row[1]
-            account = None
-            if exposed_account_id:
-                acc = resolve_provider_account_access(
-                    identity,
-                    conn,
-                    credential_id=connection_ref_id,
-                    external_account_id=exposed_account_id,
-                    beneficiary_org_id=decision.org_id or "",
-                    project_id=project_id,
-                )
-                if acc.allowed:
-                    account = {
-                        "credential_id": connection_ref_id,
-                        "external_account_id": exposed_account_id,
-                    }
-            try:
-                capabilities = get_scoped_source_capabilities(
-                    project_id=project_id,
-                    connection_ref_id=connection_ref_id,
-                    identity=identity,
-                    loaded_modules=get_loaded_modules(),
-                    conn=conn,
-                )
-            except SourceCapabilitiesNotFound:
-                return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-            except SourceCapabilitiesUnavailable:
-                return JSONResponse(
-                    {"code": "operation_failed", "message": "Source unavailable"}, status_code=503
-                )
-            recommendation = recommend_first_report(
-                conn,
-                project_id=project_id,
-                capabilities=capabilities,
-                account=account,
-                actor=identity,
-                datastream_id=datastream_id,
-            )
-    except Exception as exc:
-        return _first_report_error(exc)
-    payload = recommendation.as_dict()
-    payload["connection_ref_id"] = connection_ref_id
-    return _setup_no_store(JSONResponse(payload))
-
-
-async def _save_first_report_draft(request: Request) -> Response:
-    denied, identity, project_id, _ = await _first_report_scope(request)
-    if denied is not None:
-        return denied
-    datastream_id = request.path_params.get("datastream_id")
-    key = (request.headers.get("Idempotency-Key") or "").strip()
-    if not key:
-        return _setup_no_store(
-            JSONResponse(
-                {"code": "missing_idempotency_key", "message": "Idempotency-Key is required"},
-                status_code=422,
-            )
-        )
-    from core import tracing
-    from core.db import get_connection
-    from core.first_report_draft import save_first_report_draft
-    from core.main import get_loaded_modules
-    from core.project_access import resolve_strict_resource_access
-    from core.source_capabilities import (
-        SourceCapabilitiesNotFound,
-        SourceCapabilitiesUnavailable,
-        get_scoped_source_capabilities,
-    )
-
-    try:
-        body = json.loads(await request.body())
-        if not isinstance(body, dict):
-            raise TypeError("body must be an object")
-        with get_connection() as conn:
-            decision = resolve_strict_resource_access(
-                identity, conn, minimum_capability="edit", project_id=project_id
-            )
-            if not decision.allowed:
-                return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-            connection_ref_id = str(body.get("connection_ref_id") or "")
-            try:
-                capabilities = get_scoped_source_capabilities(
-                    project_id=project_id,
-                    connection_ref_id=connection_ref_id,
-                    identity=identity,
-                    loaded_modules=get_loaded_modules(),
-                    conn=conn,
-                )
-            except SourceCapabilitiesNotFound:
-                return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-            except SourceCapabilitiesUnavailable:
-                return JSONResponse(
-                    {"code": "operation_failed", "message": "Source unavailable"}, status_code=503
-                )
-            saved = save_first_report_draft(
-                conn,
-                project_id=project_id,
-                datastream_id=datastream_id,
-                connection_ref_id=connection_ref_id,
-                report_id=str(body.get("report_id") or ""),
-                metrics=list(body.get("metrics") or []),
-                dimensions=list(body.get("dimensions") or []),
-                grain=list(body.get("grain") or []),
-                timezone=str(body.get("timezone") or "UTC"),
-                currency=str(body.get("currency") or "unknown"),
-                interval=body.get("interval") or {},
-                capabilities=capabilities,
-                actor=identity,
-                idempotency_key=key,
-                effective_org_id=decision.org_id or "",
-                host_context=_setup_host_context(request),
-                trace_id=tracing.current_trace_id_hex(),
-            )
-    except Exception as exc:
-        return _first_report_error(exc)
-    return _setup_no_store(
-        JSONResponse(
-            {
-                "draft_id": saved.draft_id,
-                "plan_version_id": saved.plan_version_id,
-                "mapping_version_id": saved.mapping_version_id,
-                "state": saved.state,
-                "operation_id": saved.operation_id,
-                "audit_event_id": saved.audit_event_id,
-                "replayed": saved.replayed,
-                "recommendation": saved.recommendation,
-            },
-            status_code=201,
-        )
-    )
-
-
-async def _preview_first_report(request: Request) -> Response:
-    denied, identity, project_id, _ = await _first_report_scope(request)
-    if denied is not None:
-        return denied
-    from core.db import get_connection
-    from core.first_report_draft import preview_first_report
-    from core.project_access import resolve_strict_resource_access
-
-    try:
-        body = json.loads(await request.body())
-        if not isinstance(body, dict):
-            raise TypeError("body must be an object")
-        with get_connection() as conn:
-            decision = resolve_strict_resource_access(
-                identity, conn, minimum_capability="view", project_id=project_id
-            )
-            if not decision.allowed:
-                return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-            preview = preview_first_report(
-                conn,
-                project_id=project_id,
-                plan_version_id=str(body.get("plan_version_id") or ""),
-                mapping_version_id=str(body.get("mapping_version_id") or ""),
-                actor=identity,
-                draft_id=body.get("draft_id"),
-                row_count=body.get("row_count"),
-                content_hash=body.get("content_hash"),
-            )
-    except Exception as exc:
-        return _first_report_error(exc)
-    return _setup_no_store(
-        JSONResponse(
-            {
-                "draft_id": preview.draft_id,
-                "plan_version_id": preview.plan_version_id,
-                "mapping_version_id": preview.mapping_version_id,
-                "executable": preview.executable,
-                "row_count": preview.row_count,
-                "content_hash": preview.content_hash,
-                "dq_issues": preview.dq_issues,
-                "evidence": preview.evidence,
-                "can_publish": preview.can_publish,
-            }
-        )
-    )
-
-
-# ---------------------------------------------------------------------------
-# Story 36.9: execute and publish the recent-first candidate SAFELY.
-# Project-scoped, fail-closed via the Epic 36 gate + resolve_strict_resource_access
-# (edit+ to execute; view+ to read state). ONE idempotent candidate; a bad
-# candidate NEVER replaces the publication (last-known-good preserved); a ready
-# valid candidate publishes atomically. Recent/historical coverage stay separate.
-# ---------------------------------------------------------------------------
-def _recent_first_error(exc: Exception) -> Response:
-    from core.recent_first_publication import (
-        RecentFirstConflict,
-        RecentFirstUnavailable,
-        RecentFirstValidationError,
-    )
-
-    if isinstance(exc, RecentFirstUnavailable):
-        status, code, message = 404, "not_found", "Not found"
-    elif isinstance(exc, RecentFirstConflict):
-        status, code, message = 409, "conflict", "Recent-first candidate already running"
-    elif isinstance(exc, (RecentFirstValidationError, json.JSONDecodeError, TypeError)):
-        status, code, message = 422, "invalid_request", str(exc)
-    else:
-        logger.error("admin_api: recent-first publish failed: %s", type(exc).__name__)
-        status, code, message = 500, "operation_failed", "Recent-first publish unavailable"
-    return _setup_no_store(JSONResponse({"code": code, "message": message}, status_code=status))
-
-
-async def _execute_recent_first(request: Request) -> Response:
-    denied, identity, project_id, _ = await _first_report_scope(request)
-    if denied is not None:
-        return denied
-    datastream_id = request.path_params.get("datastream_id")
-    key = (request.headers.get("Idempotency-Key") or "").strip()
-    if not key:
-        return _setup_no_store(
-            JSONResponse(
-                {"code": "missing_idempotency_key", "message": "Idempotency-Key is required"},
-                status_code=422,
-            )
-        )
-    from core.db import get_connection
-    from core.project_access import resolve_strict_resource_access
-    from core.recent_first_publication import execute_recent_first
-
-    try:
-        body_bytes = await request.body()
-        body = json.loads(body_bytes) if body_bytes.strip() else {}
-        if not isinstance(body, dict):
-            raise TypeError("body must be an object")
-        with get_connection() as conn:
-            decision = resolve_strict_resource_access(
-                identity, conn, minimum_capability="edit", project_id=project_id
-            )
-            if not decision.allowed:
-                return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-            result = execute_recent_first(
-                conn,
-                project_id=project_id,
-                actor=identity,
-                idempotency_key=key,
-                draft_id=body.get("draft_id"),
-                datastream_id=datastream_id if not body.get("draft_id") else None,
-                row_count=body.get("row_count"),
-                content_hash=body.get("content_hash"),
-                verification_verdict=body.get("verification_verdict"),
-                pull_id=body.get("pull_id"),
-                validated_content_hash=body.get("validated_content_hash"),
-                force_empty_publish=bool(body.get("force_empty_publish", False)),
-                approved=bool(body.get("approved", False)),
-            )
-    except Exception as exc:
-        return _recent_first_error(exc)
-    status = 201 if result.published else 200
-    return _setup_no_store(JSONResponse(result.as_dict(), status_code=status))
-
-
-async def _get_recent_first_state(request: Request) -> Response:
-    denied, identity, project_id, _ = await _first_report_scope(request)
-    if denied is not None:
-        return denied
-    datastream_id = request.path_params.get("datastream_id")
-    from core.db import get_connection
-    from core.project_access import resolve_strict_resource_access
-    from core.recent_first_publication import get_recent_first_state
-
-    try:
-        with get_connection() as conn:
-            decision = resolve_strict_resource_access(
-                identity, conn, minimum_capability="view", project_id=project_id
-            )
-            if not decision.allowed:
-                return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-            state = get_recent_first_state(conn, project_id=project_id, datastream_id=datastream_id)
-    except Exception as exc:
-        return _recent_first_error(exc)
-    return _setup_no_store(JSONResponse(state))
-
-
-# ---------------------------------------------------------------------------
-# Story 36.10: expose first-pull progress + AUTHORITATIVE report readiness.
-# Project-scoped, fail-closed via the Epic 36 gate + resolve_strict_resource_access
-# (view+; existence-hides on denial). Returns ONE versioned first_report_readiness
-# object whose overall / host_cta are SERVER-derived (the UI never re-infers) and
-# whose degraded state is honest (never labelled fully ready). Pure read/compose
-# surface (E36-NFR05) -- mutates nothing.
-# ---------------------------------------------------------------------------
-async def _get_first_report_readiness(request: Request) -> Response:
-    denied, identity, project_id, _ = await _first_report_scope(request)
-    if denied is not None:
-        return denied
-    datastream_id = request.path_params.get("datastream_id")
-    from core.db import get_connection
-    from core.first_report_readiness import compute_first_report_readiness
-    from core.project_access import resolve_strict_resource_access
-
-    try:
-        with get_connection() as conn:
-            decision = resolve_strict_resource_access(
-                identity, conn, minimum_capability="view", project_id=project_id
-            )
-            if not decision.allowed:
-                return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-            readiness = compute_first_report_readiness(
-                conn,
-                datastream_id=datastream_id,
-                project_id=project_id,
-                actor=identity,
-            )
-    except Exception as exc:
-        logger.error("admin_api: first-report readiness failed: %s", type(exc).__name__)
-        return _setup_no_store(
-            JSONResponse(
-                {"code": "operation_failed", "message": "Readiness unavailable"},
-                status_code=500,
-            )
-        )
-    return _setup_no_store(JSONResponse(readiness.as_dict()))
-
-
-# ---------------------------------------------------------------------------
-# Story 36.19: tenant-facing first-value funnel read (E36-FR09).
-# Project-scoped, fail-closed via the Epic 36 gate + resolve_strict_resource_access
-# (view+). The funnel domain (`tenant_journeys`) INDEPENDENTLY re-resolves strict
-# resource access for `identity` and existence-hides (empty) on denial; the endpoint
-# ALSO gates up-front so an unauthorized caller learns nothing about the project.
-# Returns ONLY allowlisted stage/outcome enums + wait-state OWNER TYPES for the
-# authorized project's own journeys -- never a pseudonymised cross-tenant cohort, never
-# a raw email/org/provider (AD-32). Cross-tenant cohort stays STAFF-only tooling
-# (`first_value_funnel.cross_tenant_cohort`) and is deliberately NOT exposed here.
-# ---------------------------------------------------------------------------
-async def _get_first_value_journeys(request: Request) -> Response:
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"}, status_code=401
-        )
-    if denied := _setup_gate_response():
-        return denied
-    project_id = request.path_params.get("project_id")
-    from core.db import get_connection
-    from core.first_value_funnel import tenant_journeys
-    from core.project_access import resolve_strict_resource_access
-
-    try:
-        with get_connection() as conn:
-            decision = resolve_strict_resource_access(
-                identity, conn, minimum_capability="view", project_id=project_id
-            )
-            if not decision.allowed:
-                # Existence-hiding: an unauthorized caller learns nothing (404).
-                return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-            journeys = tenant_journeys(conn, identity=identity, project_id=project_id)
-    except Exception as exc:
-        logger.error("admin_api: first-value journeys failed: %s", type(exc).__name__)
-        return _setup_no_store(
-            JSONResponse(
-                {"code": "operation_failed", "message": "First-value journeys unavailable"},
-                status_code=500,
-            )
-        )
-    payload = {
-        "project_id": project_id,
-        "journeys": [
-            {
-                "journey_ref": view.journey_ref_hash,
-                "stages": view.stages,
-                "wait_state_owners": view.wait_state_owners,
-            }
-            for view in journeys
-        ],
-    }
-    return _setup_no_store(JSONResponse(payload))
-
-
-# ---------------------------------------------------------------------------
-# Story 36.15: render / validate / reproduce the first report (E36-FR05).
-# READ-ONLY starter request. Project-scoped, fail-closed via the Epic 36 gate +
-# resolve_strict_resource_access (view+; existence-hides on denial). Runs only
-# when readiness is ready/degraded-within-policy; returns BOUNDED evidence + an
-# optional authenticated deep-link -- NEVER the full dataset (E36-NFR06). The
-# reproduce endpoint INDEPENDENTLY re-evaluates access for the SECOND identity and
-# existence-hides on denial (no report/first-user leak).
-# ---------------------------------------------------------------------------
-async def _render_first_report(request: Request) -> Response:
-    denied, identity, project_id, _ = await _first_report_scope(request)
-    if denied is not None:
-        return denied
-    datastream_id = request.path_params.get("datastream_id")
-    from core.db import get_connection
-    from core.first_report_render import (
-        FirstReportRenderUnavailable,
-        render_first_report,
-    )
-    from core.project_access import resolve_strict_resource_access
-
-    try:
-        with get_connection() as conn:
-            decision = resolve_strict_resource_access(
-                identity, conn, minimum_capability="view", project_id=project_id
-            )
-            if not decision.allowed:
-                return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-            rendered = render_first_report(
-                conn,
-                datastream_id=datastream_id,
-                project_id=project_id,
-                actor=identity,
-            )
-    except FirstReportRenderUnavailable:
-        return _setup_no_store(
-            JSONResponse(
-                {"code": "not_renderable", "message": "Report is not yet renderable"},
-                status_code=409,
-            )
-        )
-    except Exception as exc:
-        logger.error("admin_api: first-report render failed: %s", type(exc).__name__)
-        return _setup_no_store(
-            JSONResponse(
-                {"code": "operation_failed", "message": "Render unavailable"},
-                status_code=500,
-            )
-        )
-    return _setup_no_store(JSONResponse(rendered.as_dict()))
-
-
-async def _reproduce_first_report(request: Request) -> Response:
-    denied, identity, project_id, _ = await _first_report_scope(request)
-    if denied is not None:
-        return denied
-    datastream_id = request.path_params.get("datastream_id")
-    from core.db import get_connection
-    from core.first_report_render import (
-        FirstReportRenderUnavailable,
-        FirstReportReproductionDenied,
-        reproduce_first_report,
-    )
-
-    try:
-        body_bytes = await request.body()
-        body = json.loads(body_bytes) if body_bytes.strip() else {}
-        if not isinstance(body, dict):
-            raise TypeError("body must be an object")
-        workspace_ref = body.get("workspace_ref")
-        with get_connection() as conn:
-            # The SECOND user's access is re-evaluated INDEPENDENTLY inside the
-            # domain (resolve_strict_resource_access for `identity`); denial ->
-            # existence-hiding not_found. No first-user readiness object leaks.
-            rendered = reproduce_first_report(
-                conn,
-                datastream_id=datastream_id,
-                project_id=project_id,
-                second_actor=identity,
-                workspace_ref=workspace_ref,
-            )
-    except FirstReportReproductionDenied:
-        return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-    except FirstReportRenderUnavailable:
-        return _setup_no_store(
-            JSONResponse(
-                {"code": "not_renderable", "message": "Report is not yet renderable"},
-                status_code=409,
-            )
-        )
-    except (json.JSONDecodeError, TypeError):
-        return _setup_no_store(
-            JSONResponse({"code": "invalid_request", "message": "Invalid body"}, status_code=422)
-        )
-    except Exception as exc:
-        logger.error("admin_api: first-report reproduce failed: %s", type(exc).__name__)
-        return _setup_no_store(
-            JSONResponse(
-                {"code": "operation_failed", "message": "Reproduce unavailable"},
-                status_code=500,
-            )
-        )
-    payload = rendered.as_dict()
-    payload["reproduced"] = True
-    return _setup_no_store(JSONResponse(payload))
-
-
-# ---------------------------------------------------------------------------
-# Story 36.18: governed-publication TRUSTED CONSOLE (AD-27 human confirmation).
-#
-# THE SECRET SPLIT (the invariant this section exists to enforce)
-# ---------------------------------------------------------------
-# Governed publication mints an OPAQUE, model-hidden confirmation secret in
-# ``governed_publication.prepare_publication_review``. The MCP tool
-# ``review_agent_change`` DELIBERATELY DROPS that secret before returning, so an
-# agent can inspect the review scope/diff but the secret NEVER enters model/MCP
-# context. That leaves a gap: without an out-of-band retrieval path, nobody can
-# ever call ``confirm_and_publish`` and governed publication is unreachable.
-#
-# These REST endpoints ARE that out-of-band path -- the AD-27 "trusted console /
-# in-host human presence" surface. They are NOT MCP tools: the secret is returned
-# to an AUTHENTICATED HUMAN OPERATOR over REST (never to a model), and the confirm
-# accepts the secret the console retrieved. The MCP ``review_agent_change`` stays
-# secret-hidden; the human console (here) is the only place the secret surfaces,
-# ONE TIME, to a caller who already holds ``manage`` authority over the resource.
-#
-#   MCP  review_agent_change            -> review WITHOUT the secret (agents: scope/diff)
-#   REST POST /publication-reviews      -> mints the review AND returns the secret ONCE
-#                                          to the manage-authority human console
-#   REST POST .../{id}/confirm          -> human-only; carries the console-held secret
-#                                          (or, in future, a server-verified in-host
-#                                          presence) -- NEVER a raw model tool argument
-#   REST POST .../{id}/rollback         -> the DISTINCT rollback as a human console action
-#
-# All three: authenticated + Epic 36 gate (``_setup_gate_response``) + strict
-# ``manage`` access over the proposal's/confirmation's org+project
-# (``resolve_strict_resource_access``); existence-hiding (404) on any denial; and
-# the secret is NEVER logged and NEVER placed on any MCP surface.
-# ---------------------------------------------------------------------------
-def _governed_publication_error(exc: Exception) -> Response:
-    """Map a governed-publication domain failure to a fail-closed REST response.
-
-    A confirm precondition breach (``PublicationConfirmationRefused``) carries a
-    stable ``code`` but MUST NOT reveal why beyond it; a 409 is returned so the
-    console can retry/refresh without disclosing internal review state. A missing/
-    out-of-scope review (``PublicationReviewUnavailable``) is existence-hidden as a
-    404. The confirmation secret is NEVER included in any error body.
-    """
-    from core.governed_publication import (  # noqa: PLC0415
-        PublicationConfirmationRefused,
-        PublicationReviewUnavailable,
-    )
-    from core.operations import OperationIdempotencyConflict  # noqa: PLC0415
-
-    if isinstance(exc, PublicationReviewUnavailable):
-        status, code, message = 404, "not_found", "Not found"
-    elif isinstance(exc, PublicationConfirmationRefused):
-        # Stable code only; never the raw refusal reason string beyond the code.
-        status, code, message = 409, exc.code, "Confirmation refusee"
-    elif isinstance(exc, OperationIdempotencyConflict):
-        status, code, message = 409, "conflict", "Publication already in progress"
-    elif isinstance(exc, (json.JSONDecodeError, TypeError, ValueError)):
-        status, code, message = 422, "invalid_request", "Requete invalide"
-    else:
-        logger.error("admin_api: governed publication failed: %s", type(exc).__name__)
-        status, code, message = 500, "operation_failed", "Publication indisponible"
-    return _setup_no_store(JSONResponse({"code": code, "message": message}, status_code=status))
-
-
-def _publication_confirmation_scope(conn, confirmation_id: str):
-    """Resolve (datastream_id, project_id, org_id) for a prepared confirmation.
-
-    Used to run the strict AD-5 ``manage`` guard on the confirmation's resource
-    BEFORE the domain module re-loads the full row FOR UPDATE. An absent row yields
-    None so the caller existence-hides (404) without disclosing the confirmation.
-    """
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT datastream_id, project_id, org_id "
-            "FROM app.publication_confirmations WHERE id = %s",
-            (confirmation_id,),
-        )
-        row = cur.fetchone()
-    if not row:
-        return None
-    return {"datastream_id": row[0], "project_id": row[1], "org_id": row[2]}
-
-
-async def _prepare_publication_review_console(request: Request) -> Response:
-    """POST /api/governance/publication-reviews -- mint a review + return the secret ONCE.
-
-    The trusted-console out-of-band retrieval (AD-27). Authenticated human + Epic 36
-    gate + strict ``manage`` authority over the PROPOSAL's org+project. Calls
-    ``prepare_publication_review`` and returns the review object INCLUDING the opaque
-    ``confirmation_secret`` -- exactly once, to this manage-authority human operator
-    over REST. This is the ONLY surface that reveals the secret; the MCP review tool
-    never does. The secret is NEVER logged. Denial (out of scope / not ready) is a
-    404 (existence-hiding).
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"}, status_code=401
-        )
-    if denied := _setup_gate_response():
-        return denied
-    from core.db import get_connection  # noqa: PLC0415
-    from core.governed_publication import prepare_publication_review  # noqa: PLC0415
-    from core.project_access import resolve_strict_resource_access  # noqa: PLC0415
-
-    try:
-        body = json.loads(await request.body())
-        if not isinstance(body, dict):
-            raise TypeError("body must be an object")
-        proposal_id = str(body.get("proposal_id") or "").strip()
-        if not proposal_id:
-            return _setup_no_store(
-                JSONResponse(
-                    {"code": "invalid_request", "message": "proposal_id est requis."},
-                    status_code=422,
-                )
-            )
-        with get_connection() as conn:
-            # Resolve the proposal's resource so we can guard it on the manage floor.
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT datastream_id, project_id, org_id "
-                    "FROM app.mapping_proposals WHERE id = %s",
-                    (proposal_id,),
-                )
-                prow = cur.fetchone()
-            if prow is None:
-                return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-            decision = resolve_strict_resource_access(
-                identity, conn, minimum_capability="manage", datastream_id=prow[0]
-            )
-            if not decision.allowed or str(decision.org_id) != str(prow[2]):
-                return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-            review = prepare_publication_review(
-                conn,
-                proposal_id=proposal_id,
-                actor=identity,
-                org_id=str(decision.org_id),
-                host_context=_setup_host_context(request),
-            )
-            conn.commit()
-    except Exception as exc:  # noqa: BLE001 -- fail-closed; secret never logged.
-        return _governed_publication_error(exc)
-
-    # Return the model-safe review AND -- this is the out-of-band retrieval -- the
-    # opaque secret, ONCE, to the authenticated manage-authority human console. This
-    # response is REST-only; it never enters any model/MCP context. Never logged.
-    payload = dict(review.review)
-    payload["confirmation_id"] = review.confirmation_id
-    payload["confirmation_secret"] = review.confirmation_secret
-    payload["confirmation_secret_single_return"] = True
-    return _setup_no_store(
-        Response(
-            json.dumps(payload),
-            status_code=201,
-            media_type="application/vnd.toorow.publication-review+json",
-        )
-    )
-
-
-async def _confirm_publication_review_console(request: Request) -> Response:
-    """POST /api/governance/publication-reviews/{confirmation_id}/confirm -- human confirm.
-
-    The human-only confirmation surface. Authenticated human + Epic 36 gate + strict
-    ``manage`` authority over the CONFIRMATION's org+project + Idempotency-Key. The
-    request body carries the ``confirmation_secret`` the console retrieved at prepare
-    time (the out-of-band value) -- it is a REST argument from a trusted human, NEVER
-    a model tool argument. Calls ``confirm_and_publish`` (verifies the one-way hash,
-    rechecks every precondition, routes EXACTLY ONE durable operation). The secret is
-    NEVER echoed back and NEVER logged.
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"}, status_code=401
-        )
-    if denied := _setup_gate_response():
-        return denied
-    key = (request.headers.get("Idempotency-Key") or "").strip()
-    if not key:
-        return _setup_no_store(
-            JSONResponse(
-                {"code": "missing_idempotency_key", "message": "Idempotency-Key is required"},
-                status_code=422,
-            )
-        )
-    confirmation_id = request.path_params.get("confirmation_id")
-    from core import tracing  # noqa: PLC0415
-    from core.db import get_connection  # noqa: PLC0415
-    from core.governed_publication import confirm_and_publish  # noqa: PLC0415
-    from core.project_access import resolve_strict_resource_access  # noqa: PLC0415
-
-    try:
-        body = json.loads(await request.body())
-        if not isinstance(body, dict):
-            raise TypeError("body must be an object")
-        # The out-of-band secret the console retrieved at prepare. Never logged.
-        confirmation_secret = str(body.get("confirmation_secret") or "")
-        if not confirmation_secret.strip():
-            return _setup_no_store(
-                JSONResponse(
-                    {"code": "invalid_request", "message": "confirmation_secret est requis."},
-                    status_code=422,
-                )
-            )
-        with get_connection() as conn:
-            scope = _publication_confirmation_scope(conn, confirmation_id)
-            if scope is None:
-                return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-            decision = resolve_strict_resource_access(
-                identity, conn, minimum_capability="manage", datastream_id=scope["datastream_id"]
-            )
-            if not decision.allowed or str(decision.org_id) != str(scope["org_id"]):
-                return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-            result = confirm_and_publish(
-                conn,
-                confirmation_id=confirmation_id,
-                confirmation_secret=confirmation_secret,
-                actor=identity,
-                org_id=str(decision.org_id),
-                host_context=_setup_host_context(request),
-                trace_id=tracing.current_trace_id_hex(),
-            )
-            conn.commit()
-    except Exception as exc:  # noqa: BLE001 -- fail-closed; secret never logged.
-        return _governed_publication_error(exc)
-
-    # NEVER echo the secret. Return only the operation outcome + versions.
-    return _setup_no_store(
-        JSONResponse(
-            {
-                "confirmation_id": result.confirmation_id,
-                "operation_id": result.operation_id,
-                "outcome": result.outcome,
-                "replayed": result.replayed,
-                "current_mapping_version_id": result.current_mapping_version_id,
-                "prior_mapping_version_id": result.prior_mapping_version_id,
-                "prior_version_rollbackable": result.prior_mapping_version_id is not None,
-            },
-            status_code=200,
-        )
-    )
-
-
-async def _rollback_publication_review_console(request: Request) -> Response:
-    """POST /api/governance/publication-reviews/{confirmation_id}/rollback -- human rollback.
-
-    Re-points the live mapping pointer back to the prior version as a DISTINCT
-    confirmed idempotent operation. Authenticated human + Epic 36 gate + strict
-    ``manage`` authority over the confirmation's org+project + Idempotency-Key. Calls
-    ``rollback_publication``. No secret is involved (rollback is authorized by the
-    manage guard + the confirmation binding, not by the confirmation secret).
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"}, status_code=401
-        )
-    if denied := _setup_gate_response():
-        return denied
-    key = (request.headers.get("Idempotency-Key") or "").strip()
-    if not key:
-        return _setup_no_store(
-            JSONResponse(
-                {"code": "missing_idempotency_key", "message": "Idempotency-Key is required"},
-                status_code=422,
-            )
-        )
-    confirmation_id = request.path_params.get("confirmation_id")
-    from core import tracing  # noqa: PLC0415
-    from core.db import get_connection  # noqa: PLC0415
-    from core.governed_publication import rollback_publication  # noqa: PLC0415
-    from core.project_access import resolve_strict_resource_access  # noqa: PLC0415
-
-    try:
-        body = json.loads(await request.body())
-        if not isinstance(body, dict):
-            raise TypeError("body must be an object")
-        target_mapping_version_id = str(body.get("target_mapping_version_id") or "").strip()
-        if not target_mapping_version_id:
-            return _setup_no_store(
-                JSONResponse(
-                    {
-                        "code": "invalid_request",
-                        "message": "target_mapping_version_id est requis.",
-                    },
-                    status_code=422,
-                )
-            )
-        with get_connection() as conn:
-            scope = _publication_confirmation_scope(conn, confirmation_id)
-            if scope is None:
-                return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-            decision = resolve_strict_resource_access(
-                identity, conn, minimum_capability="manage", datastream_id=scope["datastream_id"]
-            )
-            if not decision.allowed or str(decision.org_id) != str(scope["org_id"]):
-                return JSONResponse({"code": "not_found", "message": "Not found"}, status_code=404)
-            result = rollback_publication(
-                conn,
-                confirmation_id=confirmation_id,
-                target_mapping_version_id=target_mapping_version_id,
-                actor=identity,
-                org_id=str(decision.org_id),
-                host_context=_setup_host_context(request),
-                trace_id=tracing.current_trace_id_hex(),
-            )
-            conn.commit()
-    except Exception as exc:  # noqa: BLE001 -- fail-closed.
-        return _governed_publication_error(exc)
-
-    return _setup_no_store(
-        JSONResponse(
-            {
-                "confirmation_id": result.confirmation_id,
-                "operation_id": result.operation_id,
-                "outcome": result.outcome,
-                "replayed": result.replayed,
-                "current_mapping_version_id": result.current_mapping_version_id,
-                "prior_mapping_version_id": result.prior_mapping_version_id,
-                "distinct_operation": True,
-            },
-            status_code=200,
-        )
-    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 router = Router(
     routes=[
         *_BROWSER_AUTH_ROUTES,
-        # Story 21.1 (AC4): organization CRUD + membership. Static routes precede
-        # /{org_id} so Starlette matches list/create first; /members after.
-        Route(
-            "/api/instance/bootstrap/exchange",
-            endpoint=_exchange_instance_bootstrap,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/instance/claim/session",
-            endpoint=_get_self_hosted_claim_session,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/instance/claim/confirmation",
-            endpoint=_issue_instance_claim_confirmation,
-            methods=["POST"],
-        ),
-        Route("/api/instance/claim", endpoint=_claim_self_hosted_instance, methods=["POST"]),
-        Route("/api/entry-state", endpoint=_get_entry_state, methods=["GET"]),
-        Route(
-            "/api/entry/scope/confirmation",
-            endpoint=_issue_hosted_entry_confirmation,
-            methods=["POST"],
-        ),
-        Route("/api/entry/scope", endpoint=_create_hosted_entry_scope, methods=["POST"]),
-        Route("/api/organizations", endpoint=_list_orgs, methods=["GET"]),
-        Route("/api/organizations", endpoint=_create_org, methods=["POST"]),
-        Route("/invite", endpoint=_invitation_bootstrap, methods=["GET"]),
-        Route("/api/invitations/exchange", endpoint=_exchange_invitation, methods=["POST"]),
-        Route("/api/invitations/accept", endpoint=_accept_invitation, methods=["POST"]),
-        # ENTRY invitations -- the SAME invitation object, with no target
-        # organization (migration 109). Platform-admin scope; the static routes
-        # above are declared first so they always win the match.
-        Route("/api/invitations", endpoint=_list_invitations, methods=["GET"]),
-        Route("/api/invitations", endpoint=_issue_invitation, methods=["POST"]),
-        Route(
-            "/api/invitations/{invitation_id}/revoke",
-            endpoint=_revoke_invitation,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/invitations/{invitation_id}/resend",
-            endpoint=_resend_invitation,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/projects/{project_id}/setup-journey",
-            endpoint=_get_setup_journey,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/organizations/{org_id}/setup-journey",
-            endpoint=_get_setup_journey,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/setup/tasks/{task_id}/handoffs",
-            endpoint=_prepare_setup_handoff,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/setup/tasks/{task_id}/reassign",
-            endpoint=_reassign_setup_task,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/setup/handoffs/{handoff_id}/revoke",
-            endpoint=_revoke_setup_handoff,
-            methods=["POST"],
-        ),
-        Route("/handoff", endpoint=_setup_handoff_bootstrap, methods=["GET"]),
-        Route(
-            "/api/setup/handoffs/exchange",
-            endpoint=_exchange_setup_handoff,
-            methods=["POST"],
-        ),
-        # Story 36.7: delegated source authorization + exact account exposure.
-        # Static route precedes the {delegation_id} routes.
-        Route(
-            "/api/source-delegations",
-            endpoint=_prepare_source_delegation,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/source-delegations/{delegation_id}/callback",
-            endpoint=_source_delegation_callback,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/source-delegations/{delegation_id}/revoke",
-            endpoint=_revoke_source_delegation,
-            methods=["POST"],
-        ),
-        # Story 36.14: capability-driven host preflight, install handoff + bind.
-        # Static/catalog route precedes the {preflight_id} routes.
-        Route(
-            "/api/mcp-hosts/catalog",
-            endpoint=_get_host_catalog,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/mcp-hosts/preflight",
-            endpoint=_prepare_host_preflight,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/mcp-hosts/preflight/{preflight_id}/handoff",
-            endpoint=_prepare_host_install_handoff,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/mcp-hosts/preflight/{preflight_id}/bind",
-            endpoint=_bind_host_connection,
-            methods=["POST"],
-        ),
-        # Story 36.8: bounded first-report draft -- recommend / save / preview.
-        Route(
-            "/api/projects/{project_id}/datastreams/{datastream_id}/first-report/recommend",
-            endpoint=_recommend_first_report,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/projects/{project_id}/datastreams/{datastream_id}/first-report/draft",
-            endpoint=_save_first_report_draft,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/projects/{project_id}/datastreams/{datastream_id}/first-report/preview",
-            endpoint=_preview_first_report,
-            methods=["POST"],
-        ),
-        # Story 36.9: execute + publish the recent-first candidate safely; read the
-        # separate recent/historical coverage state for the 36.10 readiness object.
-        Route(
-            "/api/projects/{project_id}/datastreams/{datastream_id}/first-report/execute",
-            endpoint=_execute_recent_first,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/projects/{project_id}/datastreams/{datastream_id}/first-report/recent-state",
-            endpoint=_get_recent_first_state,
-            methods=["GET"],
-        ),
-        # Story 36.10: one versioned first-report readiness object (progress +
-        # authoritative readiness). Server-derived overall / host_cta.
-        Route(
-            "/api/projects/{project_id}/datastreams/{datastream_id}/first-report/readiness",
-            endpoint=_get_first_report_readiness,
-            methods=["GET"],
-        ),
-        # Story 36.19: tenant-facing first-value funnel journeys (E36-FR09). Project-
-        # scoped, fail-closed (view+); returns ONLY allowlisted enums + wait-state owner
-        # types for the authorized project's own journeys. Cross-tenant cohort stays
-        # staff tooling and is NOT exposed here.
-        Route(
-            "/api/projects/{project_id}/first-value/journeys",
-            endpoint=_get_first_value_journeys,
-            methods=["GET"],
-        ),
-        # Story 36.15: render / validate the first report (read-only starter
-        # request) and reproduce it for a SECOND independently-authorized user.
-        # Bounded evidence + optional deep-link -- never the full dataset.
-        Route(
-            "/api/projects/{project_id}/datastreams/{datastream_id}/first-report/render",
-            endpoint=_render_first_report,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/projects/{project_id}/datastreams/{datastream_id}/first-report/reproduce",
-            endpoint=_reproduce_first_report,
-            methods=["POST"],
-        ),
-        # Story 36.18: governed-publication TRUSTED CONSOLE (AD-27 human confirmation).
-        # The out-of-band secret-retrieval + human confirm/rollback surface. The MCP
-        # review tool stays secret-hidden; ONLY the prepare route below returns the
-        # opaque confirmation secret, ONCE, to a manage-authority human over REST.
-        Route(
-            "/api/governance/publication-reviews",
-            endpoint=_prepare_publication_review_console,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/governance/publication-reviews/{confirmation_id}/confirm",
-            endpoint=_confirm_publication_review_console,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/governance/publication-reviews/{confirmation_id}/rollback",
-            endpoint=_rollback_publication_review_console,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/organizations/{org_id}/invitations",
-            endpoint=_list_invitations,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/organizations/{org_id}/invitations/{invitation_id}/revoke",
-            endpoint=_revoke_invitation,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/organizations/{org_id}/invitations/{invitation_id}/resend",
-            endpoint=_resend_invitation,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/organizations/{org_id}/invitations",
-            endpoint=_issue_invitation,
-            methods=["POST"],
-        ),
-        # Story 21.8 AC4: read side of org membership (added after 21.5).
-        Route(
-            "/api/organizations/{org_id}/members",
-            endpoint=_list_org_members,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/organizations/{org_id}/members",
-            endpoint=_add_org_member,
-            methods=["POST"],
-        ),
-        # Story 21.5 follow-up: manage an existing member (remove / change role|status).
-        Route(
-            "/api/organizations/{org_id}/members/{identity}",
-            endpoint=_remove_org_member,
-            methods=["DELETE"],
-        ),
-        Route(
-            "/api/organizations/{org_id}/members/{identity}",
-            endpoint=_update_org_member,
-            methods=["PATCH"],
-        ),
-        Route("/api/organizations/{org_id}", endpoint=_get_org, methods=["GET"]),
-        Route("/api/organizations/{org_id}", endpoint=_patch_org, methods=["PATCH"]),
-        # Story 24.2: org data-plane lifecycle (human-gated delete + per-org provision
-        # + platform backfill).  provision-warehouse before {org_id} DELETE so
-        # Starlette resolves the sub-resource before the bare id route.
-        Route(
-            "/api/organizations/{org_id}/provision-warehouse",
-            endpoint=_provision_org_warehouse,
-            methods=["POST"],
-        ),
-        # Same ordering rule: the sub-resource is declared before the bare id.
-        Route(
-            "/api/organizations/{org_id}/deletion-preview",
-            endpoint=_org_deletion_preview,
-            methods=["GET"],
-        ),
-        Route("/api/organizations/{org_id}", endpoint=_delete_org, methods=["DELETE"]),
-        Route(
-            "/api/admin/warehouse/provision-schemas",
-            endpoint=_backfill_warehouse_schemas,
-            methods=["POST"],
-        ),
-        # Story 21.2: self-service global user profile.
-        Route("/api/me/profile", endpoint=_get_my_profile, methods=["GET"]),
-        Route("/api/me/profile", endpoint=_patch_my_profile, methods=["PATCH"]),
-        # RGPD account erasure: preview declared before the bare /api/me route.
-        Route(
-            "/api/me/deletion-preview",
-            endpoint=_get_my_deletion_preview,
-            methods=["GET"],
-        ),
-        Route("/api/me", endpoint=_delete_me, methods=["DELETE"]),
-        # Story 21.3: credential accounts + per-account cross-org grants. Most
-        # specific (grants under an account) declared before the shorter shapes.
-        Route(
-            "/api/credentials/{credential_id}/accounts/{external_account_id}/grants/{grantee_org_id}",
-            endpoint=_revoke_account_grant,
-            methods=["DELETE"],
-        ),
-        Route(
-            "/api/credentials/{credential_id}/accounts/{external_account_id}/grants",
-            endpoint=_create_account_grant,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/credentials/{credential_id}/accounts",
-            endpoint=_list_credential_accounts,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/credentials/{credential_id}/accounts",
-            endpoint=_register_credential_account,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/credentials/{credential_id}/grants",
-            endpoint=_list_credential_grants,
-            methods=["GET"],
-        ),
-        # Story 24.5: dataset marts access grants (BigQuery IAM, per-org).
-        # DELETE (with /{grant_id}) declared before the shorter GET/POST shapes.
-        Route(
-            "/api/organizations/{org_id}/dataset-access/{grant_id}",
-            endpoint=_revoke_dataset_access,
-            methods=["DELETE"],
-        ),
-        Route(
-            "/api/organizations/{org_id}/dataset-access",
-            endpoint=_grant_dataset_access,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/organizations/{org_id}/dataset-access",
-            endpoint=_list_dataset_access_grants,
-            methods=["GET"],
-        ),
-        # Story 21.4: flux (app.datastreams) org-scoped + linked to N projects.
-        # DELETE (with /{project_id}) declared before the shorter GET/POST shapes.
-        Route(
-            "/api/flux/{flux_id}/projects/{project_id}",
-            endpoint=_unlink_flux_from_project,
-            methods=["DELETE"],
-        ),
-        Route(
-            "/api/flux/{flux_id}/projects",
-            endpoint=_list_flux_projects,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/flux/{flux_id}/projects",
-            endpoint=_link_flux_to_project,
-            methods=["POST"],
-        ),
+        *DATA_SURFACE_ROUTES,
+        # Registered BEFORE the Governance read surface. Its `{section}` template
+        # cannot match a change-set address today, but the two families share a
+        # prefix, and ordering them by specificity means a future section route
+        # cannot start swallowing the command family silently.
+        *SEMANTIC_MODEL_ROUTES,
+        *GOVERNANCE_SURFACE_ROUTES,
+        # Story 49.6: the `ai-path` route type was registered in navigation.ts and
+        # answered nothing. These are its reads.
+        *AI_PATH_ROUTES,
+        *datastream_preconfiguration_routes,
+        # Story 57.7: an organization's saved setup templates. Saving only --
+        # applying one is a PATCH on a setup draft, a route that already exists.
+        *datastream_setup_templates_routes,
+        *datastream_workbench_routes,
+        # Story 63.2: where a run is, one index probe per call. Registered
+        # beside the Workbench because it shares its address prefix; no template
+        # of that family carries a variable last segment, so `/progress` cannot
+        # be swallowed by one (verified against `admin_api.router.routes`).
+        *datastream_progress_routes,
+        # Story 58.1: the day-grain read of a Datastream. Same address family as
+        # the two above and, like `/progress`, a fixed last segment -- no
+        # template of the Workbench family ends in a variable, so it cannot be
+        # swallowed by one.
+        *datastream_daily_breakdown_routes,
+        *query_spec_routes,
+        # Chantier B: which Datastream holds a measure's total, and what each
+        # breakdown of it sums to. A Governance address family -- its every
+        # segment is literal except the two ids, so it swallows nothing.
+        *metric_grain_routes,
+        # Story 62.1: the MMM extract. `/exports/` is a literal segment of its
+        # own under the Project, so it is swallowed by nothing and swallows
+        # nothing -- and it is deliberately NOT under `/analyze`: an extract is
+        # not a Result, it stores none, and putting it there would put a read
+        # that writes nothing inside the family whose every member writes one.
+        *_MMM_EXPORT_ROUTES,
+        # Story 62.2 -- the SECOND reader of that same seam, beside the first and
+        # under the same `/exports/` segment: one family, one file shape, two
+        # readings. `capabilities/analytics-alignment.md` §4 requires exactly
+        # that, and a route family is where a reader looks for the sibling.
+        *_PLANNED_ACTUAL_EXPORT_ROUTES,
+        # Chantier C: arming a Datastream's events, one gesture instead of four
+        # operations. Registered late and still reached: of the 91 sub-routes of
+        # `/datastreams/{id}/`, the six with a variable last segment all sit
+        # deeper and behind a literal, so none can capture `/event-stream`.
+        # Checked by resolving the address against `admin_api.router`, not by
+        # reading the list -- the same proof AD-43 used for its 539 routes.
+        *event_stream_arming_routes,
+        # Chantier C: which observed entities carry no detail. One literal
+        # segment under `analyze`, asked on demand -- a DISTINCT over a
+        # published relation is not folded into every Result read.
+        *entity_detail_gaps_routes,
+        # Story 52.1: the Answerable Topic catalog. Its door is Analyze > Topics.
+        *answerable_topic_routes,
+        *calculated_field_proposal_routes,
+        *ANALYZE_WORKBENCH_ROUTES,
+        *_ANALYZE_ARTIFACT_ROUTES,
+        *_DOSSIER_ROUTES,
+        *visualization_spec_routes,
+        # Story 72.5: the Chart Template family. Declared AFTER the Spec family
+        # for the reason the two are siblings and not one: a template is unbound
+        # and a Spec names members, so they share a base path and nothing else.
+        *chart_template_routes,
+        *render_share_routes,
+        *render_share_console_routes,
+        *golden_question_routes,
+        *evaluation_run_routes,
+        *trace_observation_routes,
+        *feedback_regression_routes,
+        *feedback_review_routes,
+        # Story 22.11/22.19/22.23 (AI-123): a file-source template could only
+        # be created by writing to the database directly -- which is how the
+        # one row in production got there. This is its door.
+        *file_source_template_routes,
+        *project_settings_routes,
+        # Story 75-4: the AI settings of a Project and of an Organization. Two
+        # literal `ai-settings` segments under two families whose siblings are
+        # literal too, so neither captures nor is captured.
+        *_AI_SETTINGS_ROUTES,
+        *project_overview_routes,
+        *project_access_routes,
+        *getting_started_routes,
+        *INSTANCE_CLAIM_ROUTES_1,
+        # Entrer sans scope : l'etat d'entree, l'entree hebergee, la remise.
+        *ENTRY_ROUTES_1,
+        *ORGANIZATIONS_ROUTES_1,
+        # L'arrivee : la page d'amorce, l'echange du jeton, l'acceptation.
+        *INVITATIONS_ARRIVAL_ROUTES,
+        *INVITATIONS_ROUTES_1,
+        # Entrer sans scope : l'etat d'entree, l'entree hebergee, la remise.
+        *ENTRY_ROUTES_2,
+        # Deleguer l'ouverture d'une source, et la revoquer.
+        *SOURCE_DELEGATIONS_ROUTES_1,
+        *MCP_HOSTS_ROUTES_1,
+        *FIRST_VALUE_ROUTES_1,
+        # La relecture d'une publication gouvernee.
+        *PUBLICATION_REVIEWS_ROUTES_1,
+        *INVITATIONS_ROUTES_2,
+        *ORG_MEMBERS_ROUTES_1,
+        *ORGANIZATIONS_ROUTES_2,
+        # Exploitation : cache, schemas, miroir, sante.
+        *PLATFORM_MAINTENANCE_ROUTES_1,
+        *ME_ROUTES_1,
+        *CREDENTIAL_ACCOUNTS_ROUTES_1,
+        *DATASET_ACCESS_ROUTES_1,
+        # La lecture sortante gouvernee, et le contrat que le mart publie.
+        *PROJECT_DATASET_ACCESS_ROUTES,
+        *_MART_CONTRACT_ROUTES,
+        # Le lien entre un flux et un projet.
+        *FLUX_PROJECTS_ROUTES_1,
+        *PROJECT_CONNECTIONS_ROUTES_1,
+        *DATASTREAM_SAMPLE_ROUTES_1,
+
         # Story 7.1 (AC3, AC4): project CRUD. Static /api/projects precedes the
         # parametrized /{project_id} routes so Starlette matches list/create first.
-        Route(
-            "/api/vocabularies/countries",
-            endpoint=_list_countries,
-            methods=["GET"],
-        ),
-        Route("/api/projects", endpoint=_list_projects, methods=["GET"]),
-        Route("/api/projects", endpoint=_create_project, methods=["POST"]),
-        Route(
-            "/api/projects/{project_id}/geography/preview",
-            endpoint=_preview_geographic_change,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/projects/{project_id}/geography/previews/{preview_id}/confirm",
-            endpoint=_confirm_geographic_change,
-            methods=["POST"],
-        ),
-        Route("/api/projects/{project_id}", endpoint=_get_project, methods=["GET"]),
-        Route("/api/projects/{project_id}", endpoint=_patch_project, methods=["PATCH"]),
-        Route("/api/projects/{project_id}", endpoint=_delete_project, methods=["DELETE"]),
-        # Story 7.3 (AC5): key rotation endpoint.
-        # MUST be declared before the generic {project_id} routes to avoid
-        # Starlette absorbing "rotate-key" as a path param on the nested routes.
-        Route(
-            "/api/projects/{project_id}/rotate-key",
-            endpoint=_rotate_project_key,
-            methods=["POST"],
-        ),
-        # Story 7.3 (AC4): per-connection revocation endpoint.
-        Route(
-            "/api/projects/{project_id}/connections/{connection_id}/revoke",
-            endpoint=_revoke_connection,
-            methods=["POST"],
-        ),
-        Route("/api/source-capabilities", endpoint=_source_capabilities, methods=["GET"]),
-        Route("/api/connections", endpoint=_list_connections, methods=["GET"]),
-        Route("/api/connections", endpoint=_create_connection, methods=["POST"]),
-        # Story 18.2: Google server-side OAuth (authorize + callback). AD-15: the
-        # flow lives in the console; the callback is Google's redirect target.
-        Route(
-            "/api/google/oauth/authorize",
-            endpoint=_google_oauth_authorize,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/google/oauth/callback",
-            endpoint=_google_oauth_callback,
-            methods=["GET"],
-        ),
-        # Story 18.4: Google connection status + revocation.
-        # IMPORTANT: /status/{id} and /revoke/{id} must come BEFORE any generic
-        # parametrized route that could absorb "status" or "revoke" as path params.
-        Route(
-            "/api/google/oauth/status/{connection_ref_id}",
-            endpoint=_google_status,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/google/oauth/revoke/{connection_ref_id}",
-            endpoint=_google_revoke,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/connections/{id}/refresh-health",
-            endpoint=_refresh_health,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/connections/{id}/pull",
-            endpoint=_trigger_pull,
-            methods=["POST"],
-        ),
-        # Story 25.5: account topology onboarding (discovery / selection / backfill).
-        Route(
-            "/api/connections/{id}/accounts",
-            endpoint=_list_connection_accounts,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/connections/{id}/account",
-            endpoint=_select_connection_account,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/connections/{id}/backfill",
-            endpoint=_backfill_connection,
-            methods=["POST"],
-        ),
-        # Story 3.4 (AC6): list jobs with optional filters (?state=&connection_ref_id=)
-        # IMPORTANT: /api/jobs must come before /api/jobs/{id} so the list route matches first.
-        Route("/api/jobs", endpoint=_list_jobs, methods=["GET"]),
-        # Story 3.5 (AC7): verification endpoint MUST be before /api/jobs/{id}
-        # so Starlette does not absorb "verification" as the job ID parameter.
-        Route(
-            "/api/jobs/{id}/verification",
-            endpoint=_get_job_verification,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/jobs/{id}",
-            endpoint=_get_job_status,
-            methods=["GET"],
-        ),
-        # Story 3.4 (AC3): Cloud Scheduler dispatch stub (Phase B, QUEUE_BACKEND=cloud_tasks)
-        Route(
-            "/internal/scheduler/dispatch-nightly",
-            endpoint=_dispatch_nightly_internal,
-            methods=["POST"],
-        ),
-        # Story 4.3 (AC4): context events CRUD (admin console only — widget uses MCP tool)
-        Route("/api/context-events", endpoint=_create_context_event, methods=["POST"]),
-        Route("/api/context-events", endpoint=_list_context_events, methods=["GET"]),
-        # Story 4.4 (AC8): manual mirror sync trigger
-        Route("/api/mirror/sync", endpoint=_trigger_mirror_sync, methods=["POST"]),
-        # Story 5.2 (AC4): REST proxy for health MCP tool (Pipeline panel)
-        Route("/api/health", endpoint=_health_proxy, methods=["GET"]),
-        # Story 5.3 (AC5): alert-definitions CRUD
-        # IMPORTANT: /api/alert-definitions must precede /api/alert-definitions/{id}
-        # so Starlette does not absorb the list/create routes as ID parameters.
-        Route(
-            "/api/alert-definitions",
-            endpoint=_list_alert_definitions,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/alert-definitions",
-            endpoint=_create_alert_definition,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/alert-definitions/{id}",
-            endpoint=_update_alert_definition,
-            methods=["PATCH"],
-        ),
-        Route(
-            "/api/alert-definitions/{id}",
-            endpoint=_delete_alert_definition,
-            methods=["DELETE"],
-        ),
+        # Les pays : meme sujet que les devises et les fuseaux (AD-43).
+        *COUNTRY_VOCABULARY_ROUTES,
+        *PROJECTS_ROUTES_1,
+        *PROJECT_CONNECTIONS_ROUTES_2,
+        # Le catalogue livre avec le produit, et ce que ce projet en retient.
+        *CATALOG_ROUTES_1,
+        *ME_ROUTES_2,
+        # Deleguer l'ouverture d'une source, et la revoquer.
+        *SOURCE_DELEGATIONS_ROUTES_2,
+        *CONNECTIONS_ROUTES_1,
+        *GOOGLE_OAUTH_ROUTES_1,
+        # AI-119: the console's door onto the schedule. Same row as the MCP tools.
+        *DATASTREAM_SCHEDULE_ROUTES,
+        *CONNECTIONS_ROUTES_2,
+        # Un travail lance : liste, etat, verification.
+        *JOBS_ROUTES_1,
+        *INTERNAL_ROUTES_1,
+        # Story 56.7: the subscribers to `pull.landed`. One endpoint per consumer,
+        # so each gets its own invocation, status and retry -- instead of being a
+        # named call inside the worker whose failure was one WARNING line.
+        *_FACT_ROUTES,
+        # Ce qui s'est passe ce jour-la.
+        *CONTEXT_EVENTS_ROUTES_1,
+        # Exploitation : cache, schemas, miroir, sante.
+        *PLATFORM_MAINTENANCE_ROUTES_2,
+        *ALERT_DEFINITIONS_ROUTES_1,
+        *ALERT_DESTINATIONS_ROUTES_1,
         # Story 5.5 (AC7): feedback queryability endpoint
-        Route("/api/feedback", endpoint=_list_feedback, methods=["GET"]),
-        Route("/api/tracked-entities", endpoint=_list_tracked_entities, methods=["GET"]),
-        Route("/api/knowledge", endpoint=_list_knowledge, methods=["GET"]),
-        Route("/api/procedures", endpoint=_list_procedures, methods=["GET"]),
-        Route("/api/eval/golden-questions", endpoint=_list_golden_questions, methods=["GET"]),
-        Route("/api/eval/runs", endpoint=_list_eval_runs, methods=["GET"]),
-        Route("/api/overview/summary", endpoint=_overview_summary, methods=["GET"]),
-        # Story 6.1 (AC9): report management endpoints.
-        # IMPORTANT: the static /available route precedes the parametrized PATCH
-        # route so Starlette does not absorb "available" as a project_id param.
-        Route("/api/reports/available", endpoint=_list_available_reports, methods=["GET"]),
-        Route(
-            "/api/reports/{project_id}/{module_name}/{report_id}",
-            endpoint=_patch_report,
-            methods=["PATCH"],
-        ),
-        # Story 7.2 (AC7): module management endpoints.
-        # IMPORTANT: the static /available route precedes the parametrized PATCH
-        # route so Starlette does not absorb "available" as a project_id param.
-        Route("/api/modules/available", endpoint=_list_available_modules, methods=["GET"]),
-        Route(
-            "/api/modules/{project_id}/{module_name}",
-            endpoint=_patch_module,
-            methods=["PATCH"],
-        ),
-        # Story 6.5 (AC5): notebooks CRUD + run trigger.
-        # IMPORTANT: the static /api/notebooks route (list) must precede the
-        # parametrized routes so Starlette does not absorb the list GET as a notebook_id.
-        # The /run endpoint must precede the bare /{notebook_id} routes to avoid
-        # Starlette absorbing "run" as a notebook_id path param.
-        # Story 6.6: /shared/{token} MUST precede /{notebook_id}/... routes (no auth).
-        Route("/api/notebooks", endpoint=_list_notebooks, methods=["GET"]),
-        # Story 6.6 (AC3): public shared endpoint -- no auth guard; token is unguessable.
-        # MUST be declared before parametrized notebook_id routes to avoid "shared"
-        # being absorbed as a notebook_id.
-        Route(
-            "/api/notebooks/shared/{token}",
-            endpoint=_shared_notebook_endpoint,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/notebooks/{notebook_id}/run",
-            endpoint=_run_notebook_endpoint,
-            methods=["POST"],
-        ),
-        # Story 6.6 (AC2): schedule toggle.
-        Route(
-            "/api/notebooks/{notebook_id}/schedule",
-            endpoint=_schedule_notebook,
-            methods=["PATCH"],
-        ),
+        # La surface de preuve d'epic 14 : non referencee, pas cassee.
+        *LEGACY_EVIDENCE_ROUTES,
+        # Le catalogue livre avec le produit, et ce que ce projet en retient.
+        *CATALOG_ROUTES_2,
+        *NOTEBOOKS_ROUTES_1,
         # Story 6.6 (AC3): share token management.
         Route(
+            # Story 50.7: kept MOUNTED on purpose. Deleting the entry answers 405,
+            # which is a different statement and is indistinguishable to a client
+            # from a routing regression. AC10 requires an explicit 410 naming the
+            # replacement.
             "/api/notebooks/{notebook_id}/share",
-            endpoint=_share_notebook,
+            endpoint=share_notebook_gone,
             methods=["PATCH"],
         ),
-        # Story 6.6 (AC5): slide/HTML export.
-        Route(
-            "/api/notebooks/{notebook_id}/runs/{run_id}/export/html",
-            endpoint=_export_notebook_html,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/notebooks/{notebook_id}",
-            endpoint=_get_notebook,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/notebooks/{notebook_id}",
-            endpoint=_patch_notebook,
-            methods=["PATCH"],
-        ),
-        Route(
-            "/api/notebooks/{notebook_id}",
-            endpoint=_delete_notebook,
-            methods=["DELETE"],
-        ),
-        # Story 8.2: datastream CRUD + /run.
-        # IMPORTANT: /api/datastreams (list/create) must precede the parametrized
-        # /{id} routes. The /run, /ledger, /refetch sub-routes must precede /{id}
-        # so Starlette does not absorb them as id path parameters.
-        Route("/api/datastreams", endpoint=_list_datastreams, methods=["GET"]),
-        Route("/api/datastreams", endpoint=_create_datastream, methods=["POST"]),
-        Route(
-            "/api/datastreams/{id}/versions",
-            endpoint=_list_datastream_versions,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/datastreams/{id}/validate",
-            endpoint=_validate_datastream_intent,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/datastreams/{id}/run",
-            endpoint=_run_datastream,
-            methods=["POST"],
-        ),
-        # Story 8.3: extract ledger + refetch endpoints.
-        Route(
-            "/api/datastreams/{id}/ledger",
-            endpoint=_get_datastream_ledger,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/datastreams/{id}/refetch",
-            endpoint=_refetch_datastream,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/datastreams/{id}/mapping/profile",
-            endpoint=_profile_datastream_mapping,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/datastreams/{id}/mapping/versions",
-            endpoint=_list_datastream_mapping_versions,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/datastreams/{id}/mapping/versions",
-            endpoint=_create_datastream_mapping_version,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/datastreams/{id}/mapping/versions/{ver}",
-            endpoint=_get_datastream_mapping_version,
-            methods=["GET"],
-        ),
-        # Story 12.4: safe KPI projection compile (Member; NEVER publishes).
-        Route(
-            "/api/datastreams/{id}/projection/compile",
-            endpoint=_compile_datastream_projection,
-            methods=["POST"],
-        ),
-        # Story 12.5: atomic candidate publication. Static/sub-path routes precede
-        # the /{id} catch-alls; more-specific /executions/{exec_id}/<verb> routes
-        # precede /executions/{exec_id}.
-        Route(
-            "/api/datastreams/{id}/executions",
-            endpoint=_create_datastream_execution,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/datastreams/{id}/executions/{exec_id}/state",
-            endpoint=_advance_datastream_execution_state,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/datastreams/{id}/executions/{exec_id}/publish",
-            endpoint=_publish_datastream_execution,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/datastreams/{id}/executions/{exec_id}/reconcile",
-            endpoint=_reconcile_datastream_execution,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/datastreams/{id}/executions/{exec_id}",
-            endpoint=_get_datastream_execution,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/datastreams/{id}/publications",
-            endpoint=_list_datastream_publications,
-            methods=["GET"],
-        ),
-        # Story 12.7: read-only external BigQuery observation (Member). Static
-        # /observe sub-path precedes the /{id} catch-alls.
-        Route(
-            "/api/datastreams/{id}/observe",
-            endpoint=_observe_datastream,
-            methods=["POST"],
-        ),
-        # Story 12.8: managed-feed imports through an immutable ledger. More-specific
-        # /imports/{ledger_id}/<verb> routes precede /imports/{ledger_id}, which
-        # precedes /imports; all precede the /{id} catch-alls.
-        Route(
-            "/api/datastreams/{id}/managed-feed/imports/{ledger_id}/rows",
-            endpoint=_record_managed_feed_rows,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/datastreams/{id}/managed-feed/imports/{ledger_id}/publish",
-            endpoint=_publish_managed_feed_import,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/datastreams/{id}/managed-feed/imports/{ledger_id}/rejected-rows",
-            endpoint=_get_managed_feed_rejected_rows,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/datastreams/{id}/managed-feed/imports/{ledger_id}",
-            endpoint=_get_managed_feed_import,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/datastreams/{id}/managed-feed/imports",
-            endpoint=_open_managed_feed_import,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/datastreams/{id}/managed-feed/imports",
-            endpoint=_list_managed_feed_imports,
-            methods=["GET"],
-        ),
-        # Story 12.10: Google Sheets recurring sync (managed-feed sync schedule).
-        # Static /managed-feed/<verb> sub-paths precede the /managed-feed/imports*
-        # routes above only by prefix; they are disjoint. All precede /{id}.
-        Route(
-            "/api/datastreams/{id}/managed-feed/configure",
-            endpoint=_configure_managed_feed_sync,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/datastreams/{id}/managed-feed/sync-now",
-            endpoint=_sync_now_managed_feed,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/datastreams/{id}/managed-feed/status",
-            endpoint=_status_managed_feed_sync,
-            methods=["GET"],
-        ),
-        # Story 12.9: CSV / Excel governed import. More-specific /import-contracts/
-        # {contract_id} precedes /import-contracts; /imports/preview precedes /imports.
-        # All precede the /{id} catch-alls.
-        Route(
-            "/api/datastreams/{id}/imports/preview",
-            endpoint=_preview_csv_excel_import,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/datastreams/{id}/imports",
-            endpoint=_confirm_csv_excel_import,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/datastreams/{id}/import-contracts/{contract_id}",
-            endpoint=_get_import_contract,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/datastreams/{id}/import-contracts",
-            endpoint=_put_import_contract,
-            methods=["PUT"],
-        ),
-        Route(
-            "/api/datastreams/{id}/import-contracts",
-            endpoint=_list_import_contracts,
-            methods=["GET"],
-        ),
-        # Story 12.11: bounded sync / reload / reprocess (prepare + confirm).
-        Route(
-            "/api/datastreams/{id}/bounded/prepare",
-            endpoint=_prepare_bounded_recovery,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/datastreams/{id}/bounded/confirm",
-            endpoint=_confirm_bounded_recovery,
-            methods=["POST"],
-        ),
-        # Story 12.12: safe replace / append / rollback (dataset recovery). More-
-        # specific /rollback/preview precedes /rollback. All precede the /{id}
-        # catch-alls.
-        Route(
-            "/api/datastreams/{id}/rollback/preview",
-            endpoint=_preview_dataset_rollback,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/datastreams/{id}/rollback",
-            endpoint=_rollback_dataset,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/datastreams/{id}/replace/preflight",
-            endpoint=_preflight_replace_dataset,
-            methods=["POST"],
-        ),
-        Route(
-            "/api/datastreams/{id}/append/availability",
-            endpoint=_append_availability_dataset,
-            methods=["GET"],
-        ),
-        Route(
-            "/api/datastreams/{id}/destination-policy",
-            endpoint=_dataset_destination_policy,
-            methods=["POST"],
-        ),
-        # Story 12.14: versioned Datastream read model (Viewer). A DISTINCT
-        # /read-model path (the /versions path is already taken by the 12.2 intent-
-        # version list, _list_datastream_versions). Static sub-path precedes /{id}.
-        Route(
-            "/api/datastreams/{id}/read-model",
-            endpoint=_get_datastream_versions,
-            methods=["GET"],
-        ),
-        # Story 12.19: deterministic daily masked sample-preview. Static /sample
-        # sub-path MUST precede /{id} so Starlette does not absorb it as an id.
-        Route(
-            "/api/datastreams/{id}/sample",
-            endpoint=_datastream_sample,
-            methods=["GET"],
-        ),
-        Route("/api/datastreams/{id}", endpoint=_get_datastream, methods=["GET"]),
-        Route("/api/datastreams/{id}", endpoint=_patch_datastream, methods=["PATCH"]),
-        Route("/api/datastreams/{id}", endpoint=_delete_datastream, methods=["DELETE"]),
+        *NOTEBOOKS_ROUTES_2,
+        # Story 8.2: the Datastream object itself -- list, create, intent versions,
+        # validation. STATIC sub-paths first: `/{id}` absorbs them otherwise,
+        # which is why the tail collection is spliced separately below.
+        *DATASTREAM_OBJECT_ROUTES,
+        # WHEN it collects and WHICH days: run, ledger, re-collection.
+        *DATASTREAM_COLLECTION_ROUTES,
+        # The mapping it applies and the projection it compiles. The collection
+        # carries the comment explaining why there is deliberately no POST.
+        *DATASTREAM_MAPPING_ROUTES,
+        # One execution's lifecycle, its publications, and the read-only observation.
+        *DATASTREAM_EXECUTION_ROUTES,
+        # Story 12.8 / 12.9 / 12.10: the managed-feed import surface -- ledger,
+        # upload, parsing contract and recurring sync. Extracted under AD-40; the
+        # order INSIDE each collection is the order these routes were declared
+        # here, and the two collections are spliced in that same order, so
+        # Starlette resolves them exactly as before.
+        *MANAGED_FEED_IMPORT_ROUTES,
+        *FILE_IMPORT_ROUTES,
+        # Story 12.11 bounded recovery, and the governed destination questions.
+        *DATASTREAM_RECOVERY_ROUTES,
+        # The object's catch-alls. LAST of the family on purpose -- see above.
+        *DATASTREAM_OBJECT_TAIL_ROUTES,
         # Story 8.5: data model (target fields + mappings) CRUD -- routes live in
         # core.datamodel_api; static /fields paths precede /{name} inside the list.
         *_DATAMODEL_ROUTES,
-        # Story 8.4: control tower overview -- routes live in core.overview.
-        *_OVERVIEW_ROUTES,
         # Story 8.7: declarative flows (shared MCP/REST layer) -- core.flows_api.
         *_FLOWS_ROUTES,
-        # Story 8.6: data quality monitors -- core.dq_api.
-        *_DQ_ROUTES,
+        # Story 49.4 unmounted the seven /api/dq/* routes. Two reasons, both
+        # named in its Reuse/Retire list: they were browser-composed DQ truth
+        # (health inferred from alert firings and pull days, and the issue
+        # identity PARSED out of an alert message), and /api/dq/evaluate started
+        # its work in a request-scoped ThreadPoolExecutor that no operation could
+        # observe or resume. Their only consumer was DataQualityPage.tsx, removed
+        # in the same story; the governed replacement is the Controls & Quality
+        # lens and the DQ Monitor workbench.
+        #
+        # core.dq_api itself STAYS: `fetch_dq_report_data` is a server-side helper
+        # that first_report_readiness, main, mapping_proposal_mcp and
+        # datastream_diagnosis all read. Deleting the module would break four
+        # callers to remove seven doors.
         # Story 8.9: report-to-datamodel chain view -- core.report_chain.
         # NOTE: this route pattern /api/reports/{module}/{report_id}/chain must be
         # listed AFTER any /api/reports/{project}/{module}/{id} PATCH route so the
@@ -18935,6 +2842,8 @@ router = Router(
         *_CARDS_ROUTES,
         # Story 11.1: context layer topics + procedures CRUD -- core.context_api.
         *_CONTEXT_ROUTES,
+        # Story 45.1: organization taxonomy + governed business links.
+        *_BUSINESS_TAXONOMY_ROUTES,
         # Story 11.2: schema-context auto-generation trigger (ADMIN-only) --
         # core.schema_context_api. Separate module from 11.1's CONTEXT_ROUTES.
         *_SCHEMA_CONTEXT_ROUTES,
@@ -18945,26 +2854,137 @@ router = Router(
         *_RENDUS_ROUTES,
         # Epic 35 Story 35.4: boite insights + partage equipe -- core.daily_insights_api.
         *_DAILY_INSIGHTS_ROUTES,
-        # Story 19.3: cache DuckDB observability + rebuild trigger.
-        # /status precede /rebuild pour clarte (pas de conflit de routes ici).
-        Route("/api/admin/cache/status", endpoint=_cache_status, methods=["GET"]),
-        Route("/api/admin/cache/rebuild", endpoint=_cache_rebuild, methods=["POST"]),
+        # Exploitation : cache, schemas, miroir, sante.
+        *PLATFORM_MAINTENANCE_ROUTES_3,
         # Story 27.2: metric semantics curation REST API -- core.metric_semantics_api.
         *_METRIC_SEMANTICS_ROUTES,
         # Story 27.9: inverse lineage ("what feeds this conformed dimension?") and the
         # client-owned label -- core.dimension_lineage_api. Static /fed-by and /labels
         # declared before the parameterised /labels/{canonical_dimension}.
         *_DIMENSION_LINEAGE_ROUTES,
+        # Story 75-6: the display block that rides the same cascade as the client
+        # label -- core.presentation_extends_api. `/history` is declared before the
+        # bare collection inside that list.
+        *_PRESENTATION_EXTENDS_ROUTES,
+        # Story 60.1: the client's OWN value mapping tables -- core.value_mapping_api.
+        # A different store from the conformance one above and deliberately so
+        # (migration 235 header): this one carries a NAME the client gives and the
+        # Datastreams it is assigned to. Nothing here is read at render time yet.
+        *_VALUE_MAPPING_ROUTES,
+        # `unresolved-values.md` S1 and S2: the values a mapped Datastream carries
+        # that the reading cannot name -- core.unresolved_values_api. ONE reading
+        # behind both addresses, because the Workbench `Map` tab and the
+        # `Value Tables` lens answering two different numbers for one Project is
+        # the criterion that document refuses outright. `/extract` is declared
+        # before the bare stream path inside that module.
+        *_UNRESOLVED_VALUES_ROUTES,
+        # Story 27.8: the language family's binding cycle -- core.language_bindings_api.
+        # The primitive shipped complete and unaddressed (its whole lifecycle had zero
+        # production callers until 2026-08-17); these three routes are that address.
+        # Declaring a binding is a human act, so it carries `evidence_source='human'`
+        # and names the dimension explicitly -- the automatic path still cannot confirm.
+        *_LANGUAGE_BINDINGS_ROUTES,
+        # Story 60.3: cleanup rules -- core.cleanup_rules_api. A rule stores a
+        # PATTERN and never SQL, is applied AT READ, and its `/preview` segment is
+        # declared before the parameterised `/{rule_id}` inside that module.
+        *_CLEANUP_RULE_ROUTES,
+        # Story 60.5: the immutable history of both families above, and the
+        # confirmation preview that names the version, the hash and the affected
+        # Datastreams BEFORE a change -- core.rule_versions_api. One module for
+        # the two, because "what did this rule used to be" is the same question
+        # asked twice and two answers would drift.
+        *_RULE_VERSION_ROUTES,
+        # Lot A1 (issue #68): the MDM canonical vocabulary, at an address of its
+        # own -- core.mdm_canonical_fields_api. Six production modules validate
+        # bindings against `app.mdm_canonical_fields` and nothing listed it
+        # outside the file-source Template wizard, which returns neither the
+        # value type nor the scope. A read, and only a read: the writer stays
+        # `canonical_field_registry.declare_project_field`, which refuses to mint
+        # a platform field from a project door.
+        *_MDM_CANONICAL_FIELD_ROUTES,
+        # Story 66.1: the common key -- core.mdm_common_keys_api. The object that
+        # says two Datastreams speak of the same business identity, which nothing
+        # in the repository carried before (measured 2026-08-13: zero occurrences
+        # of `common_key`). Declared here, next to the vocabulary its components
+        # come from, and never in a Datastream mapping or a Semantic View: those
+        # two own the physical binding and the join, not the identity.
+        *_MDM_COMMON_KEY_ROUTES,
+        # Story 71.1: the measurement grain -- core.metric_dimensions_api. The
+        # mirror of the common key on the measure axis: one canonical metric (the
+        # head) reported against a set of canonical dimensions (the members).
+        # Declared here, next to the vocabulary and the common key its head and
+        # members come from, and never in a Datastream mapping or a Semantic View:
+        # governance owns which measure is cut by which dimensions, not a private
+        # per-Datastream model (governance.md amendment 2026-08-27).
+        *_MDM_METRIC_DIMENSION_ROUTES,
+        # Story 68.1: the declared entity type -- core.entity_types_api. The
+        # feeder-less half of Story 64.1's declaration: a kind, its canonical
+        # key and its label as governed configuration, before any source feeds
+        # it. ONE writer with the MCP door: both call
+        # `object_kind_registry.declare_entity_type`.
+        *_ENTITY_TYPE_ROUTES,
+        # Story 68.7: the discovery read -- core.entity_context_api. What the
+        # Project declares (types, bindings, rule-set versions, coverage) in ONE
+        # governed read, served to the console AND to the model by the same
+        # function (`object_kind_registry.describe_entity_reconciliation_
+        # context`): two doors, one writer, and the unavailable sections named
+        # rather than zeroed.
+        *_ENTITY_CONTEXT_ROUTES,
+        # Story 66.2: which published sources can usefully be crossed --
+        # core.datastream_matches_api. Two addresses, ONE producer: the Datastream
+        # door is the Analyze catalog filtered, because two producers drift the day
+        # one of them learns a new candidate kind. A read only: it ranks and it
+        # explains, it approves nothing.
+        *_DATASTREAM_MATCH_ROUTES,
+        # Story 66.6: the pivot -- core.pivot_api. A projection of ONE immutable
+        # Result, computed on the server. React receives cells and computes none:
+        # a SUM in the browser would be a second semantic engine, with no measure
+        # contract and no test, disagreeing with the warehouse the first time a
+        # ratio or a truncated page appeared.
+        *_PIVOT_ROUTES,
+        # Stories 66.4/66.5 opened by 66.7: compile a cross-source plan, then run
+        # it -- core.multi_source_api. Two acts, two addresses, because "your
+        # request is ambiguous" and "the warehouse is down" must not arrive as the
+        # same failure.
+        *_MULTI_SOURCE_ROUTES,
         # Story 13.2: MDM conflicts + FX binding -- core.conflict_resolutions_api.
         # Static routes (/api/mdm/conflicts/resolutions) declared before parameterised
         # (/api/mdm/conflicts/resolutions/{project_id}/{target_field}/{source_module}).
         *_CONFLICT_RESOLUTION_ROUTES,
-        # Story 39.3: money aggregation-check (cross-currency refusal engine seam).
-        *_MONEY_ROUTES,
-        # Story 39.8: cross-source day-offset SIGNAL (timezone advisory engine seam).
-        *_TIMEZONE_ROUTES,
-        # Story 34.3: org-plan control surface (super-admin only, deny-by-default).
+        # Story 48.3 removed /api/money/aggregation-check, /api/money/reconcile and
+        # /api/timezone/day-offset-check. All three answered a question about MONEY or
+        # DAYS from amounts, currencies and Datastream ids the CALLER supplied, so the
+        # answer described whatever the caller claimed rather than what this Project
+        # published -- and none of the three had a screen. The engines they wrapped
+        # were KEPT, and this comment claimed all three were "now reached through
+        # core.money_derivation". Re-measured 2026-08-17 (chantier 67-12), that is
+        # true of ONE of them:
+        #   * core.timezone_signal -- ALIVE, but not via money_derivation: it is
+        #     called from core.datamodel:496 (check_cross_source_day_offset).
+        #   * core.money_reconciliation -- DEAD: zero production importers.
+        #   * core.currency_refusal -- DEAD transitively: its only importer is
+        #     money_reconciliation:401, which nothing reaches.
+        # And core.money_derivation reaches nothing itself -- its only production
+        # importer takes two gap CONSTANTS (money_provenance_columns:68), never the
+        # engine. See completeness-ledger.json `_reopened` 2026-08-17, which reopens
+        # currency-fx[3] and [5] for citing that same dead path as proof.
+        # Story 49.4: the ONE Controls & Quality command family. Reads stay on the
+        # Story 49.1 Governance surface; this is the only consequential family, and
+        # the Console and any future MCP surface call the same services.
+        *_CONTROLS_QUALITY_ROUTES,
+        # Story 48.3: the two governed reference vocabularies the always-present
+        # Currency & FX and Reporting Timezone selectors read. Same immutable
+        # versions core.money_policy validates against, so the list an operator
+        # picks from and the list the server accepts cannot drift apart.
+        *_REFERENCE_VOCABULARY_ROUTES,
+        # Story 34.3: org-plan control surface. The POST is super-admin only
+        # (deny-by-default); the GET added by AI-176 is member-scoped and is what
+        # lets an org read the trial ceiling it is enforced against.
         *_ORG_PLAN_ROUTES,
+        # AD-36: the platform clocks (Cloud Scheduler jobs) become readable,
+        # editable and runnable without gcloud. Platform allow-list only; the
+        # action paths are declared before /{clock_name} so it cannot shadow them.
+        *_PLATFORM_CLOCK_ROUTES,
         # Story 38.2: connector installation state surface (platform-admin + catalog gate).
         # More-specific paths (/installation suffix) before any future less-specific
         # connector routes per Starlette convention.
@@ -18992,5 +3012,16 @@ router = Router(
         # bare connector/datastream param routes. Rotate/revoke are declared before the
         # bare /credentials collection route (more-specific first).
         *_INBOUND_CREDENTIAL_ROUTES,
+        # Story 38.14: connector health + attachment inbox + delivery timeline.
+        # Declared AFTER the credential routes and, within the module,
+        # most-specific first (deliveries/{id} then inbox then health), because
+        # Starlette resolves in declaration order and
+        # /datastreams/{datastream_id}/inbox would otherwise be shadowed by any
+        # broader /datastreams/{datastream_id}/{something} route added later.
+        *_INBOUND_HEALTH_ROUTES,
+        # Story 38.18: GET prepares (no side effect), POST executes. Both carry
+        # a literal /raw-imports/ segment, so neither competes with the health
+        # routes above.
+        *_INBOUND_REPROCESS_ROUTES,
     ]
 )

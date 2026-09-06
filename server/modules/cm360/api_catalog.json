@@ -75,7 +75,7 @@
       "tier": "core"
     },
     {
-      "description": "Country or provider sentinel.",
+      "description": "Country name (e.g. 'France', 'United States'); provider sentinels such as '(not set)' are preserved.",
       "exposure": "exposed",
       "field_id": "country",
       "kind": "dimension",

@@ -204,7 +204,6 @@ def test_catalog_pull_refuses_multiple_pivots_before_api(
 ):
     """Selecting 2 pivot_* dimensions is refused with an invalid_request-class error
     BEFORE any HTTP call (LinkedIn adAnalytics is single-pivot)."""
-    monkeypatch.setenv("LINKEDIN_ADS_ACCOUNT_ID", "502840441")
     from core.pull_errors import InvalidRequestError
 
     selection = _selection(

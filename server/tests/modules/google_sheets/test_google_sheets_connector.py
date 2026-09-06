@@ -203,9 +203,9 @@ class TestParseSheetRow:
         assert result["budget_declared"] == pytest.approx(1234.56)
 
     def test_short_row_padded(self):
-        """Ligne trop courte -> cellules manquantes = vides -> metriques = None."""
+        """Ligne trop courte -> cellules missinges = vides -> metriques = None."""
         headers = ["Date", "Canal", "Budget", "Objectif CA"]
-        row = ["2026-06-01", "Meta Ads"]  # Budget et Objectif CA manquants
+        row = ["2026-06-01", "Meta Ads"]  # Budget et Objectif CA missings
         result = _parse_sheet_row(
             row, headers,
             date_column="Date",
@@ -289,7 +289,7 @@ class TestValidateColumnMapping:
         assert "row_id_column='Canal'" in str(exc.value)
 
     def test_multiple_missing_listed(self):
-        """Toutes les colonnes manquantes sont listees dans le message."""
+        """Toutes les colonnes missinges sont listees dans le message."""
         headers = ["Date"]
         with pytest.raises(ColumnMappingError) as exc:
             _validate_column_mapping(
@@ -473,7 +473,7 @@ class TestNoTokenInLogs:
     def test_no_token_in_column_mapping_error(self):
         """ColumnMappingError ne contient pas le token (AD-3)."""
         secret_token = "ya29.secret_token_should_not_appear"
-        headers = ["Date", "Canal"]  # Colonne Budget manquante
+        headers = ["Date", "Canal"]  # Colonne Budget missinge
         with pytest.raises(ColumnMappingError) as exc:
             _validate_column_mapping(
                 headers, "Date",

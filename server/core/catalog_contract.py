@@ -155,6 +155,7 @@ def validate_selection(
     issues: list[CatalogIssue] = []
     source_fields: dict[str, str] = {}
     unknown: list[str] = []
+    excluded: dict[str, str] = {}
 
     for kind, requested in (("metric", requested_metrics), ("dimension", requested_dimensions)):
         for field_id in requested:
@@ -162,7 +163,33 @@ def validate_selection(
             if entry is None:
                 unknown.append(field_id)
                 continue
+            # 27.9 -- AN EXCLUDED FIELD IS NOT SELECTABLE. `catalog_default_selection`
+            # already skips it, but an EXPLICIT selection walked straight through: the
+            # id exists, so it resolved, and the pull went to the provider to fail there
+            # with the provider's own words. The catalog already carries the reason and
+            # the reason is the answer -- "only reachable with a DSP seat" is something
+            # a person can act on, a 400 from the provider is not.
+            if entry.get("exposure") == "excluded":
+                excluded[field_id] = str(entry.get("exclusion_reason") or "no reason declared")
+                continue
             source_fields[field_id] = entry.get("source_field", field_id)
+
+    if excluded:
+        issues.append(
+            CatalogIssue(
+                path="$.selection",
+                code="excluded_selection_field",
+                message=(
+                    "Selection references field id(s) this connector does not expose: "
+                    + "; ".join(f"{name} ({reason})" for name, reason in sorted(excluded.items()))
+                ),
+                suggested_repair=(
+                    "Remove the excluded field id(s) from the selection. A field becomes "
+                    "selectable when its catalog exposure becomes `exposed`, which is what "
+                    "the exclusion reason above says is missing."
+                ),
+            )
+        )
 
     if unknown:
         issues.append(

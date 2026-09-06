@@ -11,8 +11,9 @@ Routes:
   POST   /api/metric-semantics/mappings/{id}/rename    re-target a mapping
   POST   /api/metric-semantics/mappings/{id}/reject    reject a proposed mapping
   GET    /api/metric-semantics/definitions           list definitions by scope
-  POST   /api/metric-semantics/definitions           create/upsert a definition (ORG/PROJECT only)
-  DELETE /api/metric-semantics/definitions/{canonical_name}  delete a definition
+  POST   /api/metric-semantics/definitions           REFUSED, 409 legacy_store_is_read_only
+  DELETE /api/metric-semantics/definitions/{canonical_name}
+                                                     REFUSED, 409 legacy_store_is_read_only
   POST   /api/metric-semantics/bootstrap             trigger manifest bootstrap for an org
 
 Auth: same _check_auth from core.admin_api (Bearer token via core.api_auth).
@@ -66,6 +67,40 @@ def _require_org_manage(org_id: str, identity: str, conn) -> bool:
     return identity_can_manage_org(org_id, identity, conn)
 
 
+#: THE LOWER DECLARING STORE IS READ-ONLY SINCE 2026-08-25 (story 49.3, AC1).
+#:
+#: `app.metric_definitions` (migration 049) is the second store that declares how
+#: a metric aggregates. `governance.md` settled the precedence on 2026-08-15 --
+#: the Semantic Model wins, this store answers only for a metric no published
+#: Concept carries -- and named the remaining work as a choice between "a
+#: projection or the retirement of the lower layer". This is the retirement of
+#: its AUTHORING half.
+#:
+#: WHAT REMAINS WRITABLE, on purpose: `import_platform_defaults` still upserts
+#: the PLATFORM rows from `dbt/seeds/dim_metric.csv` through
+#: POST /api/metric-semantics/bootstrap. That is the delivered catalogue, derived
+#: from a seed in the repository, not a declaration anyone authored -- the same
+#: doctrine as `platform_canonical_vocabulary`.
+#:
+#: IT REFUSES RATHER THAN DISAPPEARS, like `notebooks_api` in the 67.23 cutover:
+#: unmounting a write answers 404, which tells the caller its object is missing
+#: and sends it looking. The refusal names the surface that works instead.
+_LEGACY_WRITE_REFUSED = {
+    "code": "legacy_store_is_read_only",
+    "message": (
+        "Metric definitions are no longer authored here. A metric declares its "
+        "meaning and its aggregation as a Concept, in Governance, on the "
+        "Project's Semantic Model, through a change set that is reviewed, "
+        "published and versioned."
+    ),
+}
+
+
+def _refuse_legacy_write() -> Response:
+    """The same refusal for both definition doors -- one code, one sentence."""
+    return JSONResponse(_LEGACY_WRITE_REFUSED, status_code=409)
+
+
 # ---------------------------------------------------------------------------
 # Local read helpers (SELECT only, no store logic duplicated).
 # ---------------------------------------------------------------------------
@@ -104,19 +139,14 @@ def _list_org_mappings(
         WHERE m.scope_level = 'ORG' AND m.org_id = %s{extra}
         ORDER BY m.connector, m.source_field_path
     """
+    # AI-219: the type decides, never a list of names.
+    from core.row_json import row_to_json  # noqa: PLC0415
+
     rows: list[dict] = []
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(sql, params)
-            cols = [desc[0] for desc in cur.description]
-            for row in cur.fetchall():
-                rec: dict = {}
-                for col, val in zip(cols, row):
-                    if col in ("created_at", "updated_at") and val is not None:
-                        rec[col] = val.isoformat()
-                    else:
-                        rec[col] = val
-                rows.append(rec)
+            rows = [row_to_json(cur.description, row) for row in cur.fetchall()]
     return rows
 
 
@@ -142,13 +172,10 @@ def _get_mapping_by_id(mapping_id: str) -> dict | None:
             row = cur.fetchone()
             if row is None:
                 return None
-            cols = [desc[0] for desc in cur.description]
-            rec: dict = {}
-            for col, val in zip(cols, row):
-                if col in ("created_at", "updated_at") and val is not None:
-                    rec[col] = val.isoformat()
-                else:
-                    rec[col] = val
+            # AI-219: the type decides, never a list of names.
+            from core.row_json import row_to_json  # noqa: PLC0415
+
+            rec = row_to_json(cur.description, row)
     return rec
 
 
@@ -216,7 +243,7 @@ async def _reference(request: Request) -> Response:
     authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
-            {"code": "unauthorized", "message": "Authentification requise."},
+            {"code": "unauthorized", "message": "Authentication required."},
             status_code=401,
         )
 
@@ -225,7 +252,7 @@ async def _reference(request: Request) -> Response:
 
     if org_id is None:
         return JSONResponse(
-            {"code": "missing_param", "message": "org_id est requis."},
+            {"code": "missing_param", "message": "org_id is required."},
             status_code=400,
         )
 
@@ -236,7 +263,7 @@ async def _reference(request: Request) -> Response:
         with get_connection() as conn:
             if not _require_org_read(org_id, identity, conn):
                 return JSONResponse(
-                    {"code": "not_found", "message": "Organisation introuvable."},
+                    {"code": "not_found", "message": "Organization not found."},
                     status_code=404,
                 )
     except Exception as exc:
@@ -267,7 +294,7 @@ async def _reference(request: Request) -> Response:
             )
         if not row or row[0] != org_id:
             return JSONResponse(
-                {"code": "not_found", "message": "Projet introuvable."},
+                {"code": "not_found", "message": "Project not found."},
                 status_code=404,
             )
 
@@ -275,9 +302,8 @@ async def _reference(request: Request) -> Response:
     try:
         from core.metric_semantics import (  # noqa: PLC0415
             _load_definition_rows,
-            _load_reconciliation_rows,
             reduce_definitions_by_specificity,
-            reduce_reconciliation_by_specificity,
+            reference_reconciliation,
         )
 
         # Load definitions: PLATFORM + ORG + (PROJECT if provided).
@@ -315,21 +341,12 @@ async def _reference(request: Request) -> Response:
         # Build the metrics list.
         metrics = []
         for canonical_name, defn in sorted(definitions.items()):
-            # Reconciliation: most specific rule covering this metric.
-            rec_rows = _load_reconciliation_rows(
-                org_id=org_id, project_id=project_id, metric=canonical_name
+            # Reconciliation: the Project's published Rule Set, and nothing else
+            # (AI-295). An ORG-scoped read carries no project, so it carries no
+            # reconciliation -- see `reference_reconciliation`.
+            reconciliation = reference_reconciliation(
+                project_id=project_id, metric=canonical_name
             )
-            rec_rule = reduce_reconciliation_by_specificity(rec_rows, canonical_name)
-
-            reconciliation = None
-            if rec_rule is not None:
-                reconciliation = {
-                    "method": rec_rule.get("method"),
-                    "priority_order": rec_rule.get("priority_order"),
-                    "join_key": rec_rule.get("join_key"),
-                    "truth_connector": rec_rule.get("truth_connector"),
-                    "resolved_scope": rec_rule.get("scope_level"),
-                }
 
             source_mappings = mappings_by_definition.get(defn.get("id", ""), [])
 
@@ -383,7 +400,7 @@ async def _list_mappings(request: Request) -> Response:
     authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
-            {"code": "unauthorized", "message": "Authentification requise."},
+            {"code": "unauthorized", "message": "Authentication required."},
             status_code=401,
         )
 
@@ -393,14 +410,14 @@ async def _list_mappings(request: Request) -> Response:
 
     if org_id is None:
         return JSONResponse(
-            {"code": "missing_param", "message": "org_id est requis."},
+            {"code": "missing_param", "message": "org_id is required."},
             status_code=400,
         )
 
     _VALID_STATUSES = frozenset({"proposed", "confirmed", "renamed", "rejected"})
     if status_filter is not None and status_filter not in _VALID_STATUSES:
         return JSONResponse(
-            {"code": "invalid_param", "message": "Statut invalide."},
+            {"code": "invalid_param", "message": "Invalid status."},
             status_code=422,
         )
 
@@ -410,7 +427,7 @@ async def _list_mappings(request: Request) -> Response:
         with get_connection() as conn:
             if not _require_org_read(org_id, identity, conn):
                 return JSONResponse(
-                    {"code": "not_found", "message": "Organisation introuvable."},
+                    {"code": "not_found", "message": "Organization not found."},
                     status_code=404,
                 )
     except Exception as exc:
@@ -450,7 +467,7 @@ async def _confirm_mapping(request: Request) -> Response:
     authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
-            {"code": "unauthorized", "message": "Authentification requise."},
+            {"code": "unauthorized", "message": "Authentication required."},
             status_code=401,
         )
 
@@ -459,14 +476,14 @@ async def _confirm_mapping(request: Request) -> Response:
         body = json.loads(await request.body())
     except (json.JSONDecodeError, UnicodeDecodeError):
         return JSONResponse(
-            {"code": "invalid_json", "message": "Corps JSON invalide."},
+            {"code": "invalid_json", "message": "Invalid JSON body."},
             status_code=400,
         )
 
     org_id = (body.get("org_id") or "").strip() or None
     if org_id is None:
         return JSONResponse(
-            {"code": "missing_param", "message": "org_id est requis."},
+            {"code": "missing_param", "message": "org_id is required."},
             status_code=400,
         )
 
@@ -496,7 +513,7 @@ async def _confirm_mapping(request: Request) -> Response:
         or existing.get("scope_level") != "ORG"
     ):
         return JSONResponse(
-            {"code": "not_found", "message": "Mapping introuvable."},
+            {"code": "not_found", "message": "Mapping not found."},
             status_code=404,
         )
 
@@ -543,7 +560,7 @@ async def _rename_mapping(request: Request) -> Response:
     authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
-            {"code": "unauthorized", "message": "Authentification requise."},
+            {"code": "unauthorized", "message": "Authentication required."},
             status_code=401,
         )
 
@@ -552,7 +569,7 @@ async def _rename_mapping(request: Request) -> Response:
         body = json.loads(await request.body())
     except (json.JSONDecodeError, UnicodeDecodeError):
         return JSONResponse(
-            {"code": "invalid_json", "message": "Corps JSON invalide."},
+            {"code": "invalid_json", "message": "Invalid JSON body."},
             status_code=400,
         )
 
@@ -561,12 +578,12 @@ async def _rename_mapping(request: Request) -> Response:
 
     if org_id is None:
         return JSONResponse(
-            {"code": "missing_param", "message": "org_id est requis."},
+            {"code": "missing_param", "message": "org_id is required."},
             status_code=400,
         )
     if new_canonical is None:
         return JSONResponse(
-            {"code": "missing_param", "message": "canonical_name est requis."},
+            {"code": "missing_param", "message": "canonical_name is required."},
             status_code=400,
         )
 
@@ -595,7 +612,7 @@ async def _rename_mapping(request: Request) -> Response:
         or existing.get("scope_level") != "ORG"
     ):
         return JSONResponse(
-            {"code": "not_found", "message": "Mapping introuvable."},
+            {"code": "not_found", "message": "Mapping not found."},
             status_code=404,
         )
 
@@ -607,7 +624,7 @@ async def _rename_mapping(request: Request) -> Response:
         return JSONResponse(
             {
                 "code": "not_found",
-                "message": "Metrique cible introuvable.",
+                "message": "Target metric not found.",
             },
             status_code=422,
         )
@@ -653,7 +670,7 @@ async def _reject_mapping(request: Request) -> Response:
     authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
-            {"code": "unauthorized", "message": "Authentification requise."},
+            {"code": "unauthorized", "message": "Authentication required."},
             status_code=401,
         )
 
@@ -662,14 +679,14 @@ async def _reject_mapping(request: Request) -> Response:
         body = json.loads(await request.body())
     except (json.JSONDecodeError, UnicodeDecodeError):
         return JSONResponse(
-            {"code": "invalid_json", "message": "Corps JSON invalide."},
+            {"code": "invalid_json", "message": "Invalid JSON body."},
             status_code=400,
         )
 
     org_id = (body.get("org_id") or "").strip() or None
     if org_id is None:
         return JSONResponse(
-            {"code": "missing_param", "message": "org_id est requis."},
+            {"code": "missing_param", "message": "org_id is required."},
             status_code=400,
         )
 
@@ -698,7 +715,7 @@ async def _reject_mapping(request: Request) -> Response:
         or existing.get("scope_level") != "ORG"
     ):
         return JSONResponse(
-            {"code": "not_found", "message": "Mapping introuvable."},
+            {"code": "not_found", "message": "Mapping not found."},
             status_code=404,
         )
 
@@ -743,7 +760,7 @@ async def _list_definitions(request: Request) -> Response:
     authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
-            {"code": "unauthorized", "message": "Authentification requise."},
+            {"code": "unauthorized", "message": "Authentication required."},
             status_code=401,
         )
 
@@ -754,7 +771,7 @@ async def _list_definitions(request: Request) -> Response:
     _VALID_SCOPES = frozenset({"PLATFORM", "ORG", "PROJECT"})
     if scope_level not in _VALID_SCOPES:
         return JSONResponse(
-            {"code": "invalid_param", "message": "scope_level invalide."},
+            {"code": "invalid_param", "message": "Invalid scope_level."},
             status_code=422,
         )
 
@@ -781,7 +798,7 @@ async def _list_definitions(request: Request) -> Response:
                         row = cur.fetchone()
                 if not row or not row[0]:
                     return JSONResponse(
-                        {"code": "not_found", "message": "Projet introuvable."},
+                        {"code": "not_found", "message": "Project not found."},
                         status_code=404,
                     )
                 project_org_id = row[0]
@@ -790,7 +807,7 @@ async def _list_definitions(request: Request) -> Response:
                 elif project_org_id != guard_org_id:
                     # org_id supplied but the project belongs to another org -> 404.
                     return JSONResponse(
-                        {"code": "not_found", "message": "Projet introuvable."},
+                        {"code": "not_found", "message": "Project not found."},
                         status_code=404,
                     )
         except Exception as exc:
@@ -803,7 +820,7 @@ async def _list_definitions(request: Request) -> Response:
         # No resolvable org (scope=ORG without org_id, or nothing to resolve) -> 404.
         if guard_org_id is None:
             return JSONResponse(
-                {"code": "not_found", "message": "Organisation introuvable."},
+                {"code": "not_found", "message": "Organization not found."},
                 status_code=404,
             )
 
@@ -813,7 +830,7 @@ async def _list_definitions(request: Request) -> Response:
             with get_connection() as conn:
                 if not _require_org_read(guard_org_id, identity, conn):
                     return JSONResponse(
-                        {"code": "not_found", "message": "Organisation introuvable."},
+                        {"code": "not_found", "message": "Organization not found."},
                         status_code=404,
                     )
         except Exception as exc:
@@ -845,162 +862,30 @@ async def _list_definitions(request: Request) -> Response:
 
 
 async def _create_definition(request: Request) -> Response:
-    """POST /api/metric-semantics/definitions
+    """POST /api/metric-semantics/definitions -- REFUSED since 2026-08-25.
 
-    Creates or updates a metric definition at ORG or PROJECT scope.
-    PLATFORM scope is FORBIDDEN via the API (seeds are the authority) -> 403.
-    Auth: manage (owner/admin of the target org).
+    Story 49.3 AC1. `governance.md` left exactly two ways to close the lower
+    declaring store -- "either a projection or the retirement of the lower
+    layer" -- and this is the retirement.
+
+    WHAT THIS DOOR DID, AND WHY IT COULD NOT STAY. It wrote `app.metric_definitions`
+    at ORG or PROJECT scope: a mutable row with no version ledger, no expression
+    and no publication, which `resolve_declared_additivity` nevertheless consulted
+    on every render. Two stores declared how a metric aggregates and only one of
+    them was reviewable. The Semantic Model already wins the precedence
+    (governance.md, "The Semantic Model wins"), so a definition curated here could
+    only ever decide for a metric nobody had governed -- and decide it invisibly.
+
+    MEASURED BEFORE CLOSING IT: `app.metric_definitions` holds 0 rows in
+    production, and no console screen, e2e gate or script calls this route.
+    Nothing is being taken from anybody.
+
+    THE READS STAY. GET /definitions and GET /reference still serve the store,
+    and `Governance > Semantic Model > Metric Definitions` still lists what the
+    cascade resolves -- on the PLATFORM rows the seed import writes, which is the
+    one writer that remains (`import_platform_defaults`, the delivered catalogue).
     """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Authentification requise."},
-            status_code=401,
-        )
-
-    try:
-        body = json.loads(await request.body())
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return JSONResponse(
-            {"code": "invalid_json", "message": "Corps JSON invalide."},
-            status_code=400,
-        )
-
-    scope_level = (body.get("scope_level") or "").strip().upper()
-    if scope_level == "PLATFORM":
-        return JSONResponse(
-            {
-                "code": "forbidden",
-                "message": "La portee PLATFORM ne peut pas etre modifiee via l'API.",
-            },
-            status_code=403,
-        )
-
-    _VALID_SCOPES = frozenset({"ORG", "PROJECT"})
-    if scope_level not in _VALID_SCOPES:
-        return JSONResponse(
-            {"code": "invalid_param", "message": "scope_level doit etre ORG ou PROJECT."},
-            status_code=422,
-        )
-
-    org_id = (body.get("org_id") or "").strip() or None
-    project_id = (body.get("project_id") or "").strip() or None
-    canonical_name = (body.get("canonical_name") or "").strip() or None
-    aggregation_type = (body.get("aggregation_type") or "").strip() or None
-
-    if canonical_name is None:
-        return JSONResponse(
-            {"code": "missing_param", "message": "canonical_name est requis."},
-            status_code=422,
-        )
-    if aggregation_type is None:
-        return JSONResponse(
-            {"code": "missing_param", "message": "aggregation_type est requis."},
-            status_code=422,
-        )
-
-    additive = body.get("additive", True)
-    if not isinstance(additive, bool):
-        return JSONResponse(
-            {"code": "invalid_param", "message": "additive doit etre un booleen."},
-            status_code=422,
-        )
-
-    # Manage guard: require org.  F-2: NEVER fall through to the write when the manage
-    # decision cannot be rendered -- if guard_org_id stays None after resolution the
-    # write must NOT happen unguarded.  404 (existence-hiding) in that case.
-    guard_org_id = org_id
-    if guard_org_id is None and project_id is not None:
-        # Resolve org from project.  Do NOT swallow the exception into a fall-through:
-        # a failed lookup must 404, never let the write proceed guardless.
-        try:
-            from core.db import get_connection  # noqa: PLC0415
-
-            with get_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT org_id FROM app.projects WHERE id = %s", (project_id,)
-                    )
-                    row = cur.fetchone()
-            if row and row[0]:
-                guard_org_id = row[0]
-        except Exception as exc:
-            logger.error(
-                "metric_semantics_api: create_definition project->org lookup failed: %s",
-                exc,
-            )
-            return JSONResponse(
-                {"code": "not_found", "message": "Projet introuvable."},
-                status_code=404,
-            )
-
-    # F-2: no resolvable org (project missing, org_id NULL legacy, or no org given)
-    # => refuse before any write, existence-hiding.
-    if guard_org_id is None:
-        return JSONResponse(
-            {"code": "not_found", "message": "Projet introuvable."},
-            status_code=404,
-        )
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            if not _require_org_manage(guard_org_id, identity, conn):
-                return JSONResponse(
-                    {"code": "forbidden", "message": "Droits insuffisants."},
-                    status_code=403,
-                )
-    except Exception as exc:
-        logger.error("metric_semantics_api: create_definition guard failed: %s", exc)
-        return JSONResponse(
-            {"code": "server_error", "message": "Erreur serveur."},
-            status_code=500,
-        )
-
-    try:
-        from core.metric_semantics import (  # noqa: PLC0415
-            InvalidReconciliationRule,
-            InvalidScope,
-            upsert_metric_definition,
-        )
-
-        row = upsert_metric_definition(
-            canonical_name=canonical_name,
-            aggregation_type=aggregation_type,
-            additive=additive,
-            scope_level=scope_level,
-            org_id=org_id,
-            project_id=project_id,
-            created_by=identity,
-            display_name=body.get("display_name") or None,
-            description=body.get("description") or None,
-            ratio_numerator=body.get("ratio_numerator") or None,
-            ratio_denominator=body.get("ratio_denominator") or None,
-            format=body.get("format") or None,
-            unit=body.get("unit") or None,
-            currency_mode=body.get("currency_mode") or None,
-            non_additive_dimensions=body.get("non_additive_dimensions") or None,
-            synonyms=body.get("synonyms") or None,
-            ai_context=body.get("ai_context") or None,
-            certified=bool(body.get("certified", False)),
-        )
-    except (InvalidScope, InvalidReconciliationRule) as exc:
-        # S-1: never propagate the internal exception text to the caller (it can leak
-        # scope/id internals). Constant FR message out; the detail goes to the log only.
-        logger.warning("metric_semantics_api: create_definition rejected scope: %s", exc)
-        return JSONResponse(
-            {"code": "invalid_scope", "message": "Scope invalide."},
-            status_code=422,
-        )
-    except Exception as exc:
-        logger.error("metric_semantics_api: create_definition failed: %s", exc)
-        return JSONResponse(
-            {"code": "server_error", "message": "Erreur serveur."},
-            status_code=500,
-        )
-
-    return JSONResponse(row, status_code=201)
+    return _refuse_legacy_write()
 
 
 # ---------------------------------------------------------------------------
@@ -1009,113 +894,15 @@ async def _create_definition(request: Request) -> Response:
 
 
 async def _delete_definition(request: Request) -> Response:
-    """DELETE /api/metric-semantics/definitions/{canonical_name}
-       ?org_id=&project_id=&scope_level=
+    """DELETE /api/metric-semantics/definitions/{canonical_name} -- REFUSED.
 
-    Deletes a metric definition at ORG or PROJECT scope.
-    PLATFORM scope is FORBIDDEN via the API -> 403.
-    Auth: manage (owner/admin).
+    Same cutover as POST above (story 49.3 AC1). Deleting the row is the other
+    half of authoring it: leaving the delete open on a store nothing may write
+    would let a caller remove a PLATFORM-derived declaration it could never put
+    back. Retiring a metric is archiving its Concept, published like any other
+    change.
     """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Authentification requise."},
-            status_code=401,
-        )
-
-    canonical_name = request.path_params.get("canonical_name", "")
-    org_id = (request.query_params.get("org_id") or "").strip() or None
-    project_id = (request.query_params.get("project_id") or "").strip() or None
-    scope_level = (request.query_params.get("scope_level") or "").strip().upper()
-
-    if scope_level == "PLATFORM":
-        return JSONResponse(
-            {
-                "code": "forbidden",
-                "message": "La portee PLATFORM ne peut pas etre supprimee via l'API.",
-            },
-            status_code=403,
-        )
-
-    _VALID_SCOPES = frozenset({"ORG", "PROJECT"})
-    if scope_level not in _VALID_SCOPES:
-        return JSONResponse(
-            {"code": "invalid_param", "message": "scope_level doit etre ORG ou PROJECT."},
-            status_code=422,
-        )
-
-    # F-2: org resolution is mandatory before deleting -- a delete without a resolvable
-    # org must NOT proceed unguarded.  Resolve org from project when org_id absent.
-    guard_org_id = org_id
-    if guard_org_id is None and project_id is not None:
-        try:
-            from core.db import get_connection  # noqa: PLC0415
-
-            with get_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT org_id FROM app.projects WHERE id = %s", (project_id,)
-                    )
-                    row = cur.fetchone()
-            if row and row[0]:
-                guard_org_id = row[0]
-        except Exception as exc:
-            logger.error(
-                "metric_semantics_api: delete_definition project->org lookup failed: %s",
-                exc,
-            )
-            return JSONResponse(
-                {"code": "not_found", "message": "Projet introuvable."},
-                status_code=404,
-            )
-
-    # F-2: no resolvable org => refuse before delete, existence-hiding.
-    if guard_org_id is None:
-        return JSONResponse(
-            {"code": "not_found", "message": "Definition introuvable."},
-            status_code=404,
-        )
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            if not _require_org_manage(guard_org_id, identity, conn):
-                return JSONResponse(
-                    {"code": "forbidden", "message": "Droits insuffisants."},
-                    status_code=403,
-                )
-    except Exception as exc:
-        logger.error("metric_semantics_api: delete_definition guard failed: %s", exc)
-        return JSONResponse(
-            {"code": "server_error", "message": "Erreur serveur."},
-            status_code=500,
-        )
-
-    try:
-        from core.metric_semantics import delete_metric_definition  # noqa: PLC0415
-
-        deleted = delete_metric_definition(
-            scope_level=scope_level,
-            canonical_name=canonical_name,
-            org_id=org_id,
-            project_id=project_id,
-            identity=identity,
-        )
-    except Exception as exc:
-        logger.error("metric_semantics_api: delete_definition failed: %s", exc)
-        return JSONResponse(
-            {"code": "server_error", "message": "Erreur serveur."},
-            status_code=500,
-        )
-
-    if not deleted:
-        return JSONResponse(
-            {"code": "not_found", "message": "Definition introuvable."},
-            status_code=404,
-        )
-
-    return JSONResponse({"deleted": True})
+    return _refuse_legacy_write()
 
 
 # ---------------------------------------------------------------------------
@@ -1133,7 +920,7 @@ async def _trigger_bootstrap(request: Request) -> Response:
     authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
-            {"code": "unauthorized", "message": "Authentification requise."},
+            {"code": "unauthorized", "message": "Authentication required."},
             status_code=401,
         )
 
@@ -1141,21 +928,21 @@ async def _trigger_bootstrap(request: Request) -> Response:
         body = json.loads(await request.body())
     except (json.JSONDecodeError, UnicodeDecodeError):
         return JSONResponse(
-            {"code": "invalid_json", "message": "Corps JSON invalide."},
+            {"code": "invalid_json", "message": "Invalid JSON body."},
             status_code=400,
         )
 
     org_id = (body.get("org_id") or "").strip() or None
     if org_id is None:
         return JSONResponse(
-            {"code": "missing_param", "message": "org_id est requis."},
+            {"code": "missing_param", "message": "org_id is required."},
             status_code=400,
         )
 
     connectors = body.get("connectors")
     if connectors is not None and not isinstance(connectors, list):
         return JSONResponse(
-            {"code": "invalid_param", "message": "connectors doit etre une liste."},
+            {"code": "invalid_param", "message": "connectors must be a list."},
             status_code=422,
         )
 

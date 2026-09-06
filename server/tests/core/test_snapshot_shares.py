@@ -28,7 +28,18 @@ import time
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
+
+_RETIRED_SNAPSHOT_SHARE_REASON = (
+    "Story 50.7 retired this path. Converted to strict-xfail rather than deleted: "
+    "deleted, the retirement leaves no trace and the next reader remounts the route -- "
+    "which is exactly what happened once already (SESSIONS.md, 'Desaccord CLOS: "
+    "_create_datastream_mapping_version'). Strict-xfail turns a remount into an "
+    "UNEXPECTEDLY PASSING failure, so the absence stays loud. Replacement: "
+    "core.render_shares / core.render_shares_api."
+)
 
 
 # ---------------------------------------------------------------------------
@@ -66,11 +77,12 @@ def _col_desc(names):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_create_share_ok():
     """create_share insere un partage et retourne (share_id, token)."""
     from core.snapshot_shares import create_share
 
-    # Premier fetchone : snapshot existe dans le projet.
+    # Top landing pageer fetchone : snapshot existe dans le projet.
     # Deuxieme cursor : INSERT du partage.
     cur_calls = []
     fetchone_seq = [("rsn_1",), None]  # premier appel OK, deuxieme non appele
@@ -111,6 +123,7 @@ def test_create_share_ok():
     assert insert_sql is not None
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_create_share_snapshot_not_found():
     """create_share retourne None si le snapshot n'appartient pas au projet."""
     from core.snapshot_shares import create_share
@@ -124,6 +137,7 @@ def test_create_share_snapshot_not_found():
     assert len(insert_calls) == 0
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_create_share_ad5_cross_project():
     """AD-5 : create_share avec un project_id different retourne None (non-disclosant)."""
     from core.snapshot_shares import create_share
@@ -272,6 +286,7 @@ def _shared_snap_row(revoked=False):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_get_shared_snapshot_ok():
     """get_shared_snapshot retourne le snapshot fige si le token est valide."""
     from core.snapshot_shares import get_shared_snapshot
@@ -297,6 +312,7 @@ def test_get_shared_snapshot_ok():
     assert "2026-07-21" in result["shared_at"]
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_get_shared_snapshot_not_found():
     """get_shared_snapshot retourne None si le token est inconnu."""
     from core.snapshot_shares import get_shared_snapshot
@@ -312,6 +328,7 @@ def test_get_shared_snapshot_not_found():
     assert result is None
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_get_shared_snapshot_revoked_is_none():
     """get_shared_snapshot retourne None si le partage est revoque.
 
@@ -336,6 +353,7 @@ def test_get_shared_snapshot_revoked_is_none():
     assert "revoked_at IS NULL" in executed_sql
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_get_shared_snapshot_o1_no_marts_access():
     """O1 strict : get_shared_snapshot ne touche QUE render_snapshot_shares + render_snapshots.
 
@@ -391,6 +409,7 @@ def test_get_shared_snapshot_o1_no_marts_access():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_rate_limit_allows_within_limit():
     """_check_rendus_rate_limit autorise les requetes dans la limite."""
     # Reinitialiser l'etat du rate-limiter.
@@ -405,6 +424,7 @@ def test_rate_limit_allows_within_limit():
     assert retry_after == 0.0
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_rate_limit_blocks_after_limit():
     """_check_rendus_rate_limit bloque apres 60 requetes par fenetre."""
     import core.rendus_api as rendus_mod
@@ -457,6 +477,7 @@ def _mock_conn_ctx():
     return mock_ctx, mock_conn
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_create_share_endpoint_ok():
     """POST /api/rendus/snapshots/{id}/share -> 201 avec share_url."""
     from starlette.testclient import TestClient
@@ -486,6 +507,7 @@ def test_create_share_endpoint_ok():
     assert "/api/rendus/shared/tok_abc123" in data["share_url"]
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_create_share_endpoint_not_found():
     """POST /api/rendus/snapshots/{id}/share avec snapshot inconnu -> 404."""
     from starlette.testclient import TestClient
@@ -507,6 +529,7 @@ def test_create_share_endpoint_not_found():
     assert resp.status_code == 404
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_create_share_endpoint_ad5_denied():
     """POST /api/rendus/snapshots/{id}/share avec projet sans acces -> 404."""
     from starlette.testclient import TestClient
@@ -528,6 +551,7 @@ def test_create_share_endpoint_ad5_denied():
     assert resp.json()["code"] == "not_found"
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_list_shares_endpoint_ok():
     """GET /api/rendus/snapshots/{id}/shares -> 200 avec liste."""
     from starlette.testclient import TestClient
@@ -655,6 +679,7 @@ def _make_fake_snap():
     }
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_shared_endpoint_ok_returns_html():
     """GET /api/rendus/shared/{token} avec token valide -> 200 HTML."""
     import core.rendus_api as rendus_mod
@@ -687,6 +712,7 @@ def test_shared_endpoint_ok_returns_html():
     assert "stale" in body
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_shared_endpoint_not_found():
     """GET /api/rendus/shared/{token} avec token inconnu -> 404."""
     import core.rendus_api as rendus_mod
@@ -709,6 +735,7 @@ def test_shared_endpoint_not_found():
     assert resp.json()["code"] == "not_found"
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_shared_endpoint_revoked_is_404():
     """GET /api/rendus/shared/{token} apres revocation -> 404 (non-disclosant).
 
@@ -735,6 +762,7 @@ def test_shared_endpoint_revoked_is_404():
     assert resp.status_code == 404
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_shared_endpoint_rate_limit_429():
     """GET /api/rendus/shared/{token} apres N+1 requetes -> 429 avec Retry-After."""
     import core.rendus_api as rendus_mod
@@ -762,6 +790,7 @@ def test_shared_endpoint_rate_limit_429():
     assert "Retry-After" in resp.headers
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_shared_endpoint_html_contains_frozen_envelope():
     """Le HTML servi contient l'envelope GELEE (pas de re-run, pas de DB live).
 
@@ -824,6 +853,7 @@ def test_json_for_script_escapes_script_close_tag():
     assert "<\\/script>" in result
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_shared_endpoint_xss_payload_in_envelope_field():
     """GET /api/rendus/shared/{token} avec payload XSS dans l'envelope -> body safe.
 
@@ -859,6 +889,7 @@ def test_shared_endpoint_xss_payload_in_envelope_field():
     assert "<\\/script>" in body
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_shared_endpoint_xss_payload_in_question():
     """GET /api/rendus/shared/{token} avec payload XSS dans le champ question -> body safe."""
     import core.rendus_api as rendus_mod
@@ -893,6 +924,7 @@ def test_shared_endpoint_xss_payload_in_question():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_create_share_endpoint_audit_called_with_correct_signature():
     """POST share -> write_audit_row appelee avec la bonne signature (identity, action, ...).
 
@@ -900,7 +932,7 @@ def test_create_share_endpoint_audit_called_with_correct_signature():
     a la signature reelle de write_audit_row (H2 : la mauvaise signature levait
     TypeError avale silencieusement).
     """
-    import core.audit as audit_mod
+    import core.rendus_api as audit_mod
     from starlette.testclient import TestClient
 
     app = _make_rendus_app_shares(identity="user_audit_test")
@@ -943,7 +975,7 @@ def test_revoke_share_endpoint_audit_called_with_correct_signature():
 
     Verifie que l'audit revoke utilise la vraie signature (H2).
     """
-    import core.audit as audit_mod
+    import core.rendus_api as audit_mod
     from starlette.testclient import TestClient
 
     app = _make_rendus_app_shares(identity="user_revoke_test")
@@ -978,6 +1010,7 @@ def test_revoke_share_endpoint_audit_called_with_correct_signature():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_rate_limit_dict_purged_after_window_expiry():
     """M1 : le dict rate-limit est purge apres expiration de la fenetre.
 

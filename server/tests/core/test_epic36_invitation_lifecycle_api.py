@@ -7,6 +7,7 @@ import json
 from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock
 
+from core import invitations_api  # AD-43 : le handler vit chez son sujet
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -47,7 +48,7 @@ def test_lifecycle_routes_are_registered():
 
 
 def test_list_route_returns_only_safe_projection(monkeypatch):
-    from core import admin_api, db, invitations, project_access
+    from core import admin_api, db, invitations
 
     conn = MagicMock()
 
@@ -58,7 +59,6 @@ def test_list_route_returns_only_safe_projection(monkeypatch):
     monkeypatch.setattr(db, "get_connection", get_connection)
     monkeypatch.setattr(admin_api, "_check_auth", AsyncMock(return_value=(True, "admin-1")))
     monkeypatch.setattr(admin_api, "_enforce_org_manage", lambda *_a: None)
-    monkeypatch.setattr(project_access, "epic36_production_access_enabled", lambda: True)
     monkeypatch.setattr(
         invitations,
         "list_safe_invitations",
@@ -72,7 +72,7 @@ def test_list_route_returns_only_safe_projection(monkeypatch):
         ],
     )
     response = asyncio.run(
-        admin_api._list_invitations(
+        invitations_api._list_invitations(
             _request(
                 "/api/organizations/org-1/invitations",
                 method="GET",
@@ -88,7 +88,7 @@ def test_list_route_returns_only_safe_projection(monkeypatch):
 
 
 def test_resend_authority_denial_calls_no_domain_mutation(monkeypatch):
-    from core import admin_api, db, invitations, project_access
+    from core import admin_api, db, invitations
 
     conn = MagicMock()
 
@@ -98,16 +98,15 @@ def test_resend_authority_denial_calls_no_domain_mutation(monkeypatch):
 
     monkeypatch.setattr(db, "get_connection", get_connection)
     monkeypatch.setattr(admin_api, "_check_auth", AsyncMock(return_value=(True, "admin-1")))
-    monkeypatch.setattr(project_access, "epic36_production_access_enabled", lambda: True)
     monkeypatch.setattr(
-        admin_api,
+        invitations_api,
         "_authorize_invitation_binding",
         lambda *_a, **_k: JSONResponse({"code": "not_found"}, status_code=404),
     )
     resend = MagicMock()
     monkeypatch.setattr(invitations, "resend_invitation", resend)
     response = asyncio.run(
-        admin_api._resend_invitation(
+        invitations_api._resend_invitation(
             _request(
                 "/api/organizations/org-1/invitations/invite-1/resend",
                 method="POST",
@@ -121,14 +120,29 @@ def test_resend_authority_denial_calls_no_domain_mutation(monkeypatch):
     conn.commit.assert_not_called()
 
 
-def test_lifecycle_list_route_is_reachable_through_real_asgi_app():
-    from core.main import build_asgi_app
-    from starlette.testclient import TestClient
+def test_lifecycle_list_route_is_registered_on_the_real_app():
+    """The route is REGISTERED, proved from the router rather than from a status.
 
-    client = TestClient(build_asgi_app(), raise_server_exceptions=True)
-    response = client.get(
-        "/api/organizations/org-1/invitations",
-        headers={"Host": "localhost"},
-    )
-    assert response.status_code == 404
-    assert response.status_code != 405
+    It used to assert `== 404` against the real ASGI app, which made it a test about
+    whether a Postgres happened to be listening: with none, the handler answers 500
+    and the route's registration -- the thing this test exists to prove -- went
+    unmeasured. Any status is the wrong instrument here, because a 404 means both
+    "refused" and "no such route".
+
+    That distinction is not hypothetical. `85b1deb` deleted three `Route(...)` lines
+    while leaving their handlers in place, and `PATCH /api/projects/{project_id}`
+    answered 405 for a day: no project could be updated at all, and the four security
+    invariants covering that handler stayed green because they called it as a
+    function. A route table read is what would have caught it.
+    """
+    from core.admin_api import router
+
+    registered = {
+        (route.path, method)
+        for route in router.routes
+        for method in (getattr(route, "methods", None) or set())
+    }
+    assert ("/api/organizations/{org_id}/invitations", "GET") in registered
+    # The lifecycle pair that goes with it, for the same reason.
+    assert ("/api/organizations/{org_id}/invitations/{invitation_id}/revoke", "POST") in registered
+    assert ("/api/organizations/{org_id}/invitations/{invitation_id}/resend", "POST") in registered

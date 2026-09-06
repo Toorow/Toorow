@@ -104,34 +104,58 @@ def test_metric_and_streams_echoed():  # 7
 
 
 # ---------------------------------------------------------------------------
-# §B.4 -- defer to 39.7's GAP: exclude unknown-tz streams, never fabricate UTC (8, 9)
+# §B.4 -- an unplaceable stream is REPORTED, never coerced to UTC and never dropped.
+#
+# These three tests asserted the opposite until Story 48.3: an unknown-timezone
+# stream was excluded, and with fewer than two known zones left the function
+# returned None. Two streams agreeing and one unplaceable therefore rendered as
+# "no offset" -- an incomplete comparison presented as a healthy one, which is the
+# Reporting Timezone criterion "cross-source daily reconciliation ignores different
+# day boundaries" arriving through the back door. The fail-closed half is unchanged
+# and still asserted: unknown stays unknown, no UTC is ever fabricated.
 # ---------------------------------------------------------------------------
 
 
-def test_one_unknown_plus_one_known_returns_none():  # 8
+def test_one_unknown_plus_one_known_is_reported_not_silenced():  # 8
     out = check_cross_source_day_offset(
         metric="revenue",
         streams=[_s("a", None), _s("b", "Europe/Paris")],
     )
-    assert out is None  # only 1 known tz remains after exclusion
+    assert out is not None, "an unplaceable stream must be visible, not silently dropped"
+    assert [item["datastream"] for item in out["unplaced_streams"]] == ["a"]
+    # Still fail-closed: no UTC was fabricated for the unknown stream.
+    assert out["distinct_timezones"] == ["Europe/Paris"]
+    assert all(s["report_timezone"] for s in out["report_timezones"])
 
 
-def test_unknown_excluded_signal_fires_on_two_known():  # 9
+def test_unknown_reported_alongside_two_known():  # 9
     out = check_cross_source_day_offset(
         metric="revenue",
         streams=[_s("unknown", None), _s("a", "Europe/Paris"), _s("b", "UTC")],
     )
     assert out is not None
     assert out["distinct_timezones"] == ["Europe/Paris", "UTC"]
-    # The unknown stream is EXCLUDED, never coerced to UTC.
-    assert "unknown" not in out["affected_streams"]
+    # The unknown stream is never coerced to UTC...
     assert all(s["report_timezone"] for s in out["report_timezones"])
+    # ...and it is named, so a reader knows the comparison is incomplete.
+    assert "unknown" in out["affected_streams"]
+    assert [item["datastream"] for item in out["unplaced_streams"]] == ["unknown"]
 
 
-def test_blank_timezone_excluded():  # 8b -- blank string is fail-closed like None
+def test_blank_timezone_is_unplaceable_not_absent():  # 8b -- blank is fail-closed like None
     out = check_cross_source_day_offset(
         metric="revenue",
         streams=[_s("a", "   "), _s("b", "Europe/Paris")],
+    )
+    assert out is not None
+    assert [item["datastream"] for item in out["unplaced_streams"]] == ["a"]
+
+
+def test_all_known_and_aligned_still_flags_nothing():
+    """The one case that must stay silent: every stream placed, all on one clock."""
+    out = check_cross_source_day_offset(
+        metric="revenue",
+        streams=[_s("a", "Europe/Paris"), _s("b", "Europe/Paris")],
     )
     assert out is None
 

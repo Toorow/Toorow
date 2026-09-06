@@ -21,7 +21,14 @@ from core.main import DAILY_REPORT_WIDGET_URI, mcp
 from fastmcp.client import Client, FastMCPTransport
 
 _REPO_ROOT = Path(__file__).parent.parent.parent.parent
-_WIDGET_DIST = _REPO_ROOT / "ui" / "widgets" / "google-analytics" / "dist" / "index.html"
+# Story 50.6 -- track the RESOLVER, not a connector. This pointed at
+# `ui/widgets/google-analytics/dist/index.html`, which Story 50.5 deliberately
+# stopped serving when it deleted the connector scan that let whichever
+# connector loaded first decide how the standard report looked. The test then
+# passed or failed depending on whether that one connector happened to be built
+# locally -- an environment coin-flip, not a contract. Asking `core.main` which
+# path it actually resolves makes the branch below follow the code.
+from core.main import _WIDGET_PATH as _WIDGET_DIST  # noqa: E402
 
 
 @pytest.mark.anyio
@@ -57,8 +64,21 @@ async def test_daily_report_widget_resource_serves_html():
 
 
 @pytest.mark.anyio
-async def test_meta_resource_uri_matches_widget_resource():
-    """get_daily_report._meta.ui.resourceUri must equal the registered widget URI (AC8)."""
+async def test_a_data_tool_no_longer_advertises_the_widget_resource():
+    """Story 50.6 -- INVERTED, deliberately, so the removal leaves a trace.
+
+    Until Story 50.6 this asserted `get_daily_report._meta.ui.resourceUri ==
+    DAILY_REPORT_WIDGET_URI` (Story 1.6 AC8). `visualization-and-rendering.md`
+    ("Tool split") retires that: a DATA tool does not attach a widget resource,
+    only the render tool advertises one, and
+    `core.mcp_profiles.assert_data_render_split` aborts boot on a violation.
+
+    The assertion is inverted rather than deleted so a future reader meets the
+    decision instead of an absence, and cannot silently restore the binding.
+    The RESOURCE registration above stays: a resource no data tool advertises is
+    inert, and deleting it would destroy the inventory of what Story 50.5
+    replaces.
+    """
     with patch("core.main.warehouse.query_daily_report", return_value=[]):
         async with Client(FastMCPTransport(mcp)) as client:
             result = await client.call_tool(
@@ -66,5 +86,7 @@ async def test_meta_resource_uri_matches_widget_resource():
                 {"date_range": {"start": "2026-01-01", "end": "2026-01-31"}},
             )
     meta = getattr(result, "meta", None) or getattr(result, "_meta", None)
-    assert meta is not None
-    assert meta.get("ui", {}).get("resourceUri") == DAILY_REPORT_WIDGET_URI
+    assert (meta or {}).get("ui") is None, (
+        f"a data tool must not advertise a widget resource; got {meta!r} "
+        f"(the retired binding was {DAILY_REPORT_WIDGET_URI})"
+    )

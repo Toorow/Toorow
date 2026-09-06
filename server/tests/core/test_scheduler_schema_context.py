@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import inspect
 import os
+import re
 from datetime import date
 from unittest.mock import patch
 
@@ -35,11 +36,19 @@ def test_schema_context_step_present_and_ordered():
 
 
 def test_schema_context_step_is_isolated():
-    """The step is dispatched via _run_isolated_step (failure isolation)."""
+    """The step is dispatched via _run_isolated_step (failure isolation).
+
+    Matched ACROSS WHITESPACE rather than as one literal line. The call site
+    gained the run-ledger argument (migration 325) and the formatter wrapped it,
+    which broke a byte-exact assertion that was never about line breaks. The two
+    things it IS about -- the step name and the function, inside the same
+    `_run_isolated_step` call -- are both still required.
+    """
     src = inspect.getsource(scheduler.run_nightly_steps)
-    # The call must be wrapped:
-    # _run_isolated_step("schema_context_gen", _run_schema_context_gen, ...)
-    assert '_run_isolated_step("schema_context_gen", _run_schema_context_gen' in src
+    assert re.search(
+        r'_run_isolated_step\(\s*"schema_context_gen",\s*_run_schema_context_gen',
+        src,
+    )
 
 
 def test_schema_context_gen_skipped_by_default(caplog):

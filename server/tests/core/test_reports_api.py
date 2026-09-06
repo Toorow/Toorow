@@ -20,6 +20,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from tests.conftest import purge_fixture_project
+
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
@@ -41,6 +43,18 @@ def _pg_reachable() -> bool:
 
 
 pg_available = pytest.mark.skipif(not _pg_reachable(), reason="platform Postgres not reachable")
+
+#: THE IDENTITY THE HANDLER IS GIVEN, and it is `anonymous` on purpose.
+#:
+#: These tests measure the MERGE -- catalogue x `app.project_reports` -- not the
+#: access gate. `_list_available_reports` gained a tenant-scope gate (R43-FR09,
+#: closed 2026-07-27 on a live leak), and `admin_api._strict_project_capability_
+#: allowed` admits `anonymous` under `TOOROW_AUTH_MODE=disabled` by asking
+#: `project_exists` alone. A named identity would be sent to the strict resolver
+#: instead and refused for holding no grant on a project this file creates for
+#: itself -- so the merge would never be reached and the 404 would be read as a
+#: merge failure. `_seed_project` creating the row is what the gate then checks.
+_IDENTITY = "anonymous"
 
 _CATALOG = [
     {
@@ -65,11 +79,19 @@ def _make_get_request(project_id: str) -> MagicMock:
     return req
 
 
-def _make_patch_request(project_id, module_name, report_id, body: dict) -> MagicMock:
+def _make_patch_request(project_id, connector_name, report_id, body: dict) -> MagicMock:
+    """The path param is `connector_name`. It was `module_name` until 7c3db1fe.
+
+    `Module` left the product vocabulary ("Connector is the canonical noun"), and
+    `_patch_report` reads `path_params["connector_name"]`. A request still
+    carrying the retired key reaches the handler with an EMPTY connector name and
+    is answered `400 missing_id` -- which reads as a malformed test rather than as
+    a stale one, so the key is named here once and nowhere else.
+    """
     req = MagicMock()
     req.path_params = {
         "project_id": project_id,
-        "module_name": module_name,
+        "connector_name": connector_name,
         "report_id": report_id,
     }
     req.body = AsyncMock(return_value=json.dumps(body).encode())
@@ -77,8 +99,17 @@ def _make_patch_request(project_id, module_name, report_id, body: dict) -> Magic
 
 
 def _seed_project(project_id: str) -> None:
-    """Story 7.1: app.project_reports now has an FK to app.projects. Tests that
-    insert report rows for an ad-hoc project must first create the parent row."""
+    """The Project, plus a live connection for each connector in `_CATALOG`.
+
+    Story 7.1: `app.project_reports` has an FK to `app.projects`, so the parent
+    row comes first. The connections are the second half, and they are not
+    decoration: since the 2026-07-27 decision `_list_available_reports` serves
+    only the connectors a Project is ACTUALLY connected to (`app.connection_ref`,
+    `enabled`), because a brand-new Project was being offered the whole
+    deployment's catalogue. A fixture with no connection is now correctly served
+    an EMPTY list, which measures the filter and not the merge these tests are
+    about.
+    """
     from core.db import get_connection
 
     with get_connection() as conn:
@@ -91,6 +122,24 @@ def _seed_project(project_id: str) -> None:
                 """,
                 (project_id, project_id, project_id),
             )
+            for entry in _CATALOG:
+                provider = entry["module_name"]
+                cur.execute(
+                    """
+                    INSERT INTO app.connection_ref
+                        (id, provider, nango_connection_id, project_id, status, enabled,
+                         owner_org_id, owner_identity)
+                    VALUES (%s, %s, %s, %s, 'active', TRUE, 'org_test_fixture',
+                            'owner@example.com')
+                    ON CONFLICT (id) DO NOTHING
+                    """,
+                    (
+                        f"conn_{project_id}_{provider}",
+                        provider,
+                        f"nango_{project_id}_{provider}",
+                        project_id,
+                    ),
+                )
         conn.commit()
 
 
@@ -101,14 +150,16 @@ def _cleanup(project_id: str) -> None:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM app.project_reports WHERE project_id = %s", (project_id,))
             # Remove the parent project row too (created by _seed_project).
-            cur.execute("DELETE FROM app.projects WHERE id = %s", (project_id,))
+            # AI-291: le graphe prend le relais si une table gouvernee
+            # ajoutee depuis retient le projet en ON DELETE RESTRICT.
+            purge_fixture_project(cur.connection, project_id)
         conn.commit()
 
 
 @pg_available
 @pytest.mark.anyio
 async def test_available_reports_disabled_by_default():
-    from core.admin_api import _list_available_reports
+    from core.catalog_api import _list_available_reports  # noqa: PLC0415
 
     project_id = f"proj_test_{uuid.uuid4().hex[:8]}"
     _cleanup(project_id)
@@ -116,8 +167,8 @@ async def test_available_reports_disabled_by_default():
     try:
         req = _make_get_request(project_id)
         with (
-            patch("core.admin_api._check_auth", return_value=(True, "u@example.com")),
-            patch("core.admin_api._module_report_catalog", return_value=_CATALOG),
+            patch("core.admin_api._check_auth", return_value=(True, _IDENTITY)),
+            patch("core.catalog_api._connector_report_catalog", return_value=_CATALOG),
         ):
             resp = await _list_available_reports(req)
         assert resp.status_code == 200
@@ -131,7 +182,10 @@ async def test_available_reports_disabled_by_default():
 @pg_available
 @pytest.mark.anyio
 async def test_patch_enables_report():
-    from core.admin_api import _list_available_reports, _patch_report
+    from core.catalog_api import (
+        _list_available_reports,  # noqa: PLC0415
+        _patch_report,  # noqa: PLC0415
+    )
 
     project_id = f"proj_test_{uuid.uuid4().hex[:8]}"
     _cleanup(project_id)
@@ -140,7 +194,7 @@ async def test_patch_enables_report():
         patch_req = _make_patch_request(
             project_id, "google-analytics", "overview_daily", {"enabled": True}
         )
-        with patch("core.admin_api._check_auth", return_value=(True, "u@example.com")):
+        with patch("core.admin_api._check_auth", return_value=(True, _IDENTITY)):
             presp = await _patch_report(patch_req)
         assert presp.status_code == 200
         pbody = json.loads(presp.body)
@@ -149,8 +203,8 @@ async def test_patch_enables_report():
         # Next GET shows enabled=true for that report only.
         get_req = _make_get_request(project_id)
         with (
-            patch("core.admin_api._check_auth", return_value=(True, "u@example.com")),
-            patch("core.admin_api._module_report_catalog", return_value=_CATALOG),
+            patch("core.admin_api._check_auth", return_value=(True, _IDENTITY)),
+            patch("core.catalog_api._connector_report_catalog", return_value=_CATALOG),
         ):
             gresp = await _list_available_reports(get_req)
         gbody = json.loads(gresp.body)
@@ -164,7 +218,10 @@ async def test_patch_enables_report():
 @pg_available
 @pytest.mark.anyio
 async def test_available_reports_project_scoped():
-    from core.admin_api import _list_available_reports, _patch_report
+    from core.catalog_api import (
+        _list_available_reports,  # noqa: PLC0415
+        _patch_report,  # noqa: PLC0415
+    )
 
     proj_a = f"proj_a_{uuid.uuid4().hex[:8]}"
     proj_b = f"proj_b_{uuid.uuid4().hex[:8]}"
@@ -175,14 +232,14 @@ async def test_available_reports_project_scoped():
     try:
         # Enable a report for project A only.
         req_a = _make_patch_request(proj_a, "google-analytics", "overview_daily", {"enabled": True})
-        with patch("core.admin_api._check_auth", return_value=(True, "u@example.com")):
+        with patch("core.admin_api._check_auth", return_value=(True, _IDENTITY)):
             await _patch_report(req_a)
 
         # Project B GET must NOT see A's enablement.
         get_b = _make_get_request(proj_b)
         with (
-            patch("core.admin_api._check_auth", return_value=(True, "u@example.com")),
-            patch("core.admin_api._module_report_catalog", return_value=_CATALOG),
+            patch("core.admin_api._check_auth", return_value=(True, _IDENTITY)),
+            patch("core.catalog_api._connector_report_catalog", return_value=_CATALOG),
         ):
             resp_b = await _list_available_reports(get_b)
         body_b = json.loads(resp_b.body)
@@ -195,9 +252,9 @@ async def test_available_reports_project_scoped():
 @pg_available
 @pytest.mark.anyio
 async def test_available_reports_missing_project_id():
-    from core.admin_api import _list_available_reports
+    from core.catalog_api import _list_available_reports  # noqa: PLC0415
 
     req = _make_get_request("")
-    with patch("core.admin_api._check_auth", return_value=(True, "u@example.com")):
+    with patch("core.admin_api._check_auth", return_value=(True, _IDENTITY)):
         resp = await _list_available_reports(req)
     assert resp.status_code == 400

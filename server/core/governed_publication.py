@@ -61,6 +61,18 @@ from typing import Any
 
 from ulid import ULID
 
+from core.audit import declare_action
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12). Celles-ci n'etaient declarees NULLE PART : la valeur
+# etait retapee en dur ici, parce que la liste centrale de `core/audit.py`
+# etait trop loin pour valoir le detour. Mesure ce jour-la sur le journal
+# vivant : 29 des 64 actions reellement ecrites -- 45 % -- etaient dans ce
+# cas, et rien ne pouvait distinguer une action d'une faute de frappe.
+ACTION_DATASTREAM_MAPPING_PUBLISH = declare_action("datastream.mapping.publish")
+
+
 logger = logging.getLogger(__name__)
 
 # The governance profile the publication belongs to (E36-FR06/FR07). Kept local so
@@ -70,7 +82,7 @@ GOVERNANCE_PROFILE = "governance"
 # The durable command routed through execute_operation for a forward publication and
 # for a rollback. Distinct command_types so the two operations never share an
 # idempotency namespace (a rollback is a DISTINCT operation, NFR15).
-COMMAND_PUBLISH = "datastream.mapping.publish"
+COMMAND_PUBLISH = ACTION_DATASTREAM_MAPPING_PUBLISH
 COMMAND_ROLLBACK = "datastream.mapping.rollback"
 
 # Review time-to-live: a review not confirmed within this many seconds is stale and a
@@ -96,6 +108,19 @@ class PublicationConfirmationRefused(PermissionError):
 
     def __init__(self, code: str, message: str):
         self.code = code
+        super().__init__(message)
+
+
+class EntityDesignationRefused(ValueError):
+    """The version to publish designates an entity type no longer honored (68.2).
+
+    A REFUSAL, not an uncertainty: raised before the pointer moves, so the
+    caller answers ``failed`` with the type named -- never ``outcome_unknown``,
+    which would assert the mutation may have happened when it provably did not.
+    """
+
+    def __init__(self, object_kind: str, message: str):
+        self.object_kind = object_kind
         super().__init__(message)
 
 
@@ -433,6 +458,54 @@ def _mark_confirmation_state(
 # ---------------------------------------------------------------------------
 
 
+def _reverify_entity_designations(
+    conn, cur, *, project_id: str, datastream_id: str, to_version_id: str
+) -> None:
+    """Re-verify the designations of the version the pointer is about to name.
+
+    Story 68.2: called under the SAME FOR UPDATE as the changed-pointer guard,
+    before any write. What can drift between the draft's append and this
+    instant is the REGISTRY's side -- an entity type archived (`disabled`)
+    between draft and publish -- never the immutable payload, so the
+    `mdm_target` contradiction (a payload-internal fact, settled at append) is
+    not re-read here. A version without designations costs NO registry read.
+    """
+
+    from core.object_kind_registry import (  # noqa: PLC0415
+        entity_designations,
+        fetch_entity_type_lookup,
+        validate_entity_designations,
+    )
+
+    cur.execute(
+        """
+        SELECT mapping_payload
+          FROM app.datastream_mapping_versions
+         WHERE id = %s AND datastream_id = %s AND project_id = %s
+        """,
+        (to_version_id, datastream_id, project_id),
+    )
+    row = cur.fetchone()
+    payload = row[0] if row is not None else None
+    if isinstance(payload, str):
+        payload = _load_json(payload)
+    if not isinstance(payload, dict):
+        payload = {}
+    pairs = entity_designations(payload)
+    if not pairs:
+        return
+    declared_types = fetch_entity_type_lookup(
+        conn, project_id=project_id, object_kinds=[kind for _f, kind in pairs]
+    )
+    issues = validate_entity_designations(payload, declared_types=declared_types)
+    if issues:
+        issue = issues[0]
+        raise EntityDesignationRefused(
+            issue.object_kind,
+            f"entity designation refused at publish: {issue.message}",
+        )
+
+
 def _advance_pointer(
     conn,
     *,
@@ -469,6 +542,17 @@ def _advance_pointer(
         # review pinned. A drift here means a concurrent publish beat us -> refuse.
         if prior != expected_from_version_id:
             return prior, 0
+        # Story 68.2: the designations the TARGET version carries are re-verified
+        # under the same FOR UPDATE. An entity type archived between draft and
+        # publish refuses the advance with the type named, rather than pointing
+        # the Datastream at a key that reconciles on nothing.
+        _reverify_entity_designations(
+            conn,
+            cur,
+            project_id=project_id,
+            datastream_id=datastream_id,
+            to_version_id=to_version_id,
+        )
         cur.execute(
             """
             UPDATE app.datastreams
@@ -531,6 +615,19 @@ def _publish_mutation(
             expected_from_version_id=from_version_id,
             actor=confirmation["actor"],
             command=command,
+        )
+    except EntityDesignationRefused as exc:
+        # A REFUSAL, never an uncertainty: raised before the pointer moved, so
+        # the outcome is `failed` with the type named (Story 68.2) -- an
+        # `outcome_unknown` here would assert the publish may have happened
+        # when it provably did not.
+        return MutationResult(
+            outcome="failed",
+            before_hash=None,
+            after_hash=None,
+            result={"reason": f"entity_designation_invalid:{exc.object_kind}",
+                    "detail": str(exc), "command": command},
+            outbox_payload={"command": command, "datastream_id": confirmation["datastream_id"]},
         )
     except Exception as exc:  # noqa: BLE001 -- outcome uncertain, never a duplicate.
         logger.error(
@@ -606,7 +703,7 @@ def prepare_publication_review(
         # Existence-hiding: do not disclose whether the proposal exists out of scope.
         raise PublicationReviewUnavailable("Proposition introuvable.")
     if proposal["state"] != _PROPOSAL_READY:
-        raise PublicationReviewUnavailable("La proposition n'est pas prete a etre publiee.")
+        raise PublicationReviewUnavailable("The proposal is not ready to be published.")
 
     datastream_id = proposal["datastream_id"]
     project_id = proposal["project_id"]
@@ -773,7 +870,7 @@ def confirm_and_publish(
     # (actor mismatch) confirmation is bound to the reviewing actor.
     if confirmation["actor"] != actor:
         raise PublicationConfirmationRefused(
-            "actor_mismatch", "Acteur non autorise pour cette confirmation."
+            "actor_mismatch", "Actor not authorized for this confirmation."
         )
 
     # (workspace mismatch) the confirming workspace must match the review workspace

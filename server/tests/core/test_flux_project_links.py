@@ -17,6 +17,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from tests.conftest import (
+    enrol_fixture_identity,
+    purge_fixture_org,
+    purge_fixture_project,
+)
+
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
@@ -38,7 +44,16 @@ def _pg_reachable() -> bool:
 
 pg_available = pytest.mark.skipif(not _pg_reachable(), reason="platform Postgres not reachable")
 
-_AUTH = ("core.admin_api._check_auth", (True, "tester@example.com"))
+#: The route reads whatever `_check_auth` returns and matches it against
+#: `app.org_members.identity`, which carries `person_<ULID>`. In production the
+#: HTTP path has already resolved its principal to a person before the handler
+#: runs -- so a test that patches in a RAW subject is testing a caller that
+#: cannot exist, and every route answered `org_manage_denied`.
+#:
+#: `_setup` enrols the subject and returns the person it minted; the patches below
+#: hand back THAT, which is what production would.
+_AUTH_TARGET = "core.admin_api._check_auth"
+_AUTH_SUBJECT = "tester@example.com"
 
 
 def _post(flux_id: str, body: dict, **path) -> MagicMock:
@@ -93,6 +108,14 @@ def _setup(suffix: str) -> dict:
                 "VALUES (%s, %s, %s, %s, %s)",
                 (flux, pa1, f"F-{suffix}", "google-analytics", org_a),
             )
+            # THE ACTING IDENTITY MUST BE ENROLLED, and as the CANONICAL person.
+            # Without this the routes answered `org_manage_denied` for
+            # `tester@example.com` -- a raw subject matches no membership row, so
+            # every test measured the enrolment gap and none measured linking.
+            # Enrolled in BOTH orgs: the cross-org tests need a caller who holds
+            # org B legitimately, or their refusal would prove nothing.
+            for org in (org_a, org_b):
+                identity = enrol_fixture_identity(cur, _AUTH_SUBJECT, org_id=org)
         conn.commit()
     return {
         "org_a": org_a,
@@ -101,6 +124,7 @@ def _setup(suffix: str) -> dict:
         "pa2": pa2,
         "pb1": pb1,
         "flux": flux,
+        "identity": identity,
     }
 
 
@@ -111,14 +135,16 @@ def _teardown(ids: dict) -> None:
         with conn.cursor() as cur:
             # datastreams / projects delete cascades their project_flux links.
             cur.execute("DELETE FROM app.datastreams WHERE id = %s", (ids["flux"],))
-            cur.execute(
-                "DELETE FROM app.projects WHERE id IN (%s, %s, %s)",
-                (ids["pa1"], ids["pa2"], ids["pb1"]),
-            )
-            cur.execute(
-                "DELETE FROM app.organizations WHERE id IN (%s, %s)",
-                (ids["org_a"], ids["org_b"]),
-            )
+        # One project at a time, through the graph the production purge walks:
+        # `project_capabilities` holds each of them by ON DELETE RESTRICT, and the
+        # hand-written delete above raised ForeignKeyViolation on every teardown.
+        for project in (ids["pa1"], ids["pa2"], ids["pb1"]):
+            purge_fixture_project(conn, project)
+        # And the orgs by the same graph: `mdm_business_domains` holds an org by
+        # ON DELETE RESTRICT, which the hand-written DELETE could not know about
+        # and the next governed table would break again.
+        for org in (ids["org_a"], ids["org_b"]):
+            purge_fixture_org(conn, org)
         conn.commit()
 
 
@@ -129,18 +155,24 @@ def _teardown(ids: dict) -> None:
 
 @pytest.mark.anyio
 async def test_link_requires_project_id_422():
-    from core.admin_api import _link_flux_to_project
+    """A malformed body is refused BEFORE any access decision, so no enrolment.
 
-    with patch(_AUTH[0], return_value=_AUTH[1]):
+    This test seeds nothing on purpose: `422` must come from the missing
+    `project_id`, and a caller who could pass the access check would let a
+    later refusal masquerade as this one.
+    """
+    from core.flux_projects_api import _link_flux_to_project  # noqa: PLC0415
+
+    with patch(_AUTH_TARGET, return_value=(True, _AUTH_SUBJECT)):
         resp = await _link_flux_to_project(_post("flux_x", {}))
     assert resp.status_code == 422
 
 
 @pytest.mark.anyio
 async def test_list_flux_projects_requires_auth_401():
-    from core.admin_api import _list_flux_projects
+    from core.flux_projects_api import _list_flux_projects  # noqa: PLC0415
 
-    with patch(_AUTH[0], return_value=(False, "")):
+    with patch(_AUTH_TARGET, return_value=(False, "")):
         resp = await _list_flux_projects(_get("flux_x"))
     assert resp.status_code == 401
 
@@ -153,12 +185,15 @@ async def test_list_flux_projects_requires_auth_401():
 @pg_available
 @pytest.mark.anyio
 async def test_link_two_projects_same_org_and_list():
-    from core.admin_api import _link_flux_to_project, _list_flux_projects
+    from core.flux_projects_api import (
+        _link_flux_to_project,  # noqa: PLC0415
+        _list_flux_projects,  # noqa: PLC0415
+    )
 
     suffix = uuid.uuid4().hex[:8]
     ids = _setup(suffix)
     try:
-        with patch(_AUTH[0], return_value=_AUTH[1]):
+        with patch(_AUTH_TARGET, return_value=(True, ids["identity"])):
             for pid in (ids["pa1"], ids["pa2"]):
                 r = await _link_flux_to_project(
                     _post(ids["flux"], {"project_id": pid})
@@ -176,12 +211,12 @@ async def test_link_two_projects_same_org_and_list():
 @pg_available
 @pytest.mark.anyio
 async def test_link_cross_org_refused_409():
-    from core.admin_api import _link_flux_to_project
+    from core.flux_projects_api import _link_flux_to_project  # noqa: PLC0415
 
     suffix = uuid.uuid4().hex[:8]
     ids = _setup(suffix)
     try:
-        with patch(_AUTH[0], return_value=_AUTH[1]):
+        with patch(_AUTH_TARGET, return_value=(True, ids["identity"])):
             resp = await _link_flux_to_project(
                 _post(ids["flux"], {"project_id": ids["pb1"]})
             )
@@ -194,12 +229,12 @@ async def test_link_cross_org_refused_409():
 @pg_available
 @pytest.mark.anyio
 async def test_link_nonexistent_flux_404():
-    from core.admin_api import _link_flux_to_project
+    from core.flux_projects_api import _link_flux_to_project  # noqa: PLC0415
 
     suffix = uuid.uuid4().hex[:8]
     ids = _setup(suffix)
     try:
-        with patch(_AUTH[0], return_value=_AUTH[1]):
+        with patch(_AUTH_TARGET, return_value=(True, ids["identity"])):
             resp = await _link_flux_to_project(
                 _post(f"flux_missing_{suffix}", {"project_id": ids["pa1"]})
             )
@@ -211,12 +246,12 @@ async def test_link_nonexistent_flux_404():
 @pg_available
 @pytest.mark.anyio
 async def test_link_nonexistent_project_404():
-    from core.admin_api import _link_flux_to_project
+    from core.flux_projects_api import _link_flux_to_project  # noqa: PLC0415
 
     suffix = uuid.uuid4().hex[:8]
     ids = _setup(suffix)
     try:
-        with patch(_AUTH[0], return_value=_AUTH[1]):
+        with patch(_AUTH_TARGET, return_value=(True, ids["identity"])):
             resp = await _link_flux_to_project(
                 _post(ids["flux"], {"project_id": f"proj_missing_{suffix}"})
             )
@@ -228,12 +263,12 @@ async def test_link_nonexistent_project_404():
 @pg_available
 @pytest.mark.anyio
 async def test_duplicate_link_409():
-    from core.admin_api import _link_flux_to_project
+    from core.flux_projects_api import _link_flux_to_project  # noqa: PLC0415
 
     suffix = uuid.uuid4().hex[:8]
     ids = _setup(suffix)
     try:
-        with patch(_AUTH[0], return_value=_AUTH[1]):
+        with patch(_AUTH_TARGET, return_value=(True, ids["identity"])):
             ok = await _link_flux_to_project(
                 _post(ids["flux"], {"project_id": ids["pa1"]})
             )
@@ -249,7 +284,11 @@ async def test_duplicate_link_409():
 @pg_available
 @pytest.mark.anyio
 async def test_unlink_then_gone_and_second_unlink_404():
-    from core.admin_api import (
+    # The three handlers live in `core.flux_projects_api`, not in `core.admin_api`:
+    # they were extracted, and this one call site kept the old address while the
+    # rest of this file already used the new one. `ImportError` on collection, so
+    # eight tests never ran.
+    from core.flux_projects_api import (
         _link_flux_to_project,
         _list_flux_projects,
         _unlink_flux_from_project,
@@ -258,19 +297,24 @@ async def test_unlink_then_gone_and_second_unlink_404():
     suffix = uuid.uuid4().hex[:8]
     ids = _setup(suffix)
     try:
-        with patch(_AUTH[0], return_value=_AUTH[1]):
-            await _link_flux_to_project(_post(ids["flux"], {"project_id": ids["pa1"]}))
+        # PA2, NOT PA1. `pa1` OWNS the flux -- `_setup` creates the datastream with
+        # `project_id = pa1` -- and the product refuses to unlink an owner there:
+        # `owner_link_required`, "Archive or delete the flux instead." That refusal
+        # is correct; this test used to ask for it and read it as a failure to
+        # unlink. What it means to prove is that an ORDINARY link comes back off.
+        with patch(_AUTH_TARGET, return_value=(True, ids["identity"])):
+            await _link_flux_to_project(_post(ids["flux"], {"project_id": ids["pa2"]}))
             rv = await _unlink_flux_from_project(
-                _get(ids["flux"], project_id=ids["pa1"])
+                _get(ids["flux"], project_id=ids["pa2"])
             )
             assert rv.status_code == 200
             projects = json.loads(
                 (await _list_flux_projects(_get(ids["flux"]))).body
             )["projects"]
-            assert all(p["project_id"] != ids["pa1"] for p in projects)
+            assert all(p["project_id"] != ids["pa2"] for p in projects)
             # Second unlink -> 404 (nothing left).
             rv2 = await _unlink_flux_from_project(
-                _get(ids["flux"], project_id=ids["pa1"])
+                _get(ids["flux"], project_id=ids["pa2"])
             )
             assert rv2.status_code == 404
     finally:
@@ -331,7 +375,7 @@ def test_hard_delete_flux_sweeps_dangling_flux_grants():
                 )
             conn.commit()
             # No pull_jobs reference this flux -> hard-delete path -> sweep runs.
-            assert delete_datastream(ids["flux"], ids["pa1"], conn, "tester") is True
+            assert delete_datastream(ids["flux"], ids["pa1"], conn, "tester") == "deleted"
             conn.commit()
             with conn.cursor() as cur:
                 cur.execute(

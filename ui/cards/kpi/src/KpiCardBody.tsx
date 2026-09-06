@@ -12,13 +12,18 @@
  *   neutral  : text.secondary (no semantic color)
  */
 
-import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
-import { useTheme } from "@mui/material/styles";
-import type { Theme } from "@mui/material/styles";
-import { Sparkline, metricLabel } from "@toorow/card-shell";
+import {
+  NO_VALUE,
+  Sparkline,
+  formatPercent,
+  formatValue,
+  metricLabel,
+  metricUnitSuffix,
+} from "@toorow/card-shell";
 import type { MetricRollup, MetricDefinition, SeriesPoint } from "@toorow/card-shell";
 import { ArrowUpwardIcon, ArrowDownwardIcon } from "./icons";
+import { Box, Typography, useTheme } from "@toorow/shell";
+import type { WidgetTheme } from "@toorow/shell";
 
 interface KpiCardBodyProps {
   metrics: Record<string, MetricRollup>;
@@ -27,7 +32,7 @@ interface KpiCardBodyProps {
 }
 
 function deltaColorFor(
-  theme: Theme,
+  theme: WidgetTheme,
   deltaPct: number | null,
   direction: MetricDefinition["direction"],
 ): string {
@@ -52,8 +57,9 @@ function KpiMetricTile({
   const theme = useTheme();
   const deltaPct = rollup.delta_pct ?? null;
   const color = deltaColorFor(theme, deltaPct, definition?.direction);
-  const deltaText =
-    deltaPct === null ? "—" : `${deltaPct >= 0 ? "+" : ""}${deltaPct.toFixed(1)} %`;
+  // `toFixed` never sees a locale: it is the second decimal convention a card
+  // showed at once (story 76-8). The pinned formatter is the only one now.
+  const deltaText = deltaPct === null ? NO_VALUE : formatPercent(deltaPct, { signed: true });
 
   return (
     <Box
@@ -69,7 +75,7 @@ function KpiMetricTile({
     >
       <Typography variant="overline" color="text.secondary" sx={{ lineHeight: 1.2 }}>
         {metricLabel(metric)}
-        {definition?.unit ? ` (${definition.unit})` : ""}
+        {metricUnitSuffix(definition?.unit)}
       </Typography>
 
       {/* HERO number */}
@@ -84,7 +90,7 @@ function KpiMetricTile({
         }}
         data-testid="kpi-hero-value"
       >
-        {rollup.value.toLocaleString("fr-FR")}
+        {formatValue(rollup.value)}
       </Typography>
 
       {/* Delta + sparkline row */}
@@ -125,10 +131,10 @@ export default function KpiCardBody({ metrics, series, metricDefinitions }: KpiC
         data-testid="kpi-empty-state"
       >
         <Typography variant="body2" sx={{ mb: 0.5 }}>
-          Aucune donnée disponible pour la période demandée.
+          No data is available for the period requested.
         </Typography>
         <Typography variant="caption" color="text.disabled">
-          Vérifiez que les métriques canoniques requises sont alimentées.
+          Check that the canonical metrics this card requires are being fed.
         </Typography>
       </Box>
     );

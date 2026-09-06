@@ -32,9 +32,174 @@
     "ambiguities": {
       "type": "array",
       "items": { "$ref": "#/$defs/ambiguity" }
+    },
+    "file_source_confirmation": {
+      "$ref": "#/$defs/file_source_confirmation"
+    },
+    "column_treatments": {
+      "$ref": "#/$defs/column_treatments",
+      "description": "Story 60.6. Joining N columns into one concept and splitting one column into N concepts, declared HERE because a mapping version is already immutable and content-hashed: publishing a change appends a version and rewrites no history (datastream-workbench-and-wizard.md:987). No table is added for them -- the only store that could have claimed one, app.datastream_derived_columns, is deprecated by the same story (AI-252) and carries zero rows. Optional: a mapping with no treatment omits the key, and an absent key is not an empty declaration."
     }
   },
   "$defs": {
+    "column_treatments": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["joins", "splits"],
+      "properties": {
+        "joins": {
+          "type": "array",
+          "description": "Each entry joins N named source columns into ONE concept. The source columns are NOT removed: they keep their row in the inventory carrying the word `Joined`, because hiding them is the same defect as hiding an excluded column under another name.",
+          "items": { "$ref": "#/$defs/column_join" }
+        },
+        "splits": {
+          "type": "array",
+          "description": "Each entry splits ONE source column into N named concepts. One entry carries all N targets on purpose: N entries repeating the same pattern are two copies free to diverge, which is the defect story 59.5 repaired.",
+          "items": { "$ref": "#/$defs/column_split" }
+        },
+        "schema_splits": {
+          "type": "array",
+          "description": "Story 70.1. Each entry splits ONE source column under a SET of positional layouts, the layout being chosen per ROW by a declared detector. Not in `required`: a mapping version written before 70.1 omits the key, and an absent key is not an empty declaration. One entry carries the whole set for the same reason `splits` carries all its targets -- three entries repeating one grammar are three copies free to diverge, and no column could say which of the three produced a value.",
+          "items": { "$ref": "#/$defs/column_schema_split" }
+        }
+      }
+    },
+    "column_schema_split": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "source", "separator", "remainder", "detection", "layouts"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,47}$",
+          "description": "Names the schema set, and prefixes the three provenance columns it emits: `<name>_layout`, `<name>_token_count`, `<name>_token_count_matches_schema`. Those names are DERIVED and never declared -- a name that can be computed from the declaration is a second place for the declaration to be contradicted."
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The source column read. Refused when this mapping does not carry it, when it is excluded, or when another treatment already claims it."
+        },
+        "separator": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8,
+          "description": "What cuts the value into tokens. Never empty: an empty separator makes every value a single token, so no layout could ever apply."
+        },
+        "remainder": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "description": "The concept receiving what exceeds the last position of the chosen layout. Declared, never implicit: overflow silently truncated is a value that disappears without anybody being told. It becomes a quoted warehouse column, so it must be an identifier -- a name carrying a quote would break out of its quoting at read."
+        },
+        "detection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["method", "anchor_tokens"],
+          "properties": {
+            "method": {
+              "enum": ["anchor_min_offset"],
+              "description": "The MINIMUM offset at which an anchor token sits selects the layout. Declared as a word rather than implied, so a second method arrives as a second word and not as a silent change of meaning for rows already derived under the first."
+            },
+            "anchor_tokens": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 16,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 },
+              "description": "The tokens the detector looks for. A token containing the separator is refused: a value carrying the separator is never ONE token, so it could never be found at an offset."
+            }
+          }
+        },
+        "layouts": {
+          "type": "array",
+          "minItems": 1,
+          "description": "The positional layouts of the set. Two layouts naming one concept at two positions is the NORMAL case -- they are alternatives for the same row, never rivals -- but two layouts claiming one anchor offset is refused, because the minimum offset would designate both.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "anchor_offset", "targets"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "description": "The value the `layout` column carries on every row that took this layout."
+              },
+              "anchor_offset": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 31,
+                "description": "The 0-based position an anchor token must sit at for this layout to be chosen. It must be one of this layout's own positions: an anchor outside the layout keys the detection on something the layout does not describe."
+              },
+              "targets": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "uniqueItems": true,
+                "items": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+                "description": "The canonical concepts fed by positions 0, 1, 2 ... in order. The split runs from the LEFT; a row shorter than the layout leaves the missing positions empty and says so through `token_count_matches_schema`. Each becomes a quoted warehouse column, so it must be an identifier -- a name carrying a quote would break out of its quoting at read."
+              }
+            }
+          }
+        }
+      }
+    },
+    "column_join": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "sources", "separator"],
+      "properties": {
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The concept the joined value feeds. Refused when a binding or another treatment already claims it."
+        },
+        "sources": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "The source columns read, in the order they are joined."
+        },
+        "separator": {
+          "type": "string",
+          "maxLength": 8,
+          "description": "What is written between two joined values. An empty string is a legitimate separator (year+month+day -> 20260808) and is not the same declaration as a missing key."
+        }
+      }
+    },
+    "column_split": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "pattern", "targets"],
+      "properties": {
+        "source": { "type": "string", "minLength": 1 },
+        "pattern": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "One regular expression with named capture groups. Compiled at declaration time to refuse a bad one before a version is appended; never evaluated by the module that validates it."
+        },
+        "targets": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["group", "target"],
+            "properties": {
+              "group": {
+                "type": "string",
+                "minLength": 1,
+                "description": "A named capture group of `pattern`. A group the pattern does not capture is refused."
+              },
+              "target": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
     "field_mapping": {
       "type": "object",
       "additionalProperties": false,
@@ -73,6 +238,12 @@
           "type": "array",
           "items": { "type": "string" },
           "maxItems": 10
+        },
+        "allowed_values": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 64,
+          "uniqueItems": true
         },
         "confidence": {
           "type": "number",
@@ -127,6 +298,16 @@
           "type": ["string", "null"],
           "pattern": "^mdm_[0-9A-HJKMNP-TV-Z]{26}$"
         },
+        "designates_object_kind": {
+          "type": ["string", "null"],
+          "pattern": "^[a-z][a-z0-9_]{1,39}$",
+          "description": "Story 68.2. The entity type (declared via 68.1) this column's values are keys OF. The binding lives HERE, in the mapping payload -- the governed, immutable, pinnable store -- never in a second store (governance.md:82). Optional and additive in the 1.x line: an absent key is 'nobody declared', an explicit null is 'declared: this column designates nothing', and the two are NOT the same fact (AC4). Same snake_case grammar as the kind itself."
+        },
+        "event_role": {
+          "type": ["string", "null"],
+          "enum": ["date", "type", "label", "description", "value", "entity", null],
+          "description": "Story 68.4. What this column CONTRIBUTES to a context event, when the file carries events rather than facts. A mapping declaring at least a `date` and a `label` role takes the events route: its rows land as datastream-owned context events (persist_context_event), never as facts. Optional and additive in the 1.x line; each role appears at most once, and a role is a DECLARATION -- the route is never inferred from the values."
+        },
         "status": {
           "enum": ["suggested", "confirmed", "resolved", "excluded", "blocking"]
         },
@@ -151,6 +332,57 @@
           "items": { "type": "string" }
         },
         "repair": { "type": "object" }
+      }
+    },
+    "file_source_confirmation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "template_id",
+        "template_content_hash",
+        "sample_content_hash",
+        "sample_filename",
+        "actor",
+        "confirmed_at",
+        "resolutions",
+        "accepted_warnings",
+        "warning_reason"
+      ],
+      "properties": {
+        "template_id": {
+          "type": "string",
+          "description": "A client-saved Template (fst_...) OR a catalog Template reference (template:<CODE>:<version>) -- the two ways file-source-ingestion.md binds one. Before AI-321 (2026-08-29) only the first spelling was accepted, so a human confirmation on a catalog-bound Datastream was refused by this schema after the gate had passed.",
+          "pattern": "^(fst_[0-9A-HJKMNP-TV-Z]{26}|template:[A-Za-z0-9_-]{1,128}:[0-9]{1,6})$"
+        },
+        "template_content_hash": {
+          "type": "string",
+          "description": "The client artifact's sealed hash; EMPTY for a catalog Template, which has no client artifact to seal (its identity is the immutable (code, version) pair).",
+          "pattern": "^([0-9a-f]{64})?$"
+        },
+        "sample_content_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "sample_filename": { "type": "string" },
+        "actor": { "type": "string", "minLength": 1 },
+        "confirmed_at": { "type": "string", "format": "date-time" },
+        "resolutions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source_column", "canonical_target"],
+            "properties": {
+              "source_column": { "type": "string", "minLength": 1 },
+              "canonical_target": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "accepted_warnings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ambiguity" }
+        },
+        "warning_reason": { "type": ["string", "null"] }
       }
     }
   }

@@ -38,12 +38,15 @@ signal AS (
 -- timezone (otherwise "no offset on shared tz" proves nothing). Fail if absent or single-row.
 cardinality_guard AS (
     SELECT
-        CAST(NULL AS VARCHAR) AS project_id,
+        CAST(NULL AS {{ toorow_string_type() }}) AS project_id,
         CAST(NULL AS DATE) AS date,
-        CAST(NULL AS VARCHAR) AS metric,
+        CAST(NULL AS {{ toorow_string_type() }}) AS metric,
         CAST(NULL AS BIGINT) AS n_distinct_tz,
         'CARDINALITY_FAIL: shared_tz subset missing or has <2 same-tz rows -- seed not run or fixture emptied'
             AS failure_reason
+    -- BigQuery refuses a WHERE with no FROM; DuckDB allows it. One constant row,
+    -- accepted by both, keeps this guard a guard on either engine.
+    FROM (SELECT 1) AS one_row
     WHERE (SELECT COUNT(*) FROM signal WHERE n_rows >= 2) = 0
 ),
 -- FALSE-POSITIVE VIOLATION: any shared-tz day with >=2 distinct timezones would mean the signal

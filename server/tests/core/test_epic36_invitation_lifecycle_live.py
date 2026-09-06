@@ -68,8 +68,20 @@ def test_live_accepted_invitation_is_immutable():
                             (invitation_id,),
                         )
         finally:
+            # THE ORG GOES THROUGH THE PRODUCT'S OWN PURGE, not a hand-written
+            # DELETE. `DELETE FROM app.organizations` stopped working the day
+            # migration 130's `trg_organizations_seed_business_domains` began
+            # seeding six `app.mdm_business_domains` rows into every new
+            # organization, because that table references it ON DELETE RESTRICT:
+            # the assertion above passed and the teardown raised
+            # `ForeignKeyViolation`, which reads exactly like the guard failing.
+            # `tests.conftest.purge_fixture_org` walks `core.org_purge`'s foreign
+            # key graph -- the plan production runs -- so the next governed table
+            # seeded by a trigger is torn down without anyone editing a list.
+            from tests.conftest import purge_fixture_org  # noqa: PLC0415
+
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM app.invitations WHERE id = %s", (invitation_id,))
                 cur.execute("DELETE FROM app.operations WHERE id = %s", (operation_id,))
-                cur.execute("DELETE FROM app.organizations WHERE id = %s", (org_id,))
+            purge_fixture_org(conn, org_id)
             conn.commit()

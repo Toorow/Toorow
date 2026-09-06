@@ -41,8 +41,8 @@ export const FIXTURE_ENVELOPE: CardEnvelope = {
   data: {
     card_id: "connectors",
     card_type: "connectors",
-    title: "Connecteurs",
-    answers_question: "Quels connecteurs sont disponibles et que alimentent-ils ?",
+    title: "Connectors",
+    answers_question: "Which connectors are available and what do they feed?",
     date_range: { start: "2026-07-14", end: "2026-07-14" },
     connectors: ["connector-registry"],
     metrics: {},

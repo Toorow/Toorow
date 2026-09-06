@@ -76,10 +76,16 @@ def test_error_shape():
 
 
 # --------------------------------------------------------------------------- #
-# FastMCP app is mount-ready and named "connector"                             #
+# FastMCP app is mount-ready and named "toorow"                                #
 # --------------------------------------------------------------------------- #
 def test_mcp_app_name():
-    assert mcp.name == "connector"
+    # The MCP app is named "toorow". `0658b06d` rebranded the application
+    # identifiers (connector/atlas -> toorow) and this assertion was left on the
+    # old name. `product-name-toorow`: the product is toorow, confirmed
+    # 2026-07-18; existing TECHNICAL identifiers were deliberately not renamed
+    # wholesale, which is why `provenance.source_system` a few lines above is
+    # still "connector-core" and must stay that way.
+    assert mcp.name == "toorow"
 
 
 # --------------------------------------------------------------------------- #

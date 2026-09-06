@@ -7,6 +7,16 @@
   lives (invariant epic-24: "aucun org_<slug> compose inline hors du point de
   nommage"). No model, no schema.yml ever concatenates an org schema name.
 
+  AI-166 (2026-08-17) -- var('project'): the tenancy the LIVE deployment uses.
+  The org zones (``org_<wslug>_*``) are provisioned shells holding zero tables;
+  the rows sit in ``raw_<project_id>`` and every reader addresses
+  ``marts_<project_id>`` (core/warehouse_tenancy resolvers, TOOROW_ORG_SCHEMAS
+  OFF). So the nightly builder passes ``var('project')`` and this macro composes
+  ``<custom>_<project_id>`` -- the exact twin of
+  ``warehouse_tenancy.bigquery_marts_dataset`` / ``bigquery_staging_dataset``.
+  ``var('org')`` is UNTOUCHED and still wins when both are passed, so a flip of
+  TOOROW_ORG_SCHEMAS keeps its meaning.
+
   Contract (AC1):
     * var('org') ABSENT (default)  -> EXACT legacy behaviour. We delegate to the
       builtin dbt.generate_schema_name so a ``dbt run`` without ``--vars`` is
@@ -29,11 +39,22 @@
   so we force seeds back to the legacy (builtin) resolution regardless of var('org').
 #}
     {%- set org = var('org', none) -%}
-    {%- if org is none or node.resource_type == 'seed' -%}
+    {%- set project = var('project', none) -%}
+    {%- if node.resource_type == 'seed' or (org is none and project is none) -%}
         {{- dbt.generate_schema_name(custom_schema_name, node) -}}
+    {%- elif org is not none -%}
+        {%- if custom_schema_name is none -%}
+            {{- ('org_' ~ org) | trim -}}
+        {%- else -%}
+            {{- ('org_' ~ org ~ '_' ~ custom_schema_name) | trim -}}
+        {%- endif -%}
     {%- elif custom_schema_name is none -%}
-        {{- ('org_' ~ org) | trim -}}
+        {#- No custom schema under the per-project tenancy: land in the project's
+            RAW zone, which is where the rows already are (warehouse_write puts
+            every connector landing there). The orchestrator always passes
+            raw_schema; the literal below is only the parse-time default. -#}
+        {{- var('raw_schema', 'main') | trim -}}
     {%- else -%}
-        {{- ('org_' ~ org ~ '_' ~ custom_schema_name) | trim -}}
+        {{- (custom_schema_name ~ '_' ~ project) | trim -}}
     {%- endif -%}
 {%- endmacro %}

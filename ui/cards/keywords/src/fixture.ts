@@ -35,8 +35,8 @@ export const FIXTURE_ENVELOPE: CardEnvelope = {
   data: {
     card_id: "keywords",
     card_type: "keywords",
-    title: "Mots-clés",
-    answers_question: "Comment se comportent mes mots-clés sur la période ?",
+    title: "Keywords",
+    answers_question: "How are my keywords / queries performing over the period?",
     date_range: { start: "2026-06-14", end: "2026-07-13" },
     connectors: ["google-search-console"],
     metrics: {},
@@ -128,14 +128,22 @@ export const FIXTURE_ENVELOPE: CardEnvelope = {
       {
         // Cannibalisation (Story 10.5) — queries split across >=2 pages read from the
         // JOINT query>page grain. Server contract (cards.py _resolve_table_cannibalisation):
-        // columns ["Requête","Page","Part (%)","Position moy."], empty -> designed empty
-        // table with empty_label. This fixture ships the DESIGNED EMPTY state (rows []) since
-        // the seed has no cannibalising query; the block is ALWAYS present (never absent).
+        // {key,label,numeric} columns with rows keyed by `key`, like every other table
+        // block -- this fixture carried bare label strings until AI-59 aligned the
+        // server. Empty -> designed empty table with empty_label. This fixture ships the
+        // DESIGNED EMPTY state (rows []) since the seed has no cannibalising query; the
+        // block is ALWAYS present (never absent). Labels stay French like its
+        // neighbours; the server's English copy is the separate visible-copy lot.
         type: "table",
         binding: { metrics: ["impressions", "average_position"], dimensions: ["query", "page"], cannibalisation: true },
         title: "Cannibalisation",
         data: {
-          columns: ["Requête", "Page", "Part (%)", "Position moy."],
+          columns: [
+            { key: "_dim", label: "Requête", numeric: false },
+            { key: "page", label: "Page", numeric: false },
+            { key: "share_pct", label: "Part (%)", numeric: true },
+            { key: "average_position", label: "Position moy.", numeric: true },
+          ],
           rows: [],
           empty_label: "Aucune cannibalisation détectée",
         },

@@ -14,7 +14,7 @@
  * Le CardShell affiche automatiquement le FeedbackBar dans le footer chrome.
  */
 
-import CardShell, { CardComposition } from "@toorow/card-shell";
+import CardShell, { CardComposition, variationConventions } from "@toorow/card-shell";
 import type { CardEnvelope } from "@toorow/card-shell";
 import KpiCardBody from "./KpiCardBody";
 
@@ -61,6 +61,8 @@ export default function App({ envelope, adminConsoleUrl = "/admin" }: AppProps) 
       metricDefinitions={data.metric_definitions}
       adminConsoleUrl={adminConsoleUrl}
       feedbackProps={feedbackProps}
+      // ONE placement for the variation legend: the card footer (arbitrage 5).
+      variationConventions={variationConventions(data.composition, data)}
     >
       {body}
     </CardShell>

@@ -146,7 +146,7 @@ def _seam(trace_id: str, *, defs=None, context_hits=None):
 
     patches = [
         patch("core.main.warehouse.query_daily_report", return_value=_rows()),
-        patch("core.main._resolve_project", side_effect=lambda p: p or "default"),
+        patch("core.main._resolve_project", side_effect=lambda p, identity=None: p or "default"),
         patch("core.main.tracing.current_trace_id_hex", return_value=trace_id),
         # No live Postgres: the adherence fallback + context search degrade cleanly.
         patch("core.adherence._record_postgres_fallback", return_value=None),
@@ -196,8 +196,10 @@ async def test_context_then_data_is_adherent():
             )
     assert not result.is_error
     env = result.structured_content or result.data
-    assert env["meta"]["gate"]["adherent"] is True
-    assert env["meta"]["gate"]["context_tool"] == "search_context"
+    meta = getattr(result, "meta", None) or getattr(result, "_meta", None) or {}
+    assert "gate" not in env.get("meta", {})
+    assert meta["gate"]["adherent"] is True
+    assert meta["gate"]["context_tool"] == "search_context"
 
 
 @pytest.mark.anyio
@@ -220,7 +222,9 @@ async def test_context_then_data_not_adherent_when_search_returns_empty():
                 {"project_id": "p", "date_range": _DATE_RANGE, "connectors": ["my-connector"]},
             )
     env = result.structured_content or result.data
-    assert env["meta"]["gate"]["adherent"] is False
+    meta = getattr(result, "meta", None) or getattr(result, "_meta", None) or {}
+    assert "gate" not in env.get("meta", {})
+    assert meta["gate"]["adherent"] is False
 
 
 @pytest.mark.anyio
@@ -234,7 +238,9 @@ async def test_data_only_is_not_adherent_but_still_succeeds():
             )
     assert not result.is_error  # never blocked
     env = result.structured_content or result.data
-    assert env["meta"]["gate"]["adherent"] is False
+    meta = getattr(result, "meta", None) or getattr(result, "_meta", None) or {}
+    assert "gate" not in env.get("meta", {})
+    assert meta["gate"]["adherent"] is False
     # The envelope is still a normal, complete data envelope.
     assert env["data"]["rows"]
     assert env["schema_version"] == "1"
@@ -251,7 +257,9 @@ async def test_data_then_context_is_not_adherent_for_that_query():
             # A context call AFTER the data query does not change the recorded verdict.
             await client.call_tool("get_procedure", {"name": "whatever", "project_id": "p"})
     env = result.structured_content or result.data
-    assert env["meta"]["gate"]["adherent"] is False
+    meta = getattr(result, "meta", None) or getattr(result, "_meta", None) or {}
+    assert "gate" not in env.get("meta", {})
+    assert meta["gate"]["adherent"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -351,7 +359,7 @@ def _card_seam(trace_id: str, *, context_hits=None):
     """Patch get_card's card render + project access, share the adherence seam."""
     with _seam(trace_id, context_hits=context_hits):
         card_patches = [
-            patch("core.project_access.identity_has_project_access", return_value=True),
+            patch("core.project_access.identity_can_read_project", return_value=True),
             patch("core.cards.get_card",
                   return_value=("card resume", _card_env(), "ui://core/card-kpi")),
         ]
@@ -374,8 +382,10 @@ async def test_get_report_context_then_data_is_adherent():
             )
     assert not result.is_error
     env = result.structured_content or result.data
-    assert env["meta"]["gate"]["adherent"] is True
-    assert env["meta"]["gate"]["context_tool"] == "search_context"
+    meta = getattr(result, "meta", None) or getattr(result, "_meta", None) or {}
+    assert "gate" not in env.get("meta", {})
+    assert meta["gate"]["adherent"] is True
+    assert meta["gate"]["context_tool"] == "search_context"
 
 
 @pytest.mark.anyio
@@ -387,7 +397,9 @@ async def test_get_report_data_only_is_not_adherent():
             )
     assert not result.is_error  # AD-18: never blocked
     env = result.structured_content or result.data
-    assert env["meta"]["gate"]["adherent"] is False
+    meta = getattr(result, "meta", None) or getattr(result, "_meta", None) or {}
+    assert "gate" not in env.get("meta", {})
+    assert meta["gate"]["adherent"] is False
 
 
 @pytest.mark.anyio
@@ -400,8 +412,10 @@ async def test_get_card_context_then_data_is_adherent():
             )
     assert not result.is_error
     env = result.structured_content or result.data
-    assert env["meta"]["gate"]["adherent"] is True
-    assert env["meta"]["gate"]["context_tool"] == "search_context"
+    meta = getattr(result, "meta", None) or getattr(result, "_meta", None) or {}
+    assert "gate" not in env.get("meta", {})
+    assert meta["gate"]["adherent"] is True
+    assert meta["gate"]["context_tool"] == "search_context"
 
 
 @pytest.mark.anyio
@@ -413,7 +427,9 @@ async def test_get_card_data_only_is_not_adherent():
             )
     assert not result.is_error  # AD-18: never blocked
     env = result.structured_content or result.data
-    assert env["meta"]["gate"]["adherent"] is False
+    meta = getattr(result, "meta", None) or getattr(result, "_meta", None) or {}
+    assert "gate" not in env.get("meta", {})
+    assert meta["gate"]["adherent"] is False
 
 
 # ---------------------------------------------------------------------------

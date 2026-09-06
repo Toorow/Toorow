@@ -3,6 +3,20 @@
 Offline tests (no Postgres required): mock the DB connection.
 pg-gated tests are marked with @pytest.mark.live_postgres.
 
+WHAT MOVED (Story 67.20). These five functions kept their names and signatures,
+but the store underneath is no longer `app.fx_conflict_resolutions` -- migration
+145 dethroned it and migration 282 sealed it against writes. Reads now come from
+`app.fx_source_currency_bindings_v` and writes go through
+`core.source_currency_bindings`, which publishes an immutable version.
+
+So the tests split by what they are actually about:
+  * the READS still mock a cursor, because they still are one SELECT;
+  * the WRITES now mock the GOVERNED STORE, because that is the seam this module
+    owns -- "did it delegate, normalize and commit". What the governed store
+    itself guarantees (a published version, preserved attribution, a superseded
+    predecessor) is proven against a real Postgres in
+    `tests/core/test_source_currency_bindings.py`, not against a MagicMock.
+
 Tests:
   - upsert_fx_resolution: valid, invalid currency, missing fields
   - delete_fx_resolution: found, not found
@@ -32,9 +46,13 @@ def _make_conn(fetchone=None, fetchall=None, rowcount=1, description=None):
     cur = MagicMock()
     cur.__enter__ = lambda s: s
     cur.__exit__ = MagicMock(return_value=False)
+    # The column list of `app.fx_source_currency_bindings_v` (migration 282). The
+    # surrogate `id` is gone: a declaration is identified by the version that
+    # published it.
     cur.description = description or [
-        ("id",), ("project_id",), ("target_field",), ("source_module",),
+        ("project_id",), ("target_field",), ("source_module",),
         ("resolved_source_currency",), ("decided_by",), ("decided_at",), ("note",),
+        ("rule_set_id",), ("rule_set_version_id",),
     ]
     cur.fetchone.return_value = fetchone
     cur.fetchall.return_value = fetchall or []
@@ -45,52 +63,103 @@ def _make_conn(fetchone=None, fetchall=None, rowcount=1, description=None):
     return conn, cur
 
 
+def _binding_row(**overrides):
+    """One row of the governed projection, in cursor order."""
+    row = {
+        "project_id": "proj_a",
+        "target_field": "cost",
+        "source_module": "meta-ads",
+        "resolved_source_currency": "USD",
+        "decided_by": "alice@example.com",
+        "decided_at": _NOW,
+        "note": None,
+        "rule_set_id": "grs_EXAMPLE",
+        "rule_set_version_id": "grsv_EXAMPLE",
+    }
+    row.update(overrides)
+    return tuple(row.values())
+
+
+def _declared(**overrides):
+    """What `source_currency_bindings.declare_binding` answers."""
+    row = {
+        "project_id": "proj_a",
+        "target_field": "cost",
+        "source_module": "meta-ads",
+        "resolved_source_currency": "USD",
+        "decided_by": "alice@example.com",
+        "decided_at": _NOW.isoformat(),
+        "note": None,
+        "rule_set_id": "grs_EXAMPLE",
+        "rule_set_version_id": "grsv_EXAMPLE",
+        "content_hash": "0" * 64,
+    }
+    row.update(overrides)
+    return row
+
+
 # ---------------------------------------------------------------------------
 # upsert_fx_resolution
 # ---------------------------------------------------------------------------
 
 
 class TestUpsertFxResolution:
-    def test_valid_upsert(self):
-        """A valid upsert returns the resolution row."""
+    def test_valid_upsert_delegates_to_the_governed_store(self):
+        """A valid declaration reaches the governed store and returns its row."""
         from core.conflict_resolutions import upsert_fx_resolution
 
-        row = (1, "proj_a", "cost", "meta-ads", "USD", "alice@test", _NOW, None)
-        conn, cur = _make_conn(fetchone=row)
+        conn, _ = _make_conn()
+        declared = _declared(decided_by="alice@test")
 
-        result = upsert_fx_resolution(
-            project_id="proj_a",
-            target_field="cost",
-            source_module="meta-ads",
-            resolved_source_currency="usd",  # lowercase -> normalized to USD
-            decided_by="alice@test",
-            note=None,
-            conn=conn,
-        )
+        with patch(
+            "core.source_currency_bindings.declare_binding", return_value=declared
+        ) as declare:
+            result = upsert_fx_resolution(
+                project_id="proj_a",
+                target_field="cost",
+                source_module="meta-ads",
+                resolved_source_currency="usd",  # lowercase -> normalized to USD
+                decided_by="alice@test",
+                note=None,
+                conn=conn,
+            )
 
-        assert result["project_id"] == "proj_a"
-        assert result["target_field"] == "cost"
-        assert result["source_module"] == "meta-ads"
+        # It is the governed door that was opened, with the normalized currency.
+        declare.assert_called_once()
+        kwargs = declare.call_args.kwargs
+        assert kwargs["project_id"] == "proj_a"
+        assert kwargs["target_field"] == "cost"
+        assert kwargs["source_module"] == "meta-ads"
+        assert kwargs["source_currency"] == "USD"
+        assert kwargs["actor"] == "alice@test"
+
         assert result["resolved_source_currency"] == "USD"
         assert result["decided_by"] == "alice@test"
+        # And the answer names the version the declaration was published under --
+        # the question the overwritten row could never answer.
+        assert result["rule_set_version_id"].startswith("grsv_")
         conn.commit.assert_called_once()
 
     def test_currency_normalized_to_upper(self):
-        """Currency code is normalized to uppercase."""
+        """Currency code is normalized to uppercase before it reaches the store."""
         from core.conflict_resolutions import upsert_fx_resolution
 
-        row = (1, "proj_a", "cost", "tiktok-ads", "EUR", "bob", _NOW, None)
-        conn, cur = _make_conn(fetchone=row)
+        conn, _ = _make_conn()
 
-        result = upsert_fx_resolution(
-            project_id="proj_a",
-            target_field="cost",
-            source_module="tiktok-ads",
-            resolved_source_currency="eur",
-            decided_by="bob",
-            note=None,
-            conn=conn,
-        )
+        with patch(
+            "core.source_currency_bindings.declare_binding",
+            return_value=_declared(source_module="tiktok-ads", resolved_source_currency="EUR"),
+        ) as declare:
+            result = upsert_fx_resolution(
+                project_id="proj_a",
+                target_field="cost",
+                source_module="tiktok-ads",
+                resolved_source_currency="eur",
+                decided_by="bob",
+                note=None,
+                conn=conn,
+            )
+        assert declare.call_args.kwargs["source_currency"] == "EUR"
         assert result["resolved_source_currency"] == "EUR"
 
     def test_invalid_currency_raises(self):
@@ -99,7 +168,7 @@ class TestUpsertFxResolution:
 
         conn, _ = _make_conn()
 
-        with pytest.raises(ValueError, match="resolved_source_currency invalide"):
+        with pytest.raises(ValueError, match="resolved_source_currency is not a valid currency"):
             upsert_fx_resolution(
                 project_id="proj_a",
                 target_field="cost",
@@ -116,7 +185,7 @@ class TestUpsertFxResolution:
 
         conn, _ = _make_conn()
 
-        with pytest.raises(ValueError, match="resolved_source_currency est requis"):
+        with pytest.raises(ValueError, match="resolved_source_currency is required"):
             upsert_fx_resolution(
                 project_id="proj_a",
                 target_field="cost",
@@ -132,7 +201,7 @@ class TestUpsertFxResolution:
 
         conn, _ = _make_conn()
 
-        with pytest.raises(ValueError, match="project_id est requis"):
+        with pytest.raises(ValueError, match="project_id is required"):
             upsert_fx_resolution(
                 project_id="",
                 target_field="cost",
@@ -147,55 +216,64 @@ class TestUpsertFxResolution:
         """Empty decided_by falls back to 'anonymous'."""
         from core.conflict_resolutions import upsert_fx_resolution
 
-        row = (1, "proj_a", "cost", "meta-ads", "USD", "anonymous", _NOW, None)
-        conn, cur = _make_conn(fetchone=row)
+        conn, _ = _make_conn()
 
-        upsert_fx_resolution(
-            project_id="proj_a",
-            target_field="cost",
-            source_module="meta-ads",
-            resolved_source_currency="USD",
-            decided_by="",
-            note=None,
-            conn=conn,
-        )
-        # The INSERT uses 'anonymous' (decided_by arg replaced in function)
+        with patch(
+            "core.source_currency_bindings.declare_binding",
+            return_value=_declared(decided_by="anonymous"),
+        ) as declare:
+            upsert_fx_resolution(
+                project_id="proj_a",
+                target_field="cost",
+                source_module="meta-ads",
+                resolved_source_currency="USD",
+                decided_by="",
+                note=None,
+                conn=conn,
+            )
+        assert declare.call_args.kwargs["actor"] == "anonymous"
         assert conn.commit.called
 
     def test_upsert_with_note(self):
-        """Note is persisted."""
+        """The note reaches the governed store and comes back on the declaration."""
         from core.conflict_resolutions import upsert_fx_resolution
 
-        row = (1, "proj_a", "cost", "meta-ads", "USD", "alice", _NOW, "Force USD brut")
-        conn, cur = _make_conn(fetchone=row)
+        conn, _ = _make_conn()
 
-        result = upsert_fx_resolution(
-            project_id="proj_a",
-            target_field="cost",
-            source_module="meta-ads",
-            resolved_source_currency="USD",
-            decided_by="alice",
-            note="Force USD brut",
-            conn=conn,
-        )
+        with patch(
+            "core.source_currency_bindings.declare_binding",
+            return_value=_declared(note="Force USD brut"),
+        ) as declare:
+            result = upsert_fx_resolution(
+                project_id="proj_a",
+                target_field="cost",
+                source_module="meta-ads",
+                resolved_source_currency="USD",
+                decided_by="alice",
+                note="Force USD brut",
+                conn=conn,
+            )
+        assert declare.call_args.kwargs["note"] == "Force USD brut"
         assert result["note"] == "Force USD brut"
 
     def test_decided_at_is_isoformatted(self):
-        """decided_at is serialised to ISO string."""
+        """decided_at is an ISO string, as it was when the flat table served it."""
         from core.conflict_resolutions import upsert_fx_resolution
 
-        row = (1, "proj_a", "cost", "meta-ads", "USD", "alice", _NOW, None)
-        conn, cur = _make_conn(fetchone=row)
+        conn, _ = _make_conn()
 
-        result = upsert_fx_resolution(
-            project_id="proj_a",
-            target_field="cost",
-            source_module="meta-ads",
-            resolved_source_currency="USD",
-            decided_by="alice",
-            note=None,
-            conn=conn,
-        )
+        with patch(
+            "core.source_currency_bindings.declare_binding", return_value=_declared()
+        ):
+            result = upsert_fx_resolution(
+                project_id="proj_a",
+                target_field="cost",
+                source_module="meta-ads",
+                resolved_source_currency="USD",
+                decided_by="alice",
+                note=None,
+                conn=conn,
+            )
         assert result["decided_at"] == _NOW.isoformat()
 
     def test_no_fx_conversion_in_upsert(self):
@@ -221,22 +299,39 @@ class TestUpsertFxResolution:
 
 
 class TestDeleteFxResolution:
-    def test_delete_existing(self):
+    def test_delete_existing_withdraws_through_the_governed_store(self):
         from core.conflict_resolutions import delete_fx_resolution
 
-        conn, cur = _make_conn(rowcount=1)
+        conn, _ = _make_conn()
 
-        # Should not raise
-        delete_fx_resolution("proj_a", "cost", "meta-ads", conn)
+        with patch(
+            "core.source_currency_bindings.withdraw_binding",
+            return_value={"rule_set_version_id": "grsv_EXAMPLE"},
+        ) as withdraw:
+            delete_fx_resolution("proj_a", "cost", "meta-ads", conn)
+
+        kwargs = withdraw.call_args.kwargs
+        assert kwargs["project_id"] == "proj_a"
+        assert kwargs["target_field"] == "cost"
+        assert kwargs["source_module"] == "meta-ads"
         conn.commit.assert_called_once()
 
     def test_delete_not_found_raises(self):
+        """A pair nobody declared refuses -- the route turns it into a 404."""
         from core.conflict_resolutions import delete_fx_resolution
+        from core.governance_rule_sets import RuleSetError
 
-        conn, cur = _make_conn(rowcount=0)
+        conn, _ = _make_conn()
 
-        with pytest.raises(ValueError, match="introuvable"):
-            delete_fx_resolution("proj_a", "cost", "meta-ads", conn)
+        with patch(
+            "core.source_currency_bindings.withdraw_binding",
+            side_effect=RuleSetError(
+                "no source currency is declared for cost/meta-ads in this Project"
+            ),
+        ):
+            # RuleSetError subclasses ValueError, so the seam's 404 mapping holds.
+            with pytest.raises(ValueError, match="no source currency is declared"):
+                delete_fx_resolution("proj_a", "cost", "meta-ads", conn)
         conn.commit.assert_not_called()
 
 
@@ -249,17 +344,17 @@ class TestGetFxResolution:
     def test_found(self):
         from core.conflict_resolutions import get_fx_resolution
 
-        row = (1, "proj_a", "cost", "meta-ads", "USD", "alice", _NOW, None)
-        conn, cur = _make_conn(fetchone=row)
+        conn, _ = _make_conn(fetchall=[_binding_row()])
 
         result = get_fx_resolution("proj_a", "cost", "meta-ads", conn)
         assert result is not None
         assert result["resolved_source_currency"] == "USD"
+        assert result["rule_set_version_id"] == "grsv_EXAMPLE"
 
     def test_not_found(self):
         from core.conflict_resolutions import get_fx_resolution
 
-        conn, cur = _make_conn(fetchone=None)
+        conn, _ = _make_conn(fetchall=[])
 
         result = get_fx_resolution("proj_a", "cost", "meta-ads", conn)
         assert result is None
@@ -275,8 +370,8 @@ class TestListFxResolutions:
         from core.conflict_resolutions import list_fx_resolutions
 
         rows = [
-            (1, "proj_a", "cost", "meta-ads", "USD", "alice", _NOW, None),
-            (2, "proj_a", "cost", "tiktok-ads", "EUR", "bob", _NOW, None),
+            _binding_row(source_module="meta-ads", resolved_source_currency="USD"),
+            _binding_row(source_module="tiktok-ads", resolved_source_currency="EUR"),
         ]
         conn, cur = _make_conn(fetchall=rows)
 
@@ -287,7 +382,7 @@ class TestListFxResolutions:
     def test_project_scoped(self):
         from core.conflict_resolutions import list_fx_resolutions
 
-        rows = [(1, "proj_a", "cost", "meta-ads", "USD", "alice", _NOW, None)]
+        rows = [_binding_row()]
         conn, cur = _make_conn(fetchall=rows)
 
         list_fx_resolutions(project_id="proj_a", conn=conn)
@@ -315,7 +410,7 @@ class TestListConflicts:
 
         field_summary = {
             "name": "cost",
-            "display_name": "Coût",
+            "display_name": "Cost",
             "data_type": "currency",
             "field_kind": "metric",
             "measure": "sum",
@@ -352,9 +447,12 @@ class TestListConflicts:
         ]
 
         with patch("core.datamodel.list_target_fields", return_value=[field_summary]):
-            with patch("core.datamodel.get_target_field", return_value=field_detail):
+            with patch(
+                "core.datamodel.get_target_field", return_value=field_detail
+            ) as mock_get:
                 result = list_conflicts(project_id="proj_a", conn=conn)
 
+        mock_get.assert_called_once_with("cost", conn, project_id="proj_a")
         assert len(result) == 1
         assert result[0]["conflict"]["code"] == "CURRENCY_CONFLICT"
         assert "resolutions_by_module" in result[0]
@@ -482,33 +580,41 @@ class TestAD6Invariant:
 
 class TestNonRetroactivity:
     def test_upsert_does_not_mutate_pull_history(self):
-        """Non-retroactivity: upsert_fx_resolution only INSERTs/UPDATEs the
-        resolutions table. It does NOT touch raw_*/staging/fact tables.
+        """Non-retroactivity: declaring a source currency writes the governed
+        declaration and NOTHING else. It does not touch raw_*/staging/fact tables.
 
-        This is verified by checking the SQL sent to the cursor: only the
-        fx_conflict_resolutions table is referenced in DML.
+        Read on the SOURCE rather than on a mock's call log: the write is one
+        delegation now, so a cursor mock would observe no SQL at all and the guard
+        would pass vacuously -- which is worse than no guard.
         """
-        from core.conflict_resolutions import upsert_fx_resolution
+        import inspect
 
-        row = (1, "proj_a", "cost", "meta-ads", "USD", "alice", _NOW, None)
-        conn, cur = _make_conn(fetchone=row)
+        from core import conflict_resolutions, source_currency_bindings
 
-        upsert_fx_resolution(
-            project_id="proj_a",
-            target_field="cost",
-            source_module="meta-ads",
-            resolved_source_currency="USD",
-            decided_by="alice",
-            note=None,
-            conn=conn,
-        )
+        # The CODE of the write path, with the docstrings removed: those
+        # legitimately name `stg_*_daily.sql` when explaining who consumes the
+        # declaration, and a grep that cannot tell prose from code would fail on
+        # the explanation rather than on a mutation.
+        def _code(fn) -> str:
+            # `inspect.getdoc` re-indents, so a plain string replace misses the
+            # raw block. `fn.__doc__` is the literal that appears in the source.
+            source = inspect.getsource(fn)
+            doc = fn.__doc__
+            return source.replace(doc, "") if doc else source
 
-        # Verify the SQL only touches fx_conflict_resolutions (not raw/staging/fact)
-        sql_calls = [str(c) for c in cur.execute.call_args_list]
-        for sql in sql_calls:
-            assert "raw_meta" not in sql.lower()
-            assert "stg_" not in sql.lower()
-            assert "fact_daily" not in sql.lower()
-            assert "pull_jobs" not in sql.lower()
-        # Confirm fx_conflict_resolutions IS mentioned
-        assert any("fx_conflict_resolutions" in s for s in sql_calls)
+        bodies = [
+            _code(conflict_resolutions.upsert_fx_resolution),
+            _code(source_currency_bindings.declare_binding),
+            _code(source_currency_bindings._publish),
+        ]
+        for body in bodies:
+            lowered = body.lower()
+            assert "raw_meta" not in lowered
+            assert "stg_" not in lowered
+            assert "fact_daily" not in lowered
+            assert "pull_jobs" not in lowered
+
+        # And the write path names the governed door, not the sealed table.
+        write_path = inspect.getsource(conflict_resolutions.upsert_fx_resolution)
+        assert "declare_binding" in write_path
+        assert "fx_conflict_resolutions" not in write_path

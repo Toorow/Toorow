@@ -9,26 +9,16 @@ belongs.
 
 from __future__ import annotations
 
-import copy
-
 import pytest
 from core.geographic_reporting import (
     LOCAL_MARKETS,
     GeographicPosture,
     InvalidGeographicPosture,
     Market,
-    bindable_markets,
     market_diff,
     markets_from_country_codes,
     normalize_geographic_posture,
     posture_from_stored_row,
-    resolve_market_binding,
-)
-from core.geographic_semantics import (
-    OTHER_MARKETS,
-    UNKNOWN_MARKET,
-    group_market_reporting_rows,
-    market_bucket_descriptors,
 )
 
 _VOCABULARY = {"FR", "MC", "GP", "DE", "AT", "CH", "US", "CA", "BE", "NL"}
@@ -139,7 +129,6 @@ def test_no_preset_or_default_market_is_ever_produced() -> None:
 
     assert posture.markets == ()
     assert posture.country_codes == ()
-    assert market_bucket_descriptors(posture) == []
 
 
 # ---------------------------------------------------------------------------
@@ -158,31 +147,6 @@ def test_flat_country_codes_read_as_equivalent_single_country_markets() -> None:
     assert markets_from_country_codes(["DE", "FR"]) == legacy.markets
 
 
-def test_stored_legacy_row_reads_as_markets_with_unchanged_reporting_output() -> None:
-    rows = [_row("FR", 10), _row("Germany", 20), _row("US", 30), _row("Atlantis", 4)]
-
-    legacy = posture_from_stored_row(LOCAL_MARKETS, ["FR", "DE"], None)
-    migrated = posture_from_stored_row(
-        LOCAL_MARKETS,
-        ["FR", "DE"],
-        [_market("FR", "FR", "FR"), _market("DE", "DE", "DE")],
-    )
-
-    before = group_market_reporting_rows(rows, legacy)
-    after = group_market_reporting_rows(rows, migrated)
-
-    assert [dict(row) for row in before.rows] == [dict(row) for row in after.rows]
-    assert {row["breakdown_value"] for row in before.rows} == {
-        "FR",
-        "DE",
-        OTHER_MARKETS,
-        UNKNOWN_MARKET,
-    }
-    # Historical payload field kept for pre-37.8 readers.
-    tracked = {row["breakdown_value"]: row for row in before.rows}
-    assert tracked["FR"]["market_code"] == "FR"
-    assert tracked["FR"]["market_label"] == "FR"
-
 
 def test_stored_market_rows_win_over_the_derived_flat_column() -> None:
     posture = posture_from_stored_row(
@@ -196,148 +160,23 @@ def test_stored_market_rows_win_over_the_derived_flat_column() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Semantic grouping over multi-country markets
-# ---------------------------------------------------------------------------
-
-
-def test_multi_country_market_aggregates_into_one_bucket_and_reconciles_exactly() -> None:
-    posture = _posture(
-        _market("fr", "France", "FR", "MC"),
-        _market("dach", "DACH", "DE", "AT", "CH"),
-    )
-    rows = [
-        _row("FR", 10),
-        _row("MC", 5),
-        _row("Germany", 20),
-        _row("AT", 2),
-        _row("US", 30),
-        _row("CA", 7),
-        _row("Atlantis", 4),
-        _row(None, 6),
-    ]
-    original = copy.deepcopy(rows)
-
-    result = group_market_reporting_rows(rows, posture)
-
-    # Facts are never rewritten.
-    assert rows == original
-    values = {row["breakdown_value"]: row["value"] for row in result.rows}
-    assert values == {
-        "fr": 15.0,
-        "dach": 22.0,
-        OTHER_MARKETS: 37.0,
-        UNKNOWN_MARKET: 10.0,
-    }
-    # Additive reconciliation is EXACT: markets + Other + Unknown = canonical total.
-    assert sum(values.values()) == sum(float(row["value"]) for row in rows)
-
-    grouped = {row["breakdown_value"]: row for row in result.rows}
-    assert grouped["fr"]["market_label"] == "France"
-    assert grouped["fr"]["market_id"] == "fr"
-    assert grouped["fr"]["market_country_codes"] == ["FR", "MC"]
-    # A multi-country market has no single code to expose.
-    assert grouped["fr"]["market_code"] is None
-    assert grouped["dach"]["market_kind"] == "tracked"
-    assert grouped[UNKNOWN_MARKET]["market_kind"] == "unknown"
-    assert grouped[OTHER_MARKETS]["market_kind"] == "other"
-    assert {item["raw_value"] for item in result.data_quality} == {"Atlantis", None}
-
-
-def test_unmapped_values_never_fall_into_other_markets() -> None:
-    posture = _posture(_market("fr", "France", "FR"))
-
-    result = group_market_reporting_rows([_row("Atlantis", 4)], posture)
-
-    assert result.rows[0]["breakdown_value"] == UNKNOWN_MARKET
-    assert result.rows[0]["market_kind"] == "unknown"
-
-
-def test_non_additive_rule_applies_after_market_grouping() -> None:
-    posture = _posture(_market("fr", "France", "FR", "MC"))
-    rows = [
-        _row("FR", 0.5, metric="ctr", semantic_numerator=10, semantic_denominator=20),
-        _row("MC", 0.1, metric="ctr", semantic_numerator=10, semantic_denominator=100),
-    ]
-
-    result = group_market_reporting_rows(rows, posture)
-
-    assert len(result.rows) == 1
-    assert result.rows[0]["market_id"] == "fr"
-    # 20/120, not the mean of the two per-country ratios.
-    assert result.rows[0]["value"] == pytest.approx(20 / 120)
-    assert result.rows[0]["semantic_aggregation_rule"] == "ratio"
-
-
-def test_regrouping_reclassifies_retained_rows_without_rewriting_them() -> None:
-    rows = [_row("FR", 10), _row("MC", 5)]
-    original = copy.deepcopy(rows)
-
-    split = group_market_reporting_rows(
-        rows, _posture(_market("fr", "France", "FR"), _market("mc", "Monaco", "MC"))
-    )
-    merged = group_market_reporting_rows(rows, _posture(_market("fr", "France", "FR", "MC")))
-
-    assert {row["breakdown_value"]: row["value"] for row in split.rows} == {
-        "fr": 10.0,
-        "mc": 5.0,
-    }
-    assert {row["breakdown_value"]: row["value"] for row in merged.rows} == {"fr": 15.0}
-    # Same retained facts, no provider pull, no rewrite.
-    assert rows == original
-
-
-# ---------------------------------------------------------------------------
-# Bucket descriptors and bindings
-# ---------------------------------------------------------------------------
-
-
-def test_bucket_descriptors_carry_id_label_and_member_codes() -> None:
-    posture = _posture(_market("fr", "France", "FR", "MC"))
-
-    descriptors = market_bucket_descriptors(posture)
-
-    assert descriptors[0] == {
-        "id": "fr",
-        "label": "France",
-        "kind": "tracked",
-        "country_codes": ["FR", "MC"],
-        "country_code": None,
-        "bindable": True,
-    }
-    assert [item["kind"] for item in descriptors] == ["tracked", "other", "unknown"]
-    assert [item["bindable"] for item in descriptors] == [True, False, False]
-
-
-def test_binding_is_on_the_market_id_and_survives_a_relabel() -> None:
-    before = _posture(_market("fr", "France", "FR", "MC"))
-    after = _posture(_market("fr", "France metropolitaine + Monaco", "FR", "MC"))
-
-    bound = resolve_market_binding(before, "fr")
-    still_bound = resolve_market_binding(after, "fr")
-
-    assert bound.id == still_bound.id == "fr"
-    assert bound.label != still_bound.label
-    assert still_bound.country_codes == ("FR", "MC")
-
-
-def test_other_markets_and_unknown_are_never_bindable() -> None:
-    posture = _posture(_market("hexagone", "France", "FR", "MC"))
-
-    assert [market.id for market in bindable_markets(posture)] == ["hexagone"]
-    for bucket_id in (OTHER_MARKETS, UNKNOWN_MARKET):
-        with pytest.raises(InvalidGeographicPosture, match="not a budgetable market"):
-            resolve_market_binding(posture, bucket_id)
-    with pytest.raises(InvalidGeographicPosture, match="unknown market id"):
-        # A raw country code is not a binding handle: bindings are on market ids.
-        resolve_market_binding(posture, "FR")
-
-
-def test_bindable_markets_is_empty_in_global_mode() -> None:
-    assert bindable_markets(GeographicPosture()) == ()
-
-
-# ---------------------------------------------------------------------------
-# Audit diff
+# Semantic grouping moved out of this file in Story 48.2.
+#
+# The tests that lived here drove `group_market_reporting_rows(rows, posture)`
+# -- grouping against a mutable preference. That contract is gone: grouping now
+# runs against a published hierarchy version. The properties they proved were
+# not dropped, they were re-proven against the model that replaced them:
+#
+#   multi-country market aggregates into one bucket   test_geographic_semantics
+#   exact additive reconciliation                     test_geographic_semantics
+#   an unmapped value never falls into the catch-all  test_geographic_semantics
+#   a non-additive rule applies after grouping        test_geographic_semantics
+#   regrouping reclassifies without rewriting facts   test_geographic_semantics
+#   descriptors carry id and label                    test_country_registry
+#   the catch-all and Unknown are never bindable      test_country_registry
+#
+# What stays here is what this file is actually about: the client-defined
+# posture aggregate, its four invariants and its diff.
 # ---------------------------------------------------------------------------
 
 

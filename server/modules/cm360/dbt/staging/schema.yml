@@ -3,7 +3,7 @@ version: 2
 sources:
   - name: raw_cm360
     description: "Append-only full-grain Campaign Manager 360 landing."
-    schema: main
+    schema: "{{ var('raw_schema', 'main') }}"  # 24.4 AC2: org_<wslug>_raw injected by orchestrator, 'main' without var (bit-identique)
     tables:
       - name: raw_cm360_daily
 
@@ -21,6 +21,10 @@ models:
         tests: [not_null]
       - name: provider_value
         tests: [not_null]
+      - name: country_source
+        description: "Raw CM360 country name or provider sentinel before normalization."
+      - name: country
+        description: "Canonical ISO 3166-1 alpha-2 code; unresolved source values stay NULL."
       - name: pull_id
         tests: [not_null]
       - name: project_id

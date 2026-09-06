@@ -48,12 +48,15 @@ offset_signalled AS (
 -- not run) -- otherwise the "signal fired" assertion is vacuously satisfied.
 cardinality_guard AS (
     SELECT
-        CAST(NULL AS VARCHAR) AS project_id,
+        CAST(NULL AS {{ toorow_string_type() }}) AS project_id,
         CAST(NULL AS DATE) AS date,
-        CAST(NULL AS VARCHAR) AS metric,
+        CAST(NULL AS {{ toorow_string_type() }}) AS metric,
         CAST(NULL AS BIGINT) AS n_distinct_tz,
         'CARDINALITY_FAIL: no >=2-timezone day in epic39_validation_fixture -- seed not run or fixture emptied'
             AS failure_reason
+    -- BigQuery refuses a WHERE with no FROM; DuckDB allows it. One constant row,
+    -- accepted by both, keeps this guard a guard on either engine.
+    FROM (SELECT 1) AS one_row
     WHERE (SELECT COUNT(*) FROM offset_signalled) = 0
 ),
 -- NO-REALIGNMENT: the DISTINCT set of source dates present in the two-tz subset MUST be exactly

@@ -3,7 +3,7 @@ version: 2
 sources:
   - name: raw_linkedin
     description: "LinkedIn Ads raw data landed by connector.pull() (Story 15.3)"
-    schema: main  # DuckDB default schema; BigQuery: override via profiles.yml dataset
+    schema: "{{ var('raw_schema', 'main') }}"  # 24.4 AC2: org_<wslug>_raw injected by orchestrator, 'main' without var (bit-identique)
     tables:
       - name: raw_linkedin_ads_daily
         description: >
@@ -25,7 +25,8 @@ models:
         description: "Pivot LinkedIn : toujours 'CAMPAIGN' dans ce modele"
         tests:
           - accepted_values:
-              values: ["CAMPAIGN"]
+              arguments:
+                values: ["CAMPAIGN"]
       - name: campaign_id
         description: "Identifiant numerique de la campagne LinkedIn (issu de l'URN)"
         tests:
@@ -65,7 +66,8 @@ models:
         description: "Pivot LinkedIn : toujours 'CAMPAIGN_GROUP' dans ce modele"
         tests:
           - accepted_values:
-              values: ["CAMPAIGN_GROUP"]
+              arguments:
+                values: ["CAMPAIGN_GROUP"]
       - name: campaign_group_id
         description: "Identifiant numerique du campaign group LinkedIn"
         tests:

@@ -284,7 +284,7 @@ def recommend_first_report(
             capability_fingerprint=None,
             compatibility={
                 "reason": "no_capability_catalog",
-                "explanation": "La source n'expose aucun rapport compatible pour le moment.",
+                "explanation": "The source exposes no compatible report for now.",
             },
         )
 
@@ -308,8 +308,8 @@ def recommend_first_report(
             compatibility={
                 "reason": "no_eligible_account",
                 "explanation": (
-                    "Aucun compte exposé n'est éligible. Exposez exactement un compte "
-                    "avant de recommander un rapport."
+                    "No exposed account is eligible. Expose exactly one account "
+                    "before a report can be recommended."
                 ),
             },
         )
@@ -330,7 +330,7 @@ def recommend_first_report(
             capability_fingerprint=capability_fingerprint,
             compatibility={
                 "reason": "no_selectable_report",
-                "explanation": "Aucun rapport n'est actuellement sélectionnable pour cette source.",
+                "explanation": "No report is currently selectable for this source.",
             },
         )
 
@@ -380,8 +380,8 @@ def recommend_first_report(
             compatibility={
                 "reason": "no_safe_grain",
                 "explanation": (
-                    "Aucun rapport ne propose une granularité supportée compatible "
-                    "avec une première extraction bornée."
+                    "No report offers a supported grain compatible "
+                    "with a first bounded extraction."
                 ),
             },
         )
@@ -403,8 +403,8 @@ def recommend_first_report(
             compatibility={
                 "reason": "multiple_compatible_reports",
                 "explanation": (
-                    "Plusieurs rapports sont compatibles. Choisissez le rapport, "
-                    "la granularité et la devise avant de continuer."
+                    "Several reports are compatible. Choose the report, "
+                    "the grain and the currency before continuing."
                 ),
             },
             candidates=candidates,
@@ -427,8 +427,8 @@ def recommend_first_report(
         compatibility={
             "reason": "single_compatible_report",
             "explanation": (
-                "Un rapport compatible et une période récente bornée sont recommandés. "
-                "Vous pouvez ajuster la granularité, le fuseau et la devise."
+                "A compatible report and a bounded recent period are recommended. "
+                "You can adjust the grain, the timezone and the currency."
             ),
         },
         candidates=candidates,

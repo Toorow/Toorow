@@ -53,7 +53,7 @@
     "kind": "dimension",
     "data_type": "string",
     "section": "REACH",
-    "description": "Country or provider sentinel."
+    "description": "Country name (e.g. 'France', 'United States'); provider sentinels such as '(not set)' are preserved."
   },
   {
     "field_id": "impressions",

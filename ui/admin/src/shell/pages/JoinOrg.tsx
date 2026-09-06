@@ -46,13 +46,62 @@
  *
  * Network failure is explicit and never fabricates pending authority.
  *
- * Styling: application.css (global tokens/classes) + join-org.css for this page's
- * specifics. Colors come exclusively from the application.css CSS variables — no hex.
+ * Styling: migrated off `join-org.css` (waves 2-4 of `docs/ui-css-strategy.md`).
+ * The centered public/email column is Tailwind utilities over the `@theme`
+ * tokens plus the `Button` / `Input` / `Status` / `Alert` / `Skeleton`
+ * primitives. Colors come exclusively from theme tokens — no hex.
  */
 import { type ReactElement, useEffect, useMemo, useRef, useState } from "react";
-import "../application.css";
-import "./join-org.css";
 import { apiFetch } from "../../lib/apiFetch";
+import { Alert, Button, Input, Skeleton, Status, TONE_TEXT, formatTimestamp } from "../../ui";
+
+/* ---- Centered public/email column (Surface State Matrix: no product nav) ----
+   Ported 1:1 from the retired `join-org.css`. Geometry (not prose) keeps its px
+   values; prose measures stay in `ch`. The identity fieldset and the field
+   classes are kept identical to CreateOrg's on purpose: two screens asking the
+   same thing must ask it the same way. */
+const STAGE = "relative min-h-screen bg-background-light";
+const SCRIM = "relative inset-0 grid items-start justify-items-center px-7 py-12";
+const DIALOG =
+  "w-[min(600px,calc(100%-56px))] overflow-hidden rounded-[18px] border border-divider-base bg-surface-light shadow-overlay max-[1180px]:w-[calc(100%-36px)]";
+const HEADER = "flex items-start justify-between gap-4.5 border-b border-divider-base px-7 pb-5 pt-6";
+const TITLE = "m-0 font-display text-[22px] font-semibold tracking-[-0.01em]";
+const SUBTITLE = "m-0 mt-2 max-w-[46ch] text-label leading-normal text-text-secondary";
+const BODY = "grid gap-5.5 px-7 py-6";
+const LEAD = "m-0 text-ui leading-[1.6]";
+const NOTE = "m-0 text-caption leading-[1.55] text-text-secondary";
+const FOOTER =
+  "flex items-center justify-between gap-4.5 border-t border-divider-base px-7 py-4.5 max-[1180px]:flex-wrap";
+const FOOTER_NOTE = "text-caption leading-snug text-text-secondary";
+const ACTIONS = "flex flex-none items-center gap-2.5";
+
+/* Field group — same recipe as CreateOrg; change them together. */
+const FIELD = "grid gap-2";
+const FIELD_LABEL = "text-label font-semibold";
+const FIELD_HINT = "m-0 text-caption leading-snug text-text-secondary";
+const FIELD_ERROR = `m-0 text-caption font-semibold leading-snug ${TONE_TEXT.error}`;
+
+/* ScopeSummary (DESIGN.md: page surface, read-only). The first row after the
+   title takes SCOPE_ROW; every following row takes SCOPE_ROW_RULED. */
+const SCOPE_SUMMARY = "rounded-lg border border-divider-base bg-background-light px-4.5 py-4";
+const SCOPE_TITLE = "mb-3 flex items-center gap-2.5 font-display text-label font-semibold";
+const SCOPE_ROW =
+  "grid grid-cols-[140px_minmax(0,1fr)] items-baseline gap-3.5 py-[9px] max-[1180px]:grid-cols-1 max-[1180px]:gap-[3px]";
+const SCOPE_ROW_RULED = `${SCOPE_ROW} border-t border-divider-base`;
+const SCOPE_KEY = "text-caption font-semibold text-text-secondary";
+const SCOPE_VAL = "text-label leading-normal [overflow-wrap:anywhere]";
+const SCOPE_VAL_MONO = `${SCOPE_VAL} font-mono`;
+const SCOPE_SUB = "text-text-secondary";
+const SCOPE_NONE = "font-bold text-text-secondary";
+
+/* Grant bindings, grouped by canonical AD-5 path. */
+const BINDINGS = "m-0 grid list-none gap-2.5 p-0";
+const BINDING = "grid gap-1.5 rounded-sm border border-divider-base bg-surface-light px-3 py-2.5";
+const BINDING_PATH = "text-caption font-semibold text-text-secondary";
+const BINDING_META = "flex flex-wrap items-center gap-2";
+const CHIP =
+  "rounded-pill border border-divider-base bg-background-light px-2 py-0.5 text-[11px] font-bold";
+const SCOPE_ID = "font-mono text-caption text-text-secondary";
 
 /** One explicit grant, exactly as the accept response returns it. */
 interface ExplicitGrant {
@@ -172,19 +221,12 @@ function safeIdSuffix(scopeId: string): string {
   return scopeId.length > 8 ? `…${tail}` : tail;
 }
 
-/** Format an absolute expiry (ISO 8601) for display; falls back to the raw string. */
+/** Format an absolute expiry (ISO 8601) for display; falls back to the raw
+ *  string. The locale was the READER'S until 76-1, so the same invitation read
+ *  differently on two machines; it is the console's now, and the zone is still
+ *  named — an expiry a person cannot place in time is not an expiry. */
 function formatAbsoluteExpiry(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZoneName: "short",
-  });
+  return iso ? formatTimestamp(iso) : "";
 }
 
 /** POST the fragment bearer for its matching verified subject. A 404 is the single
@@ -369,10 +411,10 @@ export default function JoinOrg({ token, onAccepted }: JoinOrgProps) {
     setExchangeAttempt((attempt) => attempt + 1);
   }
   return (
-    <div className="joinorg-stage">
-      <div className="joinorg-scrim">
+    <div className={STAGE}>
+      <div className={SCRIM}>
         <section
-          className="joinorg-dialog"
+          className={DIALOG}
           role="dialog"
           aria-modal="true"
           aria-labelledby="joinorg-title"
@@ -430,10 +472,10 @@ function renderBody(
 
 function GenericHeader({ title, subtitle }: { title: string; subtitle: string }) {
   return (
-    <header className="joinorg-header">
+    <header className={HEADER}>
       <div>
-        <h1 id="joinorg-title">{title}</h1>
-        <p className="joinorg-subtitle">{subtitle}</p>
+        <h1 id="joinorg-title" className={TITLE}>{title}</h1>
+        <p className={SUBTITLE}>{subtitle}</p>
       </div>
     </header>
   );
@@ -446,16 +488,13 @@ function ValidatingView() {
         title="Continue to your invitation"
         subtitle="Checking your invitation. Nothing is shared until your identity matches."
       />
-      <div className="joinorg-body">
-        <div className="joinorg-status" role="status" aria-live="polite">
-          <span className="signal-label info">
-            <span className="signal-mark" />
-            Validating the invitation…
-          </span>
-          <div className="joinorg-skeleton" aria-hidden="true">
-            <span />
-            <span />
-            <span />
+      <div className={BODY}>
+        <div className="grid gap-3.5" role="status" aria-live="polite">
+          <Status tone="info">Validating the invitation…</Status>
+          <div className="grid gap-2.5" aria-hidden="true">
+            <Skeleton className="h-3.5 w-full rounded-sm" />
+            <Skeleton className="h-3.5 w-[82%] rounded-sm" />
+            <Skeleton className="h-3.5 w-[64%] rounded-sm" />
           </div>
         </div>
       </div>
@@ -470,8 +509,8 @@ function NoTokenView() {
         title="No invitation to open"
         subtitle="This page opens an invitation link. There is nothing to review here."
       />
-      <div className="joinorg-body">
-        <p className="joinorg-lead">
+      <div className={BODY}>
+        <p className={LEAD}>
           Open the invitation link from your invitation email. If your link has expired or was
           already used, ask the person who invited you — an organization owner or admin — to send a
           new one.
@@ -488,17 +527,14 @@ function SignInRequiredView() {
         title="Sign in to continue"
         subtitle="Sign in with the exact address this invitation was sent to."
       />
-      <div className="joinorg-body">
-        <p className="joinorg-lead">
+      <div className={BODY}>
+        <p className={LEAD}>
           To keep invitations private, nothing about the organization, projects, or Datastreams is
           shown until you sign in with the invited identity. Your invitation details appear only
           after your verified identity matches.
         </p>
-        <div className="joinorg-status" role="status">
-          <span className="signal-label info">
-            <span className="signal-mark" />
-            Sign in with the invited address, then reopen this link.
-          </span>
+        <div className="grid gap-3.5" role="status">
+          <Status tone="info">Sign in with the invited address, then reopen this link.</Status>
         </div>
       </div>
     </>
@@ -513,19 +549,13 @@ function UnavailableView() {
         title="This invitation can’t be opened"
         subtitle="It may have expired, already been used, or been revoked."
       />
-      <div className="joinorg-body">
-        <div className="joinorg-notice error" role="alert">
-          <span className="signal-label error">
-            <span className="signal-mark" />
-            No access was granted
-          </span>
-          <p>
-            This invitation link is no longer usable. For your privacy, we don’t reveal whether it
-            expired, was already accepted, was revoked, or was meant for a different address — the
-            outcome is the same: nothing was changed and no access was granted.
-          </p>
-        </div>
-        <p className="joinorg-note">
+      <div className={BODY}>
+        <Alert tone="error" title="No access was granted">
+          This invitation link is no longer usable. For your privacy, we don’t reveal whether it
+          expired, was already accepted, was revoked, or was meant for a different address — the
+          outcome is the same: nothing was changed and no access was granted.
+        </Alert>
+        <p className={NOTE}>
           Ask the person who invited you — an organization owner or admin — to send a fresh
           invitation. Only they can resend it.
         </p>
@@ -541,18 +571,16 @@ function ConflictView() {
         title="You already have access here"
         subtitle="This invitation overlaps with access you already hold."
       />
-      <div className="joinorg-body">
-        <div className="joinorg-notice warning" role="alert">
-          <span className="signal-label warning">
-            <span className="signal-mark" />
-            Nothing was changed
-          </span>
-          <p>
+      <div className={BODY}>
+        {/* The legacy notice carried role="alert"; `Status` gives a warning
+            role="status", so the role is restated to keep the interruption. */}
+        <div role="alert">
+          <Alert tone="warning" title="Nothing was changed">
             This invitation conflicts with access you already have in this organization, so it was
             not applied. Your existing membership and grants are unchanged.
-          </p>
+          </Alert>
         </div>
-        <p className="joinorg-note">
+        <p className={NOTE}>
           If the invitation was meant to change your access, ask an organization owner or admin to
           adjust it directly.
         </p>
@@ -568,21 +596,17 @@ function ErrorView({ message, onRetry }: { message: string; onRetry: () => void 
         title="Something went wrong"
         subtitle="No access was granted. You can try again."
       />
-      <div className="joinorg-body">
-        <div className="joinorg-notice error" role="alert">
-          <span className="signal-label error">
-            <span className="signal-mark" />
-            Invitation not accepted
-          </span>
-          <p>{message}</p>
-        </div>
+      <div className={BODY}>
+        <Alert tone="error" title="Invitation not accepted">
+          {message}
+        </Alert>
       </div>
-      <footer className="joinorg-footer">
-        <span>No changes were made. You can retry the acceptance.</span>
-        <div className="joinorg-actions">
-          <button className="primary-button" type="button" onClick={onRetry}>
+      <footer className={FOOTER}>
+        <span className={FOOTER_NOTE}>No changes were made. You can retry the acceptance.</span>
+        <div className={ACTIONS}>
+          <Button type="button" onClick={onRetry}>
             Try again
-          </button>
+          </Button>
         </div>
       </footer>
     </>
@@ -612,31 +636,35 @@ function ReviewAndAcceptView({
         title="Review and accept your invitation"
         subtitle="Your identity matched. Review the exact access below, then accept once."
       />
-      <div className="joinorg-body">
-        <p className="joinorg-lead">
+      <div className={BODY}>
+        <p className={LEAD}>
           Accepting activates your membership and grants immediately. This is a single, one-time
           action — the invitation link cannot be used again.
         </p>
 
+        {/* THE ORGANIZATION'S NAME, OR THE PLATFORM. `app.organizations.name`
+            is `NOT NULL` (migration 035) and `exchange_invitation` joins it
+            beside `org_id`, so a label is served whenever an organization is
+            scoped; `organization_label` is null exactly when `org_id` is, which
+            IS "Platform access". The `?? preview.organization_id` this line
+            carried was unreachable, and could only ever have shown `org_<ULID>`
+            to a person deciding whether to join. */}
         <ScopeSummary
-          organizationLabel={preview.organization_label ?? preview.organization_id ?? "Platform access"}
+          organizationLabel={preview.organization_label ?? "Platform access"}
           roleDerived={preview.authority.role_derived}
           grants={grants}
           explicitNone={explicitNone}
           expiryIso={preview.expires_at}
         />
       </div>
-      <footer className="joinorg-footer">
-        <span>Accepting can’t be undone from here — it grants exactly the access shown above.</span>
-        <div className="joinorg-actions">
-          <button
-            className="primary-button"
-            type="button"
-            onClick={onAccept}
-            disabled={accepting}
-          >
+      <footer className={FOOTER}>
+        <span className={FOOTER_NOTE}>
+          Accepting can’t be undone from here — it grants exactly the access shown above.
+        </span>
+        <div className={ACTIONS}>
+          <Button type="button" onClick={onAccept} disabled={accepting}>
             {accepting ? "Accepting…" : "Accept invitation"}
-          </button>
+          </Button>
         </div>
       </footer>
     </>
@@ -711,16 +739,15 @@ function AcceptedView({
             : "Your membership and grants are active. Here’s exactly what you can access."
         }
       />
-      <div className="joinorg-body">
-        <div className="joinorg-status" role="status" aria-live="polite">
-          <span className="signal-label success">
-            <span className="signal-mark" />
+      <div className={BODY}>
+        <div className="grid gap-3.5" role="status" aria-live="polite">
+          <Status tone="success">
             Invitation accepted{result.replayed ? " (already active)" : ""}
-          </span>
+          </Status>
         </div>
 
         {isEntry ? (
-          <p className="joinorg-lead">
+          <p className={LEAD}>
             This invitation is to toorow itself, not to an existing organization — so there is
             no membership to show yet. You will create your organization next, and you will be
             its owner.
@@ -738,18 +765,17 @@ function AcceptedView({
         )}
 
         {mustAskName && (
-          <fieldset className="createorg-identity">
-            <legend>Your name</legend>
-            <p className="field-hint">
+          <fieldset className="m-0 grid gap-3 rounded-lg border border-divider-base px-4.5 py-4">
+            <legend className="px-1.5 text-label font-semibold">Your name</legend>
+            <p className={FIELD_HINT}>
               We only know your email address. Your name identifies you to your colleagues and to
               anyone you invite.
             </p>
-            <div className="createorg-identity-row">
-              <div className="field">
-                <label htmlFor="joinorg-firstname">First name</label>
-                <input
+            <div className="grid grid-cols-2 gap-3.5 max-[1180px]:grid-cols-1">
+              <div className={FIELD}>
+                <label htmlFor="joinorg-firstname" className={FIELD_LABEL}>First name</label>
+                <Input
                   id="joinorg-firstname"
-                  className="text-input"
                   type="text"
                   value={firstName}
                   maxLength={120}
@@ -761,11 +787,10 @@ function AcceptedView({
                   }}
                 />
               </div>
-              <div className="field">
-                <label htmlFor="joinorg-lastname">Last name</label>
-                <input
+              <div className={FIELD}>
+                <label htmlFor="joinorg-lastname" className={FIELD_LABEL}>Last name</label>
+                <Input
                   id="joinorg-lastname"
-                  className="text-input"
                   type="text"
                   value={lastName}
                   maxLength={120}
@@ -779,20 +804,19 @@ function AcceptedView({
               </div>
             </div>
             {nameError && (
-              <p className="field-error" role="alert">
+              <p className={FIELD_ERROR} role="alert">
                 {nameError}
               </p>
             )}
           </fieldset>
         )}
       </div>
-      <footer className="joinorg-footer">
-        <span>
+      <footer className={FOOTER}>
+        <span className={FOOTER_NOTE}>
           {isEntry ? "Next: create your organization." : "Next: get started in this organization."}
         </span>
-        <div className="joinorg-actions">
-          <button
-            className="primary-button"
+        <div className={ACTIONS}>
+          <Button
             type="button"
             disabled={savingName || (mustAskName && !nameReady)}
             onClick={() => {
@@ -804,7 +828,7 @@ function AcceptedView({
               : isEntry
                 ? "Create your organization"
                 : "Continue to getting started"}
-          </button>
+          </Button>
         </div>
       </footer>
     </>
@@ -847,41 +871,41 @@ function ScopeSummary({
   const expiry = formatAbsoluteExpiry(expiryIso);
 
   return (
-    <div className="scope-summary" aria-label="Effective access this invitation grants">
-      <div className="scope-summary-title">
+    <div className={SCOPE_SUMMARY} aria-label="Effective access this invitation grants">
+      <div className={SCOPE_TITLE}>
         Effective access
       </div>
 
-      <div className="scope-row">
-        <span className="scope-key">Organization</span>
-        <span className={organizationMono ? "scope-val mono" : "scope-val"}>
+      <div className={SCOPE_ROW}>
+        <span className={SCOPE_KEY}>Organization</span>
+        <span className={organizationMono ? SCOPE_VAL_MONO : SCOPE_VAL}>
           {organizationLabel}
         </span>
       </div>
 
-      <div className="scope-row">
-        <span className="scope-key">Role authority</span>
-        <span className="scope-val">
+      <div className={SCOPE_ROW_RULED}>
+        <span className={SCOPE_KEY}>Role authority</span>
+        <span className={SCOPE_VAL}>
           {roleDerived}
-          <span className="scope-sub"> (role-derived effective authority)</span>
+          <span className={SCOPE_SUB}> (role-derived effective authority)</span>
         </span>
       </div>
 
       {/* Explicit grants grouped by canonical AD-5 path. "None" is explicit. */}
-      <div className="scope-row">
-        <span className="scope-key">Project bindings</span>
-        <span className="scope-val">
+      <div className={SCOPE_ROW_RULED}>
+        <span className={SCOPE_KEY}>Project bindings</span>
+        <span className={SCOPE_VAL}>
           {projectGrants.length === 0 ? (
-            <span className="scope-none">None</span>
+            <span className={SCOPE_NONE}>None</span>
           ) : (
-            <ul className="scope-bindings">
+            <ul className={BINDINGS}>
               {projectGrants.map((g) => (
-                <li key={`${g.scope_type}:${g.scope_id}`} className="scope-binding">
-                  <span className="scope-binding-path">Organization → Project</span>
-                  <span className="scope-binding-meta">
-                    <span className="scope-chip">{scopeTypeLabel(g.scope_type)}</span>
-                    <span className="scope-chip">{capabilityLabel(g.capability)}</span>
-                    <span className="mono scope-id">{safeIdSuffix(g.scope_id)}</span>
+                <li key={`${g.scope_type}:${g.scope_id}`} className={BINDING}>
+                  <span className={BINDING_PATH}>Organization → Project</span>
+                  <span className={BINDING_META}>
+                    <span className={CHIP}>{scopeTypeLabel(g.scope_type)}</span>
+                    <span className={CHIP}>{capabilityLabel(g.capability)}</span>
+                    <span className={SCOPE_ID}>{safeIdSuffix(g.scope_id)}</span>
                   </span>
                 </li>
               ))}
@@ -890,22 +914,22 @@ function ScopeSummary({
         </span>
       </div>
 
-      <div className="scope-row">
-        <span className="scope-key">Datastream bindings</span>
-        <span className="scope-val">
+      <div className={SCOPE_ROW_RULED}>
+        <span className={SCOPE_KEY}>Datastream bindings</span>
+        <span className={SCOPE_VAL}>
           {datastreamGrants.length === 0 ? (
-            <span className="scope-none">None</span>
+            <span className={SCOPE_NONE}>None</span>
           ) : (
-            <ul className="scope-bindings">
+            <ul className={BINDINGS}>
               {datastreamGrants.map((g) => (
-                <li key={`${g.scope_type}:${g.scope_id}`} className="scope-binding">
-                  <span className="scope-binding-path">
+                <li key={`${g.scope_type}:${g.scope_id}`} className={BINDING}>
+                  <span className={BINDING_PATH}>
                     Organization → Project binding → Datastream
                   </span>
-                  <span className="scope-binding-meta">
-                    <span className="scope-chip">{scopeTypeLabel(g.scope_type)}</span>
-                    <span className="scope-chip">{capabilityLabel(g.capability)}</span>
-                    <span className="mono scope-id">{safeIdSuffix(g.scope_id)}</span>
+                  <span className={BINDING_META}>
+                    <span className={CHIP}>{scopeTypeLabel(g.scope_type)}</span>
+                    <span className={CHIP}>{capabilityLabel(g.capability)}</span>
+                    <span className={SCOPE_ID}>{safeIdSuffix(g.scope_id)}</span>
                   </span>
                 </li>
               ))}
@@ -915,26 +939,26 @@ function ScopeSummary({
       </div>
 
       {explicitNone && (
-        <div className="scope-row">
-          <span className="scope-key">Explicit grants</span>
-          <span className="scope-val">
-            <span className="scope-none">None</span> — this invitation adds no project or Datastream
+        <div className={SCOPE_ROW_RULED}>
+          <span className={SCOPE_KEY}>Explicit grants</span>
+          <span className={SCOPE_VAL}>
+            <span className={SCOPE_NONE}>None</span> — this invitation adds no project or Datastream
             access beyond the role authority above.
           </span>
         </div>
       )}
 
-      <div className="scope-row">
-        <span className="scope-key">Expires</span>
-        <span className="scope-val">
-          {expiry ? expiry : <span className="scope-sub">At the absolute expiry on the link</span>}
+      <div className={SCOPE_ROW_RULED}>
+        <span className={SCOPE_KEY}>Expires</span>
+        <span className={SCOPE_VAL}>
+          {expiry ? expiry : <span className={SCOPE_SUB}>At the absolute expiry on the link</span>}
         </span>
       </div>
 
       {invitationId && (
-        <div className="scope-row">
-          <span className="scope-key">Invitation</span>
-          <span className="scope-val mono">{invitationId}</span>
+        <div className={SCOPE_ROW_RULED}>
+          <span className={SCOPE_KEY}>Invitation</span>
+          <span className={SCOPE_VAL_MONO}>{invitationId}</span>
         </div>
       )}
     </div>

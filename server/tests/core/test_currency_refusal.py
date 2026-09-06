@@ -209,7 +209,28 @@ def test_resolvable_via_on_cross_currency():  # 16
 # ---------------------------------------------------------------------------
 
 
-def test_is_monetary_metric_proxy():  # 17
+def test_is_monetary_metric_proxy(monkeypatch):  # 17
+    """THE TWO GOVERNED STORES ARE SILENCED EXPLICITLY, since 2026-08-31.
+
+    This file says "No DB" in its own header, and that stopped being true the day
+    `metric_semantics.is_metric_monetary` began asking the Semantic Model on the
+    NULL-project path too -- the repair `governance.md` records in its amendment
+    of 2026-08-31, because a published Concept is the store with the last word
+    and it was not being asked at all. `_is_monetary_metric` walks through that
+    entry point, so on a cluster where migration 142's seed has never been
+    corrected (`provision_platform_semantic_concepts.py --repair-only`) the
+    platform Concept for `revenue` carries `value_type = 'decimal'` and this test
+    was measuring that fixture rather than the proxy it is named for.
+
+    Naming the two layers above is the difference between measuring the fallback
+    and measuring the database. What the governed stores answer is proved in
+    `test_metric_semantics_monetary.py`, against a real one.
+    """
+    from core import metric_semantics as ms  # noqa: PLC0415
+
+    monkeypatch.setattr(ms, "_semantic_model_declares_money", lambda name, project: None)
+    monkeypatch.setattr(ms, "get_metric_definition", lambda **kw: None)
+
     # Explicit definition flag wins.
     assert _is_monetary_metric("anything", definition={"monetary": True}) is True
     assert _is_monetary_metric("revenue", definition={"monetary": False}) is False

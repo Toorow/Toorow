@@ -22,7 +22,7 @@ GUARDRAILS (hard):
     token/access_token/secret field is REJECTED by validate_flow BEFORE any DB touch.
     connection_ref_id is validated as an OPAQUE FK reference only (exists + belongs
     to the project). This module NEVER reads a token.
-  - AD-5 scoping: identity_has_project_access on every op. A cross-project access
+  - AD-5 scoping: identity_can_read_project on every op. A cross-project access
     returns None/raises FlowScopeError AND writes an 'access_denied' audit row.
   - AD-7 audit: every effective upsert writes a 'flow_updated' audit row with a
     minimal before/after diff. A no-op upsert (idempotent re-apply) writes nothing.
@@ -98,8 +98,8 @@ def _french_message(err) -> str:
     if validator == "additionalProperties":
         return (
             f"{path}: champ non autorise detecte. Les documents de flux interdisent "
-            "tout champ inconnu (garde-fou anti-secret : aucun jeton/token/secret "
-            "ne peut etre transmis). Retirez le champ signale."
+            "any unknown field (anti-secret guard: no token/secret "
+            "can be passed). Remove the flagged field."
         )
     if validator == "required":
         return f"{path}: champ obligatoire manquant ({err.message})."
@@ -117,7 +117,7 @@ def _french_message(err) -> str:
     if validator == "pattern":
         return f"{path}: format invalide. {err.message}."
     if validator == "minLength":
-        return f"{path}: la valeur ne peut pas etre vide."
+        return f"{path}: the value cannot be empty."
     return f"{path}: {err.message}"
 
 
@@ -131,7 +131,7 @@ def validate_flow(doc: dict) -> tuple[bool, list[dict]]:
     from jsonschema import Draft202012Validator  # noqa: PLC0415
 
     if not isinstance(doc, dict):
-        return False, [{"path": "/", "message": "Le document doit etre un objet JSON."}]
+        return False, [{"path": "/", "message": "The document must be a JSON object."}]
 
     kind = doc.get("kind")
     if kind not in ("datastream", "report"):
@@ -139,7 +139,7 @@ def validate_flow(doc: dict) -> tuple[bool, list[dict]]:
             {
                 "path": "/kind",
                 "message": (
-                    f"kind est requis et doit valoir 'datastream' ou 'report' (recu: {kind!r})."
+                    f"kind is required and must be 'datastream' or 'report' (received: {kind!r})."
                 ),
             }
         ]
@@ -187,7 +187,7 @@ def _assert_access(
     """Raise FlowScopeError (=> 404) + audit 'access_denied' if scope is violated."""
     from core.project_access import (  # noqa: PLC0415
         ProjectAccessUnavailable,
-        identity_has_project_access,
+        identity_can_read_project,
         identity_has_project_role,
     )
 
@@ -195,7 +195,7 @@ def _assert_access(
         allowed = (
             identity_has_project_role(project_id, identity, minimum_role, conn)
             if minimum_role is not None
-            else identity_has_project_access(project_id, identity, conn)
+            else identity_can_read_project(project_id, identity, conn)
         )
     except ProjectAccessUnavailable as exc:
         raise FlowUnavailableError("project access could not be verified") from exc
@@ -625,6 +625,50 @@ def upsert_flow(
     return _upsert_report(project_id, doc, identity, conn, loaded_modules)
 
 
+#: Fields the flow document CARRIES but this module does not write. Each names
+#: the tool that owns it, because a refusal without a destination is a dead end.
+_OWNED_ELSEWHERE = {
+    "cadence_mode": "set_datastream_schedule",
+    "next_run_at": "set_datastream_schedule",
+}
+
+
+def _refuse_fields_owned_elsewhere(doc: dict, existing: dict | None) -> None:
+    """Refuse a changed value for a field this module reads and never writes.
+
+    `cadence_mode` and `next_run_at` are read into the flow document by
+    `_datastream_row_to_flow` and written by nobody here; the schema declares
+    them, so `additionalProperties: false` ACCEPTS them. A caller that changed
+    one got a validated, audited, `changed:true` write with its own edit
+    silently dropped -- a door reporting a success it had not performed.
+
+    Refusing rather than writing is the contract of this module (`:8`): the
+    owning tool is `set_datastream_schedule`, and writing here would create the
+    second cadence path that contract exists to prevent.
+
+    Only a DIFFERENT value is refused. The read projection returns both fields,
+    so the honest read-modify-write loop resends them unchanged and keeps
+    working.
+    """
+    if existing is None:
+        return
+    for field, owner in _OWNED_ELSEWHERE.items():
+        if field not in doc:
+            continue
+        sent, stored = doc.get(field), existing.get(field)
+        if sent is not None and str(sent) != str(stored or ""):
+            raise FlowValidationError([
+                {
+                    "path": f"/{field}",
+                    "message": (
+                        f"{field} is owned by `{owner}` and is not written here. "
+                        f"Sending a different value would be accepted and dropped; "
+                        f"it is refused instead. Current value: {stored!r}."
+                    ),
+                }
+            ])
+
+
 def _upsert_datastream(
     project_id: str, doc: dict, identity: str, conn, loaded_modules=None
 ) -> dict:
@@ -658,6 +702,9 @@ def _upsert_datastream(
             # An id was supplied but does not resolve in this project -> not found (AD-5).
             raise FlowScopeError(f"Datastream {flow_id} introuvable dans le projet {project_id}")
         before_flow = _datastream_row_to_flow(existing, _fetch_mappings(flow_id, conn))
+        # Inside the branch: `existing` is bound only when an id resolved, and a
+        # creation has no stored value to differ from.
+        _refuse_fields_owned_elsewhere(doc, existing)
 
     # Desired scalar fields (map flow doc -> datastreams row fields).
     scalar = {
@@ -670,6 +717,11 @@ def _upsert_datastream(
         "refetch_days": doc.get("refetch_days", 3),
         "date_window_days": doc.get("date_window_days", 30),
         "config": doc.get("config") or None,
+        # What the data is FOR, declared by the person creating the flow rather
+        # than guessed. Carried through as a scalar so the SAME validation and the
+        # SAME insert serve both creation paths -- the legacy POST body and this
+        # versioned one. create_datastream rejects a value outside DATA_ROLES.
+        "data_role": doc.get("data_role"),
     }
     desired_mappings = doc.get("mappings", [])
 
@@ -685,7 +737,7 @@ def _upsert_datastream(
             if "unique" in str(exc).lower() or "UniqueViolation" in type(exc).__name__:
                 conn.rollback()
                 raise FlowConflictError(
-                    f"Un flux nomme {scalar['name']!r} existe deja dans ce projet."
+                    f"A Datastream named {scalar['name']!r} already exists in this project."
                 )
             raise
         flow_id = created["id"]
@@ -753,6 +805,14 @@ def _upsert_datastream(
             "diff": {},
         }
 
+    # THE ROLE DOES NOT TRAVEL THIS PATH (final judge, 2026-08-31): on UPDATE,
+    # `data_role` was still in this scalar and reached `update_datastream`'s
+    # allowed set -- held back only by the ACCIDENT that the scalar also carries
+    # `enabled`/`schedule_mode`, which the governed-fields guard refuses first.
+    # A guard that holds by a neighbour's refusal is not a door. The one writer
+    # is `datastream_data_role.change_data_role` (base stated, FOR UPDATE,
+    # downstream named per role, audited); creation keeps declaring it.
+    scalar.pop("data_role", None)
     ds_module.update_datastream(flow_id, project_id, scalar, conn)
     conn.commit()
     _apply_mappings(flow_id, desired_mappings, before_flow.get("mappings", []), identity, conn)
@@ -856,6 +916,15 @@ def _upsert_versioned_datastream(
                 identity=identity,
                 loaded_modules=loaded_modules or [],
                 conn=conn,
+                # WHICH tool the intent reads. Omitting it made every Google
+                # Datastream impossible to create: one consent screen opens
+                # seven modules, the credential is stored as provider='google'
+                # which is none of them, and with no module named the resolver
+                # cannot choose -- so the catalog came back not-found and the
+                # create answered "Source introuvable dans ce projet" for all
+                # eleven Search Console templates. The intent has always carried
+                # the answer.
+                module_name=source.get("module"),
             )
         except SourceCapabilitiesNotFound as exc:
             raise FlowScopeError("Source introuvable dans ce projet") from exc
@@ -880,9 +949,14 @@ def _upsert_versioned_datastream(
     elif ds_module.get_datastream(flow_id, project_id, conn) is None:
         raise FlowScopeError(f"Datastream {flow_id} introuvable dans le projet {project_id}")
 
-    from core.geographic_reporting import fetch_project_geographic_posture
+    # Story 37.9: the GOVERNED geography, not `project_preferences`. This read used
+    # `fetch_project_geographic_posture`, so a plan saved through the flow surface
+    # compiled its geography from a preference column the Country capability never
+    # writes -- a Project with a published hierarchy got a Global plan, or a blocked
+    # one, and nothing said why.
+    from core.country_activation import governed_posture  # noqa: PLC0415
 
-    geographic_posture = fetch_project_geographic_posture(project_id, conn)
+    geographic_posture = governed_posture(conn, project_id=project_id)
 
     try:
         version = save_datastream_intent(

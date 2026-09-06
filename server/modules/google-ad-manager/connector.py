@@ -29,7 +29,9 @@ from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-# Module-level FastMCP instance — core loader mounts this under the 'google-ad-manager' namespace.
+# Module-level FastMCP instance, kept as the conformance surface (AD-1 envelope,
+# validated by server/tests/conformance/test_envelope.py). Since AD-42 the core
+# no longer mounts it: execution uses the Datastream-parameterized core tools.
 mcp_app = FastMCP("google-ad-manager")
 
 _GAM_REST_BASE = "https://admanager.googleapis.com/v1"
@@ -146,27 +148,26 @@ def _ratio_source_fields() -> set[str]:
 # value holds MONEY metrics IN MICROS (exact in DOUBLE up to 2^53); currency and
 # report_timezone are network-level context captured at pull() so revenue is
 # never naked and cross-currency sums are refusable.
-_RAW_CREATE_DDL = """
-CREATE TABLE IF NOT EXISTS raw_google_ad_manager_daily (
-    date                VARCHAR,
-    metric              VARCHAR,
-    value               DOUBLE,
-    currency            VARCHAR,
-    report_timezone     VARCHAR,
-    breakdown_dimension VARCHAR,
-    breakdown_value     VARCHAR,
-    pull_id             VARCHAR,
-    loaded_at           VARCHAR,
-    project_id          VARCHAR
-)
-"""
+_RAW_TABLE = "raw_google_ad_manager_daily"
 
-_RAW_INSERT_SQL = """
-INSERT INTO raw_google_ad_manager_daily
-    (date, metric, value, currency, report_timezone, breakdown_dimension,
-     breakdown_value, pull_id, loaded_at, project_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-"""
+# THE RAW TABLE, DECLARED ONCE. `core.raw_landing` renders the DuckDB DDL and
+# INSERT from this list, and the BigQuery landing is handed the same list, so the
+# two backends cannot end up describing the same table differently.
+#
+# `tests/conformance/test_raw_table_has_one_declaration.py` compares this
+# declaration, the landing and `stg_google_ad_manager_daily.sql` on every run.
+_RAW_COLUMNS = [
+    ("date", "STRING"),
+    ("metric", "STRING"),
+    ("value", "FLOAT"),
+    ("currency", "STRING"),
+    ("report_timezone", "STRING"),
+    ("breakdown_dimension", "STRING"),
+    ("breakdown_value", "STRING"),
+    ("pull_id", "STRING"),
+    ("loaded_at", "STRING"),
+    ("project_id", "STRING"),
+]
 
 
 def _insert_raw_rows(
@@ -176,20 +177,22 @@ def _insert_raw_rows(
     currency: str | None = None,
     report_timezone: str | None = None,
 ) -> int:
-    """Insert canonical long-format rows into raw_google_ad_manager_daily (DuckDB).
+    """Insert canonical long-format rows into raw_google_ad_manager_daily (DuckDB and BigQuery).
 
     ``currency`` + ``report_timezone`` are the network-level context (from
     networks.get: currencyCode + timeZone). MONEY values stay in MICROS.
     """
     db_mode = _get_db_mode()
-    if db_mode != "duckdb":
+    if db_mode not in ("duckdb", "bigquery"):
         raise ValueError(f"_insert_raw_rows: unsupported db_mode {db_mode!r}")
 
-    import duckdb  # noqa: PLC0415
+    from core import raw_landing, warehouse_write  # noqa: PLC0415 -- AD-2
 
     loaded_at = datetime.now(tz=timezone.utc).isoformat().replace("+00:00", "Z")
-    con = duckdb.connect(_get_duckdb_path())
-    con.execute(_RAW_CREATE_DDL)
+    # NO WRITER IS OPENED HERE. One used to be, together with the DDL, BEFORE the
+    # branch below -- and the DuckDB branch then opened a SECOND one, so the first
+    # was never closed on either path, and in BigQuery mode the table was created
+    # twice by two different mechanisms inside this one function.
     values = [
         (
             r.get("date", ""),
@@ -205,10 +208,27 @@ def _insert_raw_rows(
         )
         for r in rows
     ]
-    if values:
-        con.executemany(_RAW_INSERT_SQL, values)
-    con.close()
-    return len(values)
+
+    if db_mode == "duckdb":
+        con = warehouse_write.open_raw_writer(_get_duckdb_path(), project_id=project_id)
+        try:
+            con.execute(raw_landing.duckdb_ddl(_RAW_TABLE, _RAW_COLUMNS))
+            if values:
+                con.executemany(raw_landing.duckdb_insert(_RAW_TABLE, _RAW_COLUMNS), values)
+        finally:
+            con.close()
+        return len(values)
+    elif db_mode == "bigquery":
+        raw_landing.land_raw_rows(
+            _RAW_TABLE,
+            [raw_landing.row_from_values(_RAW_COLUMNS, v) for v in values],
+            columns=_RAW_COLUMNS,
+            project_id=project_id,
+            backend="bigquery",
+        )
+        return len(values)
+    else:
+        raise ValueError(f"_insert_raw_rows: unsupported db_mode {db_mode!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -519,8 +539,6 @@ def pull(
     from core import nango_client  # noqa: PLC0415 -- AD-2
 
     if not network_code:
-        network_code = os.environ.get("GAM_NETWORK_CODE")
-    if not network_code:
         raise ValueError(
             "network_code is required (core passes the selected GAM network from "
             "account_topology; GAM_NETWORK_CODE is a local dev fallback)."
@@ -563,6 +581,12 @@ def pull(
         "row_count": row_count,
         "date_from": date_from,
         "date_to": date_to,
+        # AI-161: the zone this pull OBSERVED, returned so the worker can record it as
+        # boundary evidence. It was already resolved above and buried in the landed rows;
+        # the caller -- the only place that knows the datastream and that the run
+        # succeeded -- could not see it. A null here is a RESULT (the network exposed no
+        # zone), recorded as such.
+        "report_timezone": report_timezone,
     }
 
 
@@ -624,6 +648,235 @@ def transform(raw_rows: list[dict]) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Mart read (AD-12: mart only, never raw_*).
+# ---------------------------------------------------------------------------
+
+#: SQL body shared by both engines; user-supplied values NEVER enter the string.
+#: `native_currency` rides along because a monetary total that does not say its
+#: currency is a number nobody may add to another one -- the mart carries it per
+#: grain (`money_evidence_present`), and the envelope is where it becomes visible.
+_MART_QUERY = """
+    SELECT
+        metric,
+        breakdown_dimension,
+        breakdown_value,
+        SUM(value) AS value,
+        MIN(native_currency) AS native_currency,
+        MAX(pull_id) AS pull_id,
+        MAX(loaded_at) AS freshness
+    FROM {table}
+    WHERE connector = 'google-ad-manager'
+      AND project_id = {p_project}
+      AND date BETWEEN {p_from} AND {p_to}
+    GROUP BY metric, breakdown_dimension, breakdown_value
+    ORDER BY metric, breakdown_dimension, breakdown_value
+"""
+
+
+def _query_duckdb(sql: str, params: list, duckdb_path: str) -> list[dict]:
+    """Execute parameterized *sql* against the local DuckDB warehouse."""
+    import duckdb  # noqa: PLC0415
+
+    con = duckdb.connect(duckdb_path, read_only=True)
+    try:
+        rel = con.execute(sql, params)
+        cols = [d[0] for d in rel.description]
+        return [dict(zip(cols, row)) for row in rel.fetchall()]
+    finally:
+        con.close()
+
+
+def _query_bigquery(sql: str, params: dict) -> list[dict]:
+    """Execute parameterized *sql* against BigQuery (@named parameters)."""
+    from google.cloud import bigquery  # noqa: PLC0415
+
+    project = os.environ.get("GCP_PROJECT", "")
+    client = bigquery.Client(project=project or None)
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter(name, "STRING", value)
+            for name, value in params.items()
+        ]
+    )
+    result = client.query(sql, job_config=job_config).result()
+    cols = [f.name for f in result.schema]
+    return [dict(zip(cols, row)) for row in result]
+
+
+def _get_mart_table(db_mode: str, project_id: str | None) -> str:
+    """Fully-qualified mart table reference per engine."""
+    if db_mode == "duckdb":
+        from core import warehouse_tenancy  # noqa: PLC0415
+
+        return f"{warehouse_tenancy.mart_prefix(project_id)}fact_daily_kpi"
+    dataset = os.environ.get("BQ_MARTS_DATASET", "marts")
+    gcp_project = os.environ.get("GCP_PROJECT", "")
+    prefix = f"{gcp_project}.{dataset}" if gcp_project else dataset
+    return f"{prefix}.fact_daily_kpi"
+
+
+def _query_mart(date_from: str, date_to: str, project_id: str = "default") -> list[dict]:
+    """Query the fact_daily_kpi mart -- DuckDB or BigQuery depending on env."""
+    db_mode = _get_db_mode()
+    table = _get_mart_table(db_mode, project_id)
+
+    if db_mode == "duckdb":
+        sql = _MART_QUERY.format(table=table, p_project="?", p_from="?", p_to="?")
+        return _query_duckdb(sql, [project_id, date_from, date_to], _get_duckdb_path())
+    if db_mode == "bigquery":
+        sql = _MART_QUERY.format(
+            table=table, p_project="@project_id", p_from="@date_from", p_to="@date_to"
+        )
+        return _query_bigquery(
+            sql, {"project_id": project_id, "date_from": date_from, "date_to": date_to}
+        )
+    raise ValueError(f"Unknown TOOROW_DB_MODE: {db_mode!r}")
+
+
+#: The three ratios this connector RECONSTRUCTS, and the two additive components
+#: each is made of. AD-4: not one of them is stored -- `_ratio_source_fields`
+#: drops them at transform, because a rate summed over days means nothing. The
+#: multiplier turns a per-impression revenue into a per-MILLE one; `ctr` and
+#: `cpc` have none.
+_RECONSTRUCTED_RATIOS: tuple[tuple[str, str, str, float], ...] = (
+    ("ctr", "clicks", "impressions", 1.0),
+    ("ecpm", "ad_revenue", "impressions", 1000.0),
+    ("cpc", "ad_revenue", "clicks", 1.0),
+)
+
+
+def _reconstruct_ratios(by_metric: dict[str, list[dict]]) -> dict[str, list[dict]]:
+    """Derive CTR / eCPM / CPC per breakdown from the additive components.
+
+    A ratio is emitted for a breakdown ONLY when both components are present at
+    that breakdown AND the denominator is non-zero. A missing ratio is the honest
+    answer to "there were no impressions"; a zero would read as "nobody clicked".
+    """
+    reconstructed: dict[str, list[dict]] = {}
+    for name, numerator, denominator, multiplier in _RECONSTRUCTED_RATIOS:
+        top = {
+            (r["breakdown_dimension"], r["breakdown_value"]): r["value"]
+            for r in by_metric.get(numerator, [])
+        }
+        bottom = {
+            (r["breakdown_dimension"], r["breakdown_value"]): r["value"]
+            for r in by_metric.get(denominator, [])
+        }
+        rows: list[dict] = []
+        for key, denom in bottom.items():
+            numer = top.get(key)
+            if numer is None or not denom:
+                continue
+            dimension, value = key
+            rows.append(
+                {
+                    "breakdown_dimension": dimension,
+                    "breakdown_value": value,
+                    "value": (float(numer) / float(denom)) * multiplier,
+                }
+            )
+        if rows:
+            reconstructed[name] = rows
+    return reconstructed
+
+
+def _build_envelope(
+    rows: list[dict],
+    report_profile: str,
+    date_from: str,
+    date_to: str,
+    project_id: str,
+) -> dict:
+    """Build the canonical AD-1 envelope from mart rows.
+
+    MONEY GOES THROUGH THE PLATFORM ADAPTER AND NOWHERE ELSE. `read_units` is
+    asked for every monetary metric, and for `ad_revenue` it answers "do not
+    divide" -- `dbt/seeds/money_metric_units.csv` declares that metric `decimal`
+    and `stg_google_ad_manager_daily` already divided the GAM micros once, at
+    staging, where the seed prescribes it. Calling the adapter here is therefore
+    not ceremony: it is the guard that stops a SECOND division the day somebody
+    flips that seed row to `micros` and moves the divide into the mart. The
+    `/1e6` is never written locally.
+    """
+    from core.money import load_units, read_units  # noqa: PLC0415
+
+    units_map = load_units()
+
+    pull_ids = {r["pull_id"] for r in rows if r.get("pull_id")}
+    freshness_values = [r["freshness"] for r in rows if r.get("freshness")]
+    latest_pull_id = max(pull_ids) if pull_ids else None
+    latest_freshness = max(freshness_values) if freshness_values else None
+
+    money_metrics = _canonical_money_metrics()
+    currencies = {
+        r["native_currency"]
+        for r in rows
+        if r.get("native_currency") and r.get("metric") in money_metrics
+    }
+
+    data_by_metric: dict[str, list[dict]] = {}
+    for r in rows:
+        metric = r["metric"]
+        value = r["value"]
+        if metric in money_metrics and value is not None:
+            value = read_units(float(value), metric, units_map)
+        entry = {
+            "breakdown_dimension": r["breakdown_dimension"],
+            "breakdown_value": r["breakdown_value"],
+            "value": value,
+        }
+        if metric in money_metrics:
+            # Never a naked amount. The currency is CARRIED from the row, never
+            # assumed: a total whose currency the mart could not name says so.
+            entry["currency"] = r.get("native_currency")
+        data_by_metric.setdefault(metric, []).append(entry)
+
+    data_by_metric.update(_reconstruct_ratios(data_by_metric))
+
+    alerts: list[dict] = []
+    if len(currencies) > 1:
+        # Two currencies under one name is a total nobody can read. Said, not
+        # summed away -- the values stay per breakdown, each with its own tag.
+        alerts.append(
+            {
+                "level": "warning",
+                "message": (
+                    "This window carries more than one source currency "
+                    f"({', '.join(sorted(currencies))}); monetary totals are "
+                    "reported per breakdown and must not be added together."
+                ),
+            }
+        )
+
+    provenance = (
+        {
+            "source_system": "google-ad-manager",
+            "source_field": "fact_daily_kpi",
+            "pull_id": latest_pull_id,
+        }
+        if latest_pull_id is not None
+        else None
+    )
+
+    return {
+        "schema_version": "1",
+        "meta": {
+            "freshness": latest_freshness,
+            "provenance": provenance,
+            "alerts": alerts,
+        },
+        "data": {
+            "project_id": project_id,
+            "report_profile": report_profile,
+            "date_from": date_from,
+            "date_to": date_to,
+            "currency": next(iter(currencies)) if len(currencies) == 1 else None,
+            "metrics": data_by_metric,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # MCP tool — reads from fact_daily_kpi mart (AD-12: mart only, never raw_*).
 # ---------------------------------------------------------------------------
 
@@ -654,29 +907,58 @@ def get_google_ad_manager_report(
     if not date_from:
         date_from = (date.today() - timedelta(days=90)).isoformat()
 
-    # TODO(catalogue port): implement mart query (see ga4/gsc _query_mart pattern).
-    # MONEY (Story 39.2 canonical adapter): read money via `core.money.read_units` against
-    #   `dbt/seeds/money_metric_units.csv` — this connector declares native_unit='micros'
-    #   (money sub-object on AD_SERVER_REVENUE), so the adapter normalization is a NO-OP
-    #   (micros IS canonical) and read_units divides the canonical micros by 1e6 ONCE here,
-    #   surfacing the currency from provenance — never a naked amount, never a cross-currency
-    #   sum. Do NOT re-implement the /1e6 locally; the platform adapter is the single source
-    #   of the read-time division (AD-2: canonical metric names come from the seed).
-    # RATIOS: CTR/eCPM/CPM/CPC are RECONSTRUCTED here from additive components
-    #   (clicks/impressions, revenue/impressions*1000, revenue/clicks), never read
-    #   from a stored ratio column (none exists — dropped at transform).
-    return {
-        "schema_version": "1",
-        "meta": {
-            "freshness": None,
-            "provenance": None,
-            "alerts": [{"level": "warning", "message": "TODO: implement mart query"}],
-        },
-        "data": {
-            "project_id": project_id,
-            "report_profile": report_profile,
-            "date_from": date_from,
-            "date_to": date_to,
-            "metrics": {},
-        },
-    }
+    # A READ THAT FAILED IS NOT AN EMPTY REPORT. This tool used to return an
+    # empty `metrics` dict with a `TODO: implement mart query` warning shipped in
+    # the envelope -- a placeholder a reader could not tell from "this network
+    # served nothing". The two answers are now distinct: an unreadable mart says
+    # so and carries no metrics, and a readable one with no rows carries an empty
+    # `metrics` and the reason.
+    try:
+        rows = _query_mart(date_from, date_to, project_id)
+    except Exception as exc:  # noqa: BLE001 -- a report never raises at the tool seam
+        logger.warning(
+            "google-ad-manager: mart read failed project=%s window=%s..%s: %s: %s",
+            project_id,
+            date_from,
+            date_to,
+            type(exc).__name__,
+            exc,
+        )
+        return {
+            "schema_version": "1",
+            "meta": {
+                "freshness": None,
+                "provenance": None,
+                "alerts": [
+                    {
+                        "level": "error",
+                        "message": (
+                            "The ad-server report could not be read from the warehouse, "
+                            "so this window is unknown -- it is not a network that served "
+                            "nothing. Run the daily build for this project, then ask again."
+                        ),
+                    }
+                ],
+            },
+            "data": {
+                "project_id": project_id,
+                "report_profile": report_profile,
+                "date_from": date_from,
+                "date_to": date_to,
+                "currency": None,
+                "metrics": None,
+            },
+        }
+
+    envelope = _build_envelope(rows, report_profile, date_from, date_to, project_id)
+    if not rows:
+        envelope["meta"]["alerts"].append(
+            {
+                "level": "info",
+                "message": (
+                    "No ad-server row landed for this project in this window. "
+                    "The warehouse answered; it had nothing for these dates."
+                ),
+            }
+        )
+    return envelope

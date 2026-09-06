@@ -512,3 +512,84 @@ def test_post_processors_registered():
     """Both post-processors should be registered in POST_PROCESSORS map."""
     assert "position_movements" in POST_PROCESSORS
     assert "post_deploy_regressions" in POST_PROCESSORS
+
+
+# ---------------------------------------------------------------------------
+# AI-344 (2026-09-01) -- the deployment-marker read is the same defect as
+# `fetch_context_events`: mirror only, `[]` when there was none, and the report
+# then said "Aucun déploiement trouvé" about a window it never read.
+# ---------------------------------------------------------------------------
+
+
+def test_post_deploy_regressions_says_unavailable_when_no_store_can_serve(monkeypatch):
+    """No mirror and no caller to reach the record for: the report still renders,
+    carries no `context_events` (an empty list would claim a read), and says the
+    deployments were not read instead of "Contexte manquant"."""
+    monkeypatch.delenv("TOOROW_DUCKDB_PATH", raising=False)
+    rows = [
+        {
+            "date": "2026-07-01", "connector": "gsc", "metric": "average_position",
+            "breakdown_dimension": "page", "breakdown_value": "https://example.com/",
+            "value": 3.0, "pull_id": "pull_t", "loaded_at": None,
+        }
+    ]
+    with patch("core.warehouse.query_report", return_value=rows):
+        summary, envelope, _ = reports_module.render_report(
+            _fake_gsc_modules(),
+            "default",
+            "gsc/post_deploy_regressions",
+            "2026-07-01",
+            "2026-07-31",
+        )
+
+    assert "context_events" not in envelope["data"]
+    unavailable = envelope["data"]["context_events_unavailable"]
+    assert set(unavailable) == {"reason", "repair"}
+    assert "Contexte manquant" not in summary
+    assert "Aucun déploiement" not in summary
+    assert "n'ont pas pu être lus" in summary
+    # The rows themselves are untouched and carry no internal marker.
+    assert envelope["data"]["rows"] and all(
+        "_deploy_events_unavailable" not in r for r in envelope["data"]["rows"]
+    )
+
+
+def test_post_deploy_post_processor_tags_rows_when_events_are_unavailable(monkeypatch):
+    monkeypatch.delenv("TOOROW_DUCKDB_PATH", raising=False)
+    rows = [{"date": "2026-07-01", "metric": "clicks", "value": 1.0}]
+    result = _compute_post_deploy_regressions(
+        rows, "2026-07-01", "2026-07-31", project_id="default"
+    )
+    assert result[0]["_deploy_events_unavailable"]["repair"]
+    assert "_no_deploy_events" not in result[0]
+    assert rows == [{"date": "2026-07-01", "metric": "clicks", "value": 1.0}]  # not mutated
+
+
+def test_deployment_markers_come_from_the_one_context_event_read(monkeypatch):
+    """`_fetch_deployment_events` is a projection of `fetch_context_events`, so
+    whatever store serves the one serves the other; here the read is stubbed to
+    prove the projection and the type filter, not the store."""
+    served = [
+        {"id": "evt_d", "project_id": "default", "event_date": "2026-07-10",
+         "type": "deployment", "label": "Deploy v1", "platform": None, "value": None,
+         "source": "manual", "metric": None},
+        {"id": "evt_r", "project_id": "default", "event_date": "2026-07-12",
+         "type": "release", "label": "v2", "platform": None, "value": None,
+         "source": "manual", "metric": None},
+        {"id": "evt_x", "project_id": "default", "event_date": "2026-07-13",
+         "type": "promotion", "label": "Promo", "platform": None, "value": None,
+         "source": "manual", "metric": None},
+    ]
+    seen: dict = {}
+
+    def _read(project_id, start, end, **kw):
+        seen.update(kw, project_id=project_id, start=start, end=end)
+        return served
+
+    monkeypatch.setattr("core.context_events.fetch_context_events", _read)
+    events = reports_module._fetch_deployment_events(
+        "default", "2026-07-01", "2026-07-31", identity="person_tester"
+    )
+    assert [e["id"] for e in events] == ["evt_d", "evt_r"]
+    assert set(events[0]) == {"id", "project_id", "event_date", "type", "label"}
+    assert seen["identity"] == "person_tester"

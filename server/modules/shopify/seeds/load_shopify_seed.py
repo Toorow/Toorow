@@ -20,7 +20,7 @@ import os
 
 # Reuse the generator so the seed rows are the canonical parse-shape (AI-54).
 import sys as _sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from ulid import ULID
@@ -96,11 +96,20 @@ def load_duckdb(
     return len(values)
 
 
-def run(duckdb_path: str, days: int = 90, project_id: str = "default") -> tuple[str, int]:
-    """Generate + load Shopify seed rows. Returns (pull_id, row_count)."""
+def run(
+    duckdb_path: str,
+    days: int = 90,
+    project_id: str = "default",
+    end_date: date | None = None,
+) -> tuple[str, int]:
+    """Generate + load Shopify seed rows. Returns (pull_id, row_count).
+
+    ``end_date`` is the corpus-anchor seam the seed_all_connectors driver fills
+    (AI-213); None falls back to DEFAULT_SEED_END_DATE, never date.today().
+    """
     pull_id = _mint_pull_id()
     loaded_at = datetime.now(tz=timezone.utc).isoformat().replace("+00:00", "Z")
-    rows = generate_rows(days=days)
+    rows = generate_rows(days=days, end_date=end_date)
     count = load_duckdb(rows, pull_id, loaded_at, duckdb_path, project_id=project_id)
     return pull_id, count
 

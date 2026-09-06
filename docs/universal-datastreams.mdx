@@ -58,7 +58,7 @@ toorow unifies three distinct categories of data sources into one governed strea
 ## 2. Ingestion Guarantees & Lifecycle
 
 ### Immutable Execution & Versioning (`pull_id`)
-Every ingestion cycle generates a unique, lexically monotonic ULID `pull_id` (AD-7). Pulls are **immutable and append-only**:
+Every ingestion cycle generates a unique, lexically monotonic ULID `pull_id`. Pulls are **immutable and append-only**:
 - Raw landings store all extracted rows labeled with `pull_id` and `loaded_at`.
 - Staging dbt models execute `QUALIFY ROW_NUMBER() OVER (PARTITION BY grain ORDER BY pull_id DESC) = 1`, guaranteeing that the latest pull supersedes previous pulls while preserving full historical auditability.
 
@@ -81,7 +81,7 @@ Datastream candidates are published atomically. Administrators and AI agents can
     Learn how datastream facts map into canonical `fact_daily_kpi` marts.
   </Card>
   <Card title="Adding a Connector" icon="plug" href="/adding-a-connector">
-    Build a custom connector module for your proprietary data sources.
+    Build a custom connector for your proprietary data sources.
   </Card>
   <Card title="Self-Hosting Guide" icon="server" href="/self-hosting">
     Configure database URIs and BigQuery datasets for datastreams.

@@ -19,6 +19,7 @@ import os
 from unittest.mock import patch
 
 import pytest
+from core.narrative import GUIDANCE_FRAME
 
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
@@ -87,6 +88,28 @@ _ROWS = [
 
 
 class TestBuildEnvelopeR6MetricDefinitions:
+    def test_business_context_paths_are_additive_and_keep_provenance_intact(self):
+        paths = [
+            {
+                "path_key": "ctxp_abc",
+                "link_origin": "derived",
+                "target": {
+                    "type": "report_view",
+                    "id": "google-analytics/acquisition",
+                },
+            }
+        ]
+        envelope = reports_module.build_envelope(
+            _BASE_REPORT,
+            _ROWS,
+            "google-analytics",
+            "2026-07-01",
+            "2026-07-07",
+            "proj_test",
+            business_context_paths=paths,
+        )
+        assert envelope["meta"]["business_context_paths"] == paths
+        assert envelope["meta"]["provenance"]["source_system"] == "google-analytics"
     def test_metric_definitions_present_in_data_when_provided(self):
         """(a) A report with metric_definitions: data.metric_definitions is set."""
         envelope = reports_module.build_envelope(
@@ -209,15 +232,21 @@ class TestBuildSummaryR6Guidelines:
         """(c) llm_commentary_guidelines is appended to the narrative_prompt."""
         prompt = self._run_build_summary(guidelines=_GUIDELINES)
         assert prompt is not None
-        assert "Directives de commentaire:" in prompt
+        assert GUIDANCE_FRAME.strip() in prompt
         assert _GUIDELINES in prompt
         # Base prompt must still be present
         assert "Analyse GA4" in prompt
 
     def test_guidelines_separator_format(self):
-        """The separator is '\\n\\nDirectives de commentaire: ' (double newline)."""
+        """Double newline, then the shared guidance frame.
+
+        The label used to be the bare "Directives de commentaire:", which carried
+        no statement of what the text IS -- so an operator directive reached the
+        model indistinguishable from the deterministic cited comment beside it
+        (CAV-18). The frame now says: instruction, not evidence.
+        """
         prompt = self._run_build_summary(guidelines=_GUIDELINES)
-        assert "\n\nDirectives de commentaire: " in prompt
+        assert "\n\n" + GUIDANCE_FRAME in prompt
 
     def test_no_guidelines_does_not_change_prompt(self):
         """Without guidelines, narrative_prompt is unchanged."""
@@ -253,7 +282,7 @@ class TestBuildSummaryR6Guidelines:
             )
         prompt = captured.get("narrative_prompt")
         assert prompt is not None
-        assert "Directives de commentaire: " in prompt
+        assert GUIDANCE_FRAME in prompt
         assert _GUIDELINES in prompt
 
 
@@ -308,7 +337,7 @@ class TestRenderReportR6:
         _, _, mock_narr = self._run_render(llm_commentary_guidelines=_GUIDELINES)
         call_kwargs = mock_narr.call_args.kwargs
         prompt = call_kwargs.get("narrative_prompt") or ""
-        assert "Directives de commentaire:" in prompt
+        assert GUIDANCE_FRAME.strip() in prompt
         assert _GUIDELINES in prompt
 
 

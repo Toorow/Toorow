@@ -27,7 +27,7 @@ SPECIFICITE SHEETS (mapping declaratif) :
 
   Structure du column_mapping :
     {
-      "date_column": "Date",             # Obligatoire
+      "date_column": "Date",             # Required
       "row_id_column": "Campagne",       # Optionnel (defaut: index de la ligne)
       "metric_columns": {
         "Budget": "budget_declared",     # {nom_colonne_sheet: metrique_canonique}
@@ -59,6 +59,11 @@ from typing import Any
 
 import httpx
 
+# Import au niveau module (et non paresseux comme les appels a `core` dans les
+# fonctions) : les classes d'exception ci-dessous en HERITENT, donc il doit etre
+# resolu au moment ou le fichier est lu.
+from core import pull_errors
+
 # review-15-9 F-1 (BLOQUANT integration) : on REEXPORTE core.quota.RateLimitError plutot
 # qu'une classe locale distincte. Une classe locale ne serait JAMAIS attrapee par le
 # worker core (qui catch core.quota.RateLimitError) -> le 429 ne declencherait pas le
@@ -70,7 +75,9 @@ from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-# Module-level FastMCP instance -- the public surface the loader mounts.
+# Module-level FastMCP instance, kept as the conformance surface (AD-1 envelope,
+# validated by server/tests/conformance/test_envelope.py). Since AD-42 the core
+# no longer mounts it: execution uses the Datastream-parameterized core tools.
 mcp_app = FastMCP("google-sheets")
 
 # ---------------------------------------------------------------------------
@@ -90,6 +97,48 @@ def _get_db_mode() -> str:
 
 def _get_duckdb_path() -> str:
     return os.environ.get("TOOROW_DUCKDB_PATH", _DEFAULT_DUCKDB_PATH)
+
+
+# ---------------------------------------------------------------------------
+# Provider error refinements -- declared in manifest.json, never in core (AD-2).
+# ---------------------------------------------------------------------------
+
+_ERROR_MAP: dict[str, str] | None = None
+
+
+def _load_error_map() -> dict[str, str]:
+    """Return the manifest's ``error_map`` (status:code -> canonical class), cached.
+
+    Keys are ``"<http_status>:<provider_code>"``; for Sheets the code is the
+    ``error.errors[].reason`` string of the Google Workspace error envelope, or
+    the ``error.status`` enum when the response carries no reason.
+    ``core.pull_errors._extract_provider_codes`` offers both, most specific
+    first, and never keys on ``error.code`` -- which merely repeats the HTTP
+    status. The manifest ``_error_map_note`` names the published reference and
+    says which entries change a verdict.
+    """
+    global _ERROR_MAP
+    if _ERROR_MAP is None:
+        manifest_path = Path(__file__).parent / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        _ERROR_MAP = manifest.get("error_map") or {}
+    return _ERROR_MAP
+
+
+def _sheets_error(resp: httpx.Response):
+    """The typed connector error a non-2xx Sheets response means.
+
+    Reads the JSON body when there is one (the reason string lives there), falls
+    back to the raw text, and hands both to the shared classifier together with
+    the manifest map -- the documented consumption (server/modules/README.md,
+    step 4). It classifies only; the caller decides what to raise, because two of
+    the statuses carry a contract older than the taxonomy (see _raise_http_error).
+    """
+    try:
+        body = resp.json()
+    except Exception:  # noqa: BLE001 -- an error page is evidence, not a parse target
+        body = resp.text
+    return pull_errors.classify_http_error(resp.status_code, body, _load_error_map())
 
 
 def _query_duckdb(sql: str, params: list, duckdb_path: str) -> list[dict]:
@@ -122,12 +171,12 @@ def _query_bigquery(sql: str, params: dict) -> list[dict]:
     return [dict(zip(cols, row)) for row in result]
 
 
-def _get_mart_table(db_mode: str) -> str:
+def _get_mart_table(db_mode: str, project_id: str | None) -> str:
     """Fully-qualified mart table reference per engine."""
     if db_mode == "duckdb":
         from core import warehouse_tenancy  # noqa: PLC0415
 
-        return f"{warehouse_tenancy.mart_prefix(None)}fact_daily_kpi"
+        return f"{warehouse_tenancy.mart_prefix(project_id)}fact_daily_kpi"
     dataset = os.environ.get("BQ_MARTS_DATASET", "marts")
     gcp_project = os.environ.get("GCP_PROJECT", "")
     prefix = f"{gcp_project}.{dataset}" if gcp_project else dataset
@@ -157,7 +206,7 @@ def _query_mart(date_from: str, date_to: str, project_id: str = "default") -> li
     # AD-12: MCP server reads marts only -- never raw_* tables or CSV.
     """
     db_mode = _get_db_mode()
-    table = _get_mart_table(db_mode)
+    table = _get_mart_table(db_mode, project_id)
 
     if db_mode == "duckdb":
         sql = _MART_QUERY.format(table=table, p_project="?", p_from="?", p_to="?")
@@ -295,6 +344,13 @@ SHEETS_API_BASE = os.environ.get(
     "SHEETS_API_BASE", "https://sheets.googleapis.com/v4"
 )
 
+# Ce que la description d'un classeur demande -- et surtout ce qu'elle ne demande
+# pas. `includeGridData` est ABSENT : c'est lui qui rapatrierait les cellules, et
+# decrire une feuille n'est pas la tirer (story 57.2).
+_SHEET_METADATA_FIELD_MASK = (
+    "properties.title,properties.locale,properties.timeZone,sheets.properties"
+)
+
 # Tokens de valeur vide/manquante normalises en None -> NULL.
 _NOT_SET_TOKENS: frozenset[str] = frozenset(("", "-", "N/A", "n/a", "null", "none", "#N/A"))
 
@@ -309,11 +365,21 @@ _NOT_SET_TOKENS: frozenset[str] = frozenset(("", "-", "N/A", "n/a", "null", "non
 # ---------------------------------------------------------------------------
 
 
-class ColumnMappingError(Exception):
+class ColumnMappingError(pull_errors.InvalidRequestError):
     """Raised when the declared column_mapping references a column absent in the sheet.
 
-    AD-9: missing column = explicit error, NEVER a silent zero.
+    `invalid_request` : une colonne declaree qui a disparu de la feuille EST une
+    derive, et c'est le seul evenement qui la signale. AD-9 : jamais un 0
+    invente.
     """
+
+    #: -> `Mapping` : le plan demande ce que la source ne rend plus
+    #: (datastream-workbench-and-wizard.md:107). L'operateur a un endroit
+    #: ou aller, contrairement a une derive de version d'API.
+    user_action = pull_errors.REVIEW_MAPPING
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message)
 
 
 def _validate_column_mapping(
@@ -550,8 +616,14 @@ def _insert_raw_rows(
     db_mode: str,
     duckdb_path: str,
 ) -> int:
-    """Insert canonical records into raw_google_sheets_daily (DuckDB only at P-dev)."""
-    if db_mode == "duckdb":
+    """Insert canonical records into raw_google_sheets_daily (DuckDB or BigQuery)."""
+    if db_mode in ("duckdb", "bigquery"):
+        # BOTH BACKENDS, ONE PATH. `open_raw_writer` resolves DuckDB or
+        # BigQuery from TOOROW_DB_MODE itself, so this branch already covers
+        # bigquery. An `elif db_mode == "bigquery"` used to sit below it,
+        # unreachable because this test captures both modes -- dead code that
+        # had quietly drifted to a different set of column names and would
+        # have become live the day someone narrowed this condition.
         from core import warehouse_write  # noqa: PLC0415
 
         con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
@@ -576,10 +648,7 @@ def _insert_raw_rows(
         con.close()
         return len(values)
     else:
-        raise ValueError(
-            f"_insert_raw_rows: unsupported db_mode {db_mode!r} at P-dev "
-            "(BigQuery path not yet implemented)"
-        )
+        raise ValueError(f"_insert_raw_rows: unsupported db_mode {db_mode!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -629,7 +698,16 @@ def _fetch_sheet_values(
         raise RateLimitError("google-sheets", retry_after)
 
     if resp.status_code == 403:
-        # Permission denied -- likely missing scope or revoked consent.
+        # The manifest error_map is consulted FIRST, and only a 403 it makes
+        # RETRYABLE leaves as a typed error. Google returns an exhausted quota as a
+        # 403 carrying a rate/daily-limit reason; raising PermissionError for that
+        # made core/google_sheets_sync.py report "consent revoked" for a quota that
+        # merely needed backing off. Every other 403 -- missing scope, withdrawn
+        # consent -- keeps PermissionError, because that TYPE is the contract the
+        # sync classifies on (_classify_adapter_error), not an implementation detail.
+        error = _sheets_error(resp)
+        if error.retryable:
+            raise error
         raise PermissionError(
             f"google-sheets: HTTP 403 pour spreadsheet={spreadsheet_id!r}. "
             "Verifiez que le scope 'spreadsheets.readonly' est consenti "
@@ -644,11 +722,245 @@ def _fetch_sheet_values(
             "Verifiez l'ID et que le compte a acces a ce fichier."
         )
 
+    if resp.status_code >= 400:
+        # Every remaining non-2xx (401, 400, 5xx, ...) leaves as the canonical typed
+        # error instead of httpx.HTTPStatusError, so the worker reads a class and a
+        # retry policy rather than a status it has to re-interpret.
+        raise _sheets_error(resp)
+
     resp.raise_for_status()
 
     payload = resp.json()
     values: list[list[str]] = payload.get("values", [])
     return values
+
+
+def _fetch_sheet_metadata(
+    token: str,
+    spreadsheet_id: str,
+    *,
+    timeout: float = 30.0,
+) -> dict:
+    """Fetch the STRUCTURE of a spreadsheet -- tabs and grid bounds, no cell.
+
+    `GET {SHEETS_API_BASE}/spreadsheets/{id}` (spreadsheets.get) with the field
+    mask below and WITHOUT `includeGridData`. The response carries
+    `sheets[].properties` -- `title`, `index`, `sheetType` and
+    `gridProperties.{rowCount,columnCount,frozenRowCount}` -- and not one value.
+    Asking for `includeGridData` is what would repatriate cells, so it is never
+    sent: describing a sheet must not be a pull wearing another word.
+
+    Story 57.2. This is the one call this module did not have; everything else
+    the setup client needs is `_fetch_sheet_values` above. The error taxonomy is
+    that function's, unchanged (429/403/404/timeout) and with no new class: the
+    worker's breaker and the sync's classifier both match on these types.
+
+    A CONFIRMER en passe live (Phase B) : le contrat du fournisseur (masque de
+    champs accepte, `frozenRowCount` peuple) est sa moitie ; les tests hors
+    ligne prouvent la notre -- ce qu'on demande, et ce qu'on ne demande pas.
+
+    AD-3 : le token n'est utilise que dans le header Authorization.
+    """
+    url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+    }
+    params = {"fields": _SHEET_METADATA_FIELD_MASK}
+
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.get(url, headers=headers, params=params)
+    except httpx.TimeoutException as exc:
+        raise TimeoutError(
+            f"google-sheets: timeout reading spreadsheet metadata "
+            f"spreadsheet={spreadsheet_id!r}"
+        ) from exc
+
+    if resp.status_code == 429:
+        retry_after = int(resp.headers.get("Retry-After", "60"))
+        raise RateLimitError("google-sheets", retry_after)
+
+    if resp.status_code == 403:
+        # Same rule as _fetch_sheet_values: a 403 the map makes retryable is a
+        # spent quota, not a withdrawn consent.
+        error = _sheets_error(resp)
+        if error.retryable:
+            raise error
+        raise PermissionError(
+            f"google-sheets: HTTP 403 pour spreadsheet={spreadsheet_id!r}. "
+            "Verifiez que le scope 'spreadsheets.readonly' est consenti "
+            "(AD-21 : doit faire partie du GOOGLE_STACK_SCOPES)."
+        )
+
+    if resp.status_code == 404:
+        raise FileNotFoundError(
+            f"google-sheets: spreadsheet introuvable (HTTP 404) : "
+            f"spreadsheet_id={spreadsheet_id!r}. "
+            "Verifiez l'ID et que le compte a acces a ce fichier."
+        )
+
+    if resp.status_code >= 400:
+        raise _sheets_error(resp)
+
+    resp.raise_for_status()
+    payload = resp.json()
+    return payload if isinstance(payload, dict) else {}
+
+
+class SheetsSetupReader:
+    """Read-only sheet structure for Datastream setup (Story 57.2).
+
+    Satisfies `inbound.adapters.datastream_setup.SheetsSetupClient`. It opens no
+    second way into the Sheets API: the token comes from the same facade `pull`
+    uses, the header row comes from `_fetch_sheet_values` above, and the only
+    thing added is the metadata call the module did not have.
+
+    WHAT IT READS, AND WHAT IT REFUSES TO READ. A header cell is the NAME of a
+    column; a cell on row 2 or below is a VALUE. So exactly one value range is
+    ever requested and it is bounded to one line -- `'{tab}'!1:1`. Two ranges,
+    or a range like `A:Z`, would be a pull wearing the word "describe", and the
+    offline test asserts the single bounded range for that reason.
+
+    NO TYPE IS PRODUCED. A spreadsheet declares no schema, and reading values to
+    guess one is the very pull this class refuses. The returned record therefore
+    carries no `type` key at all -- the adapter states `unknown` and says why.
+    """
+
+    def __init__(self, connection_id: str) -> None:
+        self._connection_id = connection_id
+
+    def get_sheet_metadata(self, sheet_ref: str) -> dict:
+        """Describe ONE tab of one workbook, named by `{spreadsheetId}!{tab}`.
+
+        A reference with no `!` names a workbook, not a tab, and answering with
+        the FIRST tab would be a choice nobody made -- a four-tab workbook would
+        then describe four different schemas depending on order. It is reported
+        as an incomplete designation instead, WITH the list of tabs the workbook
+        carries, so the answer is a choice rather than a name to type from
+        memory. Listing tabs reads titles, never a cell: the boundary is the
+        same one, and no value range is requested on that path.
+        """
+        spreadsheet_id, separator, tab_title = str(sheet_ref).partition("!")
+        spreadsheet_id = spreadsheet_id.strip()
+        tab_title = tab_title.strip()
+        if not spreadsheet_id:
+            return {"tab_state": "unnamed", "headers": [], "tabs": []}
+
+        from core import nango_client  # noqa: PLC0415 -- AD-2: import at call time
+
+        token = nango_client.get_fresh_token(self._connection_id)
+        metadata = _fetch_sheet_metadata(token, spreadsheet_id)
+        properties = metadata.get("properties") or {}
+        tabs = _addressable_tabs(metadata, spreadsheet_id)
+        if not separator or not tab_title:
+            return {
+                "tab_state": "unnamed",
+                "headers": [],
+                "tabs": tabs,
+                "locale": properties.get("locale"),
+            }
+        tab = _find_sheet_tab(metadata, tab_title)
+        if tab is None:
+            # The workbook WAS read, so access works; only the tab is missing --
+            # and the ones it does carry are listed beside the refusal.
+            return {
+                "tab_state": "not_found",
+                "headers": [],
+                "tabs": tabs,
+                "locale": properties.get("locale"),
+                "tab_title": tab_title,
+            }
+
+        grid = tab.get("gridProperties") or {}
+        frozen = _positive_int(grid.get("frozenRowCount"))
+        # ONE range, ONE line. This is the whole boundary of the story.
+        values = _fetch_sheet_values(token, spreadsheet_id, f"'{tab_title}'!1:1")
+        header_row = [str(cell).strip() for cell in (values[0] if values else [])]
+        headers = [cell for cell in header_row if cell]
+        header_state, header_reason = _classify_header_row(header_row, frozen=frozen)
+        return {
+            "tab_state": "named",
+            "tab_title": tab_title,
+            "tabs": tabs,
+            "headers": headers,
+            "header_state": header_state,
+            "header_reason": header_reason,
+            "locale": properties.get("locale"),
+            "row_count": _positive_int(grid.get("rowCount")),
+            "column_count": _positive_int(grid.get("columnCount")),
+            "frozen_row_count": frozen,
+        }
+
+
+def _addressable_tabs(metadata: dict, spreadsheet_id: str) -> list[dict]:
+    """Every tab of the workbook, as something the wizard can be given.
+
+    `object_ref` is the reference the next discovery would be run with -- the
+    same `{spreadsheetId}!{tabTitle}` an operator would have typed -- and
+    `label` is the tab's own title. Titles only: `spreadsheets.get` without
+    `includeGridData` returns no cell, so listing the tabs takes nothing out of
+    the workbook.
+
+    A tab that is not a GRID (a chart sheet) carries no header row and is not
+    offered: it would be a choice with nothing behind it.
+    """
+    tabs: list[dict] = []
+    for sheet in metadata.get("sheets") or []:
+        properties = (sheet or {}).get("properties") or {}
+        title = str(properties.get("title") or "").strip()
+        kind = str(properties.get("sheetType") or "GRID").strip().upper()
+        if not title or kind != "GRID":
+            continue
+        tabs.append({"object_ref": f"{spreadsheet_id}!{title}", "label": title})
+    return tabs
+
+
+def _find_sheet_tab(metadata: dict, tab_title: str) -> dict | None:
+    """The tab whose title matches, or None. Never `sheets[0]` as a fallback."""
+    for sheet in metadata.get("sheets") or []:
+        properties = (sheet or {}).get("properties") or {}
+        if str(properties.get("title") or "") == tab_title:
+            return properties
+    return None
+
+
+def _positive_int(value: object) -> int:
+    """A count when the provider sent one, `0` when it sent nothing readable."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0
+    return int(value) if value > 0 else 0
+
+
+def _classify_header_row(row: list[str], *, frozen: int) -> tuple[str, str]:
+    """How much the header row is a FACT and how much it is an assumption.
+
+    Three states, in decreasing order of honesty:
+
+    * `declared` -- the tab freezes a header row. A frozen row is the sheet
+      author's own declaration, and it is a PRESENTATION property, not a value.
+    * `assumed` -- no frozen row, but row 1 reads complete and duplicate-free.
+      The ordinary case, and the manifest has always said it in words: « La
+      premiere ligne est supposee etre l'en-tete des colonnes ».
+    * `uncertain` -- duplicates, empty cells, or an empty row. A sheet with no
+      header is not a broken sheet: the reason is named and the rest of the
+      evidence stays valid.
+
+    The duplicate rule is the one `core.google_sheets_sync._validate_sheet_headers`
+    already applies (its `duplicate_headers` half, `:210-218`). It is not imported
+    here because a module never imports `core` at module scope (AD-2) and this
+    function must stay pure; the loop below is that loop, and the error CODE is
+    the same string on purpose.
+    """
+    filled = [cell for cell in row if cell]
+    duplicates = sorted({cell for cell in filled if filled.count(cell) > 1})
+    if duplicates:
+        return "uncertain", "duplicate_headers"
+    if not filled:
+        return "uncertain", "header_row_empty"
+    if len(filled) != len(row):
+        return "uncertain", "header_row_incomplete"
+    return ("declared", "") if frozen >= 1 else ("assumed", "")
 
 
 # ---------------------------------------------------------------------------
@@ -704,27 +1016,27 @@ def pull(
 
     if not spreadsheet_id:
         raise ValueError(
-            "google-sheets pull: spreadsheet_id est obligatoire "
-            "(ID du Google Spreadsheet, extrait de l'URL)."
+            "google-sheets pull: spreadsheet_id is required "
+            "(the Google Spreadsheet ID, taken from its URL)."
         )
     if not sheet_range:
         raise ValueError(
-            "google-sheets pull: sheet_range est obligatoire "
-            "(ex: 'Feuille1!A:E' ou 'Budget!A1:F100')."
+            "google-sheets pull: sheet_range is required "
+            "(e.g. 'Sheet1!A:E' or 'Budget!A1:F100')."
         )
     if not column_mapping:
         raise ValueError(
-            "google-sheets pull: column_mapping est obligatoire "
+            "google-sheets pull: column_mapping is required "
             "(mapping {date_column, metric_columns, ...})."
         )
     if "date_column" not in column_mapping:
         raise ValueError(
-            "google-sheets pull: column_mapping.date_column est obligatoire."
+            "google-sheets pull: column_mapping.date_column is required."
         )
     if not column_mapping.get("metric_columns"):
         raise ValueError(
-            "google-sheets pull: column_mapping.metric_columns est obligatoire "
-            "et doit declarer au moins une metrique canonique."
+            "google-sheets pull: column_mapping.metric_columns is required "
+            "and must declare at least one canonical metric."
         )
 
     db_mode = _get_db_mode()
@@ -774,9 +1086,12 @@ def pull(
 
     return {
         "rows_inserted": rows_inserted,
+        "row_count": rows_inserted,
         "unparsable_rows": unparsable_count,
         "pull_id": pull_id,
         "profile": profile,
+        "date_from": date_from,
+        "date_to": date_to,
     }
 
 

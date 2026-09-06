@@ -21,12 +21,10 @@
  * valeur de fact_daily_kpi n'est modifiée (AD-9).
  */
 
-import { useTheme, alpha } from "@mui/material/styles";
-import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
 import { aggregateByDateConnector } from "./dataUtils";
 import type { Row, ContextEventMeta } from "./types";
 import EventAnnotationOverlay from "./EventAnnotationOverlay";
+import { Box, Typography, alpha, useTheme } from "@toorow/shell";
 
 interface SmallMultiplesProps {
   rows: Row[];

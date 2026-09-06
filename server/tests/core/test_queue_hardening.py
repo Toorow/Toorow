@@ -267,7 +267,7 @@ class TestRateLimitBehavior:
             patch("core.quota.record_rate_limit"),
             patch("core.queue._resolve_connection_ref", return_value=fake_ref),
             patch("core.main.get_module_pull_fn", return_value=pull_fn),
-            patch("core.queue._get_manifest_for_provider", return_value={}),
+            patch("core.queue._get_manifest_for_module", return_value={}),
             patch("core.tracing.worker_span", return_value=span_mock),
             patch("core.tracing.traceparent_from_trace_id", return_value=None),
             patch("core.audit.write_audit_row"),
@@ -313,9 +313,14 @@ class TestRateLimitBehavior:
         captured: list = []
         self._run_execute(job, pull_fn, fake_ref, max_attempts=3, captured_updates=captured)
 
+        # Story 63.1: the state is a BOUND PARAMETER now, not a SQL literal --
+        # every terminal exit goes through `_finish_job`, which is what closes
+        # the run the window belonged to. `completed_at` is still in the
+        # statement, and the state is still dead_letter; only where each of them
+        # is written changed.
         dead_letter_sqls = [
-            sql for sql, _ in captured
-            if "dead_letter" in sql and "completed_at" in sql
+            sql for sql, params in captured
+            if "completed_at" in sql and "dead_letter" in (sql + str(params or ""))
         ]
         assert dead_letter_sqls, (
             "Dead-letter UPDATE must set completed_at when rate_limit_exhausted"

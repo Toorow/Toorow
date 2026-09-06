@@ -11,7 +11,7 @@ Nothing upstream ever collected a name: the marketing form has one field
 DATA flow deliberately requests no identity scope. But the console's own bearer
 IS a Google ID token, and those carry `name` / `given_name` / `family_name` --
 we were throwing that away and would have addressed invitations to
-"jeanludovic.albany@gmail.com invited you to join Acme Media".
+"owner@example.com invited you to join Acme Media".
 
 The load-bearing test here is IDENTITY_KEY: app.user_profiles and
 /api/me/profile key on the token SUBJECT, while invitation acceptance matches on
@@ -22,6 +22,7 @@ every single login.
 
 from __future__ import annotations
 
+from core import invitations_api  # AD-43 : le handler vit chez son sujet
 from core.user_profiles import display_name_from_claims
 
 # ---------------------------------------------------------------------------
@@ -99,9 +100,9 @@ def test_the_profile_key_is_the_subject_the_profile_endpoints_read():
     """
     import inspect
 
-    from core import admin_api
+    from core import admin_api  # noqa: F401 -- registers the served router before patching it
 
-    source = inspect.getsource(admin_api._accept_invitation)
+    source = inspect.getsource(invitations_api._accept_invitation)
     head, _, tail = source.partition("authenticate_subject_and_name")
     assert tail, "acceptance no longer resolves the profile subject"
 
@@ -120,9 +121,9 @@ def test_acceptance_never_overwrites_a_name_the_person_typed():
     """A self-chosen name outranks whatever the provider carries."""
     import inspect
 
-    from core import admin_api
+    from core import admin_api  # noqa: F401 -- registers the served router before patching it
 
-    source = inspect.getsource(admin_api._accept_invitation)
+    source = inspect.getsource(invitations_api._accept_invitation)
     assert "if existing:" in source
     # The provider name is only used in the else-branch.
     existing_branch = source.split("if existing:", 1)[1].split("elif token_name:", 1)[0]
@@ -133,9 +134,9 @@ def test_a_profile_failure_cannot_change_the_acceptance_outcome():
     """Acceptance has already COMMITTED by then. The name is a nicety."""
     import inspect
 
-    from core import admin_api
+    from core import admin_api  # noqa: F401 -- registers the served router before patching it
 
-    source = inspect.getsource(admin_api._accept_invitation)
+    source = inspect.getsource(invitations_api._accept_invitation)
     block = source.split("profile_name: str | None = None", 1)[1].split("response =", 1)[0]
     assert "try:" in block and "except Exception" in block
     # No early return / raise inside the block: the response is built regardless.
@@ -147,7 +148,7 @@ def test_needs_name_is_the_exact_negation_of_having_one():
     produces either a lost question or a question asked forever."""
     import inspect
 
-    from core import admin_api
+    from core import admin_api  # noqa: F401 -- registers the served router before patching it
 
-    source = inspect.getsource(admin_api._accept_invitation)
+    source = inspect.getsource(invitations_api._accept_invitation)
     assert '"profile": {"display_name": profile_name, "needs_name": not profile_name}' in source

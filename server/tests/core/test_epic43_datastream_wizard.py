@@ -78,11 +78,13 @@ def _activation_client(
     monkeypatch.setattr(datastreams, "update_datastream", _update_datastream)
     monkeypatch.setattr(db, "get_connection", _connection)
 
+    from core import datastreams_api  # noqa: PLC0415
+
     app = Router(
         routes=[
             Route(
                 "/api/datastreams/{id}",
-                endpoint=admin_api._patch_datastream,
+                endpoint=datastreams_api._patch_datastream,
                 methods=["PATCH"],
             )
         ]

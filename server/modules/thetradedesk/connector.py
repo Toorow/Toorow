@@ -1,7 +1,8 @@
 """The Trade Desk connector -- Story 28.2 (MyReports, REST v3, async).
 
-Exposes a ``mcp_app: FastMCP`` instance the core loader mounts under the
-``thetradedesk`` namespace (AD-2). Built to the epic-25/26 industrial standard:
+Exposes a ``mcp_app: FastMCP`` instance as the conformance surface (AD-1
+envelope); since AD-42 the core no longer mounts it — execution uses the
+Datastream-parameterized core tools. Built to the epic-25/26 industrial standard:
 generated api_catalog.json (275 Supermetrics columns, 263 exposed / 12 excluded
 enrichment-only, ZERO planned), status-first error_map applied module side,
 Partner -> Advertiser topology, and the 26.1 async-report socle
@@ -56,7 +57,9 @@ from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-# Module-level FastMCP instance -- the public surface the loader mounts.
+# Module-level FastMCP instance, kept as the conformance surface (AD-1 envelope,
+# validated by server/tests/conformance/test_envelope.py). Since AD-42 the core
+# no longer mounts it: execution uses the Datastream-parameterized core tools.
 mcp_app = FastMCP("thetradedesk")
 
 # ---------------------------------------------------------------------------
@@ -126,32 +129,36 @@ def _field_compat_rules() -> dict:
 # Provider error handling (dossier section 6).
 #
 # TTD publishes NO numeric error-code table: classification is by HTTP status +
-# body token. DECISION (mirrors amazon-ads 26.5): the manifest error_map uses
-# "<status>" and "<status>:<token>" keys and THIS MODULE applies them, with
-# body-token refinements first and core's pure-HTTP classify_http_error as the
-# final fallback. 429 -> core.quota.RateLimitError (breaker), never the map.
+# body token.
+#
+# AI-114 (2026-08-01) -- THE TAXONOMY HAS ONE IMPLEMENTATION. The manifest
+# `error_map` has exactly ONE reader, core.pull_errors.classify_http_error, and
+# ONE key grammar, "<status>:<provider_code>". This module used to read that
+# same manifest key itself with a SECOND grammar (a bare "<status>" lookup) AND
+# to duplicate its body-token refinements in a local table -- one declaration,
+# two readers, two grammars.
+#
+# Both are gone. The body token IS TTD's provider code, so it is now NORMALISED
+# into the {"code": <token>} shape core already extracts (the technique piano
+# uses for its API-Code Category, story 28.1) and the manifest keys
+# "401:revoked" / "401:disabled" / "403:revoked" are matched BY CORE. Those are
+# the only entries that refine: they turn "reconnect" into "your access was
+# revoked, ask for it again".
+#
+# A judgment keyed on the HTTP STATUS ALONE is not a provider refinement and has
+# no expressible form in the map; it lives in _STATUS_OVERRIDES below.
+# 429 -> core.quota.RateLimitError (breaker), never the map.
 # ---------------------------------------------------------------------------
 
-# Body-token refinements (dossier section 6), applied before status-level
-# mapping. TTD bodies carry a free-text message; a revoked/disabled credential
-# reads as auth_revoked (reconnect) rather than a transient auth_expired.
-_BODY_REFINEMENTS: tuple[tuple[int, str, str], ...] = (
-    (401, "revoked", "auth_revoked"),
-    (401, "disabled", "auth_revoked"),
-    (403, "revoked", "auth_revoked"),
-)
+# The stable tokens TTD puts in its free-text message (dossier section 6). The
+# CLASS each one maps to is declared in manifest.error_map, not here: this
+# tuple only says which substrings are provider vocabulary.
+_BODY_TOKENS: tuple[str, ...] = ("revoked", "disabled")
 
-
-def _canonical_error_classes() -> dict:
-    from core import pull_errors  # noqa: PLC0415
-
-    return {
-        pull_errors.AUTH_EXPIRED: pull_errors.AuthExpiredError,
-        pull_errors.AUTH_REVOKED: pull_errors.AuthRevokedError,
-        pull_errors.PERMISSION_DENIED: pull_errors.PermissionDeniedError,
-        pull_errors.INVALID_REQUEST: pull_errors.InvalidRequestError,
-        pull_errors.PROVIDER_TRANSIENT: pull_errors.ProviderTransientError,
-    }
+# Status-level judgment core's pure-HTTP table does not make (it leaves 404 as
+# retryable `unclassified`): an unknown report schedule / execution id is a
+# malformed request, not a transient unknown. Former status-only error_map key.
+_STATUS_OVERRIDES: dict[int, str] = {404: "invalid_request"}
 
 
 def _extract_message(body) -> str:
@@ -163,14 +170,39 @@ def _extract_message(body) -> str:
     return str(body or "")
 
 
+def _load_error_map() -> dict:
+    """Return the manifest's ``error_map`` (keys '<status>:<body_token>').
+
+    Read by NOBODY but core.pull_errors.classify_http_error -- this module
+    hands it over, it never looks a key up itself (AI-114).
+    """
+    return _load_manifest().get("error_map") or {}
+
+
+def _body_token(body) -> str | None:
+    """Reduce a TTD free-text message to the one stable token core can key on.
+
+    TTD has no error-code field, so the token IS the provider code. Returning
+    it inside a {"code": ...} payload is what lets core's generic extractor
+    match the manifest's '<status>:<token>' keys -- no second classifier.
+    """
+    message = _extract_message(body).lower()
+    for token in _BODY_TOKENS:
+        if token in message:
+            return token
+    return None
+
+
 def _raise_provider_error(status_code: int, resp: httpx.Response | None = None,
                           body=None) -> None:
     """Raise the canonical typed error for a non-2xx TTD response.
 
     429 -> core.quota.RateLimitError (breaker path; TTD publishes no Retry-After
     so the default backoff applies -- retry_after=None). Everything else:
-    body-token refinement, then the manifest's status/status:token error_map,
-    then core's pure-HTTP classify_http_error. Provider payload preserved.
+    _STATUS_OVERRIDES (status-level judgments, code-side), then the single
+    documented raise site -- classify_http_error with the manifest error_map and
+    a payload whose 'code' is the normalised body token. Provider payload
+    preserved either way.
     """
     if body is None and resp is not None:
         try:
@@ -186,19 +218,17 @@ def _raise_provider_error(status_code: int, resp: httpx.Response | None = None,
 
     from core import pull_errors  # noqa: PLC0415
 
-    classes = _canonical_error_classes()
-    message = _extract_message(body).lower()
-    for ref_status, token, canonical in _BODY_REFINEMENTS:
-        if status_code == ref_status and token in message:
-            raise classes[canonical](provider_status=status_code, provider_payload=body)
+    override = pull_errors.error_for_class(
+        _STATUS_OVERRIDES.get(status_code), status_code, body
+    )
+    if override is not None:
+        raise override
 
-    error_map = _load_manifest().get("error_map") or {}
-    refined = error_map.get(str(status_code))
-    exc_cls = classes.get(refined)
-    if exc_cls is not None:
-        raise exc_cls(provider_status=status_code, provider_payload=body)
-
-    raise pull_errors.classify_http_error(status_code, body)
+    token = _body_token(body)
+    refined_payload = body if token is None else {"code": token, "_provider_body": body}
+    raise pull_errors.classify_http_error(
+        status_code, refined_payload, _load_error_map()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -696,33 +726,38 @@ def _numeric_field_ids(field_ids: list[str]) -> list[str]:
 # staging supersedes per grain x metric (QUALIFY, AD-7).
 # ---------------------------------------------------------------------------
 
-_RAW_CREATE_DDL = """
-CREATE TABLE IF NOT EXISTS raw_thetradedesk_daily (
-    date                  VARCHAR,
-    report_template       VARCHAR,
-    partner_id            VARCHAR,
-    advertiser_id         VARCHAR,
-    campaign_id           VARCHAR,
-    campaign_name         VARCHAR,
-    ad_group_id           VARCHAR,
-    ad_group_name         VARCHAR,
-    creative_id           VARCHAR,
-    segments_json         VARCHAR,
-    metric                VARCHAR,
-    value_num             DOUBLE,
-    pull_id               VARCHAR,
-    loaded_at             VARCHAR,
-    project_id            VARCHAR
-)
-"""
+_RAW_TABLE = "raw_thetradedesk_daily"
 
-_RAW_INSERT_SQL = """
-INSERT INTO raw_thetradedesk_daily
-    (date, report_template, partner_id, advertiser_id, campaign_id,
-     campaign_name, ad_group_id, ad_group_name, creative_id, segments_json,
-     metric, value_num, pull_id, loaded_at, project_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-"""
+# THE RAW TABLE, DECLARED ONCE. `core.raw_landing` renders the DuckDB DDL and
+# INSERT from this list, and the BigQuery landing is handed the same list, so the
+# two backends cannot end up describing the same table differently.
+#
+# They did. The BigQuery branch carried its own transcription of these columns and
+# dropped `report_template` entirely, so every value from index 1 shifted one
+# column left. It also renamed the metric pair to `metric_name` /
+# `metric_value`, which is neither what this table declares nor what
+# `stg_thetradedesk_daily.sql` reads. Production runs `TOOROW_DB_MODE=bigquery`,
+# so the drifted copy was the live one.
+#
+# `tests/conformance/test_raw_table_has_one_declaration.py` compares this
+# declaration, the landing and the staging model on every run.
+_RAW_COLUMNS = [
+    ("date", "STRING"),
+    ("report_template", "STRING"),
+    ("partner_id", "STRING"),
+    ("advertiser_id", "STRING"),
+    ("campaign_id", "STRING"),
+    ("campaign_name", "STRING"),
+    ("ad_group_id", "STRING"),
+    ("ad_group_name", "STRING"),
+    ("creative_id", "STRING"),
+    ("segments_json", "STRING"),
+    ("metric", "STRING"),
+    ("value_num", "FLOAT"),
+    ("pull_id", "STRING"),
+    ("loaded_at", "STRING"),
+    ("project_id", "STRING"),
+]
 
 # (landed column, post-transform candidate keys -- canonical first, TTD id as
 # fallback for catalog selections outside the manifest map).
@@ -775,7 +810,7 @@ def _insert_raw_rows(
     sorted-key JSON) so any catalog column participates in the supersede grain
     without schema churn.
     """
-    if db_mode != "duckdb":
+    if db_mode not in ("duckdb", "bigquery"):
         raise ValueError(
             f"_insert_raw_rows: unsupported db_mode {db_mode!r} at P-dev "
             "(BigQuery path not yet implemented)"
@@ -829,12 +864,24 @@ def _insert_raw_rows(
                 )
             )
 
-    con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
-    con.execute(_RAW_CREATE_DDL)
-    if values:
-        con.executemany(_RAW_INSERT_SQL, values)
-    con.close()
-    return len(values)
+    from core import raw_landing  # noqa: PLC0415 -- AD-2
+
+    if db_mode == "bigquery":
+        raw_landing.land_raw_rows(
+            _RAW_TABLE,
+            [raw_landing.row_from_values(_RAW_COLUMNS, v) for v in values],
+            columns=_RAW_COLUMNS,
+            project_id=project_id,
+            backend="bigquery",
+        )
+        return len(values)
+    else:
+        con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
+        con.execute(raw_landing.duckdb_ddl(_RAW_TABLE, _RAW_COLUMNS))
+        if values:
+            con.executemany(raw_landing.duckdb_insert(_RAW_TABLE, _RAW_COLUMNS), values)
+        con.close()
+        return len(values)
 
 
 # ---------------------------------------------------------------------------
@@ -877,7 +924,9 @@ def _resolve_advertiser_selection(
 
         resolved = token_service.resolve_connection_by_nango_id(connection_id)
         if resolved is not None:
-            selected = account_topology.resolve_selected_account(resolved.id)
+            selected = account_topology.resolve_selected_account(
+                resolved.id, connector="thetradedesk"
+            )
     except Exception as exc:  # noqa: BLE001 -- fail closed with a clear message
         logger.warning("thetradedesk_account_resolution_failed: %s", type(exc).__name__)
 
@@ -1374,11 +1423,11 @@ def _query_bigquery(sql: str, params: dict) -> list[dict]:
     return [dict(zip(cols, row)) for row in result]
 
 
-def _get_mart_table(db_mode: str) -> str:
+def _get_mart_table(db_mode: str, project_id: str | None) -> str:
     if db_mode == "duckdb":
         from core import warehouse_tenancy  # noqa: PLC0415
 
-        return f"{warehouse_tenancy.mart_prefix(None)}fact_daily_kpi"
+        return f"{warehouse_tenancy.mart_prefix(project_id)}fact_daily_kpi"
     dataset = os.environ.get("BQ_MARTS_DATASET", "marts")
     gcp_project = os.environ.get("GCP_PROJECT", "")
     prefix = f"{gcp_project}.{dataset}" if gcp_project else dataset
@@ -1405,7 +1454,7 @@ _MART_QUERY = """
 def _query_mart(date_from: str, date_to: str, project_id: str = "default") -> list[dict]:
     # AD-12: MCP server reads marts only -- never raw_* tables or CSV.
     db_mode = _get_db_mode()
-    table = _get_mart_table(db_mode)
+    table = _get_mart_table(db_mode, project_id)
 
     if db_mode == "duckdb":
         sql = _MART_QUERY.format(table=table, p_project="?", p_from="?", p_to="?")

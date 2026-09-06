@@ -1,21 +1,30 @@
-"""Integration test: re-run provenance proof for notebooks (Story 6.5, AC7).
+"""Deux exécutions d'un même Notebook par la porte MCP sont DEUX Runs.
 
-test_rerun_resolves_fresh_pull_ids:
-  1. Create a notebook via save_notebook.
-  2. Run it -> capture pull_ids from notebook_runs row 1.
-  3. Simulate a new pull: insert a new pull_id into the warehouse rows.
-  4. Run the notebook again -> capture pull_ids from notebook_runs row 2.
-  5. Assert pull_ids[run2] != pull_ids[run1] (fresh resolution, not copy).
-  6. Assert both run rows exist in app.notebook_runs.
+CE QUE CE FICHIER TENAIT, ET OÙ CETTE PROPRIÉTÉ VIT MAINTENANT. Il prouvait
+mécaniquement que la provenance est re-résolue à chaque exécution et jamais
+recopiée de la ligne précédente (AD-9 / AD-7 / AC7), en jouant `run_notebook`
+contre un Postgres mocké et un `render_report` mocké — c'est-à-dire contre le
+moteur HÉRITÉ, celui qui lisait `app.notebooks` et écrivait `app.notebook_runs`.
 
-This is the MECHANICAL PROOF of the "provenance re-resolved, never copied stale"
-requirement (AD-9, AD-7, AC7). The test is in-process (no network) and uses
-mocked Postgres + mocked render_report so it can run in the baseline test suite.
+Ce moteur a été retiré le 2026-08-22 (story 67.23) : la porte MCP appelle
+désormais `analyze_artifacts.run_notebook`, le même service que la console. La
+propriété n'est pas perdue, elle est gardée **mieux** — contre une vraie base, au
+niveau qui la possède :
 
-The logic under test: run_notebook extracts pull_ids from the envelope returned
-by render_report. If render_report returns different pull_ids on each call (as it
-would when new data has been loaded), the stored pull_ids in notebook_runs differ.
-The test verifies this by running render_report twice with different pull_id seeds.
+  * `test_analyze_artifacts_pg.py`,
+    `test_a_notebook_run_pins_its_version_and_a_retry_returns_the_same_run`
+    — la version est épinglée AVANT qu'un bloc s'exécute, et un rejeu de la même
+    clef rend le Run d'origine plutôt qu'un doublon ;
+  * `::test_one_idempotency_key_admits_exactly_one_run` — la contrainte est dans
+    le schéma, pas seulement dans le code ;
+  * `::test_a_run_cannot_be_rebound_to_another_notebook_version` — ce qu'un Run
+    dit avoir joué ne peut pas changer après coup.
+
+CE QUI RESTE ICI est la seule moitié qui appartient à la PORTE et à personne
+d'autre : que deux appels distincts composent deux clefs distinctes. Une clef
+constante rendrait le second appel idempotent avec le premier, donc un
+utilisateur qui redemande une exécution en recevrait une ancienne — et aucun des
+tests ci-dessus ne peut le voir, parce qu'ils reçoivent la clef en argument.
 """
 
 from __future__ import annotations
@@ -28,221 +37,74 @@ os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+def _conn_returning(row, columns):
+    cursor = MagicMock()
+    cursor.fetchone.return_value = row
+    cursor.description = [(col,) for col in columns]
+    conn = MagicMock()
+    conn.__enter__ = MagicMock(return_value=conn)
+    conn.__exit__ = MagicMock(return_value=False)
+    cursor_cm = MagicMock()
+    cursor_cm.__enter__ = MagicMock(return_value=cursor)
+    cursor_cm.__exit__ = MagicMock(return_value=False)
+    conn.cursor = MagicMock(return_value=cursor_cm)
+    return conn
 
 
-def _make_envelope(pull_ids: list[str]) -> dict:
-    """Build a fake render_report envelope with the given pull_ids."""
-    return {
-        "schema_version": "1",
-        "meta": {
-            "provenance": {
-                "pull_ids": pull_ids,
-                "pull_id": pull_ids[-1] if pull_ids else None,
-                "source_system": "gsc",
-                "source_field": "fact_daily_kpi",
-            },
-            "alerts": [],
-            "freshness": None,
-            "context_events": [],
-        },
-        "data": {
-            "report_id": "gsc/position_movements",
-            "date_range": {"start": "2026-06-12", "end": "2026-07-12"},
-            "connectors": ["gsc"],
-            "metrics": {"clicks": 1200},
-            "rows": [],
-        },
-    }
-
-
-def _make_mock_conn_sequence(notebook_row, run_ids_store: list):
-    """Build conn mocks that:
-    - On first get_connection call: return the notebook row (SELECT)
-    - On second get_connection call: capture INSERT params for run 1
-    - On third get_connection call: return the notebook row again (SELECT for run 2)
-    - On fourth get_connection call: capture INSERT params for run 2
-    """
-    call_n = [0]
-
-    def get_connection_factory():
-        call_n[0] += 1
-        conn_mock = MagicMock()
-        conn_mock.__enter__ = MagicMock(return_value=conn_mock)
-        conn_mock.__exit__ = MagicMock(return_value=False)
-
-        if call_n[0] % 2 == 1:
-            # SELECT call: return notebook row
-            cursor_mock = MagicMock()
-            cursor_mock.fetchone.return_value = notebook_row
-            cursor_mock.description = [
-                ("id",), ("project_id",), ("title",), ("report_ref",),
-                ("window_rule",), ("narrative_prompt",), ("created_by",),
-            ]
-            cursor_cm = MagicMock()
-            cursor_cm.__enter__ = MagicMock(return_value=cursor_mock)
-            cursor_cm.__exit__ = MagicMock(return_value=False)
-            conn_mock.cursor = MagicMock(return_value=cursor_cm)
-        else:
-            # INSERT call: capture the pull_ids from params
-            captured = []
-
-            def capture_insert(sql, params):
-                if "notebook_runs" in sql:
-                    captured.append(params)
-                    run_ids_store.append(params)
-
-            cursor_mock = MagicMock()
-            cursor_mock.execute = capture_insert
-            cursor_cm = MagicMock()
-            cursor_cm.__enter__ = MagicMock(return_value=cursor_mock)
-            cursor_cm.__exit__ = MagicMock(return_value=False)
-            conn_mock.cursor = MagicMock(return_value=cursor_cm)
-
-        return conn_mock
-
-    return get_connection_factory
-
-
-# ---------------------------------------------------------------------------
-# Test
-# ---------------------------------------------------------------------------
-
-
-def test_rerun_resolves_fresh_pull_ids():
-    """Two sequential runs of the same notebook -> pull_ids differ after new data.
-
-    This proves provenance is re-resolved from the warehouse on each run,
-    never copied from the previous run row (AD-9 / AD-7 / AC7).
-    """
+def _keys_of_two_calls(**call_kwargs) -> list[str]:
+    """Les clefs d'idempotence composées par deux appels successifs de la porte."""
     from core.main import run_notebook
 
-    # The notebook row returned by SELECT
-    notebook_row = (
-        "nb_RERUN_TEST",
-        "proj_test",
-        "Rerun test notebook",
-        "gsc/position_movements",
-        "last_30d",
-        None,  # narrative_prompt
-        "user@example.com",
-    )
+    seen: list[str] = []
+    answer = {
+        "run_id": "nbkrun_x",
+        "notebook_version_id": "nbkv_1",
+        "state": "accepted",
+        "blocks": [],
+    }
 
-    # Pull IDs for run 1 (before new pull)
-    PULL_IDS_RUN1 = ["pull_AAAAAA"]
-    # Pull IDs for run 2 (after new pull — a new pull_id is included)
-    PULL_IDS_RUN2 = ["pull_AAAAAA", "pull_BBBBBB"]
-
-    # Storage for captured INSERT params
-    run_ids_store: list = []
-
-    # Simulate two sequential render_report calls returning different pull_ids
-    envelope_run1 = _make_envelope(PULL_IDS_RUN1)
-    envelope_run2 = _make_envelope(PULL_IDS_RUN2)
-
-    summary_run1 = "Clics: 1 000 (gsc:fact_daily_kpi, pull_AAAAAA)"
-    summary_run2 = "Clics: 1 200 (gsc:fact_daily_kpi, pull_BBBBBB)"
-
-    render_calls = [0]
-
-    def mock_render_report(*args, **kwargs):
-        render_calls[0] += 1
-        if render_calls[0] == 1:
-            return summary_run1, dict(envelope_run1), "ui://gsc/widget"
-        else:
-            return summary_run2, dict(envelope_run2), "ui://gsc/widget"
-
-    # Connection call counter for routing SELECT vs INSERT
-    call_n = [0]
-
-    def get_connection_factory():
-        call_n[0] += 1
-        conn_mock = MagicMock()
-        conn_mock.__enter__ = MagicMock(return_value=conn_mock)
-        conn_mock.__exit__ = MagicMock(return_value=False)
-
-        if call_n[0] % 2 == 1:
-            # Odd call: SELECT (fetch notebook)
-            cursor_mock = MagicMock()
-            cursor_mock.fetchone.return_value = notebook_row
-            cursor_mock.description = [
-                ("id",), ("project_id",), ("title",), ("report_ref",),
-                ("window_rule",), ("narrative_prompt",), ("created_by",),
-            ]
-        else:
-            # Even call: INSERT into notebook_runs
-            def capture_insert(sql, params):
-                if "notebook_runs" in sql:
-                    run_ids_store.append(list(params))
-
-            cursor_mock = MagicMock()
-            cursor_mock.execute = capture_insert
-
-        cursor_cm = MagicMock()
-        cursor_cm.__enter__ = MagicMock(return_value=cursor_mock)
-        cursor_cm.__exit__ = MagicMock(return_value=False)
-        conn_mock.cursor = MagicMock(return_value=cursor_cm)
-        return conn_mock
+    def _capture(_conn, **kwargs):
+        seen.append(kwargs["idempotency_key"])
+        return answer
 
     with (
-        patch("core.db.get_connection", side_effect=get_connection_factory),
+        patch(
+            "core.db.get_connection",
+            return_value=_conn_returning(("org_t", "proj_t"), ["org_id", "project_id"]),
+        ),
+        patch("core.notebook_mcp.refuse_unless_project_scope"),
+        patch("core.analyze_artifacts.run_notebook", side_effect=_capture),
         patch("core.audit.write_audit_row"),
-        patch("core.reports.render_report", side_effect=mock_render_report),
     ):
-        # === Run 1 (before new pull) ===
-        result1 = run_notebook(notebook_id="nb_RERUN_TEST")
-        assert result1.is_error is not True
+        run_notebook(notebook_id="nbk_TEST", **call_kwargs)
+        run_notebook(notebook_id="nbk_TEST", **call_kwargs)
+    return seen
 
-        # === Simulate new pull: render_report will return PULL_IDS_RUN2 next call ===
-        # (Already staged above via render_calls counter)
 
-        # === Run 2 (after new pull) ===
-        result2 = run_notebook(notebook_id="nb_RERUN_TEST")
-        assert result2.is_error is not True
+def test_two_calls_of_the_same_notebook_are_two_runs_and_not_one_replayed():
+    """Une clef constante rendrait la seconde demande idempotente avec la première.
 
-    # --- AC7 assertions ---
-
-    # 6. Both run rows stored (two INSERT captures)
-    assert len(run_ids_store) == 2, (
-        f"Expected 2 notebook_runs INSERT captures, got {len(run_ids_store)}: {run_ids_store}"
+    L'utilisateur redemanderait une exécution et recevrait l'ancienne, sans que
+    rien ne le dise. Les tests du service ne peuvent pas l'attraper : ils
+    reçoivent la clef en argument.
+    """
+    first, second = _keys_of_two_calls()
+    assert first != second, (
+        "les deux appels composent la MEME clef : le second serait servi par le "
+        "Run du premier"
     )
 
-    # Extract pull_ids from captured INSERT params.
-    # INSERT params: (nbrun_id, notebook_id, as_of, summary_text,
-    #                 envelope_ref, envelope_inline, pull_ids, 'success')
-    # pull_ids is at index 6 in the params tuple.
-    PULL_IDS_PARAM_IDX = 6
 
-    stored_run1 = run_ids_store[0]
-    stored_run2 = run_ids_store[1]
+def test_the_key_names_what_the_run_is_about():
+    """Une clef opaque est indéboguable ; celle-ci porte son notebook et sa date."""
+    key = _keys_of_two_calls(as_of="2026-08-01")[0]
+    assert "nbk_TEST" in key
+    assert "2026-08-01" in key
 
-    pull_ids_run1_stored = stored_run1[PULL_IDS_PARAM_IDX]
-    pull_ids_run2_stored = stored_run2[PULL_IDS_PARAM_IDX]
 
-    # 5. pull_ids from run 2 differ from run 1 (fresh resolution proof)
-    assert pull_ids_run1_stored != pull_ids_run2_stored, (
-        f"PROVENANCE RE-RESOLUTION FAILED: "
-        f"run1 pull_ids={pull_ids_run1_stored!r} == run2 pull_ids={pull_ids_run2_stored!r}. "
-        "pull_ids must be freshly resolved on each run, never copied from a previous run."
-    )
-
-    # Verify the values match what render_report returned
-    assert pull_ids_run1_stored == PULL_IDS_RUN1, (
-        f"Run 1 pull_ids mismatch: stored {pull_ids_run1_stored!r}, expected {PULL_IDS_RUN1!r}"
-    )
-    assert pull_ids_run2_stored == PULL_IDS_RUN2, (
-        f"Run 2 pull_ids mismatch: stored {pull_ids_run2_stored!r}, expected {PULL_IDS_RUN2!r}"
-    )
-
-    # Verify both runs' envelopes carry notebook_id and run_id in meta
-    sc1 = result1.structured_content or {}
-    sc2 = result2.structured_content or {}
-    assert sc1.get("meta", {}).get("notebook_id") == "nb_RERUN_TEST"
-    assert sc2.get("meta", {}).get("notebook_id") == "nb_RERUN_TEST"
-    run_id1 = sc1.get("meta", {}).get("run_id", "")
-    run_id2 = sc2.get("meta", {}).get("run_id", "")
-    assert run_id1.startswith("nbrun_"), f"run_id1={run_id1!r} must start with 'nbrun_'"
-    assert run_id2.startswith("nbrun_"), f"run_id2={run_id2!r} must start with 'nbrun_'"
-    assert run_id1 != run_id2, "Two runs must have distinct nbrun_ IDs"
+def test_an_as_of_replay_and_a_current_run_never_share_a_key():
+    """Sinon rejouer au 1er août rendrait le Run d'aujourd'hui, ou l'inverse."""
+    current = _keys_of_two_calls()[0]
+    replay = _keys_of_two_calls(as_of="2026-08-01")[0]
+    assert current.split(":")[:2] == replay.split(":")[:2]
+    assert current != replay

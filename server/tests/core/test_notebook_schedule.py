@@ -1,13 +1,24 @@
-"""Tests for notebook scheduling endpoints and nightly piggyback (Story 6.6, AC1, AC2, AC6).
+"""La programmation d'un Notebook, et le pas nocturne qui la tire.
 
-Covers (from AC6):
-  - test_schedule_notebook_sets_flag: PATCH scheduled=true -> scheduled=TRUE, rule='nightly'.
-  - test_unschedule_clears_rule: PATCH scheduled=false -> schedule_rule=NULL.
-  - test_invalid_schedule_rule_rejected: schedule_rule='weekly' -> 422 response.
-  - test_run_due_notebooks_called_in_nightly: mock _run_due_notebooks; trigger
-    run_nightly_steps(); assert _run_due_notebooks was called after alert steps.
-  - test_scheduled_notebook_failure_does_not_block_next: mock run_notebook_direct to
-    raise on first notebook; assert second notebook still runs.
+CE QUE CE FICHIER TENAIT JUSQU'AU 2026-08-22, et pourquoi la moitie est partie.
+Il gardait la porte `PATCH /api/notebooks/{id}/schedule` (elle ecrivait
+`app.notebooks.scheduled`) et la boucle `_run_due_notebooks` qui lisait ce
+drapeau. Les deux servaient un magasin HERITE : son seul ecrivain etait l'outil
+MCP `save_notebook` -- il n'existe aucune route REST de creation -- et les ecrans
+canoniques d'Analyze lisent `app.analysis_notebooks`. Un modele programmait donc
+un objet que rien ne montrait, et la boucle le tirait dans le vide.
+
+`save_notebook` et `run_notebook` sont passes au magasin gouverne, la porte de
+programmation heritee refuse, et la boucle heritee a ete retiree -- c'est la
+bascule AC12 que le docstring de `_dispatch_due_canonical_notebooks` nommait
+comme sa condition de sortie.
+
+CE QUI RESTE TENU, ET C'EST PLUS QU'AVANT :
+  - le refus de la porte heritee, et le fait qu'il ne depend d'aucune ligne ;
+  - que le pas nocturne appelle TOUJOURS le tir des Notebooks, a sa place dans
+    l'ordre -- la propriete que `test_run_due_notebooks_called_in_nightly`
+    gardait, et qui n'a rien a voir avec le magasin ;
+  - que ce tir passe par le service gouverne et par aucun autre.
 """
 
 from __future__ import annotations
@@ -61,6 +72,24 @@ def _fake_ts():
     return datetime(2026, 7, 12, 12, 0, 0, tzinfo=timezone.utc)
 
 
+def _fetchone_sequence(notebook_row):
+    """Answer the OWNER-PROJECT query, then the UPDATE ... RETURNING row.
+
+    AI-120. These two tests went red on main answering ONE fixed tuple to every
+    `fetchone`. That was enough until story 7.4 (AC7, AI-38) put a scope check in
+    front of the mutation: the handler now asks `SELECT project_id FROM
+    app.notebooks WHERE id = %s` FIRST, read `row[0]` -- which was "nb_TEST",
+    the notebook id -- treated it as the owning project, and refused the
+    cross-scope write with a 404. The guarantee under test is real; the mock had
+    simply stopped modelling the handler.
+
+    Answering per query rather than per test also means a future pre-check will
+    fail loudly here instead of silently reading the wrong column.
+    """
+    rows = iter([(notebook_row[1],), notebook_row])
+    return lambda *_args, **_kwargs: next(rows, notebook_row)
+
+
 def _make_mock_conn(cursor_mock=None):
     """Build a mock psycopg connection usable as a context manager."""
     if cursor_mock is None:
@@ -80,126 +109,25 @@ def _make_mock_conn(cursor_mock=None):
 # ---------------------------------------------------------------------------
 
 
-def test_schedule_notebook_sets_flag(client):
-    """PATCH scheduled=true -> DB update sets scheduled=TRUE, schedule_rule='nightly'."""
-    cursor_mock = MagicMock()
-    cursor_mock.fetchone.return_value = (
-        "nb_TEST",
-        "proj_A",
-        "Analyse SEO",
-        "gsc/position_movements",
-        "last_7d",
-        None,
-        True,
-        "nightly",
-        _fake_ts(),
-        _fake_ts(),
-    )
-    cursor_mock.description = [
-        ("id",), ("project_id",), ("title",), ("report_ref",), ("window_rule",),
-        ("narrative_prompt",), ("scheduled",), ("schedule_rule",),
-        ("created_at",), ("updated_at",),
-    ]
-    conn_mock = _make_mock_conn(cursor_mock)
-
-    with patch("core.db.get_connection", return_value=conn_mock):
-        resp = client.patch(
-            "/api/notebooks/nb_TEST/schedule",
-            json={"scheduled": True, "schedule_rule": "nightly"},
-        )
-
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["scheduled"] is True
-    assert data["schedule_rule"] == "nightly"
-
-    # Verify UPDATE was called with the right values
-    execute_calls = cursor_mock.execute.call_args_list
-    update_call = next(
-        (c for c in execute_calls if "UPDATE" in str(c) and "scheduled" in str(c)),
-        None,
-    )
-    assert update_call is not None
-    params = update_call[0][1]
-    assert params[0] is True  # scheduled
-    assert params[1] == "nightly"  # schedule_rule
+def test_the_legacy_schedule_door_refuses_and_names_where_it_lives_now(client):
+    """Elle ecrivait `app.notebooks.scheduled`, que plus aucune boucle ne lit."""
+    resp = client.patch("/api/notebooks/nb_TEST/schedule", json={"scheduled": True})
+    assert resp.status_code == 409, resp.text
+    body = resp.json()
+    assert body["code"] == "legacy_store_is_read_only"
+    assert "Analyze" in body["message"]
 
 
-def test_unschedule_clears_rule(client):
-    """PATCH scheduled=false -> schedule_rule=NULL in the DB call."""
-    cursor_mock = MagicMock()
-    cursor_mock.fetchone.return_value = (
-        "nb_TEST", "proj_A", "Analyse SEO", "gsc/position_movements", "last_7d",
-        None, False, None, _fake_ts(), _fake_ts(),
-    )
-    cursor_mock.description = [
-        ("id",), ("project_id",), ("title",), ("report_ref",), ("window_rule",),
-        ("narrative_prompt",), ("scheduled",), ("schedule_rule",),
-        ("created_at",), ("updated_at",),
-    ]
-    conn_mock = _make_mock_conn(cursor_mock)
+def test_the_schedule_refusal_reads_no_row(client):
+    """Aucune doublure de connexion : si la porte lisait, ce test tomberait.
 
-    with patch("core.db.get_connection", return_value=conn_mock):
-        resp = client.patch(
-            "/api/notebooks/nb_TEST/schedule",
-            json={"scheduled": False, "schedule_rule": None},
-        )
-
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["scheduled"] is False
-    assert data["schedule_rule"] is None
-
-    # Verify UPDATE was called with schedule_rule=None
-    execute_calls = cursor_mock.execute.call_args_list
-    update_call = next(
-        (c for c in execute_calls if "UPDATE" in str(c) and "scheduled" in str(c)),
-        None,
-    )
-    assert update_call is not None
-    params = update_call[0][1]
-    assert params[0] is False  # scheduled
-    assert params[1] is None  # schedule_rule
-
-
-def test_invalid_schedule_rule_rejected(client):
-    """schedule_rule='weekly' -> 422 response (only 'nightly' supported)."""
-    resp = client.patch(
-        "/api/notebooks/nb_TEST/schedule",
-        json={"scheduled": True, "schedule_rule": "weekly"},
-    )
-    assert resp.status_code == 422
-    data = resp.json()
-    assert "nightly" in data.get("message", "").lower()
-
-
-def test_schedule_missing_scheduled_field_returns_400(client):
-    """PATCH without 'scheduled' field -> 400."""
-    resp = client.patch(
-        "/api/notebooks/nb_TEST/schedule",
-        json={"schedule_rule": "nightly"},
-    )
-    assert resp.status_code == 400
-
-
-def test_schedule_notebook_not_found(client):
-    """PATCH schedule on non-existent notebook -> 404."""
-    cursor_mock = MagicMock()
-    cursor_mock.fetchone.return_value = None
-    conn_mock = _make_mock_conn(cursor_mock)
-
-    with patch("core.db.get_connection", return_value=conn_mock):
-        resp = client.patch(
-            "/api/notebooks/nb_MISSING/schedule",
-            json={"scheduled": True, "schedule_rule": "nightly"},
-        )
-
-    assert resp.status_code == 404
-
-
-# ---------------------------------------------------------------------------
-# test_run_due_notebooks_called_in_nightly (AC6)
-# ---------------------------------------------------------------------------
+    C'est aussi ce qui rend le refus indistinguable entre un identifiant reel et
+    un identifiant invente -- comparer deux refus n'apprend rien.
+    """
+    real = client.patch("/api/notebooks/nb_TEST/schedule", json={"scheduled": True})
+    absent = client.patch("/api/notebooks/nb_NOPE/schedule", json={"scheduled": False})
+    assert real.status_code == absent.status_code == 409
+    assert real.json() == absent.json()
 
 
 def test_run_due_notebooks_called_in_nightly():
@@ -262,48 +190,51 @@ def test_run_due_notebooks_called_in_nightly():
 # ---------------------------------------------------------------------------
 
 
-def test_scheduled_notebook_failure_does_not_block_next():
-    """Failure in first scheduled notebook must not prevent second from running."""
-    # Two scheduled notebooks: first raises, second succeeds
-    nb1 = {"id": "nb_FAIL", "title": "Notebook FAIL"}
-    nb2 = {"id": "nb_OK", "title": "Notebook OK"}
+def test_the_nightly_step_reaches_the_governed_dispatch_and_nothing_else():
+    """Ce que `_run_due_notebooks` EST devenu, et ce qu'il n'est plus.
 
-    run_calls: list[str] = []
+    Il portait une boucle : lire `app.notebooks WHERE scheduled`, appeler
+    `run_notebook_direct` par notebook, isoler chaque echec, poser une meta-alerte.
+    Il ne porte plus qu'un appel. Le test lit la SOURCE plutot que de se fier a un
+    mock, parce que la propriete en cause est << il n'existe plus de second
+    chemin >> et qu'un mock ne peut pas la nier.
+    """
+    import inspect
 
-    def fake_run_notebook_direct(notebook_id, as_of=None):
-        if notebook_id == "nb_FAIL":
-            raise RuntimeError("Simulated render failure")
-        run_calls.append(notebook_id)
+    from core import scheduler
 
-    cursor_mock = MagicMock()
-    cursor_mock.fetchall.return_value = [
-        (nb1["id"], nb1["title"]),
-        (nb2["id"], nb2["title"]),
-    ]
-    cursor_mock.description = [("id",), ("title",)]
-    conn_mock = _make_mock_conn(cursor_mock)
+    body = inspect.getsource(scheduler._run_due_notebooks)
+    assert "_dispatch_due_canonical_notebooks()" in body
+    # Plus aucune lecture du magasin herite dans le corps.
+    assert "FROM app.notebooks" not in body
+    assert "run_notebook_direct" not in body.split('"""')[-1], (
+        "le second moteur d'execution est encore appele"
+    )
 
+
+def test_a_failing_dispatch_does_not_take_the_nightly_step_down():
+    """La resilience que la boucle heritee portait, tenue par le tir gouverne.
+
+    `test_scheduled_notebook_failure_does_not_block_next` prouvait qu'un notebook
+    en echec n'empechait pas le suivant. Le service gouverne isole chaque
+    Notebook par SAVEPOINT et rend un rapport ; ce qui reste a prouver ici est le
+    dernier maillon -- que le pas nocturne survit a un tir qui LEVE, et pose la
+    meta-alerte plutot que d'emporter la nuit avec lui.
+    """
+    from core import scheduler
+
+    alerts: list[tuple[str, str]] = []
     with (
-        patch("core.db.get_connection", return_value=conn_mock),
-        patch("core.main.run_notebook_direct", side_effect=fake_run_notebook_direct),
-        patch("core.scheduler._insert_meta_alert"),
+        patch(
+            "core.analyze_artifacts.dispatch_due_notebook_schedules",
+            side_effect=RuntimeError("dispatch exploded"),
+        ),
+        patch("core.db.get_connection", return_value=_make_mock_conn(MagicMock())),
+        patch.object(
+            scheduler, "_insert_meta_alert", side_effect=lambda *a: alerts.append(a)
+        ),
     ):
-        from core.scheduler import _run_due_notebooks
+        scheduler._run_due_notebooks()  # ne doit PAS lever
 
-        _run_due_notebooks()
-
-    # nb_OK must have been called despite nb_FAIL raising
-    assert "nb_OK" in run_calls
-
-
-def test_run_due_notebooks_empty_list():
-    """_run_due_notebooks with no scheduled notebooks is a no-op."""
-    cursor_mock = MagicMock()
-    cursor_mock.fetchall.return_value = []
-    cursor_mock.description = [("id",), ("title",)]
-    conn_mock = _make_mock_conn(cursor_mock)
-
-    with patch("core.db.get_connection", return_value=conn_mock):
-        from core.scheduler import _run_due_notebooks
-
-        _run_due_notebooks()  # Should not raise
+    assert alerts, "un tir qui explose doit poser une meta-alerte"
+    assert alerts[0][0] == "dispatch_canonical_notebooks"

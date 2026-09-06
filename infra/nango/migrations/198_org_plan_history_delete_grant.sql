@@ -1,0 +1,42 @@
+-- 198 -- the RGPD erasure hatch of migration 098 was never granted the privilege
+--
+-- Migration 098 found and fixed a real blocker: append-only TRIGGERS refused the
+-- cascade DELETE that dropping an organization fires, so "dropping an org was
+-- STRUCTURALLY impossible, independently of any application code" (098:8-12).
+-- Its fix was the escape-hatch idiom: DELETE allowed only inside a purge that
+-- flags itself with `app.rgpd_erasure`, set with SET LOCAL by core/org_purge.py.
+--
+-- The trigger was fixed. The GRANT was not.
+--
+-- PostgreSQL checks the table privilege BEFORE the trigger runs, so the hatch
+-- could never open: the statement is refused with 42501
+-- (`InsufficientPrivilege`) and the trigger that would have allowed it is never
+-- reached. 098 therefore closed half of its own finding.
+--
+-- Measured 2026-08-03 on a freshly migrated database (197 migrations, ordinary
+-- `connector` role, no superuser, no BYPASSRLS):
+--
+--   SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+--    WHERE n.nspname = 'app' AND c.relkind = 'r'
+--      AND EXISTS (SELECT 1 FROM pg_constraint k WHERE k.conrelid = c.oid
+--                  AND k.contype = 'f' AND k.confrelid = 'app.organizations'::regclass
+--                  AND k.confdeltype = 'c')
+--      AND NOT has_table_privilege('connector', c.oid, 'DELETE');
+--   -> org_plan_history
+--
+-- EXACTLY ONE table. Every other cascade child of `app.organizations` already
+-- carries DELETE; this one was the only hole, and it is enough to make the whole
+-- erasure fail.
+--
+-- Surfaced by `server/tests/core/test_epic36_e2e_first_journey.py`, which had
+-- skipped itself for want of a database and failed the moment one existed:
+--   psycopg.errors.InsufficientPrivilege: droit refuse pour la table org_plan_history
+--   CONTEXT: DELETE FROM ONLY "app"."org_plan_history" WHERE org_id = $1
+--
+-- DELETE ONLY, NEVER UPDATE. 098:18-19 states the rule this migration must not
+-- weaken: "UPDATE stays blocked unconditionally: append-only means history is
+-- not REWRITABLE; erasure of a whole tenant is a different, audited operation."
+-- The trigger keeps enforcing the flag, so this grant does not open a plain
+-- DELETE path -- it only lets the flagged purge reach the trigger that judges it.
+
+GRANT DELETE ON app.org_plan_history TO connector;

@@ -17,17 +17,17 @@
  *   1. One accent — the tile chrome is neutral; delta arrow only gets a tint.
  *   2. Near-black/near-white — no hardcoded colors beyond theme tokens.
  *   3. The number is the hero — absolute value is h3, delta is caption.
- *   4. No default-MUI look — borderless card, diffuse shadow.
+ *   4. No stock component-library look — borderless card, diffuse shadow.
  *   5. Generous spacing — py: 2.5, px: 2.
  *   6. Tokens from theme — no inline hex.
  */
 
 import { useState, useId } from "react";
-import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
-import { useTheme, alpha } from "@mui/material/styles";
+
 import { ArrowUpwardIcon, ArrowDownwardIcon } from "./icons";
 import type { MetricDefinition } from "./types";
+import { NO_VALUE, formatPercent, formatValue, verdictColor, verdictTone } from "./format";
+import { Box, Typography, alpha, useTheme } from "@toorow/shell";
 
 interface KpiTileProps {
   label: string;
@@ -52,7 +52,7 @@ function InfoTooltip({ def, id }: { def: MetricDefinition; id: string }) {
     >
       <Box
         component="button"
-        aria-label="Définition de la métrique"
+        aria-label="What this metric means"
         aria-describedby={id}
         onMouseEnter={() => setVisible(true)}
         onMouseLeave={() => setVisible(false)}
@@ -142,22 +142,18 @@ export default function KpiTile({ label, currentValue, deltaPct, definition }: K
 
   const direction = definition?.direction ?? "up_good";
 
-  // Map delta sign + direction to semantic color.
-  function deltaColor(): string {
-    if (deltaPct === null) return theme.palette.text.secondary;
-    if (direction === "neutral") return theme.palette.text.secondary;
+  // ONE function decides a verdict colour on every consumer render, cards and
+  // widgets alike (story 76-8, round 2). The tiles painted `-8.6 %`, `-7.0 %`
+  // and `-9.6 %` red with nothing on the screen saying what red meant.
+  const arrowColor = verdictColor(
+    theme,
+    verdictTone(deltaPct, direction),
+    theme.palette.text.secondary,
+  );
 
-    const isPositive = deltaPct >= 0;
-    const isGood = direction === "up_good" ? isPositive : !isPositive;
-    return isGood ? theme.palette.success.main : theme.palette.error.main;
-  }
-
-  const arrowColor = deltaColor();
-
-  const deltaText =
-    deltaPct === null
-      ? "—"
-      : `${deltaPct >= 0 ? "+" : ""}${deltaPct.toFixed(1)} %`;
+  // `toFixed` is locale-blind: the tile printed « -8.6 % » beside a hero value
+  // grouped by another convention entirely (story 76-8, round 1).
+  const deltaText = deltaPct === null ? NO_VALUE : formatPercent(deltaPct, { signed: true });
 
   return (
     <Box
@@ -204,7 +200,7 @@ export default function KpiTile({ label, currentValue, deltaPct, definition }: K
         }}
         data-testid="kpi-hero-value"
       >
-        {currentValue.toLocaleString("fr-FR")}
+        {formatValue(currentValue)}
       </Typography>
 
       {/* Delta line — small, muted, direction-aware tint only on arrow (rule 3) */}

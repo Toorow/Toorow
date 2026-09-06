@@ -1,0 +1,189 @@
+{
+  "ai_path_evidence": {
+    "lifecycle": "finalized",
+    "outcome": "succeeded",
+    "path_id": "aip_FIXTURE",
+    "schema_version": "observed-ai-path.v1",
+    "state": "completed",
+    "steps": [
+      {
+        "missing_context": [],
+        "observed_at": "2026-01-01T00:00:00Z",
+        "ordinal": 0,
+        "outcome": "succeeded",
+        "step_kind": "tool_call",
+        "tool_name": "execute_analyze_query_spec"
+      }
+    ]
+  },
+  "disclosure": {
+    "expires_at": "FIXTURE_TIMESTAMP",
+    "shared_on": "FIXTURE_TIMESTAMP"
+  },
+  "facts": [
+    {
+      "label": "Shared on",
+      "value": "FIXTURE_DATE"
+    },
+    {
+      "label": "Data as of",
+      "value": "2026-07-30"
+    },
+    {
+      "label": "Grain",
+      "value": "day"
+    },
+    {
+      "label": "Comparison",
+      "value": "none"
+    },
+    {
+      "label": "Time window",
+      "value": "end: 2026-07-30, start: 2026-07-28"
+    },
+    {
+      "label": "Filters",
+      "value": "country = FR"
+    }
+  ],
+  "feedback_context": {
+    "schema_version": "exact-feedback.v1",
+    "token": "FIXTURE_SIGNED_CONTEXT",
+    "interaction_ref": "afi_FIXTURE",
+    "expires_at": "2026-01-01T00:15:00Z"
+  },
+  "render": {
+    "display": {},
+    "pins": {
+      "formatter_version": "viz-formatters@1",
+      "renderer_build": "table/toorow-table@1.0.0",
+      "runtime_build": "@toorow/card-shell/viz@0.1.0+87c254baf75d",
+      "theme_version": "viz-theme@1"
+    },
+    "profile": "share",
+    "result": {
+      "content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "evidence": {
+        "row:0:sessions": {
+          "evidence_id": "ev_fixture_sessions"
+        }
+      },
+      "manifest": {
+        "comparison": "none",
+        "filters": [
+          "country = FR"
+        ],
+        "freshness": "2026-07-30T00:00:00Z",
+        "grain": "day",
+        "time_window": {
+          "end": "2026-07-30",
+          "start": "2026-07-28"
+        }
+      },
+      "outcome": "success",
+      "result_id": "qr_FIXTURE",
+      "row_count": 3,
+      "rows": [
+        {
+          "day": "2026-07-28",
+          "sessions": 1412
+        },
+        {
+          "day": "2026-07-29",
+          "sessions": 1877
+        },
+        {
+          "day": "2026-07-30",
+          "sessions": 2043
+        }
+      ],
+      "schema": {
+        "fields": [
+          {
+            "name": "day"
+          },
+          {
+            "name": "sessions"
+          }
+        ]
+      },
+      "truncated": false
+    },
+    "spec": {
+      "document": {
+        "accessibility": {
+          "summary_source": "result_manifest",
+          "table_fallback": "required"
+        },
+        "annotations": [],
+        "axes": {
+          "x": {
+            "scale": "categorical",
+            "tick_density": "normal",
+            "zero_baseline": false
+          },
+          "y": {
+            "scale": "linear",
+            "tick_density": "normal",
+            "zero_baseline": true
+          }
+        },
+        "bindings": {
+          "dimension": [
+            "day"
+          ],
+          "measure": [
+            "sessions"
+          ]
+        },
+        "color": {
+          "role": "none",
+          "semantic_direction": "none"
+        },
+        "evidence": {
+          "datum_fields": [
+            "sessions"
+          ],
+          "mark_binding": "datum"
+        },
+        "family": "table",
+        "formatting": {
+          "date_style": "auto",
+          "number_style": "auto",
+          "unit_source": "none"
+        },
+        "interactions": {
+          "hover": true,
+          "legend_toggle": false,
+          "local_filter": false,
+          "select": true,
+          "zoom": false
+        },
+        "labels": {
+          "override": {}
+        },
+        "legend": {
+          "position": "none",
+          "visible": false
+        },
+        "order": {
+          "source": "result"
+        },
+        "reference_lines": [],
+        "responsive": {
+          "profiles": [
+            "console",
+            "share"
+          ]
+        },
+        "schema_version": 1,
+        "spec_contract_version": "visualization-spec.v1",
+        "thresholds": [],
+        "top_n": null
+      },
+      "schema_version": 1,
+      "spec_contract_version": "visualization-spec.v1",
+      "visualization_spec_version_id": "vsv_FIXTURE"
+    }
+  }
+}

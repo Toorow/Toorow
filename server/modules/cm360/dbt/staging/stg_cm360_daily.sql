@@ -1,5 +1,10 @@
 {{ config(materialized='view') }}
 
+WITH source AS (
+    SELECT *, json_extract_string(dimensions_json, '$.country') AS country_source
+    FROM {{ source('raw_cm360', 'raw_cm360_daily') }}
+)
+
 -- Full-grain supersede: every selected dimension remains in dimensions_json and
 -- the common physical keys participate directly in the grain.
 SELECT
@@ -14,6 +19,8 @@ SELECT
     creative_id,
     floodlight_activity_id,
     dimensions_json,
+    country_source,
+    {{ normalize_dimension('upper(country_source)', ref('dim_country'), 'aliases', 'iso_code') }} AS country,
     metric,
     value,
     provider_value,
@@ -21,7 +28,7 @@ SELECT
     pull_id,
     loaded_at,
     project_id
-FROM {{ source('raw_cm360', 'raw_cm360_daily') }}
+FROM source
 QUALIFY ROW_NUMBER() OVER (
     PARTITION BY project_id, report_profile, profile_id, advertiser_id, date,
                  COALESCE(campaign_id, ''), COALESCE(placement_id, ''),

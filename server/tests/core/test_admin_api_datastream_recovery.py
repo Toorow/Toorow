@@ -31,6 +31,8 @@ import os
 from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
@@ -62,12 +64,24 @@ def _auth_fail():
     )
 
 
+@contextmanager
 def _role(allowed: bool):
-    """Patch the strict project-role check used by _require_datastream_role."""
-    return patch(
-        "core.project_access.identity_has_project_role",
-        return_value=allowed,
-    )
+    """The WHOLE Datastream access decision, as one switch.
+
+    AI-219 gave `_require_datastream_role` a second question -- does this stream
+    belong to the project the caller named -- and it is answered by a real
+    statement. Left to the fake cursor, that statement eats the row the handler
+    under test had scripted, and thirty tests here start measuring the fixture
+    instead of the handler. Both halves of the decision therefore move together:
+    a test that wants "denied" must not accidentally get it from the half it
+    was not thinking about.
+    """
+    with patch(
+        "core.project_access.identity_has_project_role", return_value=allowed
+    ), patch(
+        "core.admin_api.require_datastream_in_project", return_value=allowed
+    ):
+        yield
 
 
 def _fake_conn(*, fetchone=None, fetchall=None):
@@ -165,6 +179,28 @@ class TestCsvExcelPreview:
         assert data["format"] == "csv"
         assert data["row_count"] == 1
 
+    @pytest.mark.parametrize("invalid_contract", [[], "", 0])
+    def test_non_object_contract_is_not_silently_auto_detected(self, invalid_contract):
+        _conn, fake_get = _fake_conn()
+        from core.csv_excel_import import InvalidImportContract
+
+        def reject_raw_contract(*_args, **kwargs):
+            assert kwargs["contract"] == invalid_contract
+            raise InvalidImportContract("Contract must be a JSON object.")
+
+        body = {**self._body(), "contract": invalid_contract}
+        with (
+            _auth_ok(),
+            _role(True),
+            patch("core.db.get_connection", new=fake_get),
+            patch("core.csv_excel_import.build_preview", side_effect=reject_raw_contract),
+        ):
+            response = _build_client().post(
+                "/api/datastreams/ds_1/imports/preview", headers=_HDR, json=body
+            )
+        assert response.status_code == 422
+        assert response.json()["code"] == "invalid_import_contract"
+
     def test_parse_error_returns_422(self):
         _conn, fake_get = _fake_conn()
         from core.csv_excel_import import DuplicateColumns
@@ -185,17 +221,37 @@ class TestCsvExcelPreview:
         assert resp.status_code == 422
         assert resp.json()["code"] == "duplicate_columns"
 
+    def test_scan_rejected_file_never_reaches_the_parser(self):
+        # Story 38.10's invariant holds for the preview too: a PDF wearing a
+        # .csv filename is refused by the scan (unsupported_type) with a 422,
+        # and build_preview is never called.
+        _conn, fake_get = _fake_conn()
+        body = {
+            "project_id": "proj_alpha",
+            "file_base64": base64.b64encode(b"%PDF-1.4 fake payload").decode(),
+            "filename": "b.csv",
+        }
+        with (
+            _auth_ok(),
+            _role(True),
+            patch("core.db.get_connection", new=fake_get),
+            patch("core.csv_excel_import.build_preview") as builder,
+        ):
+            client = _build_client()
+            resp = client.post(
+                "/api/datastreams/ds_1/imports/preview", headers=_HDR, json=body
+            )
+        assert resp.status_code == 422
+        assert resp.json()["code"] == "unsupported_type"
+        builder.assert_not_called()
+
 
 class TestCsvExcelConfirm:
     def _body(self, **over):
         body = {
             "project_id": "proj_alpha",
-            "plan_version_id": "dsp_1",
-            "mapping_version_id": "dmap_1",
-            "projection_plan": {"executable": True},
-            "source_metadata": {"filename": "b.csv"},
-            "contract": {"format": "csv"},
             "idempotency_key": "idem-1",
+            "filename": "b.csv",
             "file_base64": _B64,
         }
         body.update(over)
@@ -218,22 +274,31 @@ class TestCsvExcelConfirm:
 
     def test_happy_path_returns_200(self):
         conn, fake_get = _fake_conn(fetchone=(False,))  # allow_empty_publication read
-        result = {"outcome": "written_pending_publication", "published": False, "blocked": False}
+        result = {"outcome": "published", "published": True, "blocked": False}
+        upload = {
+            "status": "landed",
+            "receipt_id": "inr_1",
+            "attachments": [{"raw_import_id": "iri_1"}],
+            "dispatch_result": result,
+        }
         with (
             _auth_ok(),
             _role(True),
             patch("core.db.get_connection", new=fake_get),
-            patch("core.csv_excel_import.run_import", return_value=result) as seam,
+            patch(
+                "core.inbound_processing.process_authorized_upload",
+                return_value=upload,
+            ) as seam,
         ):
             client = _build_client()
             resp = client.post(
                 "/api/datastreams/ds_1/imports", headers=_HDR, json=self._body()
             )
         assert resp.status_code == 200
-        assert resp.json()["outcome"] == "written_pending_publication"
+        assert resp.json()["outcome"] == "published"
         conn.commit.assert_called()
         # The confirm route decodes the base64 and forwards the raw bytes.
-        assert seam.call_args.args[0] == b"date,amount\n2026-01-01,10\n"
+        assert seam.call_args.kwargs["file_bytes"] == b"date,amount\n2026-01-01,10\n"
 
     def test_append_unavailable_returns_422(self):
         _conn, fake_get = _fake_conn(fetchone=(False,))
@@ -243,7 +308,10 @@ class TestCsvExcelConfirm:
             _auth_ok(),
             _role(True),
             patch("core.db.get_connection", new=fake_get),
-            patch("core.csv_excel_import.run_import", side_effect=AppendUnavailable()),
+            patch(
+                "core.inbound_processing.process_authorized_upload",
+                side_effect=AppendUnavailable(),
+            ),
         ):
             client = _build_client()
             resp = client.post(
@@ -261,7 +329,7 @@ class TestCsvExcelConfirm:
             _role(True),
             patch("core.db.get_connection", new=fake_get),
             patch(
-                "core.csv_excel_import.run_import",
+                "core.inbound_processing.process_authorized_upload",
                 side_effect=ImportPayloadConflict(),
             ),
         ):
@@ -282,7 +350,19 @@ class TestCsvExcelConfirm:
                 headers=_HDR,
                 json=self._body(force_empty_publish=True),
             )
-        assert resp.status_code == 404
+        assert resp.status_code == 422
+        assert resp.json()["code"] == "empty_upload_not_supported"
+
+    def test_client_cannot_override_server_dispatch_authority(self):
+        body = self._body(projection_plan={"executable": True})
+        with _auth_ok():
+            client = _build_client()
+            resp = client.post(
+                "/api/datastreams/ds_1/imports", headers=_HDR, json=body
+            )
+        assert resp.status_code == 422
+        assert resp.json()["code"] == "server_resolved_dispatch_contract"
+        assert resp.json()["rejected_fields"] == ["projection_plan"]
 
 
 class TestImportContracts:
@@ -468,7 +548,7 @@ class TestSyncNowManagedFeed:
             _auth_ok(),
             _role(True),
             patch("core.db.get_connection", new=fake_get),
-            patch("core.admin_api._fetch_sync_schedule", return_value=None),
+            patch("core.file_import_api._fetch_sync_schedule", return_value=None),
         ):
             client = _build_client()
             resp = client.post(
@@ -485,7 +565,7 @@ class TestSyncNowManagedFeed:
             _auth_ok(),
             _role(True),
             patch("core.db.get_connection", new=fake_get),
-            patch("core.admin_api._fetch_sync_schedule", return_value=self._SCHEDULE),
+            patch("core.file_import_api._fetch_sync_schedule", return_value=self._SCHEDULE),
             patch("core.google_sheets_sync.run_sync", return_value=result),
         ):
             client = _build_client()
@@ -503,7 +583,7 @@ class TestSyncNowManagedFeed:
             _auth_ok(),
             _role(True),
             patch("core.db.get_connection", new=fake_get),
-            patch("core.admin_api._fetch_sync_schedule", return_value=self._SCHEDULE),
+            patch("core.file_import_api._fetch_sync_schedule", return_value=self._SCHEDULE),
             patch(
                 "core.google_sheets_sync.run_sync",
                 side_effect=NotImplementedError("PHASE_B_LIVE_BLOCKED: adapter"),
@@ -526,7 +606,7 @@ class TestSyncNowManagedFeed:
             _auth_ok(),
             _role(True),
             patch("core.db.get_connection", new=fake_get),
-            patch("core.admin_api._fetch_sync_schedule", return_value=self._SCHEDULE),
+            patch("core.file_import_api._fetch_sync_schedule", return_value=self._SCHEDULE),
             patch(
                 "core.google_sheets_sync.run_sync",
                 side_effect=QuotaViolation("hourly blocked"),
@@ -565,7 +645,7 @@ class TestStatusManagedFeedSync:
             _auth_ok(),
             _role(True),
             patch("core.db.get_connection", new=fake_get),
-            patch("core.admin_api._fetch_sync_schedule", return_value=schedule),
+            patch("core.file_import_api._fetch_sync_schedule", return_value=schedule),
             patch("core.managed_feed_ledger.list_ledger", return_value=[{"id": "mfl_1"}]),
             patch(
                 "core.google_sheets_sync.describe_next_run",
@@ -736,7 +816,9 @@ def test_bounded_prepare_resolves_shared_project_flux_owner_scope():
             "core.admin_api._resolve_datastream_route_scope",
             return_value="proj_owner",
         ) as resolve_scope,
-        patch("core.admin_api._load_datastream_org_id", return_value="org_1") as load_org,
+        patch(
+            "core.datastream_recovery_api._load_datastream_org_id", return_value="org_1"
+        ) as load_org,
         patch(
             "core.bounded_recovery.prepare_bounded_recovery", return_value=result
         ) as prepare,
@@ -770,7 +852,7 @@ def test_bounded_confirm_pins_shared_project_flux_owner_and_server_trace():
             "core.admin_api._resolve_datastream_route_scope",
             return_value="proj_owner",
         ),
-        patch("core.admin_api._load_datastream_org_id", return_value="org_1"),
+        patch("core.datastream_recovery_api._load_datastream_org_id", return_value="org_1"),
         patch("core.admin_api.os.urandom", return_value=b"a" * 16),
         patch("core.bounded_recovery.confirm_bounded_recovery", return_value=result) as confirm,
     ):
@@ -795,131 +877,6 @@ def test_bounded_confirm_pins_shared_project_flux_owner_and_server_trace():
 # ---------------------------------------------------------------------------
 # 12.12 -- safe replace / append / rollback
 # ---------------------------------------------------------------------------
-
-
-class TestRollbackPreview:
-    def test_missing_project_id_returns_400(self):
-        with _auth_ok():
-            client = _build_client()
-            resp = client.get("/api/datastreams/ds_1/rollback/preview", headers=_HDR)
-        assert resp.status_code == 400
-
-    def test_role_denied_returns_404(self):
-        _conn, fake_get = _fake_conn()
-        with _auth_ok(), _role(False), patch("core.db.get_connection", new=fake_get):
-            client = _build_client()
-            resp = client.get(
-                "/api/datastreams/ds_1/rollback/preview?project_id=proj_alpha",
-                headers=_HDR,
-            )
-        assert resp.status_code == 404
-
-    def test_happy_path_returns_200(self):
-        _conn, fake_get = _fake_conn()
-        preview = {"available": True, "target_execution_id": "dse_prior", "expired": False}
-        with (
-            _auth_ok(),
-            _role(True),
-            patch("core.db.get_connection", new=fake_get),
-            patch("core.dataset_recovery.preview_rollback", return_value=preview),
-        ):
-            client = _build_client()
-            resp = client.get(
-                "/api/datastreams/ds_1/rollback/preview?project_id=proj_alpha",
-                headers=_HDR,
-            )
-        assert resp.status_code == 200
-        assert resp.json()["target_execution_id"] == "dse_prior"
-
-
-class TestRollbackDataset:
-    def _body(self, **over):
-        body = {"project_id": "proj_alpha", "target_execution_id": "dse_prior"}
-        body.update(over)
-        return body
-
-    def test_401_without_auth(self):
-        with _auth_fail():
-            client = _build_client()
-            resp = client.post("/api/datastreams/ds_1/rollback", json=self._body())
-        assert resp.status_code == 401
-
-    def test_missing_target_returns_422(self):
-        _conn, fake_get = _fake_conn()
-        with _auth_ok(), _role(True), patch("core.db.get_connection", new=fake_get):
-            client = _build_client()
-            resp = client.post(
-                "/api/datastreams/ds_1/rollback",
-                headers=_HDR,
-                json={"project_id": "proj_alpha"},
-            )
-        assert resp.status_code == 422
-
-    def test_role_denied_returns_404(self):
-        _conn, fake_get = _fake_conn()
-        with _auth_ok(), _role(False), patch("core.db.get_connection", new=fake_get):
-            client = _build_client()
-            resp = client.post(
-                "/api/datastreams/ds_1/rollback", headers=_HDR, json=self._body()
-            )
-        assert resp.status_code == 404
-
-    def test_happy_path_returns_200(self):
-        conn, fake_get = _fake_conn()
-        result = {"rolled_back_from": "dse_cur", "rolled_back_to": "dse_prior"}
-        with (
-            _auth_ok(),
-            _role(True),
-            patch("core.db.get_connection", new=fake_get),
-            patch("core.dataset_recovery.rollback_dataset", return_value=result),
-        ):
-            client = _build_client()
-            resp = client.post(
-                "/api/datastreams/ds_1/rollback", headers=_HDR, json=self._body()
-            )
-        assert resp.status_code == 200
-        assert resp.json()["rolled_back_to"] == "dse_prior"
-        conn.commit.assert_called()
-
-    def test_window_expired_returns_409(self):
-        _conn, fake_get = _fake_conn()
-        from core.dataset_recovery import RollbackWindowExpired
-
-        with (
-            _auth_ok(),
-            _role(True),
-            patch("core.db.get_connection", new=fake_get),
-            patch(
-                "core.dataset_recovery.rollback_dataset",
-                side_effect=RollbackWindowExpired("2026-01-01T00:00:00Z", "resolved_window"),
-            ),
-        ):
-            client = _build_client()
-            resp = client.post(
-                "/api/datastreams/ds_1/rollback", headers=_HDR, json=self._body()
-            )
-        assert resp.status_code == 409
-        assert resp.json()["code"] == "rollback_window_expired"
-
-    def test_gate_failed_returns_422(self):
-        _conn, fake_get = _fake_conn()
-        from core.dataset_recovery import RollbackGateFailed
-
-        with (
-            _auth_ok(),
-            _role(True),
-            patch("core.db.get_connection", new=fake_get),
-            patch(
-                "core.dataset_recovery.rollback_dataset",
-                side_effect=RollbackGateFailed([{"code": "empty_candidate"}]),
-            ),
-        ):
-            client = _build_client()
-            resp = client.post(
-                "/api/datastreams/ds_1/rollback", headers=_HDR, json=self._body()
-            )
-        assert resp.status_code == 422
-        assert resp.json()["issues"][0]["code"] == "empty_candidate"
 
 
 class TestPreflightReplace:
@@ -1143,7 +1100,7 @@ class TestDatastreamReadModel:
                 return_value=[{"id": "dmap_1"}],
             ),
             patch(
-                "core.admin_api._read_current_published_execution",
+                "core.datastreams_api._read_current_published_execution",
                 return_value="dse_pub",
             ),
             patch(
@@ -1151,11 +1108,11 @@ class TestDatastreamReadModel:
                 return_value={"id": "dse_pub", "state": "published", "row_count": 42},
             ),
             patch(
-                "core.admin_api._read_current_candidate_execution",
+                "core.datastreams_api._read_current_candidate_execution",
                 return_value={"id": "dse_cand", "state": "validating"},
             ),
             patch(
-                "core.admin_api._read_latest_execution",
+                "core.datastreams_api._read_latest_execution",
                 return_value={"id": "dse_failed", "state": "failed"},
             ),
             patch(

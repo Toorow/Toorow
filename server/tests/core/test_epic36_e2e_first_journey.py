@@ -167,7 +167,7 @@ class TestLiveFirstJourney:
         with psycopg.connect(_DSN) as conn, conn.cursor() as cur:
             self._require_schema(cur)
 
-    def test_full_journey_invitation_to_reproduction(self):
+    def test_full_journey_invitation_to_reproduction(self, monkeypatch):
         """Invitation -> accept -> handoff -> exposure -> draft -> pull -> readiness
         -> host bind -> render -> second-user reproduction, asserting each
         transition + the audit/outbox trail.
@@ -181,10 +181,21 @@ class TestLiveFirstJourney:
         """
         import psycopg
 
-        os.environ.setdefault("TOOROW_INVITATION_PEPPER", "e2e-invitation-pepper-0000000000")
-        os.environ.setdefault("TOOROW_HANDOFF_PEPPER", "e2e-handoff-pepper-000000000000000")
-        os.environ.setdefault("TOOROW_INVITATION_ORIGIN", "https://console.toorow.test")
-        os.environ.setdefault("TOOROW_HANDOFF_ORIGIN", "https://console.toorow.test")
+        # `monkeypatch.setenv`, never `os.environ.setdefault`: the four levers
+        # below were LEFT SET when this test finished, so every module collected
+        # after it signed invitations and handoffs with this file's test pepper.
+        # Found on 2026-09-01 by `tests/env_leak_guard.py`, which is the whole
+        # reason that guard exists -- nothing here failed, somebody else's module
+        # would have. `setdefault` keeps its meaning: an origin or a pepper the
+        # session already declares is not overwritten.
+        for lever, value in (
+            ("TOOROW_INVITATION_PEPPER", "e2e-invitation-pepper-0000000000"),
+            ("TOOROW_HANDOFF_PEPPER", "e2e-handoff-pepper-000000000000000"),
+            ("TOOROW_INVITATION_ORIGIN", "https://console.toorow.test"),
+            ("TOOROW_HANDOFF_ORIGIN", "https://console.toorow.test"),
+        ):
+            if lever not in os.environ:
+                monkeypatch.setenv(lever, value)
 
         suffix = uuid.uuid4().hex[:12]
         org_id = f"org_e2e_{suffix}"
@@ -214,8 +225,23 @@ class TestLiveFirstJourney:
                 # ONE operation transaction path (Story 36.2 AC6).
                 assert before_ops >= 0
             finally:
-                with conn.cursor() as cur:
-                    cur.execute("DELETE FROM app.organizations WHERE id = %s", (org_id,))
+                # `purge_org_tree` FIRST, then the org row -- the contract of
+                # `core.org_purge`. A bare `DELETE FROM app.organizations` is what
+                # this teardown used to do, and it cannot work: children like
+                # `mdm_business_domains` are ON DELETE RESTRICT, so the delete
+                # fails on a foreign key, and the append-only ledgers inside the
+                # tree refuse a DELETE that does not flag itself (migration 098).
+                # The purge walks the FK graph and sets `app.rgpd_erasure` for
+                # exactly that reason.
+                #
+                # It also matters beyond this test: a direct SQL delete leaves the
+                # organization's BigQuery datasets orphaned, because
+                # `drop_org_schemas` is only called by `DELETE /api/organizations`.
+                # A teardown that teaches the wrong deletion is a teardown that
+                # will be copied.
+                from tests.conftest import purge_fixture_org  # noqa: PLC0415
+
+                purge_fixture_org(conn, org_id)
                 conn.commit()
 
 
@@ -284,19 +310,30 @@ class TestOfflineSecurityMatrix:
 
         # A suspended/invited owner resolves to role None (no manage authority), so a
         # downgrade/removal path evaluating owner-floor cannot silently drop the last
-        # active owner: an org with members but this identity inactive => None.
-        conn, _ = _conn(("active", True, None))  # status, has_active_members, role NULL
+        # active owner. Story 46.4 made the query itself say this: it joins
+        # `app.org_members` with `status='active'`, so an inactive identity simply
+        # returns no row -- and answers `(role,)`, not the old three-column shape.
+        conn, _ = _conn(None)
         assert resolve_org_role("org-1", "ex-owner@corp.test", conn, auth_mode="enabled") is None
-        # An org with ZERO active members re-opens to owner (documented 7.4 parity),
-        # which is why the last-owner guard lives on the mutation paths, not reads.
-        conn2, _ = _conn(("active", False, None))
-        assert resolve_org_role("org-1", "any@corp.test", conn2, auth_mode="enabled") == "owner"
+        # The "zero active members re-opens to owner" parity of 7.4 is GONE with the
+        # same story: an organization with no member opens to nobody, which is why
+        # `test_org_enforcement.test_production_never_opens_an_unclaimed_organization`
+        # now asserts the opposite of what it used to.
+        conn2, _ = _conn(None)
+        assert resolve_org_role("org-1", "any@corp.test", conn2, auth_mode="enabled") is None
+        # An ACTIVE membership row is the only thing that yields a role.
+        conn3, _ = _conn(("owner",))
+        assert resolve_org_role("org-1", "owner@corp.test", conn3, auth_mode="enabled") == "owner"
 
     # --- hidden-tool DIRECT call denial -- mcp_profiles --------------------
     def test_hidden_tool_direct_call_is_denied_even_when_absent_from_discovery(self, monkeypatch):
         from core import mcp_profiles
 
         proof_grants = {
+            # 67-16: `attested_context_id` is stamped by `_capability_context` after
+            # it reads a LIVE app.mcp_capability_contexts row. A caller cannot put it
+            # in its own claims -- the grants dict is rebuilt from the row.
+            "attested_context_id": "mcpctx_TESTATTESTED",
             "enabled_profiles": ["operations"],
             "endpoint_binding": "ep-1",
             "workspace_evidence_hash": "a" * 64,
@@ -314,17 +351,22 @@ class TestOfflineSecurityMatrix:
         # Even WITH a proof, an anonymous caller only ever sees insights.
         anon = mcp_profiles.visible_profiles("anonymous", {}, proof_grants)
         assert anon == frozenset({"insights"})
-        # FAIL-CLOSED (review C1): even a well-formed self-reported proof does NOT unlock
-        # high-risk profiles unless the deployment explicitly opts in -- the evidence is
-        # not yet server-verified against the bound capability-context row.
-        monkeypatch.delenv("TOOROW_MCP_HIGHRISK_ENABLED", raising=False)
-        assert mcp_profiles.visible_profiles("agent@corp.test", {"host": "h"}, proof_grants) == (
+        # FAIL-CLOSED (review C1, decided 67-16): a well-formed SELF-REPORTED proof
+        # does not unlock high-risk profiles. What used to stand in for the missing
+        # verification was a deployment-wide TOOROW_MCP_HIGHRISK_ENABLED flag, which
+        # was either shut (governed writes unreachable everywhere) or open (every
+        # claim believed). The flag is retired: setting it changes nothing, because
+        # the unlock now requires the grants to have been ATTESTED against a live
+        # app.mcp_capability_contexts row.
+        monkeypatch.setenv("TOOROW_MCP_HIGHRISK_ENABLED", "1")
+        forged = {k: v for k, v in proof_grants.items() if k != "attested_context_id"}
+        assert mcp_profiles.visible_profiles("agent@corp.test", {"host": "h"}, forged) == (
             frozenset({"insights"})
         )
-        # With the deployment opt-in on, authenticated identity + endpoint + 64-hex
-        # evidence raises above insights -- proves the gate is fail-closed, not permanently
-        # closed.
-        monkeypatch.setenv("TOOROW_MCP_HIGHRISK_ENABLED", "1")
+        # With the context attested, authenticated identity + endpoint + 64-hex
+        # evidence raises above insights -- the gate is fail-closed, not permanently
+        # closed. The attested path is proved end to end against a real row in
+        # `tests/core/test_mcp_capability_attestation_pg.py`.
         proven = mcp_profiles.visible_profiles("agent@corp.test", {"host": "h"}, proof_grants)
         assert "operations" in proven
 

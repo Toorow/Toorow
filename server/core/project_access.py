@@ -1,29 +1,4 @@
-"""toorow -- Per-identity project access control (Story 7.4, AD-5, FR12).
-
-The single enforcement point for "does this identity reach this project?". This
-turns the AD-5 addressing tree (Project -> Tool -> Auth -> Report -> Dimension)
-from a promise into an enforced property: no component reads data outside its
-resolved project scope.
-
-DEFAULT-OPEN FALLBACK (single-tenant compat)
---------------------------------------------
-At P3-dev the admin API uses a single shared Bearer token: any holder is "the
-admin". To make the ACL real WITHOUT breaking that single-tenant deployment (or
-the existing test suite), enforcement is *per-project* and *opt-in by data*:
-
-  - A project with ZERO rows in ``app.project_members`` is OPEN: every identity
-    is granted (this is the historical behaviour and keeps existing tests green).
-  - A project with >= 1 membership row is CLOSED: only enrolled identities pass.
-
-An agency deployment thus onboards project-by-project by inserting membership
-rows; the moment the first row lands for a project, that project is scoped.
-
-By default the check fails OPEN on a DB error and logs at debug. Callers
-guarding governed resources pass ``fail_closed=True`` and receive a
-``ProjectAccessUnavailable`` error instead. Isolation is a data property proven
-by the live-Postgres suite; the resilience default keeps legacy DB-less callers
-available. The hard proof lives in ``server/tests/isolation/``.
-"""
+"""Fail-closed Organization and Project access resolution (AD-5)."""
 
 from __future__ import annotations
 
@@ -33,182 +8,14 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-# Identities that are always allowed (dev / disabled-auth mode). "anonymous" is
-# the subject injected by api_auth when TOOROW_AUTH_MODE=disabled.
-_ALWAYS_ALLOWED = frozenset({"anonymous"})
-
 
 class ProjectAccessUnavailable(RuntimeError):
-    """Raised when a caller requests a fail-closed scope decision."""
+    """Raised when a Project access decision cannot be verified."""
 
-
-_ROLE_ORDER = {"viewer": 1, "member": 2, "owner": 3}
-
-
-def resolve_project_role(
-    project_id: str,
-    identity: str,
-    conn,
-    *,
-    auth_mode: str | None = None,
-) -> str | None:
-    """Resolve an active-project role without the legacy default-open fallback."""
-
-    mode = (auth_mode or os.environ.get("TOOROW_AUTH_MODE", "disabled")).strip().lower()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT pm.role, p.status
-                FROM app.projects p
-                LEFT JOIN app.project_members pm
-                  ON pm.project_id = p.id AND pm.identity = %s
-                WHERE p.id = %s
-                """,
-                (identity, project_id),
-            )
-            row = cur.fetchone()
-    except Exception as exc:
-        raise ProjectAccessUnavailable("project role could not be verified") from exc
-
-    if row is None:
-        return None  # nonexistent project: deny without disclosing existence (AC9)
-    if not isinstance(row, (tuple, list)) or len(row) < 2:
-        raise ProjectAccessUnavailable("project role returned an invalid result")
-    role, project_status = row[:2]
-    if project_status != "active":
-        return None
-    if mode == "disabled" and identity == "anonymous":
-        return "owner"
-    if role not in _ROLE_ORDER:
-        return None
-    return str(role)
-
-
-def identity_has_project_role(
-    project_id: str,
-    identity: str,
-    minimum_role: str,
-    conn,
-    *,
-    auth_mode: str | None = None,
-) -> bool:
-    """Return whether the strict resolved role meets ``minimum_role``."""
-
-    if minimum_role not in _ROLE_ORDER:
-        raise ValueError(f"unknown project role: {minimum_role}")
-    role = resolve_project_role(
-        project_id,
-        identity,
-        conn,
-        auth_mode=auth_mode,
-    )
-    return role is not None and _ROLE_ORDER[role] >= _ROLE_ORDER[minimum_role]
-
-
-def identity_has_project_access(
-    project_id: str, identity: str, conn, *, fail_closed: bool = False
-) -> bool:
-    """Return True if *identity* may access *project_id*.
-
-    Args:
-        project_id: The resolved project id (post project_resolver).
-        identity:   The subject string from the access token (AD-14). "anonymous"
-                    in disabled-auth dev mode.
-        conn:       An open psycopg connection (caller owns its lifecycle).
-
-    Returns:
-        True  -- access granted (member of the project, OR the project has no
-                 membership rows at all => default-open single-tenant compat, OR
-                 identity is the dev "anonymous" subject).
-        False -- the project HAS membership rows and this identity is not among
-                 them (multi-tenant scope violation).
-
-    By default, DB errors fail open for legacy callers. With ``fail_closed=True``,
-    DB errors and invalid result shapes raise ProjectAccessUnavailable.
-    """
-    if identity in _ALWAYS_ALLOWED:
-        return True
-
-    try:
-        with conn.cursor() as cur:
-            # One round-trip: is this identity a member, and does the project have
-            # ANY members at all? EXISTS on both keeps it index-only and cheap.
-            cur.execute(
-                """
-                SELECT
-                    EXISTS (
-                        SELECT 1 FROM app.project_members
-                        WHERE project_id = %s AND identity = %s
-                    ) AS is_member,
-                    EXISTS (
-                        SELECT 1 FROM app.project_members
-                        WHERE project_id = %s
-                    ) AS project_has_members,
-                    -- review-epic-7 F-3: an ARCHIVED project is closed to
-                    -- everyone, default-open cannot resurrect it.
-                    EXISTS (
-                        SELECT 1 FROM app.projects
-                        WHERE id = %s AND status = 'archived'
-                    ) AS project_archived
-                """,
-                (project_id, identity, project_id, project_id),
-            )
-            row = cur.fetchone()
-    except Exception as exc:  # pragma: no cover - resilience path
-        if fail_closed:
-            raise ProjectAccessUnavailable("project access could not be verified") from exc
-        logger.debug(
-            "project_access: check_failed project=%s identity=%s (fail-open): %s",
-            project_id,
-            identity,
-            exc,
-        )
-        return True
-
-    # Mocked cursor (DB-less unit test) returns a non-tuple / Mock -> fail open.
-    if row is None or not isinstance(row, (tuple, list)) or len(row) < 2:
-        if fail_closed:
-            raise ProjectAccessUnavailable("project access returned an invalid result")
-        return True
-
-    is_member, project_has_members = bool(row[0]), bool(row[1])
-    if len(row) >= 3 and bool(row[2]):
-        return False  # review-epic-7 F-3: archived project is closed to everyone
-
-    # Default-open: a project with no membership rows is reachable by anyone.
-    if not project_has_members:
-        return True
-
-    # Scoped: the project is enrolled -> only members pass.
-    return is_member
-
-
-# ===========================================================================
-# Story 21.5 -- ORG-LEVEL access resolution (Epic 21, FR37/CAP-25).
-#
-# The Story 7.4 pivot above is per-PROJECT (project_members). Epic 21 adds an
-# ORGANIZATION layer above the project. These functions are the org-aware twin,
-# following the SAME default-open-until-enrolled pattern (human decision), so the
-# 21.1-21.4 stack stays green (their orgs have zero members -> open, or are
-# created via the admin API whose creator is auto-enrolled -> creator passes).
-#
-# DEFAULT-OPEN-UNTIL-ENROLLED (per human; Epic 21 decisions 4 & 6):
-#   - An org with ZERO rows in app.org_members is OPEN: any identity acts as owner
-#     (single-tenant / not-yet-onboarded compat).
-#   - An org with >= 1 member is CLOSED: only enrolled identities pass, with role.
-#   - owner/admin see EVERYTHING in the org (downward visibility: nothing a member
-#     creates is ever hidden UPWARD from an owner/admin).
-#   - member/viewer with ZERO project grants -> see ALL org projects (default).
-#     The first resource_grants row (scope_type='project') for that (org, identity)
-#     engages the allow-list: from then on they see ONLY granted projects.
-#   - The dev/disabled-auth subject "anonymous" is ALWAYS allowed (owner), exactly
-#     like the per-project functions above.
-#
-# RLS (2nd barrier) is Story 21.6; scoping the READ endpoints is a follow-up.
-# ===========================================================================
 
 _ORG_MANAGE_ROLES = frozenset({"owner", "admin"})
+_ROLE_CAPABILITY = {"viewer": "view", "member": "edit", "admin": "manage", "owner": "manage"}
+_CAPABILITY_ROLE = {"view": "viewer", "edit": "member", "manage": "owner"}
 
 
 def resolve_org_role(
@@ -218,142 +25,34 @@ def resolve_org_role(
     *,
     auth_mode: str | None = None,
 ) -> str | None:
-    """Resolve *identity*'s role in *org_id* under default-open-until-enrolled.
-
-    Mirrors the Story 7.4 per-project pivot, transposed to the org layer:
-      - disabled-auth + "anonymous" -> "owner" (dev / legacy short-circuit; this
-        returns BEFORE any DB query, like identity_has_project_access).
-      - org row missing -> None.
-      - org status != 'active' (archived) -> None (closed to all).
-      - org has ZERO members -> "owner" (DEFAULT-OPEN: unenrolled org is open, the
-        caller acts as owner).
-      - otherwise -> the enrolled role (may be None -> DENIED, default-closed).
-
-    Uses ONE round trip (status + has-members + this identity's role).
-    """
-    mode = (auth_mode or os.environ.get("TOOROW_AUTH_MODE", "disabled")).strip().lower()
-
-    # Disabled-auth dev/legacy: "anonymous" is owner. Short-circuit BEFORE any DB
-    # access so a DB-less caller (mock conn) never touches the cursor.
-    if mode == "disabled" and identity in _ALWAYS_ALLOWED:
-        return "owner"
-
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT
-                o.status,
-                EXISTS (
-                    SELECT 1 FROM app.org_members
-                    WHERE org_id = %s AND status = 'active'
-                ) AS has_active_members,
-                (
-                    SELECT role FROM app.org_members
-                    WHERE org_id = %s AND identity = %s AND status = 'active'
-                ) AS role
-            FROM app.organizations o
-            WHERE o.id = %s
-            """,
-            (org_id, org_id, identity, org_id),
-        )
-        row = cur.fetchone()
-
-    if row is None:
-        return None
-    status, has_active_members, role = row[0], bool(row[1]), row[2]
-    if status != "active":
-        return None  # archived org is closed to everyone, default-open cannot open it
-    # review-21.5 F-HIGH: only ACTIVE members count. A suspended/invited member
-    # resolves to role NULL (no manage rights); an org with zero ACTIVE members is
-    # OPEN (7.4 parity -- reopen-on-empty is a documented product decision, and the
-    # "cannot suspend/remove the last owner" guard belongs to the delete/downgrade
-    # paths built later).
-    if not has_active_members:
-        if epic36_production_access_enabled(auth_mode=mode):
-            return None  # Production never exposes an unclaimed tenant implicitly.
-        return "owner"  # Legacy/dev compatibility outside the production gate.
-    return str(role) if role is not None else None
+    """Return an active Organization membership role; never infer access."""
+    del auth_mode
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT m.role
+                FROM app.organizations o
+                JOIN app.org_members m
+                  ON m.org_id = o.id AND m.identity = %s AND m.status = 'active'
+                WHERE o.id = %s AND o.status = 'active'
+                """,
+                (identity, org_id),
+            )
+            row = cur.fetchone()
+    except Exception as exc:
+        raise ProjectAccessUnavailable("organization access could not be verified") from exc
+    return str(row[0]) if isinstance(row, (tuple, list)) and row else None
 
 
 def identity_can_manage_org(org_id: str, identity: str, conn) -> bool:
-    """Return True if *identity* is an owner/admin of *org_id* (manage capability).
-
-    Manage = mutate the org (patch, add members, expose credentials, link flux).
-    Under default-open-until-enrolled an unenrolled org resolves to "owner" -> True,
-    which is what keeps the 21.1-21.4 mutation tests green.
-    """
     return resolve_org_role(org_id, identity, conn) in _ORG_MANAGE_ROLES
 
 
 def identity_has_org_access(org_id: str, identity: str, conn) -> bool:
-    """Return True if *identity* may READ the org's resources (any role).
-
-    Story 21.5 follow-up (reads scoping): an identity can see an org it belongs to
-    (any active role), an org with zero active members (open), or when the dev
-    disabled-auth "anonymous" subject is used. A non-member of an enrolled org is
-    denied -> read endpoints return 404 (existence not disclosed, 7.4 pattern).
-    """
     return resolve_org_role(org_id, identity, conn) is not None
 
 
-def identity_can_access_project_in_org(project_id: str, identity: str, conn) -> bool:
-    """Return True if *identity* may reach *project_id* under Epic 21 resolution.
-
-    Algorithm (architecture-org-tenancy s5; Epic 21 decisions 4 & 6):
-      1. Resolve the project's org_id. Missing project -> False.
-      2. org_id IS NULL (legacy, no-org project) -> FALL BACK to the Story 7.4
-         per-project default-open (identity_has_project_access), preserving legacy
-         behaviour untouched.
-      3. role = resolve_org_role(org_id, identity). None -> False (default-closed).
-      4. role in {owner, admin} -> True (downward visibility: sees ALL org projects).
-      5. member/viewer -> default-open WITHIN the org UNLESS the identity holds >= 1
-         project grant; then the allow-list engages (only granted projects pass).
-    """
-    with conn.cursor() as cur:
-        cur.execute("SELECT org_id FROM app.projects WHERE id = %s", (project_id,))
-        row = cur.fetchone()
-
-    if row is None:
-        return False  # unknown project
-    org_id = row[0]
-    if org_id is None:
-        # Legacy no-org project: keep Story 7.4 per-project default-open behaviour.
-        return identity_has_project_access(project_id, identity, conn)
-
-    role = resolve_org_role(org_id, identity, conn)
-    if role is None:
-        return False  # default-closed: non-member of an enrolled org
-    if role in _ORG_MANAGE_ROLES:
-        return True  # owner/admin see everything in the org
-
-    # member/viewer: default-open within the org, allow-list from the 1st grant.
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT
-                EXISTS (
-                    SELECT 1 FROM app.resource_grants
-                    WHERE org_id = %s AND identity = %s AND scope_type = 'project'
-                ) AS has_project_grants,
-                EXISTS (
-                    SELECT 1 FROM app.resource_grants
-                    WHERE org_id = %s AND identity = %s
-                      AND scope_type = 'project' AND scope_id = %s
-                ) AS grants_this_project
-            """,
-            (org_id, identity, org_id, identity, project_id),
-        )
-        grow = cur.fetchone()
-
-    has_project_grants = bool(grow[0]) if grow is not None else False
-    grants_this_project = bool(grow[1]) if grow is not None else False
-    if not has_project_grants:
-        return True  # default: a member sees ALL projects of the org
-    return grants_this_project  # allow-list engaged: only granted projects pass
-
-
-# Story 36.1 -- strict AD-5 production access. Legacy helpers above intentionally
-# keep their brownfield semantics; every Epic 36 surface must call this seam.
 _CAPABILITY_ORDER = {"view": 1, "edit": 2, "manage": 3}
 
 
@@ -370,13 +69,6 @@ def _denied(reason: str) -> AccessDecision:
     return AccessDecision(False, reason)
 
 
-def epic36_production_access_enabled(*, auth_mode: str | None = None) -> bool:
-    """Return whether the default-off Epic 36 production gate can open."""
-    mode = (auth_mode or os.environ.get("TOOROW_AUTH_MODE", "disabled")).strip().lower()
-    enabled = os.environ.get("TOOROW_EPIC36_PRODUCTION_ENABLED", "false").strip().lower()
-    return enabled in {"1", "true", "yes"} and mode != "disabled"
-
-
 def resolve_strict_resource_access(
     identity: str,
     conn,
@@ -385,74 +77,184 @@ def resolve_strict_resource_access(
     datastream_id: str | None = None,
     minimum_capability: str = "view",
     auth_mode: str | None = None,
+    hold_access: bool = False,
+    include_archived_project: bool = False,
 ) -> AccessDecision:
-    """Resolve one project/Datastream path with no default-open fallback."""
+    """Resolve one project/Datastream path with no default-open fallback.
+
+    THE IDENTITY IS TRANSLATED HERE BECAUSE THIS IS WHERE IT IS COMPARED. Every
+    branch below matches `identity` against `app.org_members.identity`, which
+    carries the canonical `person_<ULID>`. Thirty MCP modules each keep their own
+    copy of `token.claims.get("sub", ...)` and hand this function a raw OIDC
+    subject, which matches no membership row: measured 2026-08-13, the owner of
+    the organization was denied `not_found` on their own active project while the
+    same call with their canonical id returned `owner_floor`.
+
+    Repairing the thirty copies would leave the thirty-first free to be wrong.
+    This is the single place all of them arrive at, so it is the place that
+    translates -- and the translation is a no-op for the HTTP path, which already
+    resolves its principal to a person before calling.
+    """
+    # AI-363 (amendment project-settings.md 2026-09-02): an archived Project
+    # stays VISIBLE to the identities that hold a capability on it -- but only
+    # to callers that say so. The default refuses archived rows exactly as
+    # before, so none of the thirty MCP modules changes behaviour; the three
+    # doors of projects_api (GET, DELETE, restore) pass the flag explicitly.
+    project_statuses = ("active", "archived") if include_archived_project else ("active",)
     if minimum_capability not in _CAPABILITY_ORDER:
         raise ValueError(f"unknown capability: {minimum_capability}")
+    # THE DECLARED EVALUATION IDENTITY, ratified 2026-08-24 in
+    # `docs/product-architecture/analyze-and-test.md` (AI-305). Two clauses, and
+    # the ORDER of them is the whole guarantee.
+    #
+    # First, the REFUSAL, and it is explicit rather than "not admitted". Outside a
+    # declared evaluation environment this identity is refused BEFORE any read, so
+    # its refusal in production cannot be overturned by a row: without this line,
+    # `TOOROW_AUTH_MODE=oauth` never enters the door below at all, and an
+    # `app.org_members` row for `person_EVALUATION` inserted in production would
+    # have been honoured like anybody's. Measured while writing the negative
+    # control test, which is why it is a line and not a comment.
+    from core.evaluation_identity import (  # noqa: PLC0415
+        evaluation_environment_declared,
+        is_evaluation_identity,
+    )
+
+    identity_is_evaluation = is_evaluation_identity(identity)
+    if identity_is_evaluation and not evaluation_environment_declared():
+        return _denied("production_identity_required")
+
     mode = (auth_mode or os.environ.get("TOOROW_AUTH_MODE", "disabled")).strip().lower()
     if not identity or identity == "anonymous" or mode == "disabled":
-        return _denied("production_identity_required")
+        # Second, the ADMISSION, and it is a DOOR, not a grant. The eval harness
+        # calls the tools in process, where auth is `disabled`, so this is the
+        # line it would otherwise die on -- as `anonymous` it did, and the
+        # business-path dimension of the corpus was mute because of it. Past here
+        # NOTHING is relaxed: the membership row, the organization status, the
+        # role and the capability floor are all still read below, so an
+        # evaluation run that is not a member is refused exactly like anyone else.
+        if not identity_is_evaluation:
+            return _denied("production_identity_required")
     if bool(project_id) == bool(datastream_id):
         return _denied("invalid_resource")
 
+    from core.identity_bridge import canonical_identity  # noqa: PLC0415
+
+    identity = canonical_identity(identity, conn)
+
     try:
-        with conn.cursor() as cur:
-            if project_id:
+        if hold_access:
+            with conn.cursor() as cur:
+                if project_id:
+                    cur.execute(
+                        """
+                        SELECT p.org_id, o.status
+                        FROM app.projects p
+                        JOIN app.organizations o ON o.id = p.org_id
+                        WHERE p.id = %s AND p.status = ANY(%s)
+                        FOR SHARE OF p, o
+                        """,
+                        (project_id, list(project_statuses)),
+                    )
+                    scope_type, scope_id = "project", project_id
+                else:
+                    cur.execute(
+                        """
+                        SELECT d.org_id, o.status
+                        FROM app.datastreams d
+                        JOIN app.organizations o ON o.id = d.org_id
+                        WHERE d.id = %s
+                        FOR SHARE OF d, o
+                        """,
+                        (datastream_id,),
+                    )
+                    scope_type, scope_id = "flux", datastream_id
+                scope_row = cur.fetchone()
+                if not isinstance(scope_row, (tuple, list)) or len(scope_row) < 2:
+                    return _denied("not_found")
+                org_id, org_status = scope_row[:2]
                 cur.execute(
                     """
-                    SELECT p.org_id, o.status, m.role, m.status
-                    FROM app.projects p
-                    JOIN app.organizations o ON o.id = p.org_id
-                    LEFT JOIN app.org_members m
-                      ON m.org_id = p.org_id AND m.identity = %s
-                    WHERE p.id = %s AND p.status = 'active'
+                    SELECT role, status
+                    FROM app.org_members
+                    WHERE org_id = %s AND identity = %s
+                    FOR SHARE
                     """,
-                    (identity, project_id),
+                    (org_id, identity),
                 )
-                row = cur.fetchone()
-                scope_type, scope_id = "project", project_id
-            else:
-                cur.execute(
-                    """
-                    SELECT d.org_id, o.status, m.role, m.status
-                    FROM app.datastreams d
-                    JOIN app.organizations o ON o.id = d.org_id
-                    LEFT JOIN app.org_members m
-                      ON m.org_id = d.org_id AND m.identity = %s
-                    WHERE d.id = %s
-                    """,
-                    (identity, datastream_id),
-                )
-                row = cur.fetchone()
-                scope_type, scope_id = "flux", datastream_id
-        if not isinstance(row, (tuple, list)) or len(row) < 4:
-            return _denied("not_found")
-        org_id, org_status, role, member_status = row[:4]
-        if org_status != "active" or member_status != "active" or role not in {
-            "owner", "admin", "member", "viewer"
-        }:
+                member_row = cur.fetchone()
+            if not isinstance(member_row, (tuple, list)) or len(member_row) < 2:
+                return _denied("not_found")
+            role, member_status = member_row[:2]
+        else:
+            with conn.cursor() as cur:
+                if project_id:
+                    cur.execute(
+                        """
+                        SELECT p.org_id, o.status, m.role, m.status
+                        FROM app.projects p
+                        JOIN app.organizations o ON o.id = p.org_id
+                        LEFT JOIN app.org_members m
+                          ON m.org_id = p.org_id AND m.identity = %s
+                        WHERE p.id = %s AND p.status = ANY(%s)
+                        """,
+                        (identity, project_id, list(project_statuses)),
+                    )
+                    row = cur.fetchone()
+                    scope_type, scope_id = "project", project_id
+                else:
+                    cur.execute(
+                        """
+                        SELECT d.org_id, o.status, m.role, m.status
+                        FROM app.datastreams d
+                        JOIN app.organizations o ON o.id = d.org_id
+                        LEFT JOIN app.org_members m
+                          ON m.org_id = d.org_id AND m.identity = %s
+                        WHERE d.id = %s
+                        """,
+                        (identity, datastream_id),
+                    )
+                    row = cur.fetchone()
+                    scope_type, scope_id = "flux", datastream_id
+            if not isinstance(row, (tuple, list)) or len(row) < 4:
+                return _denied("not_found")
+            org_id, org_status, role, member_status = row[:4]
+        if (
+            org_status != "active"
+            or member_status != "active"
+            or role not in {"owner", "admin", "member", "viewer"}
+        ):
             return _denied("not_found")
         path = (f"organization:{org_id}", f"{scope_type}:{scope_id}")
         if role == "owner":
             return AccessDecision(True, "owner_floor", "manage", str(org_id), path)
 
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT capability FROM app.resource_grants
-                WHERE org_id = %s AND identity = %s
-                  AND scope_type = %s AND scope_id = %s
-                """,
-                (org_id, identity, scope_type, scope_id),
-            )
+            grant_params = (org_id, identity, scope_type, scope_id)
+            if hold_access:
+                cur.execute(
+                    """
+                    SELECT capability FROM app.resource_grants
+                    WHERE org_id = %s AND identity = %s
+                      AND scope_type = %s AND scope_id = %s
+                    FOR SHARE
+                    """,
+                    grant_params,
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT capability FROM app.resource_grants
+                    WHERE org_id = %s AND identity = %s
+                      AND scope_type = %s AND scope_id = %s
+                    """,
+                    grant_params,
+                )
             grant = cur.fetchone()
         if not isinstance(grant, (tuple, list)) or not grant:
             return _denied("grant_required")
         capability = str(grant[0])
         role_cap = {"viewer": "view", "member": "edit", "admin": "manage"}[str(role)]
-        effective_rank = min(
-            _CAPABILITY_ORDER.get(capability, 0), _CAPABILITY_ORDER[role_cap]
-        )
+        effective_rank = min(_CAPABILITY_ORDER.get(capability, 0), _CAPABILITY_ORDER[role_cap])
         if effective_rank < _CAPABILITY_ORDER[minimum_capability]:
             return _denied("insufficient_capability")
         effective = next(k for k, v in _CAPABILITY_ORDER.items() if v == effective_rank)
@@ -460,6 +262,169 @@ def resolve_strict_resource_access(
     except Exception:
         logger.exception("strict resource access unavailable")
         return _denied("access_unavailable")
+
+
+def project_exists(project_id: str, conn, *, include_archived: bool = False) -> bool:
+    """True when *project_id* names an ACTIVE row of app.projects.
+
+    Existence and authorization are two different questions, and the
+    disabled-auth developer bypass answers only the second. Without this, `make
+    dev` granted every capability on every string: `?project_id=proj_TYPO`
+    passed the gate and the handler answered `200 {"topics": []}` -- an
+    invented project that reads as an empty one. The strict seam already
+    refuses it with a 404, so the two modes disagreed on the same URL (live
+    finding C1: 200 here, 404 on the taxonomy routes, 500 on an outage).
+
+    Fail-closed: an unreachable table is NOT an existing project.
+    """
+    if not project_id:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM app.projects WHERE id = %s AND status = ANY(%s)",
+                (project_id, ["active", "archived"] if include_archived else ["active"]),
+            )
+            return cur.fetchone() is not None
+    except Exception:
+        logger.warning("project existence could not be verified: %s", project_id)
+        return False
+
+
+def identity_can_read_project(
+    project_id: str,
+    identity: str,
+    conn,
+    *,
+    fail_closed: bool = True,
+    auth_mode: str | None = None,
+) -> bool:
+    """Return the strict Project read decision; no default-open mode exists."""
+    del fail_closed
+    return resolve_strict_resource_access(
+        identity,
+        conn,
+        project_id=project_id,
+        minimum_capability="view",
+        auth_mode=auth_mode,
+    ).allowed
+
+
+def identity_has_project_role(
+    project_id: str,
+    identity: str,
+    minimum_role: str,
+    conn,
+    *,
+    auth_mode: str | None = None,
+) -> bool:
+    """Map legacy role floors onto the strict effective capability model."""
+    capability = _ROLE_CAPABILITY.get(minimum_role)
+    if capability is None:
+        raise ValueError(f"unknown project role: {minimum_role}")
+    return resolve_strict_resource_access(
+        identity,
+        conn,
+        project_id=project_id,
+        minimum_capability=capability,
+        auth_mode=auth_mode,
+    ).allowed
+
+
+def identity_can_access_project_in_org(project_id: str, identity: str, conn) -> bool:
+    """Compatibility name for the same strict Project read decision."""
+    return identity_can_read_project(project_id, identity, conn)
+
+
+def effective_project_role(project_id: str, identity: str, conn) -> str | None:
+    """Return a role-shaped label derived from strict effective capability."""
+    decision = resolve_strict_resource_access(identity, conn, project_id=project_id)
+    return _CAPABILITY_ROLE.get(decision.capability) if decision.allowed else None
+
+
+#: The reason an authority carries when it comes from a Datastream's stored
+#: activation rather than from the person standing in front of the screen.
+SCHEDULED_ACTIVATION = "scheduled_activation"
+
+
+def resolve_scheduled_account_access(
+    conn,
+    *,
+    credential_id: str,
+    external_account_id: str,
+    beneficiary_org_id: str,
+    datastream_id: str,
+) -> AccessDecision:
+    """The clock's authority to pull: the ACTIVATION, not a person. (AI-301)
+
+    WHY THIS EXISTS. `resolve_provider_account_access` opens on
+    `resolve_strict_resource_access(identity, ...)`, which answers from
+    `app.org_members`. The nightly dispatcher has no identity and no membership,
+    so it was denied `not_found` on every window -- measured on production
+    2026-08-17, with the deployed `TOOROW_AUTH_MODE=oauth`:
+
+        scheduler   -> allowed=False reason=not_found
+        the owner   -> allowed=True  reason=owner_account_floor
+
+    and the whole platform collected nothing from 2026-08-12 to 2026-08-17.
+
+    THE BRANCH NOT TAKEN, and it was already refused in writing. Giving the clock
+    a service identity is what `db.background_connection` rejects: "it would need
+    an `app.org_members` row per organization for an actor who is nobody, which
+    fabricates a member in the membership registry". A membership that names
+    nobody would then be indistinguishable from one that names someone.
+
+    SO THE AUTHORITY IS THE ONE THAT ALREADY EXISTS. A person authorized this
+    pull when they ACTIVATED the Datastream against this account; the row is that
+    decision, still standing. This function re-reads it at every dispatch rather
+    than trusting it once: a Datastream turned off, archived, left as a draft or
+    belonging to another organization carries no authority tonight, whatever it
+    carried when someone pressed the button.
+
+    WHAT IS NOT RELAXED, and it is most of the gate. Only the FIRST link changes.
+    Credential owner still active, connection health, account scope still `ready`,
+    the account still `available`, and the exposure -- owner floor or an active
+    `credential_account_grants` row -- are all re-validated unchanged by
+    `resolve_provider_account_access` below, because none of them asks who is
+    calling. Revoke the grant, unverify the account or archive the Datastream and
+    the clock stops, tonight.
+    """
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT org_id, enabled, lifecycle_state, archived_at
+                FROM app.datastreams WHERE id = %s
+                """,
+                (datastream_id,),
+            )
+            row = cur.fetchone()
+    except Exception:
+        logger.exception("scheduled account access unavailable")
+        return _denied("access_unavailable")
+    if not row:
+        return _denied("not_found")
+    org_id, enabled, lifecycle_state, archived_at = row[:4]
+    if org_id != beneficiary_org_id:
+        return _denied("not_found")
+    if not enabled or lifecycle_state != "active" or archived_at is not None:
+        return _denied("datastream_not_active")
+    activation = AccessDecision(
+        True,
+        SCHEDULED_ACTIVATION,
+        "view",
+        beneficiary_org_id,
+        (f"datastream:{datastream_id}",),
+    )
+    return resolve_provider_account_access(
+        "",
+        conn,
+        credential_id=credential_id,
+        external_account_id=external_account_id,
+        beneficiary_org_id=beneficiary_org_id,
+        datastream_id=datastream_id,
+        _resource=activation,
+    )
 
 
 def resolve_provider_account_access(
@@ -471,9 +436,16 @@ def resolve_provider_account_access(
     beneficiary_org_id: str,
     project_id: str | None = None,
     datastream_id: str | None = None,
+    _resource: AccessDecision | None = None,
 ) -> AccessDecision:
-    """Revalidate one exact provider-account exposure before provider use."""
-    resource = resolve_strict_resource_access(
+    """Revalidate one exact provider-account exposure before provider use.
+
+    `_resource` lets a caller supply the authority for the FIRST link instead of
+    resolving it from a human identity -- see `resolve_scheduled_account_access`,
+    which is the only caller that passes it. Everything after that link is
+    unchanged and still runs: it does not depend on who is asking.
+    """
+    resource = _resource or resolve_strict_resource_access(
         identity,
         conn,
         project_id=project_id,
@@ -493,7 +465,15 @@ def resolve_provider_account_access(
                 JOIN app.credential_accounts ca
                   ON ca.credential_id = cr.id AND ca.external_account_id = %s
                 LEFT JOIN app.connection_health h ON h.connection_ref_id = cr.id
-                LEFT JOIN app.connection_account_scope s ON s.connection_ref_id = cr.id
+                -- The scope OF THIS ACCOUNT. Joined on the credential alone, it
+                -- answered with whichever account happened to be selected under
+                -- that authorization -- so access to account A was decided on
+                -- the verification state of account B. One row per credential
+                -- hid it; migration 211 allows several, and the question was
+                -- always account-shaped.
+                LEFT JOIN app.connection_account_scope s
+                  ON s.connection_ref_id = cr.id
+                 AND s.account_id = ca.external_account_id
                 WHERE cr.id = %s
                 """,
                 (external_account_id, credential_id),
@@ -504,17 +484,35 @@ def resolve_provider_account_access(
         owner_org, owner_status, health, scope_state, selected_account, available = account[:6]
         if owner_status != "active":
             return _denied("credential_owner_inactive")
-        if health != "ok":
+        # `stale` is not broken -- it is "a refresh is due", which is the normal
+        # state of a Google credential one hour after consent (an access token
+        # lives 60 minutes; the refresh happens at use, not on a timer). Denying
+        # on it made every Google authorization unusable an hour after it was
+        # created: reading its catalog, creating a Datastream from it and
+        # scheduling it all answered `connection_unhealthy`, while the credential
+        # was perfectly able to refresh itself on the next call. Only a health
+        # that says the authorization is GONE closes the door; `unknown` (health
+        # never polled) does too, because nothing has been verified.
+        #
+        # AI-341: `provider_denied` does NOT close it. The authorization is
+        # alive -- the provider refuses the data -- and the daily probe this
+        # door admits is exactly the detector of restoration: the first
+        # verified `ok` pull lifts the red with no console gesture. Closing
+        # here would deadlock the red behind the door that detects its repair
+        # (execution-substrate.md, Decided 2026-08-31).
+        if health not in ("ok", "stale", "provider_denied"):
             return _denied("connection_unhealthy")
         if scope_state != "ready" or selected_account != external_account_id or not available:
             return _denied("account_not_ready")
-        if resource.reason == "owner_floor" and owner_org == beneficiary_org_id:
+        if (
+            resource.reason in ("owner_floor", SCHEDULED_ACTIVATION)
+            and owner_org == beneficiary_org_id
+        ):
             path = resource.resource_path + (
-                f"credential:{credential_id}", f"account:{external_account_id}"
+                f"credential:{credential_id}",
+                f"account:{external_account_id}",
             )
-            return AccessDecision(
-                True, "owner_account_floor", "manage", beneficiary_org_id, path
-            )
+            return AccessDecision(True, "owner_account_floor", "manage", beneficiary_org_id, path)
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -528,7 +526,8 @@ def resolve_provider_account_access(
         if not exposure:
             return _denied("account_exposure_required")
         path = resource.resource_path + (
-            f"credential:{credential_id}", f"account:{external_account_id}"
+            f"credential:{credential_id}",
+            f"account:{external_account_id}",
         )
         return AccessDecision(
             True, "exact_account_exposure", resource.capability, beneficiary_org_id, path

@@ -95,7 +95,7 @@ def test_live_postgres_context_triggers_and_constraints(live_postgres) -> None:
                 "UPDATE app.context_topics_versions SET title = 'New Title' WHERE topic_id = %s",
                 (topic_id,),
             )
-    assert exc_info.value.pgcode == "P0001"
+    assert exc_info.value.sqlstate == "P0001"
     conn.rollback()
 
     # 2. Trigger rejects DELETE on procedures_versions -- tightened to exact pgcode (Fix 6).
@@ -105,7 +105,7 @@ def test_live_postgres_context_triggers_and_constraints(live_postgres) -> None:
                 "DELETE FROM app.procedures_versions WHERE procedure_id = %s",
                 (proc_id,),
             )
-    assert exc_info.value.pgcode == "P0001"
+    assert exc_info.value.sqlstate == "P0001"
     conn.rollback()
 
     # 3. schema_context UNIQUE on (project_id, relation, doc_kind)
@@ -206,7 +206,13 @@ def test_live_postgres_context_triggers_and_constraints(live_postgres) -> None:
 
 @requires_postgres
 def test_truncate_blocked_on_context_topics_versions(live_postgres) -> None:
-    """TRUNCATE on context_topics_versions must raise (Fix 1: BEFORE TRUNCATE trigger)."""
+    """TRUNCATE on context_topics_versions must raise (Fix 1: BEFORE TRUNCATE trigger).
+
+    CASCADE is required since migration 173: app.answerable_topic_knowledge_bindings
+    holds a FK to this table, and PostgreSQL refuses a bare TRUNCATE with 0A000
+    before any trigger fires. CASCADE waives that check, so the BEFORE TRUNCATE
+    trigger under test is what actually raises (P0001).
+    """
     import psycopg.errors
 
     conn = live_postgres
@@ -216,14 +222,20 @@ def test_truncate_blocked_on_context_topics_versions(live_postgres) -> None:
 
     with conn.cursor() as cur:
         with pytest.raises(psycopg.errors.RaiseException) as exc_info:
-            cur.execute("TRUNCATE app.context_topics_versions")
-    assert exc_info.value.pgcode == "P0001"
+            cur.execute("TRUNCATE app.context_topics_versions CASCADE")
+    assert exc_info.value.sqlstate == "P0001"
     conn.rollback()
 
 
 @requires_postgres
 def test_truncate_blocked_on_procedures_versions(live_postgres) -> None:
-    """TRUNCATE on procedures_versions must raise (Fix 1: BEFORE TRUNCATE trigger)."""
+    """TRUNCATE on procedures_versions must raise (Fix 1: BEFORE TRUNCATE trigger).
+
+    CASCADE is required since migration 173: app.answerable_topic_knowledge_bindings
+    holds a FK to this table, and PostgreSQL refuses a bare TRUNCATE with 0A000
+    before any trigger fires. CASCADE waives that check, so the BEFORE TRUNCATE
+    trigger under test is what actually raises (P0001).
+    """
     import psycopg.errors
 
     conn = live_postgres
@@ -233,8 +245,8 @@ def test_truncate_blocked_on_procedures_versions(live_postgres) -> None:
 
     with conn.cursor() as cur:
         with pytest.raises(psycopg.errors.RaiseException) as exc_info:
-            cur.execute("TRUNCATE app.procedures_versions")
-    assert exc_info.value.pgcode == "P0001"
+            cur.execute("TRUNCATE app.procedures_versions CASCADE")
+    assert exc_info.value.sqlstate == "P0001"
     conn.rollback()
 
 

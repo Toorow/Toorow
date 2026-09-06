@@ -2,7 +2,7 @@
   "name": "@toorow/widget-google-analytics",
   "private": true,
   "version": "0.1.0",
-  "description": "Story 1.6 signature heatmap widget — 90-day calendar heatmap, delta-first tiles, small multiples, day detail with provenance (AD-11).",
+  "description": "Story 1.6 signature heatmap widget \u2014 90-day calendar heatmap, delta-first tiles, small multiples, day detail with provenance (AD-11).",
   "type": "module",
   "scripts": {
     "build": "vite build",
@@ -13,9 +13,6 @@
   "dependencies": {
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "@mui/material": "^9.0.0",
-    "@emotion/react": "^11.13.0",
-    "@emotion/styled": "^11.13.0",
     "@toorow/shell": "workspace:*"
   },
   "devDependencies": {

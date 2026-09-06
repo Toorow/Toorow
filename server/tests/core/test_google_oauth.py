@@ -4,9 +4,9 @@ Familles de tests :
 
   (a) UNIT -- URL d'autorisation :
       - scopes/params EXACTS (Authorization Code, access_type=offline,
-        prompt=consent, include_granted_scopes) ;
+        prompt='select_account consent', include_granted_scopes) ;
       - AUCUN client_secret dans l'URL ;
-      - config manquante -> GoogleOAuthConfigError.
+      - config missinge -> GoogleOAuthConfigError.
 
   (b) UNIT -- state anti-CSRF :
       - round-trip mint -> verify (project/connection/identity/nonce) ;
@@ -98,7 +98,12 @@ def test_authorize_url_has_exact_params_and_scopes(oauth_env):
     q = parse_qs(parsed.query)
     assert q["response_type"] == ["code"]
     assert q["access_type"] == ["offline"]
-    assert q["prompt"] == ["consent"]
+    # `select_account` ET `consent`. `consent` seul force l'ecran d'AUTORISATION
+    # et rien d'autre : Google reutilise la session ouverte et sa chaine par
+    # defaut, donc le choix de compte n'etait JAMAIS propose -- mesure du
+    # 2026-08-11, trois consentements, jamais un selecteur. `consent` reste,
+    # c'est lui qui garantit un refresh_token a chaque passage.
+    assert q["prompt"] == ["select_account consent"]
     assert q["include_granted_scopes"] == ["true"]
     assert q["client_id"] == ["client-id-123.apps.googleusercontent.com"]
     # Les 4 scopes exacts du stack, dans un seul ecran (AI-53).
@@ -129,7 +134,7 @@ def test_authorize_url_missing_config_raises(monkeypatch):
     monkeypatch.delenv("GOOGLE_OAUTH_REDIRECT_URI", raising=False)
     with pytest.raises(GoogleOAuthConfigError) as exc_info:
         build_authorize_url("proj_1", "conn_1", "admin@example.com")
-    # Le message nomme les variables manquantes mais aucune valeur.
+    # Le message nomme les variables missinges mais aucune valeur.
     assert "GOOGLE_OAUTH_CLIENT_ID" in str(exc_info.value)
 
 
@@ -167,12 +172,27 @@ def test_state_not_yet_expired_ok(oauth_env):
 
 
 def test_state_tampered_tag_rejected(oauth_env):
+    import base64
+
     from core.google_oauth import GoogleOAuthStateError, mint_state, verify_state
 
     state = mint_state("proj_1", "conn_1", "admin@example.com")
     payload_b64, tag_b64 = state.split(".", 1)
-    # Falsifier le tag (dernier caractere).
-    forged_tag = tag_b64[:-1] + ("A" if tag_b64[-1] != "A" else "B")
+    # Falsifier le tag SUR LES OCTETS, pas sur le dernier caractere base64.
+    #
+    # L'ancienne version remplacait `tag_b64[-1]` par 'A' (ou 'B'). Le tag est
+    # un HMAC-SHA256, soit 32 octets = 256 bits, encodes sur 43 caracteres
+    # base64url : le dernier caractere ne porte que 4 bits utiles, les deux
+    # derniers etant du bourrage. Plusieurs caracteres distincts y decodent donc
+    # vers LES MEMES OCTETS : le test ne falsifiait alors rien, `verify_state`
+    # acceptait a juste titre, et le test echouait sur un code correct.
+    # Taux MESURE le 2026-08-01 sur 20 000 tags aleatoires : 6,2 %. L'alea vient
+    # du HMAC, qui change a chaque `mint_state` -- d'ou un rouge sur quatre
+    # executions du meme code, et trois verts qui ne prouvaient rien.
+    raw = base64.urlsafe_b64decode(tag_b64 + "=" * (-len(tag_b64) % 4))
+    forged = bytes([raw[0] ^ 0x01]) + raw[1:]
+    forged_tag = base64.urlsafe_b64encode(forged).decode().rstrip("=")
+    assert forged_tag != tag_b64, "la falsification doit produire un tag different"
     with pytest.raises(GoogleOAuthStateError):
         verify_state(f"{payload_b64}.{forged_tag}")
 
@@ -440,7 +460,7 @@ def _authorize_db():
 
 @pytest.mark.anyio
 async def test_route_authorize_requires_auth():
-    from core.admin_api import _google_oauth_authorize
+    from core.google_oauth_api import _google_oauth_authorize  # noqa: PLC0415
 
     with patch(_AUTH[0], return_value=(False, "")):
         resp = await _google_oauth_authorize(
@@ -451,7 +471,7 @@ async def test_route_authorize_requires_auth():
 
 @pytest.mark.anyio
 async def test_route_authorize_missing_params(oauth_env):
-    from core.admin_api import _google_oauth_authorize
+    from core.google_oauth_api import _google_oauth_authorize  # noqa: PLC0415
 
     with patch(_AUTH[0], return_value=_AUTH[1]):
         resp = await _google_oauth_authorize(_get_request({"project_id": "p"}))
@@ -462,11 +482,11 @@ async def test_route_authorize_missing_params(oauth_env):
 
 @pytest.mark.anyio
 async def test_route_authorize_success_returns_url(oauth_env):
-    from core.admin_api import _google_oauth_authorize
+    from core.google_oauth_api import _google_oauth_authorize  # noqa: PLC0415
 
     with (
         patch(_AUTH[0], return_value=_AUTH[1]),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.project_access.identity_can_read_project", return_value=True),
         _authorize_db(),
         patch("core.project_access.identity_can_manage_org", return_value=True),
     ):
@@ -481,14 +501,14 @@ async def test_route_authorize_success_returns_url(oauth_env):
 
 @pytest.mark.anyio
 async def test_route_authorize_denies_cross_project(oauth_env):
-    from core.admin_api import _google_oauth_authorize
+    from core.google_oauth_api import _google_oauth_authorize  # noqa: PLC0415
 
     with (
         patch(_AUTH[0], return_value=_AUTH[1]),
-        patch("core.project_access.identity_has_project_access", return_value=False),
+        patch("core.project_access.identity_can_read_project", return_value=False),
         _authorize_db(),
         patch("core.project_access.identity_can_manage_org", return_value=True),
-        patch("core.admin_api.write_audit_row") as audit,
+        patch("core.google_oauth_api.write_audit_row") as audit,
     ):
         resp = await _google_oauth_authorize(
             _get_request({"project_id": "proj_other", "connection_ref_id": "conn_1"})
@@ -505,11 +525,11 @@ async def test_route_authorize_not_configured(monkeypatch):
     monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
     monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
     monkeypatch.delenv("GOOGLE_OAUTH_REDIRECT_URI", raising=False)
-    from core.admin_api import _google_oauth_authorize
+    from core.google_oauth_api import _google_oauth_authorize  # noqa: PLC0415
 
     with (
         patch(_AUTH[0], return_value=_AUTH[1]),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.project_access.identity_can_read_project", return_value=True),
         _authorize_db(),
         patch("core.project_access.identity_can_manage_org", return_value=True),
     ):
@@ -523,7 +543,7 @@ async def test_route_authorize_not_configured(monkeypatch):
 
 @pytest.mark.anyio
 async def test_route_callback_bad_state_generic_400(oauth_env):
-    from core.admin_api import _google_oauth_callback
+    from core.google_oauth_api import _google_oauth_callback  # noqa: PLC0415
 
     resp = await _google_oauth_callback(_get_request({"code": _FAKE_CODE, "state": "forged.tag"}))
     assert resp.status_code == 400
@@ -536,8 +556,8 @@ async def test_route_callback_bad_state_generic_400(oauth_env):
 @respx.mock
 @pytest.mark.anyio
 async def test_route_callback_success_stores_and_audits(oauth_env):
-    from core.admin_api import _google_oauth_callback
     from core.google_oauth import GOOGLE_TOKEN_ENDPOINT, mint_state
+    from core.google_oauth_api import _google_oauth_callback  # noqa: PLC0415
 
     respx.post(GOOGLE_TOKEN_ENDPOINT).mock(
         return_value=Response(
@@ -554,8 +574,8 @@ async def test_route_callback_success_stores_and_audits(oauth_env):
 
     with (
         patch("core.google_token_store.store_google_token") as store,
-        patch("core.admin_api.write_audit_row") as audit,
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.google_oauth_api.write_audit_row") as audit,
+        patch("core.project_access.identity_can_read_project", return_value=True),
         patch("core.db.get_connection"),
     ):
         resp = await _google_oauth_callback(_get_request({"code": _FAKE_CODE, "state": state}))
@@ -586,15 +606,15 @@ async def test_route_callback_success_stores_and_audits(oauth_env):
 @respx.mock
 @pytest.mark.anyio
 async def test_route_callback_google_error_redacted(oauth_env):
-    from core.admin_api import _google_oauth_callback
     from core.google_oauth import GOOGLE_TOKEN_ENDPOINT, mint_state
+    from core.google_oauth_api import _google_oauth_callback  # noqa: PLC0415
 
     respx.post(GOOGLE_TOKEN_ENDPOINT).mock(
         return_value=Response(400, json={"error": "invalid_grant", "error_description": _FAKE_CODE})
     )
     state = mint_state("proj_1", "conn_1", "admin@example.com")
     with (
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.project_access.identity_can_read_project", return_value=True),
         patch("core.db.get_connection"),
     ):
         resp = await _google_oauth_callback(_get_request({"code": _FAKE_CODE, "state": state}))
@@ -609,8 +629,8 @@ async def test_route_callback_google_error_redacted(oauth_env):
 @respx.mock
 @pytest.mark.anyio
 async def test_route_callback_missing_refresh_reconsent(oauth_env):
-    from core.admin_api import _google_oauth_callback
     from core.google_oauth import GOOGLE_TOKEN_ENDPOINT, mint_state
+    from core.google_oauth_api import _google_oauth_callback  # noqa: PLC0415
 
     respx.post(GOOGLE_TOKEN_ENDPOINT).mock(
         return_value=Response(
@@ -619,7 +639,7 @@ async def test_route_callback_missing_refresh_reconsent(oauth_env):
     )
     state = mint_state("proj_1", "conn_1", "admin@example.com")
     with (
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.project_access.identity_can_read_project", return_value=True),
         patch("core.db.get_connection"),
     ):
         resp = await _google_oauth_callback(_get_request({"code": _FAKE_CODE, "state": state}))
@@ -631,11 +651,11 @@ async def test_route_callback_missing_refresh_reconsent(oauth_env):
 
 @pytest.mark.anyio
 async def test_route_callback_user_declined(oauth_env):
-    from core.admin_api import _google_oauth_callback
     from core.google_oauth import mint_state
+    from core.google_oauth_api import _google_oauth_callback  # noqa: PLC0415
 
     state = mint_state("proj_1", "conn_1", "admin@example.com")
-    with patch("core.admin_api.write_audit_row"):
+    with patch("core.google_oauth_api.write_audit_row"):
         resp = await _google_oauth_callback(
             _get_request({"error": "access_denied", "state": state})
         )
@@ -689,7 +709,46 @@ pg_available = pytest.mark.skipif(
 )
 
 
-def _seed_connection(dsn: str, project_id: str, conn_id: str) -> None:
+def _seed_owned_org(dsn: str, org_id: str, identity: str) -> None:
+    """An organization the caller OWNS, because access is no longer default-open.
+
+    `identity_can_read_project` became `resolve_strict_resource_access` in
+    `85b1deb2` (2026-07-29) -- *"no default-open mode exists"*. A project in a
+    fixture organization the caller was never a member of is refused, and the
+    AD-5 recheck of the callback refuses it BEFORE exchanging the code. So a test
+    that wants the callback to reach its own subject has to grant the access it
+    was silently borrowing, and `owner` is the floor that needs no capability row.
+
+    A DEDICATED organization, not `org_test_fixture`: making a stranger the owner
+    of the shared fixture org would leak an owner floor into every other test
+    that reads it.
+    """
+    import psycopg  # noqa: PLC0415
+
+    with psycopg.connect(dsn) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO app.organizations (id, name, slug, status, created_by)
+                VALUES (%s, %s, %s, 'active', 'test')
+                ON CONFLICT (id) DO NOTHING
+                """,
+                (org_id, f"oauth-{org_id}", f"org-slug-{uuid.uuid4().hex[:8]}"),
+            )
+            cur.execute(
+                """
+                INSERT INTO app.org_members (id, org_id, identity, role, status, joined_at)
+                VALUES (%s, %s, %s, 'owner', 'active', now())
+                ON CONFLICT (id) DO NOTHING
+                """,
+                (f"orgm_{uuid.uuid4().hex[:12]}", org_id, identity),
+            )
+        conn.commit()
+
+
+def _seed_connection(
+    dsn: str, project_id: str, conn_id: str, org_id: str = "org_test_fixture"
+) -> None:
     import psycopg  # noqa: PLC0415
 
     with psycopg.connect(dsn) as conn:
@@ -697,25 +756,25 @@ def _seed_connection(dsn: str, project_id: str, conn_id: str) -> None:
             cur.execute(
                 """
                 INSERT INTO app.projects (id, name, slug, status, created_by, org_id)
-                VALUES (%s, %s, %s, 'active', 'test', 'org_test_fixture')
+                VALUES (%s, %s, %s, 'active', 'test', %s)
                 ON CONFLICT (id) DO NOTHING
                 """,
-                (project_id, f"oauth-{project_id}", f"slug-{uuid.uuid4().hex[:8]}"),
+                (project_id, f"oauth-{project_id}", f"slug-{uuid.uuid4().hex[:8]}", org_id),
             )
             cur.execute(
                 """
                 INSERT INTO app.connection_ref
                     (id, provider, nango_connection_id, project_id, auth_path, owner_org_id,
                         owner_identity)
-                VALUES (%s, 'google-analytics', %s, %s, 'nango', 'org_test_fixture',
+                VALUES (%s, 'google-analytics', %s, %s, 'nango', %s,
                     'tester@example.com')
                 """,
-                (conn_id, f"nango_{conn_id}", project_id),
+                (conn_id, f"nango_{conn_id}", project_id, org_id),
             )
         conn.commit()
 
 
-def _cleanup(dsn: str, project_id: str, conn_id: str) -> None:
+def _cleanup(dsn: str, project_id: str, conn_id: str, org_id: str | None = None) -> None:
     import psycopg  # noqa: PLC0415
 
     with psycopg.connect(dsn) as conn:
@@ -735,6 +794,13 @@ def _cleanup(dsn: str, project_id: str, conn_id: str) -> None:
                     cur.execute("RELEASE SAVEPOINT cleanup_step")
                 except Exception:  # noqa: BLE001 -- best-effort, FK audit_log
                     cur.execute("ROLLBACK TO SAVEPOINT cleanup_step")
+        if org_id:
+            # THROUGH THE PRODUCT'S PURGE, never a hand-written DELETE: migration
+            # 130 seeds six `app.mdm_business_domains` rows into every new
+            # organization and that table references it ON DELETE RESTRICT.
+            from tests.conftest import purge_fixture_org  # noqa: PLC0415
+
+            purge_fixture_org(conn, org_id)
         conn.commit()
 
 
@@ -751,8 +817,8 @@ async def test_live_callback_persists_encrypted_token(monkeypatch, oauth_env):
         "TENANT_KEY_DIR", os.path.join(os.environ.get("TMP", "/tmp"), f"k_{uuid.uuid4().hex[:8]}")
     )
     import psycopg  # noqa: PLC0415
-    from core.admin_api import _google_oauth_callback
     from core.google_oauth import GOOGLE_TOKEN_ENDPOINT, mint_state
+    from core.google_oauth_api import _google_oauth_callback  # noqa: PLC0415
 
     respx.post(GOOGLE_TOKEN_ENDPOINT).mock(
         return_value=Response(
@@ -766,10 +832,19 @@ async def test_live_callback_persists_encrypted_token(monkeypatch, oauth_env):
         )
     )
 
+    # The AD-5 recheck of the callback reads the STRICT resolver, and that
+    # resolver refuses every non-evaluation identity outright while
+    # `TOOROW_AUTH_MODE` is `disabled` -- before it reads a single membership row.
+    # So the mode is named here as the product names it in service, and the
+    # access this test needs is GRANTED rather than assumed.
+    monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
+
     pid = f"proj_{uuid.uuid4().hex[:12]}"
     cid = f"conn_{uuid.uuid4().hex[:12]}"
+    org = f"org_{uuid.uuid4().hex[:12]}"
     try:
-        _seed_connection(dsn, pid, cid)
+        _seed_owned_org(dsn, org, "admin@example.com")
+        _seed_connection(dsn, pid, cid, org_id=org)
         state = mint_state(pid, cid, "admin@example.com")
         resp = await _google_oauth_callback(_get_request({"code": _FAKE_CODE, "state": state}))
         assert resp.status_code == 302
@@ -796,9 +871,9 @@ async def test_live_callback_persists_encrypted_token(monkeypatch, oauth_env):
         assert any(
             action == "connection.created" and identity == "admin@example.com"
             for action, identity in audit_rows
-        ), "ligne d'audit d'emission manquante"
+        ), "ligne d'audit d'emission missinge"
     finally:
-        _cleanup(dsn, pid, cid)
+        _cleanup(dsn, pid, cid, org_id=org)
 
 
 # ---------------------------------------------------------------------------
@@ -822,7 +897,7 @@ def test_no_realistic_token_plaintext_in_story_files():
         re.compile(r"eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}"),
     ]
     for path in story_files:
-        assert path.exists(), f"fichier de story manquant : {path}"
+        assert path.exists(), f"fichier de story missing : {path}"
         text = path.read_text(encoding="utf-8")
         for pat in forbidden:
             assert pat.search(text) is None, (
@@ -999,7 +1074,7 @@ def test_state_empty_identity_rejected(oauth_env):
 def test_oauth_console_redirect_valid_path(monkeypatch):
     """F-5: valeur commencant par '/' -> utilisee telle quelle."""
     monkeypatch.setenv("ADMIN_CONSOLE_OAUTH_RETURN", "/mon/chemin/console")
-    from core.admin_api import _oauth_console_redirect
+    from core.google_oauth_api import _oauth_console_redirect  # noqa: PLC0415
 
     url = _oauth_console_redirect("success", "conn_123")
     assert url.startswith("/mon/chemin/console")
@@ -1010,7 +1085,7 @@ def test_oauth_console_redirect_valid_path(monkeypatch):
 def test_oauth_console_redirect_external_url_falls_back(monkeypatch):
     """F-5: valeur HTTP externe -> fallback /console/connections + warning."""
     monkeypatch.setenv("ADMIN_CONSOLE_OAUTH_RETURN", "http://evil.example.com/steal")
-    from core.admin_api import _oauth_console_redirect
+    from core.google_oauth_api import _oauth_console_redirect  # noqa: PLC0415
 
     url = _oauth_console_redirect("success", "conn_123")
     assert url.startswith("/console/connections")
@@ -1021,7 +1096,7 @@ def test_oauth_console_redirect_external_url_falls_back(monkeypatch):
 def test_oauth_console_redirect_empty_uses_default(monkeypatch):
     """F-5: valeur absente -> defaut /console/connections."""
     monkeypatch.delenv("ADMIN_CONSOLE_OAUTH_RETURN", raising=False)
-    from core.admin_api import _oauth_console_redirect
+    from core.google_oauth_api import _oauth_console_redirect  # noqa: PLC0415
 
     url = _oauth_console_redirect("error")
     assert url.startswith("/console/connections")
@@ -1035,8 +1110,8 @@ def test_oauth_console_redirect_empty_uses_default(monkeypatch):
 @pytest.mark.anyio
 async def test_callback_revoked_access_denied_before_exchange(oauth_env):
     """F-3: acces revoque entre authorize et callback -> 403 + code non echange."""
-    from core.admin_api import _google_oauth_callback
     from core.google_oauth import GOOGLE_TOKEN_ENDPOINT, mint_state
+    from core.google_oauth_api import _google_oauth_callback  # noqa: PLC0415
 
     # Mocker le token endpoint pour verifier qu'il n'est PAS appele.
     token_route = respx.post(GOOGLE_TOKEN_ENDPOINT).mock(
@@ -1054,9 +1129,9 @@ async def test_callback_revoked_access_denied_before_exchange(oauth_env):
     state = mint_state("proj_revoked", "conn_1", "admin@example.com")
 
     with (
-        patch("core.project_access.identity_has_project_access", return_value=False),
+        patch("core.project_access.identity_can_read_project", return_value=False),
         patch("core.db.get_connection"),
-        patch("core.admin_api.write_audit_row") as audit,
+        patch("core.google_oauth_api.write_audit_row") as audit,
     ):
         resp = await _google_oauth_callback(_get_request({"code": _FAKE_CODE, "state": state}))
 
@@ -1109,12 +1184,12 @@ async def test_replay_same_state_google_invalid_grant(oauth_env):
     """F-2a: rejeu du meme state valide, Google rejette le 2e code (invalid_grant).
     Le 2e echange -> 502 exchange_failed, SANS audit supplementaire ni store.
     """
-    from core.admin_api import _google_oauth_callback
     from core.google_oauth import GOOGLE_TOKEN_ENDPOINT, mint_state
+    from core.google_oauth_api import _google_oauth_callback  # noqa: PLC0415
 
     state = mint_state("proj_1", "conn_1", "admin@example.com")
 
-    # Premier echange: succes.
+    # Top landing pageer echange: succes.
     respx.post(GOOGLE_TOKEN_ENDPOINT).mock(
         return_value=Response(
             200,
@@ -1128,8 +1203,8 @@ async def test_replay_same_state_google_invalid_grant(oauth_env):
     )
     with (
         patch("core.google_token_store.store_google_token"),
-        patch("core.admin_api.write_audit_row"),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.google_oauth_api.write_audit_row"),
+        patch("core.project_access.identity_can_read_project", return_value=True),
         patch("core.db.get_connection"),
     ):
         resp1 = await _google_oauth_callback(_get_request({"code": _FAKE_CODE, "state": state}))
@@ -1143,8 +1218,8 @@ async def test_replay_same_state_google_invalid_grant(oauth_env):
     )
     with (
         patch("core.google_token_store.store_google_token") as store2,
-        patch("core.admin_api.write_audit_row") as audit2,
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.google_oauth_api.write_audit_row") as audit2,
+        patch("core.project_access.identity_can_read_project", return_value=True),
         patch("core.db.get_connection"),
     ):
         resp2 = await _google_oauth_callback(_get_request({"code": _FAKE_CODE, "state": state}))
@@ -1169,8 +1244,8 @@ async def test_replay_same_state_google_accepts_second_code_behavior_documented(
     qu'il est utilise -- F-2a), mais documente le comportement du serveur si cela arrivait.
     Le vrai fix (table anti-rejeu) est BLOCKED Phase B.
     """
-    from core.admin_api import _google_oauth_callback
     from core.google_oauth import GOOGLE_TOKEN_ENDPOINT, mint_state
+    from core.google_oauth_api import _google_oauth_callback  # noqa: PLC0415
 
     state = mint_state("proj_1", "conn_1", "admin@example.com")
 
@@ -1191,8 +1266,8 @@ async def test_replay_same_state_google_accepts_second_code_behavior_documented(
 
     with (
         patch("core.google_token_store.store_google_token") as store1,
-        patch("core.admin_api.write_audit_row") as audit1,
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.google_oauth_api.write_audit_row") as audit1,
+        patch("core.project_access.identity_can_read_project", return_value=True),
         patch("core.db.get_connection"),
     ):
         resp1 = await _google_oauth_callback(_get_request({"code": _FAKE_CODE, "state": state}))
@@ -1216,8 +1291,8 @@ async def test_replay_same_state_google_accepts_second_code_behavior_documented(
     )
     with (
         patch("core.google_token_store.store_google_token") as store2,
-        patch("core.admin_api.write_audit_row") as audit2,
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.google_oauth_api.write_audit_row") as audit2,
+        patch("core.project_access.identity_can_read_project", return_value=True),
         patch("core.db.get_connection"),
     ):
         resp2 = await _google_oauth_callback(_get_request({"code": _FAKE_CODE_2, "state": state}))

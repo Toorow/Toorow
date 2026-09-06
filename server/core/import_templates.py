@@ -32,6 +32,19 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from core.audit import declare_action
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12) : declarees ICI, a cote du code qui les ecrit, et non
+# dans `core/audit.py`. Ce fichier etait un carrefour -- 43 editions de 29
+# sujets depuis juin, dont 34 n'ajoutaient qu'une constante -- et 45 % des
+# actions reellement ecrites en production n'y etaient meme pas declarees,
+# parce que la liste etait trop loin pour valoir le detour. `write_audit_row`
+# refuse desormais une action que personne n'a declaree.
+ACTION_INBOUND_DATASTREAM_CREATED = declare_action("inbound.datastream.created")
+
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -58,6 +71,10 @@ class TemplateNotFound(ValueError):
 
 class TemplateChannelError(ValueError):
     """channels argument is invalid (empty, non-subset, or wrong type)."""
+
+
+class ConnectorActivationRequired(RuntimeError):
+    """The organization has no ACTIVE activation for this connector."""
 
 
 # ---------------------------------------------------------------------------
@@ -144,17 +161,19 @@ def list_templates(conn) -> list[dict[str, Any]]:
     for row in rows:
         raw = _row_to_template(cols, row)
         contract = raw.get("contract") or {}
-        result.append({
-            "template_code": raw["template_code"],
-            "version": raw["version"],
-            "title": raw["title"],
-            "required_fields": contract.get("required_fields", []),
-            "optional_fields": contract.get("optional_fields", []),
-            "identity_keys": contract.get("identity_keys", []),
-            "grain": contract.get("grain"),
-            "is_generic": raw["is_generic"],
-            "created_at": raw["created_at"],
-        })
+        result.append(
+            {
+                "template_code": raw["template_code"],
+                "version": raw["version"],
+                "title": raw["title"],
+                "required_fields": contract.get("required_fields", []),
+                "optional_fields": contract.get("optional_fields", []),
+                "identity_keys": contract.get("identity_keys", []),
+                "grain": contract.get("grain"),
+                "is_generic": raw["is_generic"],
+                "created_at": raw["created_at"],
+            }
+        )
     return result
 
 
@@ -168,6 +187,7 @@ def create_inbound_datastream(
     *,
     project_id: str,
     name: str,
+    connector_name: str,
     template_code: str,
     template_version: int,
     channels: list[str],
@@ -202,8 +222,35 @@ def create_inbound_datastream(
         is not a list/set.
     """
     # ------------------------------------------------------------------
-    # Input validation: template lookup (fail closed if unknown).
+    # Input validation: normalize every operation identity before hashing.
     # ------------------------------------------------------------------
+    for field, value in (
+        ("project_id", project_id),
+        ("name", name),
+        ("connector_name", connector_name),
+        ("template_code", template_code),
+        ("created_by", created_by),
+        ("org_id", org_id),
+        ("idempotency_key", idempotency_key),
+    ):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{field} is required")
+    if len(idempotency_key.strip()) > 255:
+        raise ValueError("idempotency_key is too long")
+    if (
+        isinstance(template_version, bool)
+        or not isinstance(template_version, int)
+        or template_version < 1
+    ):
+        raise ValueError("template_version must be a positive integer")
+    project_id = project_id.strip()
+    name = name.strip()
+    connector_name = connector_name.strip()
+    template_code = template_code.strip()
+    created_by = created_by.strip()
+    org_id = org_id.strip()
+    idempotency_key = idempotency_key.strip()
+
     tpl = get_template(conn, template_code, template_version)
     if tpl is None:
         raise TemplateNotFound(
@@ -215,9 +262,9 @@ def create_inbound_datastream(
     # ------------------------------------------------------------------
     if not channels or not isinstance(channels, (list, set, tuple)):
         raise TemplateChannelError("channels must be a non-empty list")
-    channel_set = {str(ch).strip().lower() for ch in channels}
-    if not channel_set:
-        raise TemplateChannelError("channels must be non-empty")
+    if any(not isinstance(ch, str) or not ch.strip() for ch in channels):
+        raise TemplateChannelError("channels must contain non-empty strings")
+    channel_set = {ch.strip().lower() for ch in channels}
     unknown = channel_set - VALID_CHANNELS
     if unknown:
         raise TemplateChannelError(
@@ -236,6 +283,7 @@ def create_inbound_datastream(
     # This is the SOLE binding record (AC5: no second ledger).
     # ------------------------------------------------------------------
     ds_config: dict[str, Any] = {
+        "connector_name": connector_name,
         "template_code": template_code,
         "template_version": template_version,
         "channels": sorted(channel_set),
@@ -262,6 +310,7 @@ def create_inbound_datastream(
         resource_path=(
             f"organization:{org_id}",
             f"project:{project_id}",
+            f"connector:{connector_name}",
             f"template:{template_code}:{template_version}",
         ),
         idempotency_key=idempotency_key,
@@ -274,6 +323,7 @@ def create_inbound_datastream(
         # Deterministic over business inputs only (no row id in payload).
         # Row id is minted inside _epic12_create at write time.
         request_payload={
+            "connector_name": connector_name,
             "template_code": template_code,
             "template_version": template_version,
             "channels": sorted(channel_set),
@@ -284,15 +334,27 @@ def create_inbound_datastream(
         provider_references={},
         confirmation_mode="server",
         confirmation_reference=(
-            f"inbound-datastream:{org_id}:{project_id}:{template_code}:{template_version}"
+            f"inbound-datastream:{org_id}:{project_id}:{connector_name}:"
+            f"{template_code}:{template_version}"
         ),
         trace_id=trace_id,
     )
 
-    # Capture the created datastream so we can return it from outside the closure.
-    _created: dict[str, Any] = {}
-
     def mutation(operation_conn, operation_id: str) -> MutationResult:
+        import os  # noqa: PLC0415
+
+        from core.connector_activation import get_activation  # noqa: PLC0415
+
+        environment = os.environ.get("TOOROW_ENVIRONMENT", "production").strip() or "production"
+        activation = get_activation(
+            operation_conn,
+            org_id=org_id,
+            connector_name=connector_name,
+            environment=environment,
+        )
+        if activation is None or activation.get("state") != "ACTIVE":
+            raise ConnectorActivationRequired("connector activation is unavailable")
+
         # AC5 proof: this is the ONLY write path. We call create_datastream
         # (the Epic 12 seam) -- no direct INSERT into app.datastreams here.
         ds = _datastreams_mod.create_datastream(
@@ -307,15 +369,7 @@ def create_inbound_datastream(
             created_by,
             operation_conn,
         )
-        _created["ds"] = ds
-        result = {
-            "datastream_id": ds["id"],
-            "template_code": template_code,
-            "template_version": template_version,
-            "channels": sorted(channel_set),
-            "publishable": publishable,
-            "enabled": ds.get("enabled", enabled),
-        }
+        result = dict(ds)
         return MutationResult(
             outcome="succeeded",
             before_hash=None,
@@ -331,10 +385,10 @@ def create_inbound_datastream(
 
     op_result = execute_operation(conn, spec, mutation=mutation)
 
-    # On idempotent replay, _created is empty; return the op_result.result dict
-    # as the authoritative read-model (per review lesson: result from op_result).
-    if _created:
-        return _created["ds"]
-
-    # Replay: reconstruct a minimal datastream dict from the durable result.
-    return dict(op_result.result)
+    data = op_result.result
+    if not isinstance(data, dict) or not data.get("id"):
+        raise RuntimeError("datastream operation returned an incomplete result")
+    config = data.get("config")
+    if not isinstance(config, dict) or config.get("connector_name") != connector_name:
+        raise RuntimeError("datastream operation returned an inconsistent result")
+    return dict(data)

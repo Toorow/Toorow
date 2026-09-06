@@ -21,6 +21,12 @@ Key invariants (proven by tests):
   * Default split is équiréparti 1/N PER CAMPAIGN across the lines that map it
     (decision 4), with the rounding remainder on the first line_key so the
     weights sum to EXACTLY 1.0.
+  * A match carries HOW it was obtained (story 61.3, migration 246): the level
+    travels on the ENTRY, because set_line_mappings replaces a line's whole set
+    and a level that did not travel would be erased by the next write. An entry
+    that states no level is `manual` -- somebody typed it -- which is a different
+    fact from the NULL migration 246 left on the matches written before it, and
+    those are never rewritten as `manual`.
 
 Business errors reuse the typed hierarchy from core.mediaplan_store (MediaPlan*
 Error) so the API layer maps them to 4xx identically (lesson 12.3).
@@ -33,9 +39,7 @@ from typing import Any
 from uuid import UUID
 
 from core.audit import (
-    ACTION_MEDIA_PLAN_MAPPING_ORPHANED,
-    ACTION_MEDIA_PLAN_MAPPING_REBALANCED,
-    ACTION_MEDIA_PLAN_MAPPING_SET,
+    declare_action,
     insert_audit_row,
 )
 from core.mediaplan_store import (
@@ -43,6 +47,19 @@ from core.mediaplan_store import (
     MediaPlanStateError,
     MediaPlanValidationError,
 )
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12) : declarees ICI, a cote du code qui les ecrit, et non
+# dans `core/audit.py`. Ce fichier etait un carrefour -- 43 editions de 29
+# sujets depuis juin, dont 34 n'ajoutaient qu'une constante -- et 45 % des
+# actions reellement ecrites en production n'y etaient meme pas declarees,
+# parce que la liste etait trop loin pour valoir le detour. `write_audit_row`
+# refuse desormais une action que personne n'a declaree.
+ACTION_MEDIA_PLAN_MAPPING_ORPHANED = declare_action("media_plan.mapping.orphaned")
+ACTION_MEDIA_PLAN_MAPPING_REBALANCED = declare_action("media_plan.mapping.rebalanced")
+ACTION_MEDIA_PLAN_MAPPING_SET = declare_action("media_plan.mapping.set")
+
 
 # split_weight is stored as NUMERIC(7,6): six fractional digits, quantum 1e-6.
 _WEIGHT_QUANTUM = Decimal("0.000001")
@@ -73,17 +90,17 @@ def compute_default_splits(line_keys: list[str]) -> dict[str, Decimal]:
     """
     if not line_keys:
         raise MediaPlanValidationError(
-            "Impossible de répartir : aucune ligne cible."
+            "Cannot distribute: no target row."
         )
     ordered = sorted(line_keys)
     if len(set(ordered)) != len(ordered):
         raise MediaPlanValidationError(
-            "Impossible de répartir : clé de ligne dupliquée."
+            "Cannot distribute: duplicate row key."
         )
     if len(ordered) > 1_000_000:
         raise MediaPlanValidationError(
-            "Impossible de répartir : trop de lignes cibles "
-            "(maximum 1 000 000 pour un poids non nul)."
+            "Cannot distribute: too many target rows "
+            "(maximum 1,000,000 for a non-zero weight)."
         )
 
     n = len(ordered)
@@ -109,8 +126,8 @@ def validate_split_sum(weights: list[Decimal], *, campaign_ref: str) -> None:
         # Render without a trailing exponent (e.g. 110 not 1.1E+2).
         pct_str = f"{pct:f}"
         raise MediaPlanValidationError(
-            "La somme des répartitions pour la campagne "
-            f"« {campaign_ref} » doit faire 100 % (constaté : {pct_str} %)."
+            "The sum of the distributions for campaign "
+            f"'{campaign_ref}' must total 100% (observed: {pct_str}%)."
         )
 
 
@@ -131,6 +148,82 @@ def _fmt(val: Any) -> Any:
     return val
 
 
+def _parse_match_level(
+    raw: dict[str, Any], *, connector: str, campaign_ref: str
+) -> tuple[str | None, float | None]:
+    """The LEVEL of one entry -- how this match was obtained. Story 61.3.
+
+    THE VOCABULARY IS NOT RESPELLED HERE. `exact | normalized | similarity |
+    manual` lives in `core.dimension_conformance` and is mirrored by the CHECK of
+    migration 246; this function refuses anything else at the door rather than
+    letting Postgres raise an untyped IntegrityError the API cannot name.
+
+    ABSENT IS `manual`, AN EXPLICIT `None` IS "NOT KNOWN", AND THE TWO ARE NOT THE
+    SAME FACT. An entry that does not mention `match_method` at all came from
+    somebody who typed the pair -- this store is reached by a person filling a form
+    and by the confirmation of a suggestion, which always states its level -- so
+    `manual` is what happened. An entry that carries `match_method: None` states
+    that the level is UNKNOWN, and that is how a match written before migration 246
+    survives a rewrite of its line: `set_line_mappings` replaces the whole set, so
+    the untouched neighbours of the new match are re-sent as they were read, and
+    re-sending them as `manual` would claim a person typed rows nobody can name.
+    The distinction can only understate a level, never invent one.
+
+    A `manual` entry carries NO score: there is nothing to measure about a match
+    somebody typed, and migration 246 refuses the pair in the database too.
+    """
+    from core.dimension_conformance import (  # noqa: PLC0415
+        METHOD_MANUAL,
+        METHOD_SIMILARITY,
+    )
+    from core.plan_matching_states import MATCH_METHODS  # noqa: PLC0415
+
+    if "match_method" not in raw:
+        method: str | None = METHOD_MANUAL
+    elif raw["match_method"] is None:
+        method = None
+    else:
+        method = str(raw["match_method"]).strip()
+    if method is not None and method not in MATCH_METHODS:
+        raise MediaPlanValidationError(
+            f"The match level of '{campaign_ref}' ({connector}) must be one of "
+            f"{', '.join(MATCH_METHODS)}."
+        )
+
+    score_raw = raw.get("match_score")
+    if score_raw is None:
+        score = None
+    else:
+        try:
+            score = float(score_raw)
+        except (TypeError, ValueError) as exc:
+            raise MediaPlanValidationError(
+                f"The match score of '{campaign_ref}' ({connector}) must be a number."
+            ) from exc
+        if not (0.0 <= score <= 1.0):
+            raise MediaPlanValidationError(
+                f"The match score of '{campaign_ref}' ({connector}) must fall within "
+                "the interval [0, 1]."
+            )
+
+    if method is None and score is not None:
+        raise MediaPlanValidationError(
+            f"The match of '{campaign_ref}' ({connector}) states a score without saying "
+            "how it was obtained."
+        )
+    if method == METHOD_MANUAL and score is not None:
+        raise MediaPlanValidationError(
+            f"The match of '{campaign_ref}' ({connector}) was made by hand, so it "
+            "carries no score."
+        )
+    if method == METHOD_SIMILARITY and score is None:
+        raise MediaPlanValidationError(
+            f"The match of '{campaign_ref}' ({connector}) is a name similarity, so "
+            "it must state the score it was judged on."
+        )
+    return method, score
+
+
 def _parse_weight(value: Any, *, connector: str, campaign_ref: str) -> Decimal:
     """Parse an explicit split_weight into a Decimal in (0, 1] at the 1e-6 quantum.
 
@@ -141,24 +234,24 @@ def _parse_weight(value: Any, *, connector: str, campaign_ref: str) -> Decimal:
         weight = Decimal(str(value))
     except Exception as exc:  # noqa: BLE001
         raise MediaPlanValidationError(
-            f"Le poids de répartition de « {campaign_ref} » ({connector}) "
-            "doit être un nombre décimal."
+            f"The distribution weight of '{campaign_ref}' ({connector}) "
+            "must be a decimal number."
         ) from exc
     if not weight.is_finite():
         raise MediaPlanValidationError(
-            f"Le poids de répartition de « {campaign_ref} » ({connector}) "
-            "doit être un nombre fini."
+            f"The distribution weight of '{campaign_ref}' ({connector}) "
+            "must be a finite number."
         )
     if weight <= 0 or weight > _ONE:
         raise MediaPlanValidationError(
-            f"Le poids de répartition de « {campaign_ref} » ({connector}) "
-            "doit être compris dans l'intervalle ]0, 1]."
+            f"The distribution weight of '{campaign_ref}' ({connector}) "
+            "must fall within the interval ]0, 1]."
         )
     quantised = weight.quantize(_WEIGHT_QUANTUM)
     if quantised != weight:
         raise MediaPlanValidationError(
-            f"Le poids de répartition de « {campaign_ref} » ({connector}) "
-            "ne peut pas avoir plus de 6 décimales."
+            f"The distribution weight of '{campaign_ref}' ({connector}) "
+            "cannot have more than 6 decimal places."
         )
     return quantised
 
@@ -234,10 +327,10 @@ def set_line_mappings(
     filtered to this line_key).
     """
     if not isinstance(line_key, str) or not line_key.strip():
-        raise MediaPlanValidationError("La clé de ligne ne peut pas être vide.")
+        raise MediaPlanValidationError("The row key cannot be empty.")
     line_key = line_key.strip()
     if not isinstance(entries, list):
-        raise MediaPlanValidationError("« mappings » doit être une liste.")
+        raise MediaPlanValidationError("'mappings' must be a list.")
 
     # Normalise + de-duplicate entries by (connector, campaign_ref): a payload may
     # not repeat a target (last-writer-wins would hide data).
@@ -245,20 +338,20 @@ def set_line_mappings(
     seen: set[tuple[str, str]] = set()
     for raw in entries:
         if not isinstance(raw, dict):
-            raise MediaPlanValidationError("Chaque mapping doit être un objet.")
+            raise MediaPlanValidationError("Each mapping must be an object.")
         connector = (raw.get("connector") or "").strip()
         campaign_ref = (raw.get("campaign_ref") or "").strip()
         if not connector:
-            raise MediaPlanValidationError("Le connecteur ne peut pas être vide.")
+            raise MediaPlanValidationError("The connector cannot be empty.")
         if not campaign_ref:
             raise MediaPlanValidationError(
-                "La référence de campagne ne peut pas être vide."
+                "The campaign reference cannot be empty."
             )
         key = (connector, campaign_ref)
         if key in seen:
             raise MediaPlanValidationError(
-                f"La cible « {campaign_ref} » ({connector}) est dupliquée "
-                "dans la requête."
+                f"Target '{campaign_ref}' ({connector}) is duplicated "
+                "in the request."
             )
         seen.add(key)
         weight_raw = raw.get("split_weight")
@@ -267,8 +360,17 @@ def set_line_mappings(
             if weight_raw is not None
             else None
         )
+        method, score = _parse_match_level(
+            raw, connector=connector, campaign_ref=campaign_ref
+        )
         normalised.append(
-            {"connector": connector, "campaign_ref": campaign_ref, "weight": weight}
+            {
+                "connector": connector,
+                "campaign_ref": campaign_ref,
+                "weight": weight,
+                "match_method": method,
+                "match_score": score,
+            }
         )
 
     # --- transaction body (caller commits) -------------------------------------
@@ -322,12 +424,16 @@ def set_line_mappings(
             # caller supplied an explicit weight, it is written as-is and the
             # campaign is validated (SUM==1.0), never overwritten.
             provisional = entry["weight"] if entry["weight"] is not None else _WEIGHT_QUANTUM
+            # THE LEVEL IS INSERTED WITH THE PAIR -- story 61.3. This function
+            # replaces a line's WHOLE set, so a level that did not travel on the
+            # entry would be erased by the next write on the line, and the one
+            # place that happens is the moment a person validates a suggestion.
             cur.execute(
                 """
                 INSERT INTO app.plan_line_mappings
                     (plan_id, line_key, connector, campaign_ref, split_weight,
-                     status, created_by, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, now(), now())
+                     status, match_method, match_score, created_by, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now(), now())
                 """,
                 (
                     plan_id,
@@ -336,6 +442,8 @@ def set_line_mappings(
                     entry["campaign_ref"],
                     provisional,
                     row_status,
+                    entry["match_method"],
+                    entry["match_score"],
                     actor,
                 ),
             )
@@ -643,7 +751,8 @@ def _list_line_mappings(
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT connector, campaign_ref, split_weight, status
+            SELECT connector, campaign_ref, split_weight, status,
+                   match_method, match_score
             FROM app.plan_line_mappings
             WHERE plan_id = %s AND line_key = %s
             ORDER BY connector, campaign_ref
@@ -656,6 +765,10 @@ def _list_line_mappings(
                 "campaign_ref": r[1],
                 "split_weight": _fmt(r[2]),
                 "status": r[3],
+                # Story 61.3. `None` on a match written before migration 246 and
+                # NEVER `manual`: nothing measured that anybody typed those rows.
+                "match_method": r[4],
+                "match_score": r[5],
             }
             for r in cur.fetchall()
         ]
@@ -673,7 +786,8 @@ def list_mappings(conn: Any, *, plan_id: str) -> dict[str, Any]:
 
         cur.execute(
             """
-            SELECT line_key, connector, campaign_ref, split_weight, status
+            SELECT line_key, connector, campaign_ref, split_weight, status,
+                   match_method, match_score
             FROM app.plan_line_mappings
             WHERE plan_id = %s
             ORDER BY line_key, connector, campaign_ref
@@ -683,13 +797,15 @@ def list_mappings(conn: Any, *, plan_id: str) -> dict[str, Any]:
         rows = cur.fetchall()
 
     grouped: dict[str, list[dict[str, Any]]] = {}
-    for line_key, connector, campaign_ref, weight, status in rows:
+    for line_key, connector, campaign_ref, weight, status, method, score in rows:
         grouped.setdefault(line_key, []).append(
             {
                 "connector": connector,
                 "campaign_ref": campaign_ref,
                 "split_weight": _fmt(weight),
                 "status": status,
+                "match_method": method,
+                "match_score": score,
             }
         )
     return {
@@ -703,8 +819,29 @@ def list_mappings(conn: Any, *, plan_id: str) -> dict[str, Any]:
 # Reasons carried by each unmapped entry (E1-F-1). Distinct so the UI/card can tell
 # a genuinely never-mapped campaign apart from spend a mapping DOES exist for but
 # that falls OUTSIDE the window of the line(s) that map it.
-REASON_UNMAPPED = "sans_mapping"
-REASON_OUT_OF_WINDOW = "hors_fenetre_lignes_mappees"
+#
+# STORY 61.2 RENAMED THE VALUES, NOT THE CONSTANTS. They were `sans_mapping` and
+# `hors_fenetre_lignes_mappees` -- French, on the wire, compared literally by the
+# console (`WorkbenchPlacementsPage.tsx`). CLAUDE.md §2 says "toujours écrire en
+# anglais : le code, les commentaires, LES VALEURS", and translating at the edge
+# would have left the fault on the wire for the next reader to copy -- which is
+# exactly how four spellings of one capability word came to exist (AI-261).
+# `server/tests/conformance/test_payload_values_are_english.py` is the guard that
+# stops the third occurrence.
+#
+# THE SENTENCES LIVE HERE TOO, beside the values they explain. The console used
+# to hold them, which meant the wire carried a token whose meaning existed only
+# in one screen; the MCP and the card block read the same rows and had no
+# sentence at all.
+REASON_UNMAPPED = "no_match"
+REASON_OUT_OF_WINDOW = "outside_matched_line_window"
+
+UNMAPPED_REASON_LABELS: dict[str, str] = {
+    REASON_UNMAPPED: "No plan line of this plan matches this campaign.",
+    REASON_OUT_OF_WINDOW: (
+        "A line matches it, but this spend falls outside that line's window."
+    ),
+}
 
 
 def _parse_iso_day(value: Any) -> str | None:
@@ -728,6 +865,7 @@ def list_unmapped_actuals(
     plan_id: str,
     campaign_spend_fn: Any = None,
     campaign_spend_daily_fn: Any = None,
+    cleanup_resolution_fn: Any = None,
 ) -> dict[str, Any]:
     """Return the plan-perimeter spend that carries NO active ventilation (AD-9).
 
@@ -746,8 +884,8 @@ def list_unmapped_actuals(
       * a (connector, campaign_ref, day) is COVERED iff at least one ACTIVE line that
         maps that campaign has ``start_date <= day <= end_date``;
       * unmapped = (campaigns with NO active mapping: all their envelope spend, as
-        before, ``reason='sans_mapping'``) + (mapped campaigns: the spend of their
-        NON-covered days, aggregated, ``reason='hors_fenetre_lignes_mappees'``).
+        before, ``reason='no_match'``) + (mapped campaigns: the spend of their
+        NON-covered days, aggregated, ``reason='outside_matched_line_window'``).
 
     Conservation: Σ(covered spend) + Σ(unmapped spend) == Σ(total perimeter spend).
 
@@ -761,10 +899,25 @@ def list_unmapped_actuals(
     which propagates here (story rule: warehouse unavailable => clean error, not a
     fake empty perimeter).
 
+    AI-260: the project's cleanup rules on the exact field ``campaign_id`` are
+    resolved HERE, on this connection (``cleanup_resolution_fn``, defaulting to
+    `cleanup_rule_application.resolve_cleanup_rules`, injectable for tests), and
+    handed to the default daily reader so the perimeter is the CLEANED one --
+    a `_TEST_` campaign a rule removes must not surface as unmapped real spend.
+    The application's named states travel on the ``cleanup_rules`` key of this
+    contract (gaps and outages are NAMED, never a 500 and never a pick); it is
+    ``None`` only when no spend was read at all (no window).
+
     Returns:
       {plan_id, window: {start, end} | None, project_id,
-       unmapped: [{connector, campaign_ref, spend, reason}, ...]}
+       unmapped: [{connector, campaign_ref, spend, reason, reason_label}, ...],
+       cleanup_rules: {source_field, state, reason, rules, gaps} | None}
     When the active version has no lines, window is None and unmapped is [].
+
+    ``reason_label`` is story 61.2: the sentence travels with the value so the
+    three readers of these rows -- the Placements tab, the card block
+    (``cards.py``) and the MCP -- say the same thing, instead of one of them
+    holding the only copy of the meaning.
     """
     with conn.cursor() as cur:
         cur.execute(
@@ -794,6 +947,9 @@ def list_unmapped_actuals(
                 "project_id": project_id,
                 "window": None,
                 "unmapped": [],
+                # No spend was read, so no cleanup rule touched anything -- which
+                # is a different fact from a resolved state and is spelled None.
+                "cleanup_rules": None,
             }
 
         # Active mapped campaigns (for the "no active mapping at all" test).
@@ -834,12 +990,28 @@ def list_unmapped_actuals(
     start_iso = _parse_iso_day(wmin)
     end_iso = _parse_iso_day(wmax)
 
+    # AI-260: ONE resolution, on this connection, before the warehouse read.
+    # Fail-soft is inside the resolver (savepoint, state 'unavailable'); a gap
+    # or an outage is a NAMED state on this contract, never a 500.
+    if cleanup_resolution_fn is None:
+        from core.cleanup_rule_application import resolve_cleanup_rules  # noqa: PLC0415
+
+        cleanup_resolution_fn = resolve_cleanup_rules
+    cleanup = cleanup_resolution_fn(
+        conn, project_id=project_id, source_field="campaign_id"
+    )
+
     # Injected DAILY warehouse read -- raises on failure (never a silent []).
+    # The default reader receives the resolved application; an injected test
+    # double keeps its historic three-argument signature.
     if campaign_spend_daily_fn is None:
         from core import warehouse as _wh  # noqa: PLC0415
 
-        campaign_spend_daily_fn = _wh.query_campaign_spend_daily
-    daily_rows = campaign_spend_daily_fn(project_id, start_iso, end_iso)
+        daily_rows = _wh.query_campaign_spend_daily(
+            project_id, start_iso, end_iso, cleanup=cleanup
+        )
+    else:
+        daily_rows = campaign_spend_daily_fn(project_id, start_iso, end_iso)
 
     def _is_covered(key: tuple[Any, Any], day: str | None) -> bool:
         """A (connector, campaign_ref, day) is covered iff a mapped active line spans it."""
@@ -852,9 +1024,21 @@ def list_unmapped_actuals(
 
     # Aggregate the non-covered spend back to a per-(connector, campaign_ref) total,
     # tagging the reason. A campaign with NO active mapping -> every day is
-    # non-covered -> reason 'sans_mapping'. A mapped campaign -> only its
-    # out-of-window days accumulate here -> reason 'hors_fenetre_lignes_mappees'.
-    accum: dict[tuple[Any, Any], float] = {}
+    # non-covered -> reason 'no_match'. A mapped campaign -> only its
+    # out-of-window days accumulate here -> reason 'outside_matched_line_window'.
+    #
+    # IN MICROS, AND THAT IS THE POINT (AI-267). This loop added up to ninety
+    # daily DOUBLES per campaign. Repairing the warehouse statement and leaving a
+    # float accumulator here would move the drift one function along rather than
+    # remove it: the reader now hands back an EXACT integer per day, so the total
+    # is exact too, and the display value is derived once at the end.
+    #
+    # `spend` is still read as the fallback for an injected test double that
+    # predates `spend_micros` -- converted through the same single boundary, never
+    # accumulated as a float.
+    from core.money import MICROS_PER_UNIT  # noqa: PLC0415
+
+    accum: dict[tuple[Any, Any], int] = {}
     for r in daily_rows:
         connector = r.get("connector")
         campaign_ref = r.get("campaign_ref")
@@ -862,11 +1046,13 @@ def list_unmapped_actuals(
         day = _parse_iso_day(r.get("day"))
         if _is_covered(key, day):
             continue
-        spend = r.get("spend") or 0.0
-        accum[key] = accum.get(key, 0.0) + float(spend)
+        micros = r.get("spend_micros")
+        if micros is None:
+            micros = round(float(r.get("spend") or 0.0) * MICROS_PER_UNIT)
+        accum[key] = accum.get(key, 0) + int(micros)
 
     unmapped: list[dict[str, Any]] = []
-    for (connector, campaign_ref), spend in accum.items():
+    for (connector, campaign_ref), spend_micros in accum.items():
         reason = (
             REASON_OUT_OF_WINDOW
             if (connector, campaign_ref) in mapped
@@ -876,8 +1062,10 @@ def list_unmapped_actuals(
             {
                 "connector": connector,
                 "campaign_ref": campaign_ref,
-                "spend": spend,
+                "spend": spend_micros / MICROS_PER_UNIT,
+                "spend_micros": spend_micros,
                 "reason": reason,
+                "reason_label": UNMAPPED_REASON_LABELS[reason],
             }
         )
 
@@ -891,6 +1079,9 @@ def list_unmapped_actuals(
         "project_id": project_id,
         "window": {"start": start_iso, "end": end_iso},
         "unmapped": unmapped,
+        # AI-260: the named states of the cleanup resolution travel with the
+        # perimeter they governed -- applied rules, gaps and outages alike.
+        "cleanup_rules": cleanup.as_dict() if cleanup is not None else None,
     }
 
 
@@ -899,6 +1090,7 @@ def list_unmapped_actuals(
 __all__ = [
     "REASON_OUT_OF_WINDOW",
     "REASON_UNMAPPED",
+    "UNMAPPED_REASON_LABELS",
     "MediaPlanNotFoundError",
     "MediaPlanStateError",
     "MediaPlanValidationError",

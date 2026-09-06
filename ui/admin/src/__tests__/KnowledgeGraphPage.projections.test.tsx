@@ -47,10 +47,18 @@ class ResizeObserverStub {
       width: 800, height: 600, x: 0, y: 0, top: 0, left: 0, bottom: 600, right: 800,
       toJSON() { return this; },
     } as DOMRectReadOnly;
-    this.callback(
-      [{ target, contentRect } as ResizeObserverEntry],
-      this as unknown as ResizeObserver,
-    );
+    // Un vrai ResizeObserver ne repond JAMAIS synchronement depuis observe() --
+    // le rappel part dans les rendering steps. Le feu synchrone cassait la
+    // mesure des noeuds React Flow des que le layout elk changeait de forme
+    // (partitionnement de la vue Domains) : la mesure arrivait avant les
+    // positions et plus rien ne se rendait.
+    const callback = this.callback;
+    setTimeout(() => {
+      callback(
+        [{ target, contentRect } as ResizeObserverEntry],
+        this as unknown as ResizeObserver,
+      );
+    }, 0);
   }
   unobserve() {}
   disconnect() {}
@@ -239,11 +247,47 @@ function graphCalls(calls: string[]) {
 // ---------------------------------------------------------------------------
 
 describe("projectGraph — pure per-view projections", () => {
-  it("Domains: passes the visible set through unchanged, layered RIGHT", () => {
+  it("Domains: groups every node under its owning domain — unlinked under Unlinked", () => {
+    // Le pass-through d'origine laissait chaque carte connecteur flotter dans
+    // la bande de chaque metier. La vue regroupe desormais par domaine
+    // proprietaire (partitioning elk, mecanisme partage avec la vue Schema).
     const out = projectGraph("domains", ALL_NODES, ALL_EDGES);
-    expect(out.nodes).toBe(ALL_NODES);
-    expect(out.edges).toBe(ALL_EDGES);
     expect(out.elkOptions["elk.direction"]).toBe("RIGHT");
+    expect(out.elkOptions["elk.partitioning.activate"]).toBe("true");
+    // Aucune taxonomie dans ce jeu : tout est honnetement non rattache.
+    expect(out.groups).toBeDefined();
+    for (const n of ALL_NODES) expect(out.groups![n.id]).toBe("Unlinked");
+    // Le jeu d'entree n'est pas rendu tel quel : il est trie par groupe puis titre.
+    expect(out.nodes).not.toBe(ALL_NODES);
+    expect(out.nodes.map((n) => n.id)).toEqual(
+      [...ALL_NODES].sort((a, b) => a.title.localeCompare(b.title)).map((n) => n.id),
+    );
+    expect(out.edges).toBe(ALL_EDGES);
+  });
+
+  it("Domains: a governed object inherits the domain of the key that links to it", () => {
+    const domain: GraphNodeRow = {
+      ...TOPIC, id: "bdm_marketing", node_type: "business_domain", title: "Marketing",
+    };
+    const layer: GraphNodeRow = {
+      ...TOPIC, id: "bcl_analyst", node_type: "business_classification", title: "Data analyst",
+    };
+    const linked: GraphNodeRow = { ...TOPIC, id: "top_ga4", title: "Connector — Google Analytics" };
+    const free: GraphNodeRow = { ...TOPIC, id: "top_free", title: "Unlinked note" };
+    const taxonomyEdges: GraphEdgeRow[] = [
+      { ...EDGE_EXPLAINS, id: "e1", from_id: "bdm_marketing", to_id: "bcl_analyst", edge_type: "contains" },
+      { ...EDGE_EXPLAINS, id: "e2", from_id: "bcl_analyst", to_id: "top_ga4", edge_type: "explains" },
+    ];
+    const out = projectGraph("domains", [domain, layer, linked, free], taxonomyEdges);
+    // La classification sous un domaine, et le topic qu'elle explique, portent
+    // le titre du domaine racine ; le topic jamais lie reste « Unlinked ».
+    expect(out.groups!["bdm_marketing"]).toBe("Marketing");
+    expect(out.groups!["bcl_analyst"]).toBe("Marketing");
+    expect(out.groups!["top_ga4"]).toBe("Marketing");
+    expect(out.groups!["top_free"]).toBe("Unlinked");
+    // Et le tri place la bande Marketing avant la bande Unlinked.
+    const titles = out.nodes.map((n) => out.groups![n.id]);
+    expect(titles.indexOf("Marketing")).toBeLessThan(titles.indexOf("Unlinked"));
   });
 
   it("Procedures: reorders procedure nodes first and flags the ordering", () => {
@@ -443,11 +487,12 @@ describe("KnowledgeGraphPage — view switcher wiring", () => {
     await waitFor(() => expect(flowRef.current).toBeTruthy());
 
     // "campaign" matches exactly the two marts schema docs, in projection
-    // order: doc_fct first, then doc_dim.
+    // order: the Domains view sorts by (group, title), so doc_dim
+    // ("marts.dim_campaign") comes first, then doc_fct ("marts.fct_…").
     await user.type(screen.getByTestId("kg-search"), "campaign");
     const fitSpy = vi.spyOn(flowRef.current as FlowLike, "fitView");
     await waitFor(() => {
-      expect(screen.getByTestId("kg-node-doc_fct")).toHaveAttribute("data-match", "true");
+      expect(screen.getByTestId("kg-node-doc_dim")).toHaveAttribute("data-match", "true");
     });
 
     // Fired on the BODY, not the search input: cycling used to require the
@@ -456,7 +501,7 @@ describe("KnowledgeGraphPage — view switcher wiring", () => {
 
     await waitFor(() => {
       expect(fitSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ nodes: [{ id: "doc_dim" }] }),
+        expect.objectContaining({ nodes: [{ id: "doc_fct" }] }),
       );
     });
   }, TEST_TIMEOUT);

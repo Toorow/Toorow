@@ -4,7 +4,6 @@ Tests:
   - AlertSignal dataclass construction
   - _read_dead_letter_count: returns counts grouped by connector; returns {} on DB error
   - _read_mirror_lag: reads _last_sync_result; returns None when None or error key
-  - _read_verification_failures: returns count below threshold; 0 on DB error
   - _read_health_poller_staleness: computes seconds; None if no rows; 0 on DB error
   - evaluate_alerts: threshold matrix (AC6) -- 6 required scenarios
   - evaluate_alerts: graceful degradation on DB error (returns [] or partial)
@@ -181,34 +180,14 @@ class TestReadMirrorLag:
         assert result is None
 
 
-# ---------------------------------------------------------------------------
-# T1.4 -- _read_verification_failures
-# ---------------------------------------------------------------------------
-
-
-class TestReadVerificationFailures:
-    def test_returns_count(self):
-        from core.infra_alerts import _read_verification_failures
-
-        rows = [(3,)]
-        conn = _make_conn(_make_cursor(rows=rows))
-        result = _read_verification_failures(conn, threshold=0.5)
-        assert result == 3
-
-    def test_returns_zero_when_no_rows(self):
-        from core.infra_alerts import _read_verification_failures
-
-        conn = _make_conn(_make_cursor(rows=None))
-        result = _read_verification_failures(conn, threshold=0.5)
-        assert result == 0
-
-    def test_returns_zero_on_db_error(self):
-        from core.infra_alerts import _read_verification_failures
-
-        conn = MagicMock()
-        conn.cursor = MagicMock(side_effect=RuntimeError("DB error"))
-        result = _read_verification_failures(conn)
-        assert result == 0
+# RETIRE 2026-08-17 (AI-101) -- `TestReadVerificationFailures`.
+# Il tenait `_read_verification_failures`, un COMPTE plateforme des verdicts sous
+# un seuil de completude sur 24 h, leve avec `connector=None`. Il ne nommait
+# aucun Datastream, donc un tirage vide isole et une source morte depuis un mois
+# rendaient la meme ligne -- et la question << un flux vide reste-t-il
+# planifie ? >> n etait pas evaluable. Remplace par `datastream_empty_streak`,
+# un signal PAR flux ; la mesure est prouvee sur base vivante dans
+# `tests/integration/test_verification_streaks_pg.py`.
 
 
 # ---------------------------------------------------------------------------

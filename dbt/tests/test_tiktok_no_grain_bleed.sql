@@ -43,7 +43,7 @@ stg_series AS (
         date,
         '{{ mart_metric }}'  AS metric,
         '{{ dimension }}'    AS breakdown_dimension,
-        SUM(CAST({{ stg_col }} AS DOUBLE)) AS stg_total
+        SUM(CAST({{ stg_col }} AS {{ toorow_float_type() }})) AS stg_total
     FROM {{ ref('stg_tiktok_ads_daily') }}
     WHERE data_level = '{{ data_level }}'
       AND {{ dimension }} IS NOT NULL

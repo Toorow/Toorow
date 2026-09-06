@@ -1,203 +1,282 @@
 ---
 title: FastMCP Agent Tools Reference
-description: Exhaustive technical reference for all FastMCP tools exposed to AI agents in toorow.
+description: How the toorow MCP surface is organised, and the tools an AI agent reaches on each governed profile.
 ---
 
-This document provides an exhaustive technical reference for all **FastMCP tools** mounted on the **toorow** microkernel server (`server/core/main.py`).
+**toorow** mounts a single governed MCP surface on the microkernel server
+(`server/core/main.py`). Every tool is *declared*: its profile, whether it reads
+or writes, and what it may touch are part of the declaration, not of the code
+that answers the call.
+
+<Note>
+  This page describes the surface and documents the tools you will reach first.
+  It is **not** a listing of all 131 tools: the tool catalog a host receives at
+  `tools/list` is generated from the server itself, and that catalog is the
+  reference which cannot fall behind. Every tool named on this page is checked
+  against the server registry by a conformance test.
+</Note>
 
 ---
 
-## 1. Core Analytics & Data Tools
+## 1. Three profiles, one surface
+
+A host does not see all 131 tools. It sees the profiles its session is entitled
+to, and nothing else.
+
+| Profile | Tools | What it may do | Reached when |
+| --- | --- | --- | --- |
+| `insights` | 54 | Reads only. Never mutates. | Always — this is the floor, with no token and no proof of workspace |
+| `operations` | 43 | Runs, drafts, schedules, compositions | The session proves an endpoint and a workspace |
+| `governance` | 34 | Publishes definitions, capabilities and master data | The session proves an endpoint, a workspace, and verified interactive presence |
+
+A tool that writes cannot be declared `insights` — the server refuses to
+assemble a surface where one is. Forty-three tools are declared *confirmed
+write*: each is refused before it runs unless a person is verifiably present at
+the host, and five of those additionally consume a single-use confirmation
+issued by a preceding `prepare_*` call.
+
+---
+
+## 2. Reading what the platform already holds
 
 ### `get_daily_report`
-Fetches canonical daily marketing metrics across all active connectors for a project.
+Canonical daily marketing metrics for a project, across every active connector.
 
 ```python
 get_daily_report(
     project_id: str = "default",
-    report_profile: str = "daily",
-    date_from: str = "",
-    date_to: str = ""
+    date_range: dict | None = None,
+    connectors: list[str] | None = None,
+    as_of: str | None = None
 ) -> dict
 ```
 
-#### JSON Response Schema (`structuredContent`)
-```json
-{
-  "project_id": "default",
-  "report_profile": "daily",
-  "date_range": { "from": "2026-07-01", "to": "2026-07-25" },
-  "provenance": {
-    "pull_id": "01J3M4K5N6P7Q8R9S0T1V2W3X4",
-    "loaded_at": "2026-07-25T02:15:00Z"
-  },
-  "metrics": [
-    {
-      "date": "2026-07-24",
-      "connector": "google-analytics",
-      "impressions": 45200,
-      "clicks": 3120,
-      "spend": 0.0,
-      "conversions": 280,
-      "revenue": 14200.50,
-      "ctr": 0.069,
-      "cpa": 0.0,
-      "roas": null
-    },
-    {
-      "date": "2026-07-24",
-      "connector": "meta-ads",
-      "impressions": 128000,
-      "clicks": 4200,
-      "spend": 1850.00,
-      "conversions": 190,
-      "revenue": 8900.00,
-      "ctr": 0.0328,
-      "cpa": 9.73,
-      "roas": 4.81
-    }
-  ]
-}
-```
+The answer carries its own provenance: the pull that produced each row, the
+moment it landed, and the freshness of the data behind it. An agent that quotes
+a number from this tool can always say where the number came from.
 
----
-
-### `<source>_report`
-Source-specific report tools auto-discovered at server startup:
-- `google_analytics_report(project_id, date_from, date_to)`
-- `meta_ads_report(project_id, date_from, date_to)`
-- `tiktok_ads_report(project_id, date_from, date_to)`
-- `linkedin_ads_report(project_id, date_from, date_to)`
-- `shopify_report(project_id, date_from, date_to)`
-- `stripe_report(project_id, date_from, date_to)`
-- `mailgun_report(project_id, date_from, date_to)`
-
----
-
-## 2. Intelligence & Surveillance Tools
-
-### `get_morning_briefing`
-Synthesizes the latest nightly morning briefing for an AI agent.
+### `get_report`
+Runs a saved report definition and returns its rows.
 
 ```python
-get_morning_briefing(project_id: str = "default") -> dict
+get_report(project_id: str, report_id: str, date_from: str = "", date_to: str = "") -> dict
 ```
 
-#### JSON Response Schema
-```json
-{
-  "briefing_date": "2026-07-25",
-  "project_id": "default",
-  "summary_text": "Overall performance is stable. Meta Ads spend increased by 8% with a 12% rise in conversions. GA4 organic conversions experienced a 15% drop on July 24.",
-  "kpi_deltas": {
-    "total_spend": { "current": 3450.00, "previous": 3200.00, "delta_pct": 7.81 },
-    "total_conversions": { "current": 640, "previous": 610, "delta_pct": 4.91 },
-    "total_revenue": { "current": 28400.00, "previous": 26900.00, "delta_pct": 5.57 }
-  },
-  "flagged_anomalies": [
-    {
-      "date": "2026-07-24",
-      "connector": "google-analytics",
-      "metric": "conversions",
-      "observed": 280,
-      "rolling_mean": 380.5,
-      "zscore": -3.21,
-      "severity": "warning",
-      "candidate_context": [
-        {
-          "event_type": "checkout_migration",
-          "title": "Stripe API v2 Migration",
-          "date": "2026-07-24"
-        }
-      ]
-    }
-  ]
-}
+`list_reports`, `get_report_versions` and `run_report_version` cover the rest of
+the report lifecycle. A report version names the query intent *and* the default
+presentation; running it produces a new immutable Result.
+
+### `get_data_quality_report`
+The state of the ten data-quality monitors for a project, or for one connector.
+
+```python
+get_data_quality_report(project_id: str = "default", connector: str | None = None) -> dict
 ```
 
----
+See [Data Quality](/data-quality) for what each monitor watches and what its
+findings mean.
 
 ### `get_source_capabilities`
-Inspects source metadata, available fields, supported grains, and filter bounds.
+What one connected source can actually deliver: fields, supported grains, filter
+bounds.
 
 ```python
-get_source_capabilities(
-    project_id: str,
-    connection_ref_id: str
-) -> dict
+get_source_capabilities(project_id: str, connection_ref_id: str) -> dict
 ```
 
 ---
 
-## 3. Governed Flow & Configuration Tools
+## 3. Asking a new question: the analytical path
 
-### `flows_list`
-Lists active datastreams and report configurations.
+toorow has one governed analytical path, and these tools are its steps. Query
+intent becomes an immutable **Result**; a Result may become a **Render**;
+Renders may be composed into a **Dossier**; a Dossier version or a single Render
+may be handed out through a revocable **Share**. See
+[Renders, Dossiers and Sharing](/renders-and-sharing).
+
+### `explore_analyze_query`
+States a question against a Semantic View — governed measures, governed
+dimensions, a grain and a window — and executes it.
 
 ```python
-flows_list(project_id: str = "default") -> list[dict]
+explore_analyze_query(
+    project_id: str,
+    semantic_view_id: str,
+    semantic_view_version_id: str,
+    measures: list[str],
+    dimensions: list[str],
+    time_grain: str = "",
+    last_n_days: int = 0,
+    name: str = ""
+) -> dict
+```
+
+`discover_analyze_matches` and `list_analyze_facets` are the read-only tools that
+let an agent find which Semantic View and which governed names to ask for,
+before it asks.
+
+### `execute_analyze_query_spec`
+Re-executes an existing Query Spec version. Same question, new data.
+
+```python
+execute_analyze_query_spec(project_id: str, query_spec_version_id: str) -> dict
+```
+
+### `analyze_result`
+Opens an existing Result — its data, its definitions, its quality, its
+provenance, its freshness, and its reasoning path (or an explicit *No AI path*).
+
+```python
+analyze_result(project_id: str, result_id: str) -> dict
+```
+
+### `render_analyze_result`
+Turns a Result into a presentation, either from a saved Visualization Spec
+version or from a Chart Template version.
+
+```python
+render_analyze_result(
+    project_id: str,
+    result_id: str,
+    visualization_spec_version_id: str | None = None,
+    visualization_template_version_id: str | None = None
+) -> dict
+```
+
+### `compose_dossier`
+Keeps what the model drew and wrote. Each figure is frozen server-side into an
+immutable Render, and the narrative blocks are stamped with their author — the
+model, or a person — in the same transaction as the Dossier version.
+
+```python
+compose_dossier(
+    project_id: str,
+    label: str,
+    blocks: list[dict],
+    description: str = "",
+    dossier_id: str = ""
+) -> dict
+```
+
+A block referencing a figure from another project fails the whole call: no
+partial Dossier is ever written.
+
+---
+
+## 4. Governed flows and configuration
+
+### `flows_list`
+Lists datastreams and report configurations for a project.
+
+```python
+flows_list(project_id: str, kind: str | None = None) -> dict
 ```
 
 ### `flows_get`
-Retrieves a specific datastream or report definition by ID.
+Retrieves one datastream or report definition.
 
 ```python
-flows_get(project_id: str, flow_id: str) -> dict
+flows_get(project_id: str, kind: str, id: str) -> dict
 ```
 
 ### `flows_upsert`
-Creates or updates a datastream configuration.
+Creates or updates a datastream configuration. `flows_validate` checks a
+definition without writing it.
 
 ```python
-flows_upsert(
+flows_upsert(project_id: str, definition: dict) -> dict
+```
+
+---
+
+## 5. Connectors: installed, verified, activated
+
+There is no per-connector tool. A connector is not a tool surface — it is a
+source the platform knows how to pull. Three read tools answer the three
+questions a host actually asks, and `list_connectors` enumerates the catalog.
+
+### `get_connector_installation_status`
+Is this connector present in the running server?
+
+```python
+get_connector_installation_status(connector_name: str) -> dict
+```
+
+### `get_connector_verification_status`
+Has this connector been proved against a real account?
+
+```python
+get_connector_verification_status(connector_name: str) -> dict
+```
+
+### `get_connector_activation_status`
+Is this connector connected and pulling for this organization?
+
+```python
+get_connector_activation_status(connector_name: str, org_id: str) -> dict
+```
+
+---
+
+## 6. Context, insights and feedback
+
+### `get_context_hub`
+The registered context of a project: what happened, when, and who recorded it.
+`add_context_event` records one. `correct_context_event` appends a correction
+and preserves the original wording — a correction never overwrites.
+`withdraw_context_event` withdraws one, auditably, and a withdrawal is not
+undone. `search_context` and `get_context_adherence` read.
+
+### `preview_daily_insight` / `publish_daily_insights`
+Composes the daily narrative, then publishes it.
+
+```python
+preview_daily_insight(project_id: str, payload: dict) -> dict
+publish_daily_insights(
     project_id: str,
-    kind: str,  # "datastream" or "report"
-    definition: dict
+    insight_date: str,
+    items: list[dict] | None = None,
+    status: str = ""
 ) -> dict
 ```
 
----
-
-## 4. Connector Management & Verification Tools
-
-### `connector_activate`
-Activates an auto-discovered connector module for a project.
-
-```python
-connector_activate(project_id: str, provider: str) -> dict
-```
-
-### `connector_verify`
-Runs immediate health checks and golden-pull validation for a connector connection.
-
-```python
-connector_verify(project_id: str, connection_ref_id: str) -> dict
-```
-
----
-
-## 5. Observability & Feedback Tools
+`get_daily_insight_readiness` says whether there is anything to publish, and
+`retract_daily_insight` withdraws a published one as an audited transition —
+never as a deletion.
 
 ### `submit_feedback`
-Submits user rating (+1 / -1) and commentary on an agent analysis trace (AD-13).
+Records a rating and commentary against a trace, a report or a connector.
 
 ```python
 submit_feedback(
-    trace_id: str,
-    rating: int,  # 1 or -1
-    feedback_text: str = ""
+    project_id: str,
+    rating: int,           # 1 or -1
+    trace_id: str | None = None,
+    comment: str = "",
+    report_ref: str = "",
+    connector: str = "",
+    handle: str = ""
 ) -> dict
 ```
+
+`submit_analyze_feedback` is the equivalent on the analytical path: it attaches
+the rating to the exact observation the reader was looking at.
 
 ---
 
 ## Next Steps & Cross-References
 
 <CardGroup cols={2}>
+  <Card title="Renders, Dossiers and Sharing" icon="chart-line" href="/renders-and-sharing">
+    How an answer becomes a frozen figure, a document, and a revocable link.
+  </Card>
   <Card title="Agent Rules" icon="scroll" href="/agent-rules">
     Review system instructions and constraints for tool execution.
   </Card>
   <Card title="MCP App Use Cases" icon="layer-group" href="/use-cases-library">
     Explore interactive MCP App UI widgets powered by tool outputs.
+  </Card>
+  <Card title="Host Integration" icon="plug" href="/mcp-host-integration">
+    Connect Claude, ChatGPT or another MCP host to your workspace.
   </Card>
 </CardGroup>

@@ -1,0 +1,32 @@
+version: 2
+
+sources:
+  - name: raw_bigquery
+    description: "Immutable raw landing zone for replicated BigQuery tables (AD-7: append-only)."
+    schema: "{{ var('raw_schema', 'main') }}"  # 24.4 AC2: org_<wslug>_raw injected by orchestrator, 'main' without var (bit-identique)
+    tables:
+      - name: raw_bigquery_daily
+        description: >
+          Rows replicated from a customer-owned BigQuery table, folded into long
+          format (date, metric, value, breakdown). Append-only (AD-7): a re-pull of
+          the same window adds rows and the staging QUALIFY supersedes them.
+
+models:
+  - name: stg_bigquery_daily
+    description: >
+      Staging: the replicated table in canonical long format.
+      QUALIFY supersede (AD-7): latest pull per grain wins.
+    columns:
+      - name: date
+        tests: [not_null]
+      - name: metric
+        tests: [not_null]
+      - name: value
+        tests: [not_null]
+      - name: pull_id
+        tests: [not_null]
+    tests:
+      - unique:
+          name: stg_bigquery_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || metric || '|' || breakdown_dimension || '|' || breakdown_value"

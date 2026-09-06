@@ -1,5 +1,21 @@
 """Story 39.5: live as-of-day FX provider (Frankfurter / ECB) behind the 39.4 seam.
 
+NOT ARMED, AND OPTIONAL BY RATIFICATION -- read this before wiring anything to it.
+Measured 2026-08-17: this module has ZERO production importers; only its own tests
+reach it. That is not an oversight to repair in passing. The amendment of
+2026-08-17 to ``docs/product-architecture/alignment-register.md`` states that
+automatic rate ingestion "remains optional and may be armed later; its absence
+does not block conversion", because the path a user actually has is the POSED
+one -- ``core.fx_fixed_rates``, a fixed value under the governed ``fixed`` method.
+
+So this file is kept deliberately, not abandoned: arming a daily FX pull is a
+product decision (the audit of 2026-08-17 asks whether it should be a row of
+``app.platform_clocks`` or an application scheduler job), and deleting the
+provider would make that decision cost a rewrite. Nothing here is dead code by
+accident; it is unarmed code on purpose. Two repairs are owed BEFORE it is armed:
+``core.fx_rate_sets.ingest_rate_batch`` still has no caller and no job, and
+``core.money_derivation.derive`` dates an undated amount with ``date.today()``.
+
 The live-tier implementation of Epic 39 (E39-FR06): a ``FrankfurterAsOfRateProvider``
 that satisfies the ``AsOfRateProvider`` structural Protocol shipped by Story 39.4
 (``server/core/fx_helper.py``) and plugs into

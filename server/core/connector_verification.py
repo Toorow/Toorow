@@ -33,9 +33,9 @@ INVARIANTS (adversarially enforced, mirroring connector_installation.py):
     ``request_payload``. Row ids are generated at WRITE TIME inside the mutation
     closure. Two identical runs with the same Idempotency-Key replay cleanly.
 
-  * ROWCOUNT CHECKED (review H2). INSERT uses ``ON CONFLICT DO NOTHING``; the
-    rowcount is verified; on a lost race the call reconciles to the persisted row.
-    The safe read-model is derived from ``op_result.result``, not a hard-coded target.
+  * ROWCOUNT CHECKED (review H2). Every immutable INSERT must affect exactly
+    one row. An impossible collision is rejected instead of being reconciled
+    to unrelated evidence. The read-model comes from the operation result.
 
   * SYNTHETIC DELIVERY SHORT-CIRCUITS (AC3). The injectable delivery runner MUST
     NOT write a quarantine object, raw import, or publication. The mutation asserts
@@ -59,7 +59,24 @@ from typing import Any, Callable
 
 from ulid import ULID
 
+from core.audit import declare_action
+
+# Imported at module scope on purpose: it is the one fact this module needs about
+# the connector, and binding it here is what makes the answer substitutable in a
+# test without touching the registry the rest of the process shares.
+from core.connector_family import owes_routing_contract
 from core.operations import MutationResult, OperationSpec, execute_operation
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12) : declarees ICI, a cote du code qui les ecrit, et non
+# dans `core/audit.py`. Ce fichier etait un carrefour -- 43 editions de 29
+# sujets depuis juin, dont 34 n'ajoutaient qu'une constante -- et 45 % des
+# actions reellement ecrites en production n'y etaient meme pas declarees,
+# parce que la liste etait trop loin pour valoir le detour. `write_audit_row`
+# refuse desormais une action que personne n'a declaree.
+ACTION_CONNECTOR_VERIFICATION_RAN = declare_action("connector.verification.ran")
+
 
 # ---------------------------------------------------------------------------
 # Constants / evidence classes (AC1, Task 2).
@@ -87,6 +104,11 @@ _DEGRADABLE: frozenset[str] = frozenset({"READY"})
 
 # Default re-check interval TTL in seconds (1 hour).
 _DEFAULT_TTL_SECONDS = 3600
+_MAX_IDEMPOTENCY_KEY_LENGTH = 255
+_ALLOWED_CHECK_EVIDENCE_CLASSES: frozenset[str] = frozenset({
+    EVIDENCE_CLASS_ROUTING,
+    EVIDENCE_CLASS_AUTH,
+})
 
 
 # ---------------------------------------------------------------------------
@@ -153,11 +175,20 @@ def _safe_run_read_model(
     created_at: Any,
     blocking_reason: str | None,
     synthetic_delivery: bool,
+    ttl_seconds: int | None = None,
 ) -> dict[str, Any]:
     """Build the secret-free read-model for a verification run.
 
     NEVER includes evidence_hash, signing secrets, DNS tokens, or any raw
     credential (AC4, E38-NFR03).
+
+    ``ttl_seconds`` IS PART OF THE ANSWER, not decoration. The evidence row has
+    carried a re-check interval since migration 085 and no reader ever asked for
+    it, so "verified" and "verified within the interval it is checked on" were
+    the same sentence to every caller. A console that must tell a person whether
+    a `READY` connector's evidence has run out cannot invent that interval, and
+    the expiry itself is NOT returned: `last_run_at + ttl_seconds` is derivable,
+    and two representations of one instant can disagree.
     """
     return {
         "connector_name": connector_name,
@@ -169,6 +200,7 @@ def _safe_run_read_model(
         "last_run_at": _safe_iso(created_at),
         "blocking_reason": blocking_reason,
         "synthetic_delivery": synthetic_delivery,
+        "ttl_seconds": ttl_seconds,
         "safe_next_action": _SAFE_NEXT_ACTIONS.get(outcome or "", "run verification"),
     }
 
@@ -197,7 +229,8 @@ def get_verification_state(
     with conn.cursor() as cur:
         cur.execute(
             "SELECT r.outcome, r.evidence_class, r.first_seen_at, r.created_at, "
-            "       r.blocking_reason, r.synthetic_delivery, i.state "
+            "       r.blocking_reason, r.synthetic_delivery, r.ttl_seconds, "
+            "       i.state "
             "FROM app.connector_verification_runs r "
             "JOIN app.connector_installations i "
             "     ON i.id = r.installation_id "
@@ -209,7 +242,16 @@ def get_verification_state(
         row = cur.fetchone()
     if row is None:
         return None
-    outcome, ev_class, first_seen, last_run, reason, synthetic, inst_state = row
+    (
+        outcome,
+        ev_class,
+        first_seen,
+        last_run,
+        reason,
+        synthetic,
+        ttl_seconds,
+        inst_state,
+    ) = row
     return _safe_run_read_model(
         connector_name=connector_name,
         environment=environment,
@@ -220,6 +262,7 @@ def get_verification_state(
         created_at=last_run,
         blocking_reason=reason,
         synthetic_delivery=bool(synthetic),
+        ttl_seconds=None if ttl_seconds is None else int(ttl_seconds),
     )
 
 
@@ -272,9 +315,13 @@ def run_verification(
         raise ConnectorVerificationError("actor is required")
     if not isinstance(idempotency_key, str) or not idempotency_key.strip():
         raise ConnectorVerificationError("idempotency_key is required")
+    if len(idempotency_key.strip()) > _MAX_IDEMPOTENCY_KEY_LENGTH:
+        raise ConnectorVerificationError("idempotency_key is too long")
 
     environment = environment.strip()
     connector_name = connector_name.strip()
+    actor = actor.strip()
+    idempotency_key = idempotency_key.strip()
 
     # ------------------------------------------------------------------
     # Load the installation row.
@@ -283,7 +330,8 @@ def run_verification(
         cur.execute(
             "SELECT id, state "
             "FROM app.connector_installations "
-            "WHERE environment = %s AND connector_name = %s",
+            "WHERE environment = %s AND connector_name = %s "
+            "FOR UPDATE",
             (environment, connector_name),
         )
         inst_row = cur.fetchone()
@@ -295,110 +343,70 @@ def run_verification(
     installation_id, current_state = inst_row
 
     # ------------------------------------------------------------------
-    # Load the active domain config id (optional -- may be None if unconfigured).
+    # Load and lock the active domain config. Verification without the active
+    # configuration would attach evidence to no routing contract.
     # ------------------------------------------------------------------
     with conn.cursor() as cur:
         cur.execute(
             "SELECT id FROM app.connector_domain_configs "
             "WHERE environment = %s AND connector_name = %s "
-            "AND superseded_by IS NULL",
+            "AND superseded_by IS NULL "
+            "FOR SHARE",
             (environment, connector_name),
         )
         dc_row = cur.fetchone()
 
-    domain_config_id: str | None = dc_row[0] if dc_row is not None else None
-
-    # ------------------------------------------------------------------
-    # F5: Zero checks must NOT silently pass.
-    # When no checks are configured at all, return a distinct not_configured
-    # outcome WITHOUT writing a DB row (the CHECK constraint only allows
-    # 'passed'/'failed'/'degraded'; 'not_configured' is a read-model-only
-    # sentinel). No state advance. Surfaced in the API response via
-    # checks_evaluated=0 and outcome="not_configured".
-    # ------------------------------------------------------------------
-    if not checks:
-        rm = _safe_run_read_model(
-            connector_name=connector_name,
-            environment=environment,
-            state=current_state,
-            outcome=OUTCOME_NOT_CONFIGURED,
-            evidence_class=EVIDENCE_CLASS_NO_CHECKS,
-            first_seen_at=None,
-            created_at=None,
-            blocking_reason=None,
-            synthetic_delivery=False,
-        )
-        rm["checks_evaluated"] = 0
-        return rm
-
-    # ------------------------------------------------------------------
-    # Evaluate checks (all checks run; first failure short-circuits final
-    # outcome determination after the loop).
-    # ------------------------------------------------------------------
-    checks_evaluated = len(checks)
-    all_pass = True
-    fail_class = EVIDENCE_CLASS_ROUTING
-    fail_reason: str | None = None
-    check_results: list[tuple[bool, str, str]] = []
-    for check_fn in checks:
-        try:
-            passed, ev_class, reason = check_fn()
-        except Exception as exc:  # noqa: BLE001
-            passed, ev_class, reason = False, EVIDENCE_CLASS_ROUTING, f"check_error: {exc}"
-        check_results.append((passed, ev_class, reason))
-        if not passed and all_pass:
-            all_pass = False
-            fail_class = ev_class
-            fail_reason = reason
-
-    # ------------------------------------------------------------------
-    # Determine outcome and state transition.
-    # ------------------------------------------------------------------
-    if all_pass:
-        outcome = OUTCOME_PASSED
-        evidence_class = EVIDENCE_CLASS_ROUTING
-        blocking_reason = None
-        first_seen_at: Any = None
-
-        # State advance: DOMAIN_PENDING / VERIFYING / DEGRADED -> READY (F2).
-        target_state: str | None = None
-        if current_state in _ADVANCEABLE_TO_READY:
-            target_state = "READY"
-        # READY stays READY -- just record the evidence (no transition needed).
+    if dc_row is None:
+        # AI-206. An installation that never owed a domain cannot be refused for
+        # not having one. THE QUESTION IS ASKED OF THE FAMILY, not of the current
+        # state: this read `current_state != "VERIFYING"` until 2026-08-17, which
+        # is true for exactly one instant -- the moment after `apply_installation`
+        # opens a domain-less installation at VERIFYING (migration 267). The first
+        # passing run moves the same row to READY, and every later verification of
+        # that connector was then refused for not having a domain it never owed.
+        #
+        # Three things that cost: story 38.4 is CONTINUOUS verification and the
+        # evidence row carries a `ttl_seconds` whose re-run could never happen for
+        # any of the 39 module connectors; a platform prerequisite that disappeared
+        # could never degrade the installation, READY being the only state
+        # `_DEGRADABLE` admits and READY being refused entry; and
+        # `_SAFE_NEXT_ACTIONS["DEGRADED"]` offered « resolve cause, then advance to
+        # READY or VERIFYING », a gesture this function would have refused.
+        #
+        # Not a second caller-supplied flag either -- that was the objection the
+        # state proxy was chosen over, and it was right: two hand-passed booleans
+        # can disagree, and the same connector would then owe a domain to one
+        # function and not to the other. `core.connector_family` is DERIVED from
+        # the registry and shared with `apply_installation`'s caller, so there is
+        # nothing to keep in step. `run_synthetic_delivery` below keeps the hard
+        # requirement for every family, and correctly -- a synthetic delivery IS
+        # the routing contract being exercised, so without one it has nothing to
+        # send through.
+        if owes_routing_contract(connector_name):
+            raise ConnectorVerificationUnavailable(
+                "active domain configuration is required"
+            )
+        domain_config_id = None
     else:
-        evidence_class = fail_class
-        blocking_reason = fail_reason
+        domain_config_id = dc_row[0]
 
-        if current_state in _DEGRADABLE:
-            outcome = OUTCOME_DEGRADED
-            target_state = "DEGRADED"
-            # Carry forward first_seen_at from the prior DEGRADED run (AC2).
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT first_seen_at FROM app.connector_verification_runs "
-                    "WHERE environment = %s AND connector_name = %s "
-                    "AND outcome = 'degraded' "
-                    "ORDER BY created_at DESC LIMIT 1",
-                    (environment, connector_name),
-                )
-                prior_deg = cur.fetchone()
-            # F6: On first-ever degradation (no prior degraded run), set first_seen_at
-            # to NOW() via SQL in the INSERT (DB-authoritative timestamp). We signal
-            # this by using the sentinel value "SET_TO_NOW" so the mutation uses
-            # NOW() in SQL rather than a Python timestamp.
-            first_seen_at = prior_deg[0] if prior_deg is not None else "SET_TO_NOW"
-        else:
-            outcome = OUTCOME_FAILED
-            target_state = None
-            first_seen_at = None
+    # ------------------------------------------------------------------
+    # A zero-check attempt still enters the idempotency/audit spine. Its mutation
+    # records no verification row and advances no state, but a retry can replay
+    # the same not_configured result without depending on current module wiring.
+    checks_evaluated = len(checks)
+
+    # ------------------------------------------------------------------
+    # Check evaluation belongs inside the operation mutation. On an idempotent
+    # replay execute_operation returns the stored result without invoking it.
 
     # ------------------------------------------------------------------
     # Build OperationSpec (deterministic idempotency -- no random id in payload).
     # ------------------------------------------------------------------
     spec = OperationSpec(
-        command_type="connector.verification.ran",
+        command_type=ACTION_CONNECTOR_VERIFICATION_RAN,
         actor=actor,
-        effective_org_id="platform",
+        effective_org_id=None,
         resource_path=(
             "platform:connector-verification-runs",
             f"environment:{environment}",
@@ -415,8 +423,6 @@ def run_verification(
         request_payload={
             "environment": environment,
             "connector_name": connector_name,
-            "outcome": outcome,
-            "evidence_class": evidence_class,
             "synthetic_delivery": False,
         },
         provider_references={},
@@ -427,85 +433,19 @@ def run_verification(
         trace_id=trace_id,
     )
 
-    # Capture first_seen_at in closure for the mutation (avoids mutation arg).
-    # The sentinel "SET_TO_NOW" means the DB supplies the timestamp via NOW().
-    _first_seen = first_seen_at
-
     def mutation(operation_conn, operation_id: str) -> MutationResult:
-        # Generate row id at write time (review H1: not hashed).
-        run_id = f"cvr_{ULID()}"
-
-        # Compute evidence hash over class + current wall-clock string.
-        import datetime as _dt  # noqa: PLC0415
-        sampled_at = _dt.datetime.utcnow().isoformat()
-        ev_hash = _evidence_hash(evidence_class, sampled_at)
-
-        # F6: When first_seen_at sentinel is "SET_TO_NOW", use NOW() in SQL so
-        # the timestamp is DB-authoritative (onset = this run's created_at).
-        if _first_seen == "SET_TO_NOW":
-            with operation_conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO app.connector_verification_runs "
-                    "(id, installation_id, domain_config_id, environment, "
-                    "connector_name, outcome, evidence_class, evidence_hash, "
-                    "blocking_reason, first_seen_at, ttl_seconds, "
-                    "synthetic_delivery, operation_id) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s, FALSE, %s) "
-                    "ON CONFLICT DO NOTHING",
-                    (
-                        run_id,
-                        installation_id,
-                        domain_config_id,
-                        environment,
-                        connector_name,
-                        outcome,
-                        evidence_class,
-                        ev_hash,
-                        blocking_reason,
-                        _DEFAULT_TTL_SECONDS,
-                        operation_id,
-                    ),
-                )
-                if cur.rowcount != 1:
-                    # Reconcile to the persisted row (review H2).
-                    cur.execute(
-                        "SELECT id, outcome, evidence_class, blocking_reason, "
-                        "first_seen_at, created_at "
-                        "FROM app.connector_verification_runs "
-                        "WHERE environment = %s AND connector_name = %s "
-                        "ORDER BY created_at DESC LIMIT 1",
-                        (environment, connector_name),
-                    )
-                    race_row = cur.fetchone()
-                    if race_row is None:  # pragma: no cover
-                        from core.operations import _canonical_hash  # noqa: PLC0415
-                        result = {"run_id": run_id, "outcome": outcome,
-                                  "evidence_class": evidence_class}
-                        return MutationResult(
-                            outcome="succeeded", before_hash=None,
-                            after_hash=_canonical_hash(result), result=result,
-                            outbox_payload=result,
-                        )
-                    r_id, r_outcome, r_ev_class, r_reason, r_first, r_created = race_row
-                    from core.operations import _canonical_hash  # noqa: PLC0415
-                    result = {"run_id": r_id, "outcome": r_outcome,
-                              "evidence_class": r_ev_class,
-                              "first_seen_at": r_first.isoformat() if r_first else None}
-                    return MutationResult(
-                        outcome="succeeded", before_hash=None,
-                        after_hash=_canonical_hash(result), result=result,
-                        outbox_payload=result,
-                    )
-
+        if not checks:
             from core.operations import _canonical_hash  # noqa: PLC0415
+
             result = {
-                "run_id": run_id,
                 "environment": environment,
                 "connector_name": connector_name,
-                "outcome": outcome,
-                "evidence_class": evidence_class,
-                "blocking_reason": blocking_reason,
-                "first_seen_at": "now",  # sentinel: actual value set by DB NOW()
+                "outcome": OUTCOME_NOT_CONFIGURED,
+                "evidence_class": EVIDENCE_CLASS_NO_CHECKS,
+                "blocking_reason": None,
+                "first_seen_at": None,
+                "created_at": None,
+                "checks_evaluated": 0,
             }
             return MutationResult(
                 outcome="succeeded",
@@ -515,9 +455,86 @@ def run_verification(
                 outbox_payload={
                     "connector_name": connector_name,
                     "environment": environment,
-                    "outcome": outcome,
+                    "outcome": OUTCOME_NOT_CONFIGURED,
                 },
             )
+
+        all_pass = True
+        fail_class = EVIDENCE_CLASS_ROUTING
+        fail_reason: str | None = None
+        # WHAT THE CHECKS ACTUALLY REPORTED (AI-206). The pass branch below used
+        # to hardcode `EVIDENCE_CLASS_ROUTING`, discarding every class the checks
+        # returned -- so a passing `auth_check` was written to the ledger as a
+        # ROUTING verdict, describing a route that may not exist. Collected here
+        # because the loop is the only place that sees them.
+        seen_classes: set[str] = set()
+        for check_fn in checks:
+            try:
+                result = check_fn()
+                if not isinstance(result, tuple) or len(result) != 3:
+                    raise ValueError("invalid check result")
+                passed, ev_class, reason = result
+                if not isinstance(passed, bool):
+                    raise ValueError("invalid check outcome")
+                if ev_class not in _ALLOWED_CHECK_EVIDENCE_CLASSES:
+                    raise ValueError("invalid evidence class")
+                if not isinstance(reason, str):
+                    raise ValueError("invalid check reason")
+            except Exception:  # noqa: BLE001 -- collapse untrusted check failures.
+                passed = False
+                ev_class = EVIDENCE_CLASS_ROUTING
+                reason = "verification_failed"
+            seen_classes.add(ev_class)
+            if not passed and all_pass:
+                all_pass = False
+                fail_class = ev_class
+                fail_reason = reason
+
+        blocking_reason: str | None = None
+        first_seen_at: Any = None
+        if all_pass:
+            outcome = OUTCOME_PASSED
+            # Routing WINS when any check exercised a route, because a run that
+            # proved a route is a routing verdict whatever else it also proved.
+            # With no routing check at all the run is what it is: an auth_check.
+            evidence_class = (
+                EVIDENCE_CLASS_ROUTING
+                if EVIDENCE_CLASS_ROUTING in seen_classes or not seen_classes
+                else EVIDENCE_CLASS_AUTH
+            )
+        else:
+            from core.connector_installation import sanitize_blocking_cause  # noqa: PLC0415
+
+            evidence_class = fail_class
+            blocking_reason = sanitize_blocking_cause(
+                fail_reason, fallback="verification_failed"
+            )
+            if current_state in _DEGRADABLE:
+                outcome = OUTCOME_DEGRADED
+                with operation_conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT first_seen_at FROM app.connector_verification_runs "
+                        "WHERE environment = %s AND connector_name = %s "
+                        "AND outcome = 'degraded' "
+                        "ORDER BY created_at DESC LIMIT 1",
+                        (environment, connector_name),
+                    )
+                    prior_degradation = cur.fetchone()
+                if prior_degradation is not None:
+                    first_seen_at = prior_degradation[0]
+                else:
+                    import datetime as _dt  # noqa: PLC0415
+
+                    first_seen_at = _dt.datetime.now(_dt.UTC)
+            else:
+                outcome = OUTCOME_FAILED
+
+        run_id = f"cvr_{ULID()}"
+
+        import datetime as _dt  # noqa: PLC0415
+
+        sampled_at = _dt.datetime.now(_dt.UTC)
+        ev_hash = _evidence_hash(evidence_class, sampled_at.isoformat())
 
         with operation_conn.cursor() as cur:
             cur.execute(
@@ -526,8 +543,7 @@ def run_verification(
                 "connector_name, outcome, evidence_class, evidence_hash, "
                 "blocking_reason, first_seen_at, ttl_seconds, "
                 "synthetic_delivery, operation_id) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, FALSE, %s) "
-                "ON CONFLICT DO NOTHING",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, FALSE, %s)",
                 (
                     run_id,
                     installation_id,
@@ -538,44 +554,18 @@ def run_verification(
                     evidence_class,
                     ev_hash,
                     blocking_reason,
-                    _first_seen,
+                    first_seen_at,
                     _DEFAULT_TTL_SECONDS,
                     operation_id,
                 ),
             )
             if cur.rowcount != 1:
-                # Reconcile to the persisted row (review H2).
-                cur.execute(
-                    "SELECT id, outcome, evidence_class, blocking_reason, "
-                    "first_seen_at, created_at "
-                    "FROM app.connector_verification_runs "
-                    "WHERE environment = %s AND connector_name = %s "
-                    "ORDER BY created_at DESC LIMIT 1",
-                    (environment, connector_name),
-                )
-                race_row = cur.fetchone()
-                if race_row is None:  # pragma: no cover
-                    from core.operations import _canonical_hash  # noqa: PLC0415
-                    result = {"run_id": run_id, "outcome": outcome,
-                              "evidence_class": evidence_class}
-                    return MutationResult(
-                        outcome="succeeded", before_hash=None,
-                        after_hash=_canonical_hash(result), result=result,
-                        outbox_payload=result,
-                    )
-                (
-                    r_id, r_outcome, r_ev_class, r_reason, r_first, r_created,
-                ) = race_row
-                from core.operations import _canonical_hash  # noqa: PLC0415
-                result = {"run_id": r_id, "outcome": r_outcome,
-                          "evidence_class": r_ev_class}
-                return MutationResult(
-                    outcome="succeeded", before_hash=None,
-                    after_hash=_canonical_hash(result), result=result,
-                    outbox_payload=result,
+                raise ConnectorVerificationError(
+                    "verification evidence insert did not create exactly one row"
                 )
 
         from core.operations import _canonical_hash  # noqa: PLC0415
+
         result = {
             "run_id": run_id,
             "environment": environment,
@@ -583,6 +573,9 @@ def run_verification(
             "outcome": outcome,
             "evidence_class": evidence_class,
             "blocking_reason": blocking_reason,
+            "first_seen_at": _safe_iso(first_seen_at),
+            "created_at": sampled_at.isoformat(),
+            "checks_evaluated": checks_evaluated,
         }
         return MutationResult(
             outcome="succeeded",
@@ -597,6 +590,18 @@ def run_verification(
         )
 
     op_result = execute_operation(conn, spec, mutation=mutation)
+    data = op_result.result or {}
+    outcome = data.get("outcome", OUTCOME_FAILED)
+    evidence_class = data.get("evidence_class", EVIDENCE_CLASS_ROUTING)
+    blocking_reason = data.get("blocking_reason")
+    first_seen_at = data.get("first_seen_at")
+
+    target_state: str | None = None
+    if not op_result.replayed:
+        if outcome == OUTCOME_PASSED and current_state in _ADVANCEABLE_TO_READY:
+            target_state = "READY"
+        elif outcome == OUTCOME_DEGRADED and current_state in _DEGRADABLE:
+            target_state = "DEGRADED"
 
     # ------------------------------------------------------------------
     # F1: Drive the installation state transition via the LEGAL walk.
@@ -634,7 +639,22 @@ def run_verification(
                     environment=environment,
                     connector_name=connector_name,
                     target_state=to_state,
-                    responsible_actor=actor,
+                    # AN ACTOR CLASS, NEVER THE SUBJECT (AI-206). This passed
+                    # `actor` -- the identity that called the endpoint -- into a
+                    # parameter whose own validator refuses anything but
+                    # `automated` / `platform_admin` / `platform_support`, and
+                    # whose docstring says « never a subject identity ». So every
+                    # transition raised `responsible_actor must be one of the
+                    # supported actor classes`, and NO verification could ever
+                    # advance an installation, for any connector, domain or not.
+                    #
+                    # The class answers « who owns the NEXT step »: nobody does
+                    # when the run passed and the connector is READY, so
+                    # `automated` carries it; a person owns a failure, so a hop
+                    # that lands blocked is `platform_admin`.
+                    responsible_actor=(
+                        "platform_admin" if blocking_reason else "automated"
+                    ),
                     blocking_cause=blocking_reason,
                     last_verified_at=(
                         _dt2.datetime.now(_dt2.UTC) if to_state == "READY" else None
@@ -678,19 +698,19 @@ def run_verification(
     )
     actual_state = (actual_inst or {}).get("state", current_state)
 
-    data = op_result.result or {}
     rm = _safe_run_read_model(
         connector_name=connector_name,
         environment=environment,
         state=actual_state,
         outcome=data.get("outcome", outcome),
         evidence_class=data.get("evidence_class", evidence_class),
-        first_seen_at=(None if first_seen_at == "SET_TO_NOW" else first_seen_at),
-        created_at=None,
+        first_seen_at=data.get("first_seen_at", first_seen_at),
+        created_at=data.get("created_at"),
         blocking_reason=data.get("blocking_reason", blocking_reason),
         synthetic_delivery=False,
+        ttl_seconds=_DEFAULT_TTL_SECONDS,
     )
-    rm["checks_evaluated"] = checks_evaluated
+    rm["checks_evaluated"] = data.get("checks_evaluated", checks_evaluated)
     return rm
 
 
@@ -739,9 +759,13 @@ def run_synthetic_delivery(
     # F8: validate idempotency_key (mirrors run_verification guard).
     if not isinstance(idempotency_key, str) or not idempotency_key.strip():
         raise ConnectorVerificationError("idempotency_key is required")
+    if len(idempotency_key.strip()) > _MAX_IDEMPOTENCY_KEY_LENGTH:
+        raise ConnectorVerificationError("idempotency_key is too long")
 
     environment = environment.strip()
     connector_name = connector_name.strip()
+    actor = actor.strip()
+    idempotency_key = idempotency_key.strip()
 
     # ------------------------------------------------------------------
     # Load the installation row.
@@ -750,7 +774,8 @@ def run_synthetic_delivery(
         cur.execute(
             "SELECT id, state "
             "FROM app.connector_installations "
-            "WHERE environment = %s AND connector_name = %s",
+            "WHERE environment = %s AND connector_name = %s "
+            "FOR UPDATE",
             (environment, connector_name),
         )
         inst_row = cur.fetchone()
@@ -762,40 +787,35 @@ def run_synthetic_delivery(
     installation_id, current_state = inst_row
 
     # ------------------------------------------------------------------
-    # Load the active domain config id (optional).
+    # Load and lock the active domain config.
     # ------------------------------------------------------------------
     with conn.cursor() as cur:
         cur.execute(
             "SELECT id FROM app.connector_domain_configs "
             "WHERE environment = %s AND connector_name = %s "
-            "AND superseded_by IS NULL",
+            "AND superseded_by IS NULL "
+            "FOR SHARE",
             (environment, connector_name),
         )
         dc_row = cur.fetchone()
 
-    domain_config_id: str | None = dc_row[0] if dc_row is not None else None
+    if dc_row is None:
+        raise ConnectorVerificationUnavailable(
+            "active domain configuration is required"
+        )
+    domain_config_id = dc_row[0]
 
     # ------------------------------------------------------------------
-    # Run the synthetic delivery via the injectable runner (auth-only).
-    # The runner MUST NOT write any durable receipt, quarantine, import or
-    # publication. This module never calls any import path (AC3).
-    # ------------------------------------------------------------------
-    try:
-        auth_passed, auth_reason = delivery_runner()
-    except Exception as exc:  # noqa: BLE001
-        auth_passed, auth_reason = False, f"runner_error: {exc}"
-
-    outcome = OUTCOME_PASSED if auth_passed else OUTCOME_FAILED
-    evidence_class = EVIDENCE_CLASS_SYNTHETIC
-    blocking_reason: str | None = None if auth_passed else auth_reason
+    # The delivery runner is invoked inside the operation mutation so replays do
+    # not repeat an external authentication attempt.
 
     # ------------------------------------------------------------------
     # Build OperationSpec (deterministic idempotency -- no random id in payload).
     # ------------------------------------------------------------------
     spec = OperationSpec(
-        command_type="connector.verification.ran",
+        command_type=ACTION_CONNECTOR_VERIFICATION_RAN,
         actor=actor,
-        effective_org_id="platform",
+        effective_org_id=None,
         resource_path=(
             "platform:connector-verification-runs",
             f"environment:{environment}",
@@ -812,8 +832,6 @@ def run_synthetic_delivery(
         request_payload={
             "environment": environment,
             "connector_name": connector_name,
-            "outcome": outcome,
-            "evidence_class": evidence_class,
             "synthetic_delivery": True,
         },
         provider_references={},
@@ -825,12 +843,33 @@ def run_synthetic_delivery(
     )
 
     def mutation(operation_conn, operation_id: str) -> MutationResult:
-        # Generate row id at write time (review H1: not hashed).
+        try:
+            runner_result = delivery_runner()
+            if not isinstance(runner_result, tuple) or len(runner_result) != 2:
+                raise ValueError("invalid delivery runner result")
+            auth_passed, auth_reason = runner_result
+            if not isinstance(auth_passed, bool) or not isinstance(auth_reason, str):
+                raise ValueError("invalid delivery runner result")
+        except Exception:  # noqa: BLE001 -- collapse untrusted runner failures.
+            auth_passed = False
+            auth_reason = "synthetic_verification_failed"
+
+        outcome = OUTCOME_PASSED if auth_passed else OUTCOME_FAILED
+        evidence_class = EVIDENCE_CLASS_SYNTHETIC
+        blocking_reason: str | None = None
+        if not auth_passed:
+            from core.connector_installation import sanitize_blocking_cause  # noqa: PLC0415
+
+            blocking_reason = sanitize_blocking_cause(
+                auth_reason, fallback="synthetic_verification_failed"
+            )
+
         run_id = f"cvr_{ULID()}"
 
         import datetime as _dt  # noqa: PLC0415
-        sampled_at = _dt.datetime.utcnow().isoformat()
-        ev_hash = _evidence_hash(evidence_class, sampled_at)
+
+        sampled_at = _dt.datetime.now(_dt.UTC)
+        ev_hash = _evidence_hash(evidence_class, sampled_at.isoformat())
 
         with operation_conn.cursor() as cur:
             cur.execute(
@@ -839,8 +878,7 @@ def run_synthetic_delivery(
                 "connector_name, outcome, evidence_class, evidence_hash, "
                 "blocking_reason, first_seen_at, ttl_seconds, "
                 "synthetic_delivery, operation_id) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, %s, TRUE, %s) "
-                "ON CONFLICT DO NOTHING",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, %s, TRUE, %s)",
                 (
                     run_id,
                     installation_id,
@@ -856,36 +894,12 @@ def run_synthetic_delivery(
                 ),
             )
             if cur.rowcount != 1:
-                # Reconcile to the persisted row (review H2).
-                cur.execute(
-                    "SELECT id, outcome, evidence_class "
-                    "FROM app.connector_verification_runs "
-                    "WHERE environment = %s AND connector_name = %s "
-                    "AND synthetic_delivery = TRUE "
-                    "ORDER BY created_at DESC LIMIT 1",
-                    (environment, connector_name),
-                )
-                race_row = cur.fetchone()
-                if race_row is None:  # pragma: no cover
-                    from core.operations import _canonical_hash  # noqa: PLC0415
-                    result = {"run_id": run_id, "outcome": outcome,
-                              "synthetic_delivery": True}
-                    return MutationResult(
-                        outcome="succeeded", before_hash=None,
-                        after_hash=_canonical_hash(result), result=result,
-                        outbox_payload=result,
-                    )
-                r_id, r_outcome, r_ev_class = race_row
-                from core.operations import _canonical_hash  # noqa: PLC0415
-                result = {"run_id": r_id, "outcome": r_outcome,
-                          "evidence_class": r_ev_class, "synthetic_delivery": True}
-                return MutationResult(
-                    outcome="succeeded", before_hash=None,
-                    after_hash=_canonical_hash(result), result=result,
-                    outbox_payload=result,
+                raise ConnectorVerificationError(
+                    "synthetic evidence insert did not create exactly one row"
                 )
 
         from core.operations import _canonical_hash  # noqa: PLC0415
+
         result = {
             "run_id": run_id,
             "environment": environment,
@@ -893,6 +907,7 @@ def run_synthetic_delivery(
             "outcome": outcome,
             "evidence_class": evidence_class,
             "blocking_reason": blocking_reason,
+            "created_at": sampled_at.isoformat(),
             "synthetic_delivery": True,
         }
         return MutationResult(
@@ -910,14 +925,19 @@ def run_synthetic_delivery(
 
     op_result = execute_operation(conn, spec, mutation=mutation)
     data = op_result.result or {}
+    returned_outcome = data.get("outcome", OUTCOME_FAILED)
+    returned_reason = data.get("blocking_reason")
+    if returned_outcome != OUTCOME_PASSED and returned_reason is None:
+        returned_reason = "synthetic_verification_failed"
     return _safe_run_read_model(
         connector_name=connector_name,
         environment=environment,
         state=current_state,
-        outcome=data.get("outcome", outcome),
-        evidence_class=data.get("evidence_class", evidence_class),
+        outcome=returned_outcome,
+        evidence_class=data.get("evidence_class", EVIDENCE_CLASS_SYNTHETIC),
         first_seen_at=None,
-        created_at=None,
-        blocking_reason=data.get("blocking_reason", blocking_reason),
+        created_at=data.get("created_at"),
+        blocking_reason=returned_reason,
         synthetic_delivery=True,
+        ttl_seconds=_DEFAULT_TTL_SECONDS,
     )

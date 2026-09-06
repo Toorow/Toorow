@@ -12,6 +12,39 @@ version: 2
 # AD-2: no provider vocabulary in the map -- canonical metric names only.
 
 seeds:
+  - name: connector_metric_names
+    description: >
+      AI-270. The connector metric-rename map: (connector, landed_metric) -> canonical_metric.
+      DERIVED from the 39 manifests' own `canonical_metric_mapping` by
+      scripts/generate_metric_name_map.py, and kept honest by
+      tests/conformance/test_metric_name_map_is_current.py -- it is a projection of the
+      manifests, never a second place where the mapping is decided.
+
+      WHY IT EXISTS: five connectors land LONG, so the metric name travels as a column
+      VALUE, while their transform() renames row KEYS -- a dict comprehension cannot touch
+      a name that is data. They therefore landed raw provider names (x-ads
+      `billed_charge_local_micro`, sa360 `metrics.cost_micros`, brevo `sent`) where the
+      fact expects the canonical one, and wiring them would have made one metric read as
+      two across connectors.
+
+      APPLIED AT STAGING rather than by repairing each landing, because rows ALREADY
+      landed keep their raw names: a landing-only fix would split every total in two
+      across the date it shipped. Identity pairs are absent by construction, and the
+      staging join is LEFT + COALESCE, so an absent pair means "keep the landed name".
+    columns:
+      - name: connector
+        description: "Module directory name. Part of the grain."
+        tests:
+          - not_null
+      - name: landed_metric
+        description: "The name as it actually lands in the raw table."
+        tests:
+          - not_null
+      - name: canonical_metric
+        description: "The platform dictionary name the fact must carry."
+        tests:
+          - not_null
+
   - name: money_metric_units
     description: >
       Money adapter canonical-unit map (Story 39.2 / E39-AD1). Maps each monetary canonical
@@ -44,7 +77,7 @@ seeds:
       singular tests test_money_contract_micros_read_once / _micros_semantic / _totals_unchanged.
     config:
       column_types:
-        value: bigint
+        value: INT64
 
   - name: epic39_validation_fixture
     description: >
@@ -62,7 +95,10 @@ seeds:
       _no_false_positive_offset / _totals_bit_identical / _honesty_missing_currency / _honesty_fx_gaps.
     config:
       column_types:
-        value_micros: bigint
+        value_micros: INT64
+        # Integral decimals ("100.00") infer INT64 on BOTH warehouses; BigQuery's
+        # CSV loader then refuses the literal. Declared, per dialect (AI-314).
+        value_decimal: "{{ 'NUMERIC' if target.type == 'bigquery' else 'DECIMAL(18,6)' }}"
     columns:
       - name: connector
         description: "Namespaced validation connector key (__epic39_src_a__/__epic39_src_b__)."
@@ -98,3 +134,64 @@ seeds:
               name: epic39_validation_fixture_unit_accepted
               arguments:
                 values: ["micros", "decimal"]
+
+  # Story 48.3: two GENERATED projections of governed vocabulary versions. Both are
+  # rendered by scripts/export_reference_vocabulary.py from
+  # app.master_data_vocabulary_versions and pinned by a .provenance.json sidecar --
+  # editing either CSV by hand makes the warehouse disagree with the version a
+  # Money or Timezone Policy pinned. `--check` proves the projection still matches.
+  - name: dim_currency
+    description: >
+      ISO 4217 currency vocabulary (Story 48.3 AC1). `minor_unit` is the exact
+      rounding precision of the currency and is EMPTY where the standard assigns
+      none (XAU, XDR) -- it is never defaulted to 2. `kind` separates legal tender,
+      which a Project may select as its reporting currency, from fund, metal, test
+      and no-currency codes, which are resolvable as a NATIVE currency only.
+    columns:
+      - name: code
+        description: "ISO 4217 alpha-3 code. Grain of the vocabulary."
+        tests:
+          - not_null
+          - unique:
+              name: dim_currency_code_unique
+      - name: numeric_code
+        description: "ISO 4217 numeric code."
+        tests:
+          - not_null
+      - name: kind
+        description: "tender | fund | metal | test | no_currency."
+        tests:
+          - not_null
+          - accepted_values:
+              name: dim_currency_kind_accepted
+              arguments:
+                values: ["tender", "fund", "metal", "test", "no_currency"]
+      - name: status
+        tests:
+          - not_null
+          - accepted_values:
+              name: dim_currency_status_accepted
+              arguments:
+                values: ["active", "withdrawn"]
+
+  - name: dim_timezone
+    description: >
+      IANA time-zone vocabulary (Story 48.3 AC7), rendered from the same tz database
+      release every derivation resolves against. `canonical_zone` collapses backward
+      links, so two Projects on the same boundary cannot look different because one
+      of them stored Europe/Kiev and the other Europe/Kyiv.
+    columns:
+      - name: zone
+        description: "IANA identifier. Grain of the vocabulary."
+        tests:
+          - not_null
+          - unique:
+              name: dim_timezone_zone_unique
+      - name: canonical_zone
+        description: "The primary zone this identifier resolves to."
+        tests:
+          - not_null
+      - name: selectable
+        description: "Whether a Project may confirm this zone as its reporting boundary."
+        tests:
+          - not_null

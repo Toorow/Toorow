@@ -133,7 +133,7 @@ variable "inbound_bucket_location" {
 }
 
 variable "inbound_quarantine_retention_days" {
-  description = "Lifecycle age (days) for the quarantine bucket cleanup rule STUB. Real retention is wired in Story 38.9; this is an inert default."
+  description = "Minimum retention and live-object expiry window (days) for inbound quarantine evidence."
   type        = number
   default     = 30
 }
@@ -186,4 +186,44 @@ variable "inbound_manifest_object_prefix" {
   description = "GCS object_name_prefix scoping the notification to the inbound/ key space the receipt service writes. The bridge additionally filters for the reserved _manifest.json object."
   type        = string
   default     = "inbound/"
+}
+
+variable "inbound_scan_task_queue" {
+  description = "Cloud Tasks queue: one task is one inbound attachment scan job."
+  type        = string
+  default     = "inbound-scan"
+}
+
+variable "inbound_scan_max_attempts" {
+  description = "Bounded scan attempts before the durable ledger enters DEAD_LETTER."
+  type        = number
+  default     = 5
+  validation {
+    condition     = var.inbound_scan_max_attempts >= 5 && var.inbound_scan_max_attempts <= 20
+    error_message = "inbound_scan_max_attempts must be in the shared Pub/Sub/runtime range 5..20."
+  }
+
+}
+variable "inbound_scan_timeout_seconds" {
+  description = "Hard Cloud Run request and scanner wall-clock budget."
+  type        = number
+  default     = 60
+}
+
+variable "inbound_scan_memory" {
+  description = "Cloud Run memory budget for one bounded scan job."
+  type        = string
+  default     = "512Mi"
+}
+
+variable "inbound_clamav_image" {
+  description = "Pinned ClamAV sidecar image used by the bounded INSTREAM scanner."
+  type        = string
+  default     = "clamav/clamav:1.4.3@sha256:75fb5fd95fcbe1d7e6d240c369c1572b686ee2c95949d1042b5148de8eddebb4"
+}
+
+variable "inbound_clamav_memory" {
+  description = "Memory budget reserved for the ClamAV sidecar and signatures."
+  type        = string
+  default     = "1Gi"
 }

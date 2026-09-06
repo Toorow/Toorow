@@ -109,6 +109,13 @@ ERR_QUOTA_HOURLY_NOT_PERMITTED = "hourly_cadence_not_permitted"
 ERR_MISSING_SPREADSHEET_ID = "missing_spreadsheet_id"
 ERR_MISSING_SHEET_RANGE = "missing_sheet_range"
 ERR_MISSING_COLUMN_MAPPING = "missing_column_mapping"
+# The schedule table (migration 079) carries no plan/mapping version; when the
+# caller supplies none they are resolved from app.datastreams' current versions.
+# A datastream with none committed cannot land governed rows (AD-7).
+ERR_MISSING_GOVERNANCE_VERSIONS = "missing_governance_versions"
+# open_import mints the 12.5 execution on the write path; landing without its id
+# would write rows no scoped reader can see (AD-7) -- surfaced, never landed.
+ERR_EXECUTION_MISSING = "execution_missing"
 # Empty-candidate gate code (mirrors datastream_publication.GATE_EMPTY_CANDIDATE).
 ERR_EMPTY_CANDIDATE = "empty_candidate"
 
@@ -507,8 +514,11 @@ def run_sync(
         sheet_name:    Human-readable sheet name for traceability.
         column_mapping: Declarative mapping from 15.6
                         (``{date_column, metric_columns, row_id_column?}``).
-        plan_version_id: Committed plan version (``dsp_<ULID>``).
-        mapping_version_id: Committed mapping version (``dmap_<ULID>``).
+        plan_version_id: Committed plan version (``dsp_<ULID>``). When empty,
+                         resolved from ``app.datastreams.current_plan_version_id``
+                         (the scheduled dispatch supplies none -- AD-7).
+        mapping_version_id: Committed mapping version (``dmap_<ULID>``). Same
+                         fallback to ``current_mapping_version_id`` when empty.
         projection_plan: Executable 12.4 projection plan (the 12.5 ticket).
         actor:          Identity string for audit rows.
         cadence_mode:   ``'manual'`` | ``'daily'`` | ``'hourly'``.
@@ -580,6 +590,27 @@ def run_sync(
         raise SheetsSyncError(
             "invalid_sync_config",
             "; ".join(param_errors),
+        )
+
+    # AD-7: a scheduled dispatch (and a sync-now without an explicit ticket)
+    # arrives with NO plan/mapping version -- the schedule table (migration 079)
+    # carries none. The committed versions live on the datastream itself
+    # (``app.datastreams.current_plan_version_id`` / ``current_mapping_version_id``,
+    # the same source ``datastream_first_candidate`` mints from). Resolve them
+    # here so the ledger row, the 12.5 execution AND the landed rows all name
+    # the same ticket. A datastream with no committed version is a sync that
+    # cannot be governed: that is said, never landed blank.
+    if not plan_version_id or not mapping_version_id:
+        current_plan_id, current_mapping_id = _resolve_current_versions(
+            conn, datastream_id, project_id
+        )
+        plan_version_id = plan_version_id or current_plan_id
+        mapping_version_id = mapping_version_id or current_mapping_id
+    if not plan_version_id or not mapping_version_id:
+        raise SheetsSyncError(
+            ERR_MISSING_GOVERNANCE_VERSIONS,
+            "datastream has no committed plan/mapping version; the sync cannot "
+            "land governed rows (AD-7)",
         )
 
     # ------------------------------------------------------------------
@@ -743,6 +774,38 @@ def run_sync(
     ledger_row = import_result["ledger"]
     ledger_id = ledger_row["id"]
     execution = import_result["execution"]
+    if not execution or not execution.get("id"):
+        # AD-7: rows landed without an execution id are invisible to every
+        # scoped reader (collected_mapped_reader filters on project_id, the
+        # superseding reads MAX(execution_id)). open_import mints the execution
+        # on this path; its absence is a defect to surface, not to land around.
+        ledger.mark_outcome(
+            ledger_id,
+            project_id,
+            outcome=ledger.OUTCOME_FAILED,
+            actor=actor,
+            conn=conn,
+            error_code=ERR_EXECUTION_MISSING,
+            error_detail="open_import returned no scoped candidate execution",
+        )
+        logger.warning(
+            '{"event": "gsheets_sync_execution_missing", '
+            '"datastream_id": "%s", "ledger_id": "%s"}',
+            datastream_id,
+            ledger_id,
+        )
+        return {
+            "outcome": ledger.OUTCOME_FAILED,
+            "ledger_id": ledger_id,
+            "execution_id": None,
+            "row_count": None,
+            "content_hash": content_hash,
+            "no_op": False,
+            "replay": False,
+            "error_code": ERR_EXECUTION_MISSING,
+            "error_detail": "open_import returned no scoped candidate execution",
+            "next_run": describe_next_run(None),
+        }
 
     # ------------------------------------------------------------------
     # 7. Parse sheet rows (using the 15.6 parser via the adapter contract).
@@ -809,6 +872,9 @@ def run_sync(
             landing_relation=landing_relation,
             datastream_id=datastream_id,
             project_id=project_id,
+            execution_id=execution["id"],
+            plan_version_id=plan_version_id,
+            mapping_version_id=mapping_version_id,
             duckdb_path=duckdb_path,
         )
     except Exception as exc:  # noqa: BLE001
@@ -1094,6 +1160,37 @@ def _record_fetch_failure(
             error_code=error_code,
             error_detail=error_detail,
         )
+        # AND THE EXECUTION, which `mark_outcome` does not touch.
+        #
+        # `open_import` creates a `datastream_executions` row in state `created`
+        # (`datastream_publication.py:629`), and `mark_outcome` updates only
+        # `managed_feed_import_ledger`. So a Sheets sync that failed left a
+        # PHANTOM run: a row that exists, never advances, and carries no error.
+        # The Runs tab reads that table, so it printed "No error was recorded"
+        # on a run that had failed — worse than showing nothing, because a person
+        # checking whether their sync broke was told it had not.
+        #
+        # This is not a choice of where the durable record lives (that question
+        # is open for the failures which create no execution at all). This
+        # finishes a write that was already started, through the same
+        # `advance_state` the DQ-gate failure path already uses.
+        if execution:
+            from core.datastream_publication import (  # noqa: PLC0415
+                STATE_CREATED,
+                STATE_FAILED,
+                advance_state,
+            )
+
+            advance_state(
+                execution["id"],
+                STATE_CREATED,
+                STATE_FAILED,
+                actor,
+                conn,
+                project_id=project_id,
+                error_code=error_code,
+                error_detail=error_detail,
+            )
     except Exception as exc:  # noqa: BLE001
         # If even the ledger open fails (e.g. DB hiccup), return the error
         # without a ledger_id -- this is a last-resort safe path.
@@ -1233,51 +1330,113 @@ def _parse_raw_values(
     return accepted, rejected
 
 
+def _resolve_current_versions(conn, datastream_id: str, project_id: str) -> tuple[str, str]:
+    """Read the datastream's committed plan/mapping versions (AD-7 fallback).
+
+    The sync schedule (migration 079) stores no plan/mapping version, so a
+    scheduled dispatch -- and a sync-now called without an explicit ticket --
+    arrives with empty strings. The committed versions are a property of the
+    datastream (``app.datastreams.current_plan_version_id`` /
+    ``current_mapping_version_id``), the same source
+    ``datastream_first_candidate`` mints its candidate from. Returns ``("", "")``
+    when the datastream has none committed -- the caller turns that into the
+    named ``missing_governance_versions`` refusal rather than landing rows
+    whose provenance would be blank.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT current_plan_version_id, current_mapping_version_id
+            FROM app.datastreams
+            WHERE id = %s AND project_id = %s
+            """,
+            (datastream_id, project_id),
+        )
+        row = cur.fetchone()
+    if not row:
+        return "", ""
+    return str(row[0] or ""), str(row[1] or "")
+
+
 def _write_landing_rows(
     rows: list[dict[str, Any]],
     *,
     landing_relation: str,
     datastream_id: str,
     project_id: str,
+    execution_id: str,
+    plan_version_id: str,
+    mapping_version_id: str,
     duckdb_path: str | None,
 ) -> int:
     """Write accepted rows to the project-scoped managed RAW landing.
 
-    Uses ``ledger.open_managed_landing`` -> ``open_raw_writer`` routing
-    (AD-8: never a mart; schema from warehouse_tenancy). Returns the row count.
+    Goes through ``raw_landing.land_raw_rows`` -- the one seam the connectors and
+    the CSV/Excel import path already use. It used to open a DuckDB connection
+    here and emit its own CREATE/INSERT, which made this the SECOND managed-feed
+    lander, and the narrower one. Three things the shared seam gives that the
+    local writer could not:
 
-    In Phase B this will route to BigQuery via the same open_raw_writer seam.
-    At Phase A / dev, uses DuckDB.
+      * BigQuery as well as DuckDB. The docstring used to promise this as "Phase
+        B"; routing here delivers it instead of scheduling it again.
+      * An active ``candidate_execution`` scope is honoured, so a Sheets
+        candidate lands in the execution's own relation and cannot reach the
+        marts before someone publishes it. The local writer ignored the scope
+        entirely, which is why the Sheets channel could not be isolated.
+      * A failed write raises with its per-row errors rather than leaving a
+        half-written table behind a returned count.
+
+    Columns stay STRING, which is what a sheet yields and what this function
+    already wrote (all VARCHAR); typing them is a separate, deliberate change.
+
+    AD-7 provenance: every row also carries ``execution_id``,
+    ``plan_version_id``, ``mapping_version_id`` and ``project_id`` -- the same
+    four columns, in the same order, from the same sources as
+    ``import_runner`` (the execution ``open_import`` minted, the committed
+    versions, the project scope). Without them the landed rows were invisible
+    to every scoped reader (``collected_mapped_reader`` filters
+    ``WHERE project_id = ...``) and the superseding read ``MAX(execution_id)``
+    as NULL. The values come from the run itself; this function never invents
+    them, which is why they are required arguments.
     """
     if not rows:
         return 0
 
-    if duckdb_path is None:
-        import os  # noqa: PLC0415
+    from core.raw_landing import land_raw_rows  # noqa: PLC0415
 
-        duckdb_path = os.environ.get("TOOROW_DUCKDB_PATH", ":memory:")
-
-    con = ledger.open_managed_landing(duckdb_path, project_id)
-
-    # Extract table name from landing_relation (schema.table or just table).
+    # `land_raw_rows` resolves the dataset/schema from the Project, so it takes
+    # the bare table name; composing a warehouse location here is what the AD-8
+    # routing exists to prevent.
     table_name = landing_relation.rsplit(".", 1)[-1]
 
-    # Derive column names from first row.
-    if not rows:
-        con.close()
-        return 0
+    # Same names, same conceptual order as import_runner's provenance_specs:
+    # appended AFTER the sheet's own columns. A sheet column named like one of
+    # these loses to the run's provenance, exactly as in import_runner.
+    provenance = {
+        "execution_id": execution_id,
+        "plan_version_id": plan_version_id,
+        "mapping_version_id": mapping_version_id,
+        "project_id": project_id,
+    }
 
-    columns = list(rows[0].keys())
-    col_defs = ", ".join(f"{c} VARCHAR" for c in columns)
-    col_list = ", ".join(columns)
-    placeholders = ", ".join("?" * len(columns))
+    # Ordered union of the keys present, not just the first row's: a sheet whose
+    # later rows carry a column the header row omitted would otherwise shift.
+    column_names: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        for key in row:
+            if key not in seen and key not in provenance:
+                seen.add(key)
+                column_names.append(str(key))
+    column_names.extend(provenance)
 
-    create_sql = f"CREATE TABLE IF NOT EXISTS {table_name} ({col_defs})"
-    insert_sql = f"INSERT INTO {table_name} ({col_list}) VALUES ({placeholders})"
-
-    con.execute(create_sql)
-    values = [tuple(str(r.get(c, "") or "") for c in columns) for r in rows]
-    if values:
-        con.executemany(insert_sql, values)
-    con.close()
-    return len(rows)
+    landed = land_raw_rows(
+        table_name,
+        [
+            {name: str({**row, **provenance}.get(name, "") or "") for name in column_names}
+            for row in rows
+        ],
+        columns=[(name, "STRING") for name in column_names],
+        project_id=project_id,
+    )
+    return int(landed.get("rows") or 0)

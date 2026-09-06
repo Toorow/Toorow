@@ -77,8 +77,34 @@ Copy `.env.example` to `.env` in your deployment environment and configure the r
 | `QUEUE_BACKEND` | String | `local` | Job queue backend: `local` (Postgres worker thread) or `cloud_tasks` (GCP Cloud Tasks). |
 | `QUEUE_POLL_INTERVAL_SECONDS` | Integer | `5` | Polling frequency for local queue worker. |
 | `SCHEDULER_ENABLED` | Boolean | `false` | Enables in-process nightly scheduler thread. Set `true` in production containers. |
-| `SCHEDULER_NIGHTLY_HOUR` | Integer | `2` | Local hour (0–23) to trigger nightly ingestion and dbt runs. |
+| `SCHEDULER_NIGHTLY_HOUR` | Integer | `2` | Fallback local hour (0–23) for a Datastream that carries no moment of its own. A Datastream with its own cadence ignores it. |
 | `SCHEDULER_TIMEZONE` | String | `Europe/Paris` | IANA timezone string for computing daily boundaries (`yesterday`). |
+| `CLOUD_TASKS_PROJECT` | String | — | GCP project owning the Cloud Tasks queue. Required when `QUEUE_BACKEND=cloud_tasks`. |
+| `CLOUD_TASKS_LOCATION` | String | — | Queue region, e.g. `europe-west1`. |
+| `CLOUD_TASKS_QUEUE_NAME` | String | — | Queue name the tasks are created in. |
+| `CLOUD_TASKS_WORKER_URL` | String | — | Public base URL of this service. Tasks are pushed to `<url>/internal/worker/...`. |
+| `INTERNAL_ENDPOINTS_REQUIRE_HEADER` | String | — | Shared secret for `X-Internal-Auth`. **Mandatory** under `cloud_tasks`: without it no task can authenticate and every scheduled call answers `503`. One value per deployment — not per user. |
+| `QUEUE_RECONCILE_GRACE_SECONDS` | Integer | `300` | How long a committed job may sit unclaimed before the reconciliation sweep presumes its task was lost. |
+| `PUBSUB_TOPIC` | String | — | Full topic path for published facts. Absent = facts are recorded and logged, never published. Not an error. |
+
+<Warning>
+**If your host suspends the container between requests, `QUEUE_BACKEND=local` will not run your scheduled work.**
+
+The `local` backend relies on three in-process daemon threads (queue worker,
+nightly scheduler, health poller). On a platform that allocates CPU only during
+request handling — Google Cloud Run with `--min-instances=0` is the reference
+case — those threads only advance while a request happens to be in flight, so
+nightly retrieval may never fire and nothing records that it did not.
+
+Choose one:
+- **`cloud_tasks`** with Cloud Scheduler driving `/internal/scheduler/*` (see
+  [Cloud Hosting](/cloud-hosting#3-scheduled-and-queued-work-cloud-tasks-pubsub-cloud-scheduler));
+- or **`local`** on a host that keeps the process running continuously (a VM, a
+  container with always-allocated CPU, docker-compose).
+
+`SCHEDULER_ENABLED=true` alone does not make an idle-suspended container run its
+scheduler.
+</Warning>
 
 ### Read-Through Cache (DuckDB)
 

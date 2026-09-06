@@ -25,6 +25,8 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
+from tests.migration_ledger import apply_migrations_absent_from_the_ledger  # noqa: E402
+
 MIGRATIONS = ROOT / "infra" / "nango" / "migrations"
 INTENT_MIGRATION = MIGRATIONS / "030_versioned_datastream_intents.sql"
 MAPPING_MIGRATION = MIGRATIONS / "032_datastream_field_mappings.sql"
@@ -51,15 +53,30 @@ def _id(prefix: str) -> str:
 
 
 def _apply_migrations(conn) -> None:
-    with conn.cursor() as cur:
-        for path in (
-            INTENT_MIGRATION,
-            MAPPING_MIGRATION,
-            REGISTRY_MIGRATION,
-            EXTERNAL_BQ_MIGRATION,
-        ):
-            cur.execute(path.read_text(encoding="utf-8"))
-    conn.commit()
+    """Appliquer ces quatre migrations SEULEMENT si le ledger ne les porte pas.
+
+    CE FICHIER EMPOISONNAIT TOUTE LA SESSION, mesure le 2026-08-17. La migration
+    076 definit `app.sync_external_dispatch_excluded` avec
+    `NEW.source_kind = 'external_bq'` -- qui rend NULL quand `source_kind` est
+    NULL. Les migrations 103 puis 226 l ont corrigee (`COALESCE(..., FALSE)`), et
+    les deux sont `applied`. Mais un `CREATE OR REPLACE FUNCTION` rejoue REMPLACE
+    le corps vivant : rejouer la 076 ici reinstallait la version cassee pour tous
+    les tests suivants du meme run.
+
+    Consequence mesuree : 113 `NotNullViolation` sur `external_dispatch_excluded`,
+    dans des fichiers qui n avaient rien demande -- `test_multi_source_plan_pg`,
+    `test_match_profile_pg`, `test_datastream_matches_pg`. La forme la plus
+    couteuse d un defaut : celle ou le coupable reste vert et la victime est
+    ailleurs.
+
+    Sur un cluster deja migre ces quatre lignes sont donc REDONDANTES : elles ne
+    creent rien qui n existe, et elles defont des reparations. Sur une base nue
+    elles restent necessaires, et le helper les applique.
+    """
+    apply_migrations_absent_from_the_ledger(
+        conn,
+        (INTENT_MIGRATION, MAPPING_MIGRATION, REGISTRY_MIGRATION, EXTERNAL_BQ_MIGRATION),
+    )
 
 
 def _seed_project(conn, project_id: str) -> None:

@@ -46,7 +46,7 @@ function makeEnvelope(
 describe("Déduplication card — fixture happy-path (FIXTURE_ENVELOPE)", () => {
   it("rend le titre de la carte", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
-    expect(screen.getByTestId("card-title")).toHaveTextContent("Déduplication");
+    expect(screen.getByTestId("card-title")).toHaveTextContent("Deduplication");
   });
 
   it("rend le kpi_row (bloc duplication_rate)", () => {
@@ -141,7 +141,7 @@ describe("Déduplication card — dégradé verified NULL (FIXTURE_ENVELOPE_NULL
 
   it("rend le titre même sans taux disponible", () => {
     render(<App envelope={FIXTURE_ENVELOPE_NULL_RATE} />);
-    expect(screen.getByTestId("card-title")).toHaveTextContent("Déduplication");
+    expect(screen.getByTestId("card-title")).toHaveTextContent("Deduplication");
   });
 
   it("AD-9 CRITIQUE : le commentaire mentionne l'indisponibilité, jamais 0%", () => {
@@ -178,7 +178,7 @@ describe("Déduplication card — dégradé opt-out (FIXTURE_ENVELOPE_OPT_OUT)",
 
   it("rend le titre même sans configuration de source", () => {
     render(<App envelope={FIXTURE_ENVELOPE_OPT_OUT} />);
-    expect(screen.getByTestId("card-title")).toHaveTextContent("Déduplication");
+    expect(screen.getByTestId("card-title")).toHaveTextContent("Deduplication");
   });
 
   it("le commentaire opt-out mentionne 'source' ou 'vérification' (guidance utilisateur)", () => {
@@ -251,7 +251,7 @@ describe("Déduplication card — dégradés blocs individuels (composition ad-h
   it("composition entièrement vide → carte utilisable sans exception", () => {
     const env = makeEnvelope([]);
     expect(() => render(<App envelope={env} />)).not.toThrow();
-    expect(screen.getByTestId("card-title")).toHaveTextContent("Déduplication");
+    expect(screen.getByTestId("card-title")).toHaveTextContent("Deduplication");
   });
 
   it("type de bloc inconnu → composition-unknown-block (jamais d'exception)", () => {
@@ -311,7 +311,7 @@ describe("Déduplication card — ordre des blocs dans la fixture (contrat compo
 describe("Déduplication card — libellés français accentués (UX-DR10)", () => {
   it("le titre de la carte est 'Déduplication' (avec accent)", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
-    expect(screen.getByTestId("card-title").textContent).toContain("Déduplication");
+    expect(screen.getByTestId("card-title").textContent).toContain("Deduplication");
   });
 
   it("le commentaire contient 'Estimation' (français, jamais 'estimate' en anglais)", () => {

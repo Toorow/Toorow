@@ -30,7 +30,15 @@ from typing import Any
 
 import pytest
 
+# This file's fixtures do DDL (disabling immutability triggers, ALTER TABLE), so
+# it needs the schema owner. As a plain application role every test in it dies on
+# "must be owner of table ...", which measures the connection and not the code.
+# The marker turns that into an honest skip naming the role it wants.
+pytestmark = pytest.mark.pg_owner
+
 ROOT = Path(__file__).resolve().parents[3]
+from tests.migration_ledger import apply_migrations_absent_from_the_ledger  # noqa: E402
+
 MIGRATIONS = ROOT / "infra" / "nango" / "migrations"
 
 # Migration sequence needed for this story (must be applied in order).
@@ -74,12 +82,15 @@ def _fake_adapter(connection_id, spreadsheet_id, sheet_range):
 
 
 def _apply_migrations(conn) -> None:
-    with conn.cursor() as cur:
-        for migration_name in _MIGRATION_CHAIN:
-            path = MIGRATIONS / migration_name
-            if path.exists():
-                cur.execute(path.read_text(encoding="utf-8"))
-    conn.commit()
+    """Ne rejouer que ce que le ledger ne porte pas -- voir `tests.migration_ledger`.
+
+    `030`, `032`, `042` et `077` sont ANTERIEURES a la `099` : les rejouer contre
+    une base migree recree cinq gardes DELETE de l arbre org SANS la clause
+    `rgpd_erasure`.
+    """
+    apply_migrations_absent_from_the_ledger(
+        conn, [MIGRATIONS / name for name in _MIGRATION_CHAIN]
+    )
 
 
 def _insert_test_project_and_datastream(conn, project_id: str, ds_id: str) -> None:

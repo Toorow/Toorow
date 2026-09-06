@@ -15,6 +15,30 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+
+def _datastream_insert(cur):
+    """L'appel qui INSERT le Datastream, pas le dernier appel du curseur.
+
+    `create_datastream` ecrit desormais DEUX lignes : le Datastream, puis son
+    lien dans `app.project_flux` -- sans lequel toutes ses routes de detail
+    repondaient 404 sur un objet pourtant present. Lire `call_args` prenait donc
+    l'insertion du lien.
+    """
+    for call in reversed(cur.execute.call_args_list):
+        sql = call[0][0]
+        if "INSERT INTO app.datastreams" in sql:
+            return sql, (call[0][1] if len(call[0]) > 1 else ())
+    raise AssertionError("aucun INSERT INTO app.datastreams parmi les appels")
+
+
+def _project_flux_insert(cur):
+    """L'insertion du lien projet<->flux, ou None si elle n'a pas eu lieu."""
+    for call in cur.execute.call_args_list:
+        if "INSERT INTO app.project_flux" in call[0][0]:
+            return call[0][1] if len(call[0]) > 1 else ()
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -186,7 +210,7 @@ class TestCreateDatastream:
             "member-1",
             conn,
         )
-        sql, params = cur.execute.call_args.args
+        sql, params = _datastream_insert(cur)
         assert "source_kind" in sql
         assert "external_bq" in params
         assert False in params
@@ -228,7 +252,7 @@ class TestCreateDatastream:
         cur.fetchone.return_value = _ds_row()
         with pytest.raises(ValueError, match="schedule_mode"):
             create_datastream(
-                {"name": "x", "module_name": "ga", "schedule_mode": "weekly"},
+                {"name": "x", "module_name": "ga", "schedule_mode": "invalid_mode"},
                 "proj_a",
                 "user1",
                 conn,
@@ -246,7 +270,7 @@ class TestCreateDatastream:
             "user1",
             conn,
         )
-        sql, params = cur.execute.call_args[0]
+        sql, params = _datastream_insert(cur)
         # schedule_mode 'nightly' should appear in params
         assert "nightly" in params
 
@@ -263,7 +287,7 @@ class TestCreateDatastream:
             conn,
         )
         # Check that the ID param passed to INSERT starts with 'ds_'
-        sql, params = cur.execute.call_args[0]
+        sql, params = _datastream_insert(cur)
         assert params[0].startswith("ds_")
 
 
@@ -303,19 +327,49 @@ class TestUpdateDatastream:
         row = _ds_row()
         conn, cur = _make_conn([row])
         cur.fetchone.return_value = row
-        with pytest.raises(ValueError, match="schedule_mode"):
-            update_datastream("ds_001", "proj_a", {"schedule_mode": "weekly"}, conn)
+        with pytest.raises(ValueError, match="reviewed Datastream operation"):
+            update_datastream("ds_001", "proj_a", {"schedule_mode": "invalid_mode"}, conn)
 
-    def test_update_enabled(self):
+    def test_the_reference_role_can_be_declared_after_creation(self):
+        """Without this, no person and no model can build the join.
+
+        Measured on 2026-08-12: a project whose facts carried 519 video ids had
+        exactly one stream able to name them, and `data_role` was writable only at
+        creation -- `flows.upsert_flow` passed it here and it was dropped in
+        silence.
+        """
         from core.datastreams import update_datastream
 
         row = _ds_row()
-        updated = _ds_row(enabled=False)
         conn, cur = _make_conn([row])
-        cur.fetchone.side_effect = [row, updated]
-        update_datastream("ds_001", "proj_a", {"enabled": False}, conn)
-        # Verify UPDATE was called
-        assert cur.execute.call_count >= 2
+        cur.fetchone.side_effect = [row, row]
+        update_datastream(
+            "ds_001", "proj_a", {"data_role": "Reference & targets"}, conn
+        )
+        sql = " ".join(str(call[0][0]) for call in cur.execute.call_args_list)
+        assert "data_role" in sql
+
+    def test_a_role_outside_the_seven_names_the_seven(self):
+        from core.datastreams import DATA_ROLES, update_datastream
+
+        row = _ds_row()
+        conn, cur = _make_conn([row])
+        cur.fetchone.return_value = row
+        with pytest.raises(ValueError, match="data_role invalide"):
+            update_datastream("ds_001", "proj_a", {"data_role": "Catalogue"}, conn)
+        # The message carries the allowed set, so the next attempt is right.
+        try:
+            update_datastream("ds_001", "proj_a", {"data_role": "Catalogue"}, conn)
+        except ValueError as exc:
+            for role in DATA_ROLES:
+                assert role in str(exc)
+
+    def test_update_enabled_requires_governed_operation(self):
+        from core.datastreams import update_datastream
+
+        conn, _ = _make_conn([_ds_row()])
+        with pytest.raises(ValueError, match="reviewed Datastream operation"):
+            update_datastream("ds_001", "proj_a", {"enabled": False}, conn)
 
 
 # ---------------------------------------------------------------------------
@@ -324,27 +378,12 @@ class TestUpdateDatastream:
 
 
 class TestEnableDisable:
-    def test_enables_datastream(self):
+    def test_direct_enable_requires_governed_operation(self):
         from core.datastreams import enable_disable_datastream
 
-        row = _ds_row(enabled=False)
-        enabled_row = _ds_row(enabled=True)
-        conn, cur = _make_conn([row])
-        cur.fetchone.side_effect = [row, enabled_row]
-        # Story 34.2: enabling re-checks the trial cap; neutralise that governance
-        # read here -- this test is about the enable/disable SQL, not the cap.
-        with patch("core.trial_enforcement.check_datastream_limit"):
-            result = enable_disable_datastream("ds_001", "proj_a", True, conn)
-        assert result is not None
-
-    def test_returns_none_when_not_found(self):
-        from core.datastreams import enable_disable_datastream
-
-        conn, cur = _make_conn([])
-        cur.fetchone.return_value = None
-        result = enable_disable_datastream("ds_missing", "proj_a", True, conn)
-        assert result is None
-
+        conn, _ = _make_conn([_ds_row(enabled=False)])
+        with pytest.raises(ValueError, match="reviewed Datastream operation"):
+            enable_disable_datastream("ds_001", "proj_a", True, conn)
 
 # ---------------------------------------------------------------------------
 # delete_datastream
@@ -358,30 +397,95 @@ class TestDeleteDatastream:
         conn, cur = _make_conn([])
         cur.fetchone.return_value = None
         result = delete_datastream("ds_missing", "proj_a", conn)
-        assert result is False
+        assert result is None
 
     def test_soft_archives_when_pull_jobs_exist(self):
+        """A pull job lets go instead of refusing, so it has to be asked for.
+
+        `pull_jobs` references a Datastream ON DELETE SET NULL: a hard delete
+        would succeed and leave the pull history orphaned. It is counted last,
+        after the tables whose keys restrict.
+        """
         from core.datastreams import delete_datastream
 
         row = _ds_row()
         conn, cur = _make_conn([row])
-        # First fetchone = get_datastream, second = ref_count > 0
+        cur.fetchall.return_value = []  # nothing in the catalogue holds it
         cur.fetchone.side_effect = [row, (2,)]  # 2 pull_jobs reference it
         result = delete_datastream("ds_001", "proj_a", conn)
-        assert result is True
+        assert result == "archived"
         # UPDATE (not DELETE) should be called for soft-archive
         calls = cur.execute.call_args_list
         update_calls = [c for c in calls if "UPDATE" in str(c)]
         assert len(update_calls) >= 1
 
-    def test_soft_archives_when_plan_version_exists(self):
+    def test_soft_archives_when_a_plan_version_ROW_exists(self):
+        """THE ROW, not the pointer -- which is what made a Fleet ungrowable-back.
+
+        A Datastream that never published has a plan VERSION and a NULL
+        `current_plan_version_id`. Reading the pointer answered "no history", the
+        hard delete ran, and `fk_datastream_plan_datastream_scope` refused it with
+        a 500. Measured in production 2026-08-12: 27 of 28 deletions failed, so
+        every Datastream born in the setup wizard was undeletable.
+        """
         from core.datastreams import delete_datastream
 
         row = _ds_row()
         conn, cur = _make_conn([row])
-        cur.fetchone.side_effect = [row, (0,), ("dsp_01",)]
+        cur.fetchall.return_value = [("datastream_plan_versions", "datastream_id")]
+        cur.fetchone.side_effect = [row, (1,), (0,)]
         result = delete_datastream("ds_001", "proj_a", conn)
-        assert result is True
+        assert result == "archived"
+        sql_calls = [str(call.args[0]) for call in cur.execute.call_args_list]
+        assert any("archived_at" in sql for sql in sql_calls)
+        assert not any("DELETE FROM app.datastreams" in sql for sql in sql_calls)
+
+    def test_the_tables_that_hold_it_are_read_from_the_catalogue(self):
+        """Nothing here names a table, so a migration that adds one is covered.
+
+        The previous version kept the list by hand and named three things while
+        33 tables carry a restricting key -- and nothing made that wrong out loud.
+        """
+        from core.datastreams import _restricting_references
+
+        conn, cur = _make_conn([])
+        cur.fetchall.return_value = [
+            ("datastream_executions", "datastream_id"),
+            ("datastream_setup_drafts", "materialized_datastream_id"),
+        ]
+        cur.fetchone.side_effect = [(3,), (0,), (0,)]
+        held = _restricting_references(conn, "ds_001")
+        assert held == [("datastream_executions", 3)]
+        catalogue_query = str(cur.execute.call_args_list[0].args[0])
+        assert "pg_constraint" in catalogue_query
+        assert "confdeltype" in catalogue_query
+        counted = [str(call.args[0]) for call in cur.execute.call_args_list[1:]]
+        assert "app.datastream_setup_drafts" in counted[1]
+        assert "materialized_datastream_id" in counted[1], (
+            "a table that names the column differently must still be counted"
+        )
+
+    def test_soft_archives_when_an_inbound_receipt_exists(self):
+        """Un recu d'entree est de l'histoire immuable, comme un pull job.
+
+        AI-200 : la suppression dure butait sur la cle etrangere de
+        `app.inbound_receipts`, protegee par une garde append-only, et rendait un
+        500 `db_error`. Le flux devenait indestructible -- et continuait a
+        consommer le quota d'essai de l'organisation. Archiver preserve le recu,
+        ce que la garde protege, et rend le flux inactif.
+        """
+        from core.datastreams import delete_datastream
+
+        row = _ds_row()
+        conn, cur = _make_conn([row])
+        # get_datastream, 1 recu inbound, 0 pull job.
+        cur.fetchall.return_value = [("inbound_receipts", "datastream_id")]
+        cur.fetchone.side_effect = [row, (1,), (0,)]
+        result = delete_datastream("ds_001", "proj_a", conn)
+        assert result == "archived", (
+            "the caller is told it ARCHIVED; inferring the disposition from the "
+            "pull-job count alone is what made the API answer `deleted` here"
+        )
         sql_calls = [str(call.args[0]) for call in cur.execute.call_args_list]
         assert any("archived_at" in sql for sql in sql_calls)
         assert not any("DELETE FROM app.datastreams" in sql for sql in sql_calls)
@@ -391,13 +495,14 @@ class TestDeleteDatastream:
 
         row = _ds_row()
         conn, cur = _make_conn([row])
-        # 4 fetchone: get_datastream row, pull_jobs count, plan-version pointer,
-        # then to_regclass('app.resource_grants') -- the 21.5-follow-up sweep of
-        # dangling per-flux grants (d3ba092) added that 4th read; exercise the
-        # table-present path so the grants DELETE is covered too.
-        cur.fetchone.side_effect = [row, (0,), (None,), ("app.resource_grants",)]
+        # get_datastream row, then 0 pull jobs (nothing in the catalogue holds
+        # it), then to_regclass('app.resource_grants') -- the 21.5-follow-up sweep
+        # of dangling per-flux grants (d3ba092); exercise the table-present path
+        # so the grants DELETE is covered too.
+        cur.fetchall.return_value = []
+        cur.fetchone.side_effect = [row, (0,), ("app.resource_grants",)]
         result = delete_datastream("ds_001", "proj_a", conn)
-        assert result is True
+        assert result == "deleted"
         calls = cur.execute.call_args_list
         delete_calls = [c for c in calls if "DELETE" in str(c)]
         assert len(delete_calls) >= 1
@@ -545,8 +650,11 @@ class TestBackfillDatastreams:
 
             def execute(sql, params=None):
                 if params and len(params) >= 3 and "INSERT INTO app.datastreams" in sql:
-                    # params[2] is the name
-                    inserted_names.append(params[2])
+                    # params[3] is the name
+                    # params[2] n'est le nom QUE dans l'INSERT du Datastream ;
+                    # l'insertion du lien project_flux passe par ici aussi.
+                    if "INSERT INTO app.datastreams" in sql:
+                        inserted_names.append(params[3])
                     cur.fetchone.return_value = (params[0],)  # return the ds_id
                 elif "SELECT id, provider, project_id" in sql or (params and len(params) == 0):
                     pass
@@ -599,3 +707,216 @@ class TestBackfillDatastreams:
         # Each name must include the last-4 suffix
         for name in inserted_names:
             assert "[" in name and "]" in name, f"Name {name!r} missing conn suffix bracket"
+
+
+# ---------------------------------------------------------------------------
+# data_role -- the write path that migration 093 never had
+# ---------------------------------------------------------------------------
+
+
+class TestDataRole:
+    """What a Datastream is FOR, declared instead of guessed.
+
+    Migration 093 added app.datastreams.data_role with a 7-value CHECK and
+    backfilled it ONCE by running a regular expression over module_name. After
+    that, `data_role` appeared in exactly one SELECT and in no INSERT or UPDATE
+    anywhere in the server: the column could never be written again, so every
+    Datastream kept whatever the regex guessed and the person who actually knows
+    the answer had no way to give it (found 2026-07-27).
+    """
+
+    def _conn(self):
+        from unittest.mock import MagicMock
+
+        cur = MagicMock()
+        cur.__enter__.return_value = cur
+        cur.__exit__.return_value = False
+        cur.description = [("id",), ("project_id",), ("name",), ("data_role",)]
+        cur.fetchone.return_value = ("ds_1", "proj_1", "GSC pages", "Performance")
+        conn = MagicMock()
+        conn.cursor.return_value = cur
+        return conn, cur
+
+    def test_declared_role_reaches_the_insert(self):
+        from core.datastreams import create_datastream
+
+        conn, cur = self._conn()
+        create_datastream(
+            {"name": "GSC pages", "module_name": "gsc", "data_role": "Performance"},
+            "proj_1",
+            "person_1",
+            conn,
+        )
+
+        sql, params = _datastream_insert(cur)
+        assert "data_role" in sql, "the insert must carry the column"
+        assert "Performance" in params, "the declared role must be bound, not dropped"
+
+    def test_an_invalid_role_is_refused_before_the_database(self):
+        """A 422 naming the allowed set beats a CheckViolation surfacing as a 500."""
+        import pytest
+        from core.datastreams import create_datastream
+
+        conn, _ = self._conn()
+        with pytest.raises(ValueError, match="data_role"):
+            create_datastream(
+                {"name": "x", "module_name": "gsc", "data_role": "Whatever"},
+                "proj_1",
+                "person_1",
+                conn,
+            )
+
+    def test_role_stays_optional(self):
+        """Omitting it must not break creation -- most existing callers do."""
+        from core.datastreams import create_datastream
+
+        conn, cur = self._conn()
+        create_datastream({"name": "x", "module_name": "gsc"}, "proj_1", "person_1", conn)
+        _sql, params = _datastream_insert(cur)
+        assert params[-1] is None
+
+    def test_the_allowed_set_matches_the_migration(self):
+        """DATA_ROLES mirrors migration 093's CHECK; drift here is a 500 in production.
+
+        BOTH DIRECTIONS. Inclusion alone only catches a role added here and missing
+        from the database; it never catches a role the database accepts and this
+        module refuses, which is a 422 on a perfectly legal value.
+        """
+        import re
+
+        from core.datastreams import DATA_ROLES
+
+        from tests.conftest import REPO_ROOT
+
+        sql = (REPO_ROOT / "infra/nango/migrations/093_datastream_data_role.sql").read_text(
+            encoding="utf-8"
+        )
+        checked = re.search(r"data_role IN \(([^)]*)\)", sql, re.S)
+        assert checked, "the CHECK of migration 093 could not be read"
+        in_database = set(re.findall(r"'([^']+)'", checked.group(1)))
+        assert in_database == set(DATA_ROLES)
+
+    def test_the_wizard_select_offers_exactly_these_seven(self):
+        """The screen is the THIRD copy of this vocabulary, and it had no guard.
+
+        `app.datastreams.data_role` was mirrored in Python and checked against the
+        migration, but the `<select>` an operator actually uses was checked against
+        nothing -- which is how it came to offer `Finance`, `Reference` and
+        `Operations`, three tokens that exist in no constraint and in no server
+        module. Choosing one was accepted for six wizard sections and refused at
+        materialization.
+
+        Equality in both directions, deliberately: inclusion would let an eighth
+        role land in the database and never reach the screen, and the screen would
+        stay green while refusing a value the product supports.
+        """
+        import re
+
+        from core.datastreams import DATA_ROLES
+
+        from tests.conftest import REPO_ROOT
+
+        source = (
+            REPO_ROOT
+            / "ui/admin/src/datastreams/preconfiguration/DatastreamSetupWizard.tsx"
+        ).read_text(encoding="utf-8")
+        declared = re.search(r"const DATA_ROLES:[^=]*=\s*\[(.*?)\n\];", source, re.S)
+        assert declared, "the wizard no longer declares a DATA_ROLES constant"
+        on_screen = re.findall(r'\["([^"]+)",\s*"[^"]*"\]', declared.group(1))
+
+        assert on_screen == list(DATA_ROLES)
+
+
+def test_creation_links_the_datastream_to_its_project():
+    """Sans cette ligne, un Datastream neuf est invisible a ses propres ecrans.
+
+    Toutes les routes de detail le resolvent par une jointure sur
+    app.project_flux ; la creation ne l'ecrivait pas, et l'Overview, Data,
+    Mapping, Runs et /sample repondaient 404 sur un objet bien present dans
+    app.datastreams.
+    """
+    from unittest.mock import MagicMock
+
+    from core.datastreams import create_datastream
+
+    cur = MagicMock()
+    cur.fetchone.return_value = ("ds_001", "proj_1", "n", "gsc", None, None, True,
+                                "nightly", 3, 30, None, "person_1", None, None)
+    cur.description = [("id",), ("project_id",), ("name",), ("module_name",),
+                       ("connection_ref_id",), ("report_profile_id",), ("enabled",),
+                       ("schedule_mode",), ("refetch_days",), ("date_window_days",),
+                       ("config",), ("created_by",), ("created_at",), ("updated_at",)]
+    conn = MagicMock()
+    conn.cursor.return_value.__enter__.return_value = cur
+
+    create_datastream({"name": "n", "module_name": "gsc"}, "proj_1", "person_1", conn)
+
+    params = _project_flux_insert(cur)
+    assert params is not None, "la creation n'a pas indexe le flux dans son projet"
+    assert params[0] == "proj_1"
+
+
+# ---------------------------------------------------------------------------
+# AI-217 -- a weekly row must not be REPORTED as manual.
+# ---------------------------------------------------------------------------
+
+
+class TestTheCadenceAScreenIsTold:
+    def test_a_weekly_row_reads_as_weekly(self):
+        """It read `manual`, which is the opposite of what the row does.
+
+        `cadence_mode` is derived from `schedule_mode` for every row that carries
+        no intent payload, and the derivation knew two cadences: `nightly` and
+        `hourly`. Everything else fell through to `manual` -- so a Datastream the
+        dispatcher pulls once a week told every screen it never runs at all.
+        """
+        from core.datastreams import get_datastream
+
+        conn, _ = _make_conn([_ds_row(schedule_mode="weekly")])
+        assert get_datastream("ds_001", "proj_a", conn)["cadence_mode"] == "weekly"
+
+    def test_a_manual_row_still_reads_as_manual(self):
+        from core.datastreams import get_datastream
+
+        conn, _ = _make_conn([_ds_row(schedule_mode="manual")])
+        assert get_datastream("ds_001", "proj_a", conn)["cadence_mode"] == "manual"
+
+
+class TestTheCadenceVocabularyIsOneTable:
+    """AI-217. Two names for one setting, and they must not drift apart.
+
+    The plan intent says `daily`, the stable row says `nightly`, and the
+    translation between them existed in four private dictionaries -- three
+    forward, one backward. `weekly` was missing from all four, so a legal cadence
+    was silently turned into `manual` on the way in and reported as `manual` on
+    the way out.
+    """
+
+    def test_a_weekly_cadence_maps_to_the_weekly_schedule_mode(self):
+        from core.datastreams import schedule_mode_for_cadence
+
+        assert schedule_mode_for_cadence("weekly") == "weekly"
+
+    def test_the_two_names_of_a_daily_cadence_still_meet(self):
+        from core.datastreams import cadence_for_schedule_mode, schedule_mode_for_cadence
+
+        assert schedule_mode_for_cadence("daily") == "nightly"
+        assert cadence_for_schedule_mode("nightly") == "daily"
+
+    def test_every_legal_cadence_survives_the_round_trip(self):
+        """Nothing the CHECK constraint allows may fall through to `manual`.
+
+        The `.get(mode, "manual")` default is what made an unknown cadence look
+        like a decision to run on demand. A round trip that loses a value is the
+        same defect, one table further on.
+        """
+        from core.datastreams import cadence_for_schedule_mode, schedule_mode_for_cadence
+
+        for mode in ("nightly", "weekly", "hourly", "manual"):
+            assert schedule_mode_for_cadence(cadence_for_schedule_mode(mode)) == mode
+
+    def test_an_unknown_cadence_is_still_read_as_manual(self):
+        """Defensive, and deliberately unchanged: an unknown word promises nothing."""
+        from core.datastreams import schedule_mode_for_cadence
+
+        assert schedule_mode_for_cadence("fortnightly") == "manual"

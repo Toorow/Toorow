@@ -162,7 +162,6 @@ def test_catalog_pull_refuses_incompatible_breakdown_pair_before_api(
 ):
     """An incompatible breakdown pair (age + country) is refused with an
     invalid_request-class error BEFORE any HTTP call (breakdown_compatibility)."""
-    monkeypatch.setenv("META_ADS_AD_ACCOUNT_ID", "1234567890")
     from core.pull_errors import InvalidRequestError
 
     selection = _selection(["spend"], ["age", "country"], catalog)

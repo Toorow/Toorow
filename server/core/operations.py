@@ -39,7 +39,20 @@ _HOST_KEYS = {
     "capability_profile",
     "client_id",
 }
-_VERSION_KEYS = {"policy", "catalog", "tool"}
+#: The versions an operation may pin itself to. FIVE names, and the list is not a
+#: preference: migration 070 declares the vocabulary in the schema itself --
+#: "The immutable plan/mapping/policy/catalog/tool versions the proposal was
+#: pinned to" (`070_operations_recovery.sql:34`). This set carried only three of
+#: them, so an operation that pinned the plan and mapping versions it ran against
+#: -- the two that actually decide what a Datastream produces -- was refused
+#: before any SQL, with `versions contains unsupported keys`.
+#:
+#: That refusal was the whole of `datastream_first_candidate`: BOTH of its MCP
+#: tools pin `plan` + `mapping`, so neither `start_datastream_first_candidate` nor
+#: `publish_activate_datastream_candidate` could ever run. A Datastream reaching a
+#: Ready candidate had no way to be published, and the failure named a key rather
+#: than the tool.
+_VERSION_KEYS = {"plan", "mapping", "policy", "catalog", "tool"}
 _PROVIDER_REFERENCE_KEYS = {
     "connection_ref",
     "account_id",
@@ -226,6 +239,23 @@ def _existing_operation(cur, prepared: PreparedOperation):
         (spec.effective_org_id, spec.command_type, prepared.idempotency_key_hash),
     )
     return cur.fetchone()
+
+
+def operation_already_ran(conn, spec: OperationSpec) -> bool:
+    """True when this idempotency key has already produced an operation.
+
+    WHY A CALLER NEEDS TO ASK. A command whose pre-checks read the world -- "is
+    this short code free?" -- refuses a legitimate RETRY: the first attempt
+    committed, the answer to the pre-check changed because of it, and the client
+    that timed out is told its own creation is a duplicate. Asking this first
+    lets the replay path answer, which is what the key is for. It reads the same
+    row `execute_operation` would replay, through the same lookup, so the two can
+    never disagree about what "already ran" means.
+    """
+
+    prepared = prepare_operation(spec)
+    with conn.cursor() as cur:
+        return _existing_operation(cur, prepared) is not None
 
 
 def _replayed_result(existing, prepared: PreparedOperation) -> OperationResult:
@@ -544,8 +574,17 @@ def reconcile_operation_outcome(
             """
             UPDATE app.operations
             SET state = %s, outcome = %s,
+                -- `jsonb_build_object` accepte `any`, donc un parametre nu
+                -- n'a AUCUN contexte de type et Postgres refuse la requete
+                -- ENTIERE. Sans ce cast, aucune operation `outcome_unknown` ne
+                -- pouvait quitter cet etat : la seule sortie prevue levait
+                -- IndeterminateDatatype a chaque appel. Meme classe que les
+                -- comparaisons IS NULL non typees de AI-186, meme reparation.
+                -- (Et le marqueur fautif ne s'ecrit PAS dans ce commentaire :
+                -- il vit dans le litteral, donc psycopg le compterait comme un
+                -- placeholder de plus.)
                 result = COALESCE(result, '{}'::jsonb)
-                         || jsonb_build_object('reconciliation_evidence_hash', %s),
+                         || jsonb_build_object('reconciliation_evidence_hash', %s::text),
                 completed_at = NOW(), updated_at = NOW()
             WHERE id = %s AND state = 'outcome_unknown'
             """,

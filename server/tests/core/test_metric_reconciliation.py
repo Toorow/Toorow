@@ -13,7 +13,6 @@ decision stable. Pattern calque sur test_dataset_access_grants.py / test_metric_
 from __future__ import annotations
 
 import os
-import uuid
 from pathlib import Path
 
 import pytest
@@ -24,6 +23,8 @@ os.environ.setdefault("SCHEDULER_ENABLED", "false")
 
 from core import metric_reconciliation as mr  # noqa: E402
 from core import metric_semantics as ms  # noqa: E402
+
+from tests.support.updated_at_trigger import ensure_set_updated_at
 
 # ---------------------------------------------------------------------------
 # Postgres availability check (calque sur test_metric_semantics.py)
@@ -368,7 +369,7 @@ def test_estimate_route_carries_designated_truth_note():
 
 
 def test_keep_separate_carries_do_not_sum_reason():
-    """D-5 (honesty): KEEP_SEPARATE carries an explicit FR reason -- never sum the series."""
+    """D-5 (honesty): KEEP_SEPARATE carries an explicit reason -- never sum the series."""
     d = mr.resolve_route(
         "proj", "cost",
         rule_resolver=_rule_resolver(_rule("KEEP_SEPARATE", overlap_group_id="ovg_cost")),
@@ -378,7 +379,15 @@ def test_keep_separate_carries_do_not_sum_reason():
     assert d.status == mr.RouteStatus.KEEP_SEPARATE
     assert d.reason is not None
     assert d.reason.code == mr.CODE_KEEP_SEPARATE
-    assert "additionner" in d.reason.message.lower()
+    # AD-34 is ratified (SPEC.md:159, directive Jean 2026-07-24): all visible
+    # application copy is English. The reason string was translated in `d3ea695d`
+    # ("ne jamais les additionner" -> "never add them together"); this assertion
+    # kept matching the French. The PRODUCT is right and the test was wrong --
+    # same shape as AI-103.
+    #
+    # What the assertion is FOR is the honesty invariant: the reason must say, in
+    # words, that the per-source series are not to be added. Asserted on that.
+    assert "never add them together" in d.reason.message.lower()
 
 
 def test_missing_project_falls_back_platform_defaults():
@@ -450,6 +459,7 @@ def test_gate_two_emitters_no_rule_warns():
         "proj",
         rule_resolver=_rule_resolver(None),
         emitters_source={"impressions": ["a", "b"]},
+        members_reader=lambda: [],
     )
     assert len(reasons) == 1
     assert reasons[0].code == mr.CODE_UNRULED_OVERLAP
@@ -461,6 +471,7 @@ def test_gate_one_emitter_no_warning():
     reasons = mr.detect_unruled_overlaps(
         "proj", rule_resolver=_rule_resolver(None),
         emitters_source={"cost": ["ias"]},
+        members_reader=lambda: [],
     )
     assert reasons == []
 
@@ -502,9 +513,16 @@ def test_emitters_sorted_deduped_and_dict_canonical():
         _FakeModule("alpha", {"c2": "conversions"}),
         _FakeModule("beta_dup", {"c3": "conversions"}),
     ]
-    got = mr.emitters_of("conversions", modules=modules)
+    # `members_reader=lambda: []` is what makes this offline. `emitters_of` UNIONs
+    # the DB's overlap members with the manifests, so without it this assertion
+    # describes whatever the database happens to hold -- and passed only while no
+    # database was reachable.
+    got = mr.emitters_of("conversions", modules=modules, members_reader=lambda: [])
     assert got == ("alpha", "beta", "beta_dup")  # sorted, deduped
-    assert mr.emitters_of("average_position", modules=modules) == ("beta",)
+    assert (
+        mr.emitters_of("average_position", modules=modules, members_reader=lambda: [])
+        == ("beta",)
+    )
 
 
 def test_gate_unions_db_members_without_loaded_module():
@@ -570,7 +588,8 @@ def test_gate_db_union_fail_soft_when_reader_raises():
 def test_gate_returns_list_never_raises():
     """§20: detect_unruled_overlaps returns a LIST, never raises, no side effect."""
     out = mr.detect_unruled_overlaps(
-        "proj", rule_resolver=_rule_resolver(None), emitters_source={}
+        "proj", rule_resolver=_rule_resolver(None), emitters_source={},
+        members_reader=lambda: [],
     )
     assert isinstance(out, list)
     assert out == []
@@ -593,7 +612,13 @@ def test_pilot_cost_today_silent():
         }),
     ]
     reasons = mr.detect_unruled_overlaps(
-        "proj", rule_resolver=_rule_resolver(None), modules=modules
+        "proj",
+        rule_resolver=_rule_resolver(None),
+        modules=modules,
+        # Offline means offline: without this the DB's overlap members are
+        # merged in and the assertion below describes the database, not the
+        # fake modules this test builds.
+        members_reader=lambda: [],
     )
     # measured_impressions / viewable_impressions ARE co-emitted -> those overlap (correct),
     # but NO reason mentions 'cost' (neither source emits it).
@@ -661,9 +686,13 @@ def test_invariant1_no_warehouse_read():
     source = Path(mr.__file__).read_text(encoding="utf-8").lower()
     assert "fact_daily_kpi" not in source
     assert ".sql" not in source
-    # The only DB access is the read of overlap_group_members (topology), never a fact read.
-    assert "from app.overlap_group_members" in source
     assert "fact_" not in source
+    # STRONGER SINCE AI-295, and the assertion moved with the fact. It used to
+    # pin `from app.overlap_group_members` as "the only DB access, and it is
+    # topology rather than a fact". That store is retired: the module now opens
+    # NO cursor at all, so the invariant is checked at its source instead of
+    # through the one exception it used to allow.
+    assert "get_connection" not in source
 
 
 def test_known_marts_are_the_four_targets():
@@ -690,21 +719,109 @@ def test_derive_target_mart_declarative():
 
 
 # ---------------------------------------------------------------------------
+# Story 49.3 AC1 -- the layer-1 declaration is read SEMANTIC MODEL FIRST.
+#
+# THE DEFECT THESE TESTS PIN, and it is story 60.2's defect one module further on.
+# `_resolve_definition` read `resolve_metric_definitions` alone -- the cascade over
+# `app.metric_definitions`. A metric a person had declared `non_additive` in the
+# Concept workbench was therefore invisible to this gate, and step 5 of
+# `resolve_route` answered DIRECT_SUM on it: a PERMISSION to add two sources
+# together, granted by a store that did not carry the declaration.
+#
+# It now goes through `resolve_declared_additivity` -- the ONE reader every render
+# already uses, which puts published Concept versions first and keeps
+# `app.metric_definitions` as its second layer. What this gate applies and what a
+# roll-up applies can no longer disagree.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("klass", "expected_additive"),
+    [
+        ("additive", True),
+        # `semi_additive` is on the non-summable side: "summable across SOME
+        # dimensions" is not an answer a cross-source sum can use.
+        ("semi_additive", False),
+        ("non_additive", False),
+    ],
+)
+def test_a_declared_class_decides_the_layer_one_definition(
+    monkeypatch, klass, expected_additive
+):
+    monkeypatch.setattr(ms, "resolve_declared_additivity", lambda project: {"cost": klass})
+
+    definition = mr._resolve_definition("proj_EXAMPLE", "cost", None)
+
+    assert definition["additive"] is expected_additive
+    assert definition["additivity_class"] == klass
+
+
+def test_a_metric_nobody_declared_stays_none(monkeypatch):
+    """Absent from BOTH stores -> None, and `_no_rule_decision` keeps additive=True.
+
+    The move never widens a permission; it only lets a declaration take one away.
+    """
+    monkeypatch.setattr(ms, "resolve_declared_additivity", lambda project: {})
+
+    assert mr._resolve_definition("proj_EXAMPLE", "efficiency_index", None) is None
+
+
+def test_an_unreadable_store_answers_none_rather_than_a_guess(monkeypatch):
+    def _boom(project):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(ms, "resolve_declared_additivity", _boom)
+
+    assert mr._resolve_definition("proj_EXAMPLE", "cost", None) is None
+
+
+def test_a_client_metric_declared_non_additive_is_not_combinable(monkeypatch):
+    """End to end through `resolve_route`: the declaration reaches the gate's verdict.
+
+    `efficiency_index` matches no platform frozenset and no ratio-name suffix --
+    the exact metric story 60.2 measured being summed across two days -- so this
+    verdict can only come from the declaration.
+    """
+    monkeypatch.setattr(
+        ms, "resolve_declared_additivity", lambda project: {"efficiency_index": "non_additive"}
+    )
+
+    decision = mr.resolve_route(
+        "proj_EXAMPLE",
+        "efficiency_index",
+        rule_resolver=lambda project, metric: None,
+        emitters_source=lambda metric: ("meta-ads",),
+    )
+
+    assert decision.status is mr.RouteStatus.NOT_COMBINABLE
+
+
+def test_the_module_no_longer_reads_the_lower_store_directly():
+    """The permanent attack, and it is `governance.md`'s *Incomplete if* verbatim:
+    "a render reads `app.metric_definitions` without going through the reader that
+    puts the Semantic Model first"."""
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(mr))
+    called = {
+        node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+
+    assert "resolve_declared_additivity" in called, sorted(called)
+    assert "resolve_metric_definitions" not in called, sorted(called)
+
+
+# ---------------------------------------------------------------------------
 # Live Postgres -- the real socle after import_platform_defaults
 # ---------------------------------------------------------------------------
 
 
 def _ensure_set_updated_at(conn) -> None:
-    with conn.cursor() as cur:
-        cur.execute("CREATE SCHEMA IF NOT EXISTS app")
-        cur.execute(
-            """
-            CREATE OR REPLACE FUNCTION app.set_updated_at() RETURNS trigger AS $$
-            BEGIN NEW.updated_at = now(); RETURN NEW; END;
-            $$ LANGUAGE plpgsql
-            """
-        )
-    conn.commit()
+    """See `tests.support.updated_at_trigger`: ask before replacing."""
+    ensure_set_updated_at(conn)
 
 
 def _apply_migration_049(conn) -> None:
@@ -719,106 +836,70 @@ def _bootstrap_platform(conn) -> None:
     _apply_migration_049(conn)
 
 
+# ---------------------------------------------------------------------------
+# Live routing, rewritten by Story 49.4.
+#
+# These five tests asserted a PLATFORM-scope cascade: `import_platform_defaults`
+# seeded `overlap_groups` at PLATFORM scope, and `resolve_route` for a project
+# that DOES NOT EXIST ("no_such_project") returned a routed mart. Read plainly,
+# that is a routing decision for nobody -- and it is the behaviour AC3 abolishes:
+# "Platform or Organization defaults are versioned templates materialized as
+# editable Project drafts. They are not a hidden runtime cascade."
+#
+# The cutover was made on a measurement, not on preference: the one real Project
+# on this deployment has a single active Datastream and no published mapping, so
+# it has nothing to reconcile and loses nothing. A Project that does have several
+# sources reaches a rule through
+# `controls_quality.materialize_reconciliation_template` plus a governed
+# publication, which `test_controls_quality.py` proves end to end.
+#
+# The routing logic itself is untouched; the 54 unit tests above still exercise
+# every branch by injecting a resolver. Only the rule's SOURCE moved.
+# ---------------------------------------------------------------------------
+
+
 @pg_available
-def test_live_route_conversions_to_mart():
-    """§25: import then resolve_route(project, 'conversions') -> ROUTED_TO_MART, mart set."""
+@pytest.mark.pg_owner
+def test_live_platform_seed_no_longer_decides_for_a_project():
+    """The cascade is gone: a platform seed is a template, not an authority."""
     from core.db import get_connection
 
     with get_connection() as conn:
         _bootstrap_platform(conn)
     ms.import_platform_defaults(seeds_dir=_SEEDS_DIR)
 
-    d = mr.resolve_route("no_such_project", "conversions")
-    assert d.status == mr.RouteStatus.ROUTED_TO_MART
-    assert d.target_mart == "cross_source_conversions"
-    assert d.method == "PRIORITY"
-
-
-@pg_available
-def test_live_route_revenue_to_mart():
-    """§26: resolve_route(project, 'revenue') -> cross_source_revenue."""
-    from core.db import get_connection
-
-    with get_connection() as conn:
-        _bootstrap_platform(conn)
-    ms.import_platform_defaults(seeds_dir=_SEEDS_DIR)
-
-    d = mr.resolve_route("no_such_project", "revenue")
-    assert d.status == mr.RouteStatus.ROUTED_TO_MART
-    assert d.target_mart == "cross_source_revenue"
-
-
-@pg_available
-def test_live_route_cost_keep_separate():
-    """§27: resolve_route(project, 'cost') -> KEEP_SEPARATE, series {doubleverify, ias}."""
-    from core.db import get_connection
-
-    with get_connection() as conn:
-        _bootstrap_platform(conn)
-    ms.import_platform_defaults(seeds_dir=_SEEDS_DIR)
-
-    d = mr.resolve_route("no_such_project", "cost")
-    assert d.status == mr.RouteStatus.KEEP_SEPARATE
-    assert d.target_mart is None
-    assert {s.connector for s in d.series} == {"doubleverify", "ias"}
-
-
-@pg_available
-def test_live_org_override_shadows_platform():
-    """§28: an ORG KEEP_SEPARATE group on a metric shadows the PLATFORM default (scope=ORG)."""
-    from core.db import get_connection
-
-    suffix = uuid.uuid4().hex[:8]
-    org_id = f"mr_org_{suffix}"
-    project_id = f"mr_proj_{suffix}"
-    with get_connection() as conn:
-        _bootstrap_platform(conn)
-    ms.import_platform_defaults(seeds_dir=_SEEDS_DIR)
-
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO app.organizations (id, name, slug, created_by) "
-                "VALUES (%s, %s, %s, 'system')",
-                (org_id, f"MROrg-{suffix}", f"mr-org-{suffix}"),
-            )
-            cur.execute(
-                "INSERT INTO app.projects (id, org_id, name, created_by) "
-                "VALUES (%s, %s, %s, 'system')",
-                (project_id, org_id, f"MRProj-{suffix}"),
-            )
-        conn.commit()
-
-    try:
-        # An ORG KEEP_SEPARATE group on 'conversions' shadows the PLATFORM PRIORITY default.
-        grp = ms.upsert_overlap_group(
-            canonical_name="conversions", name=f"conv-org-{suffix}",
-            scope_level=ms.SCOPE_ORG, org_id=org_id, created_by="system",
+    for metric in ("conversions", "revenue"):
+        decision = mr.resolve_route("no_such_project", metric)
+        assert decision.status != mr.RouteStatus.ROUTED_TO_MART, (
+            f"'{metric}' was routed to a mart for a Project that does not exist"
         )
-        ms.set_overlap_group_members(
-            overlap_group_id=grp["id"], connectors=["src_a", "src_b"],
-            created_by="system", scope_level=ms.SCOPE_ORG, org_id=org_id,
-        )
-        ms.upsert_reconciliation_rule(
-            overlap_group_id=grp["id"], method=ms.METHOD_KEEP_SEPARATE,
-            scope_level=ms.SCOPE_ORG, org_id=org_id, created_by="system",
-        )
-
-        d = mr.resolve_route(project_id, "conversions")
-        assert d.status == mr.RouteStatus.KEEP_SEPARATE
-        assert d.scope_level == ms.SCOPE_ORG
-        assert {s.connector for s in d.series} == {"src_a", "src_b"}
-    finally:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM app.projects WHERE id = %s", (project_id,))
-                cur.execute("DELETE FROM app.organizations WHERE id = %s", (org_id,))
-            conn.commit()
+        assert decision.target_mart is None
 
 
 @pg_available
-def test_live_reimport_stable_decision():
-    """§29: re-import_platform_defaults leaves the routing decision unchanged (idempotent)."""
+@pytest.mark.pg_owner
+def test_live_no_published_rule_never_invents_a_total():
+    """Without a rule the sources stay apart. That has always been the safe answer."""
+    from core.db import get_connection
+
+    with get_connection() as conn:
+        _bootstrap_platform(conn)
+    ms.import_platform_defaults(seeds_dir=_SEEDS_DIR)
+
+    decision = mr.resolve_route("no_such_project", "cost")
+    assert decision.status in {
+        mr.RouteStatus.KEEP_SEPARATE,
+        mr.RouteStatus.UNRULED_OVERLAP,
+        mr.RouteStatus.DIRECT_SUM,
+        mr.RouteStatus.NOT_COMBINABLE,
+    }
+    assert decision.target_mart is None
+
+
+@pg_available
+@pytest.mark.pg_owner
+def test_live_reimporting_the_template_changes_nothing():
+    """Re-importing the seed is inert, because the seed is no longer authority."""
     from core.db import get_connection
 
     with get_connection() as conn:
@@ -828,3 +909,94 @@ def test_live_reimport_stable_decision():
     ms.import_platform_defaults(seeds_dir=_SEEDS_DIR)
     after = mr.resolve_route("no_such_project", "conversions")
     assert before == after
+
+
+def test_an_unreadable_policy_degrades_to_no_rule_never_to_a_sum():
+    """Fail-soft in the SAFE direction, and this one needs no database.
+
+    `governed_runtime_rule` returns None when the owner cannot be read. None means
+    "no rule governs this metric", which keeps the sources separate -- the only
+    degradation that cannot produce a wrong number.
+    """
+    from unittest.mock import patch
+
+    from core.controls_quality import governed_runtime_rule
+
+    with patch("core.db.get_connection", side_effect=RuntimeError("owner unreadable")):
+        assert governed_runtime_rule("any_project", "conversions") is None
+
+
+# ---------------------------------------------------------------------------
+# A governed rule never touches the pre-governance store -- governance.md [3]
+# ---------------------------------------------------------------------------
+
+
+def test_a_governed_rule_reads_its_members_without_touching_the_legacy_store():
+    """Measured 2026-08-16: it queried `app.overlap_group_members` every time.
+
+    `controls_quality.py:422` sets `overlap_group_id` to the
+    `rule_set_version_id` on purpose -- "it now names the governed version rather
+    than a mutable group row" -- and `_resolve_members` was never told, so it
+    kept handing that value to `_group_members` as if it were a group id. The
+    query matched nothing every time (a governed version is minted `grsv_`, a
+    group `ovg_`), and fell through to the `priority_order` the rule already
+    carried. A read that works only because it always fails is not a working
+    read.
+
+    AI-295 finished it: the store has no writer left either, so the branch that
+    read it is gone rather than skipped, and the module opens no cursor at all.
+    """
+    governed = {
+        "method": "PRIORITY",
+        "priority_order": ["connector_a", "connector_b"],
+        "overlap_group_id": "grsv_01ABCDEF",
+        "rule_set_version_id": "grsv_01ABCDEF",
+    }
+    assert mr._resolve_members(governed, None, "cost") == ["connector_a", "connector_b"]
+    assert not hasattr(mr, "_group_members"), (
+        "the legacy member reader is retired with its store (AI-295)"
+    )
+
+
+def test_no_resolver_can_still_produce_an_ungoverned_rule():
+    """The other side of the branch: removing a query must not remove a PATH.
+
+    Until AI-295 this test asserted the opposite -- that a rule without a
+    `rule_set_version_id` still read `app.overlap_group_members`, because
+    dropping that read would have emptied the series contract of every Project
+    not yet migrated. That concern is answered rather than dropped: there is no
+    longer any way to obtain such a rule. `_resolve_rule` calls exactly one
+    resolver, and every rule it returns carries the published version's id
+    (`controls_quality.resolve_reconciliation_rule` sets it from `version["id"]`,
+    which is never null). The only remaining producer of an ungoverned rule is an
+    injected `rule_resolver` in a test.
+
+    So the assertion is on the seam, not on the query: whatever the sole resolver
+    returns is governed, and a rule with no version id cannot reach the members
+    branch from production code.
+    """
+    from unittest.mock import patch
+
+    seen = {}
+
+    def _fake_governed(project_id, metric):
+        seen["called"] = (project_id, metric)
+        return {"method": "PRIORITY", "priority_order": ["a"], "rule_set_version_id": "grsv_X"}
+
+    with patch("core.controls_quality.governed_runtime_rule", _fake_governed):
+        rule = mr._resolve_rule("proj_EXAMPLE", "cost", None)
+
+    assert seen["called"] == ("proj_EXAMPLE", "cost")
+    assert rule["rule_set_version_id"], "the sole resolver always names its published version"
+    # And the series still come from the rule itself, never from a second store.
+    assert mr._resolve_members(rule, None, "cost") == ["a"]
+
+
+def test_the_two_id_namespaces_cannot_collide():
+    """Why the legacy read could never succeed on a governed rule, in one line."""
+    from core.governance_rule_sets import _mint
+
+    assert _mint("grsv").startswith("grsv_")
+    from core import metric_semantics
+
+    assert metric_semantics._ID_PREFIXES["overlap_group"] == "ovg_"

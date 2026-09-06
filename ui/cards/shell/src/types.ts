@@ -8,6 +8,8 @@
  * Claude can deepen the analysis in chat (hybrid commentary).
  */
 
+import { unitWorthShowing } from "./viz/theme/formatters";
+
 /** Re-export the shared metric definition shape (R6). */
 export interface MetricDefinition {
   definition: string;
@@ -43,12 +45,42 @@ export interface CardSelection {
   alternatives: Array<{ id: string; answers_question: string }>;
 }
 
+/**
+ * meta.analytical_path — WHICH engine produced the figures on this card
+ * (story 53.9, CAV-17). Toorow answers the same business question through two
+ * paths reading two different relations: the card path reads an ungoverned
+ * relation (`fact_daily_kpi` for the generic card), while the Console's
+ * Explore/Result path reads the Datastream's published output relation and pins
+ * a Semantic View version and a Query Spec version on the Result. They can
+ * disagree, and neither reconciles against the other.
+ *
+ * Declared server-side by `core.envelope.declare_analytical_path`, and stamped
+ * unconditionally by `core.envelope.build_envelope` on every envelope built from
+ * story 53.9 onward. Optional HERE for one honest reason: a Render frozen before
+ * that change carries no such key, and a required field would describe those
+ * persisted envelopes falsely. Absence means "built before the disclosure", never
+ * "governed".
+ */
+export interface AnalyticalPath {
+  path: string;
+  relation: string;
+  governed_result: boolean;
+  note: string;
+}
+
 export interface CardMeta {
   freshness?: {
     last_pull: string | null;
     cadence_hours?: number;
     stale_since?: string | null;
+    /**
+     * `stale_since: null` alone reads as "evaluated, and fresh". Only
+     * `core.health_enrichment` evaluates staleness, and no card path reaches it,
+     * so the server always declares WHICH of the two situations a reader is in.
+     */
+    stale_since_evaluated?: boolean;
   };
+  analytical_path?: AnalyticalPath;
   provenance?: {
     source_system?: string | null;
     source_field?: string | null;
@@ -166,6 +198,17 @@ export interface KpiRowBlockData {
 /** line block payload — one named series of {x:date, y:value} points per bound metric. */
 export interface LineBlockData {
   series: Array<{ name: string; points: Array<{ x: string; y: number }> }>;
+  /**
+   * Faits datés posés sur l'axe (sorties de vidéo, mises en ligne).
+   *
+   * Ce ne sont PAS des mesures : un repère n'a pas de valeur, il a une date et
+   * un titre. Le serveur en fournit autant qu'il en a lus ; ceux dont la date ne
+   * tombe sur aucun point de l'axe ne sont pas dessinés, et `markers_reason` dit
+   * pourquoi la liste est vide plutôt que de laisser croire qu'il n'y a rien eu.
+   */
+  markers?: Array<{ index: string; label: string }>;
+  /** Pourquoi il n'y a aucun repère — jamais une liste vide muette. */
+  markers_reason?: { code: string; message: string } | null;
 }
 
 /** bar block payload — top-N bars grouped by the resolved dimension. */
@@ -184,7 +227,17 @@ export interface BarBlockData {
 /** donut block payload — share of an additive metric by the resolved dimension. */
 export interface DonutBlockData {
   total: number;
+  /** The STABLE identifier the product joins on. It never reaches a person. */
   dimension: string | null;
+  /**
+   * The word a person reads at the centre of the donut — the client's own name
+   * for `dimension` when somebody named it, otherwise the word derived from the
+   * identifier. Resolved server-side by the SAME seam the block title above it
+   * uses, because a heading and the unit under it must not call one dimension
+   * two things. Until 2026-08-31 the shell printed `dimension` here, so a donut
+   * of `device_category` announced its unit in the words of the database.
+   */
+  dimension_label?: string | null;
   slices: Array<{ label: string; value: number; pct: number }>;
 }
 
@@ -192,12 +245,28 @@ export interface DonutBlockData {
 export interface GaugeBlockData {
   value: number | null;
   target: number | null;
-  /** "binding" when the target came from the template; "default" for the fallback. */
-  target_source: "binding" | "default";
+  /** Where the objective came from. null target <=> "unset" — see below (CAV-08). */
+  target_source: "unset" | "project" | "binding";
   unit: string;
   direction: "up_good" | "down_good" | "neutral";
   label: string;
 }
+
+/*
+ * `GaugeBlockData.target_source` mirrors `cards.py:_resolve_gauge`, most specific first:
+ *   - "binding" — the card template bound the objective;
+ *   - "project" — the project preference `cpa_target` supplied it;
+ *   - "unset"   — nobody defined one, so `target` is null and NO verdict is drawn.
+ *
+ * "default" was the fourth member, and it named the platform constant
+ * `_DEFAULT_CPA_TARGET = 50.0`. The server stopped emitting it in 34cd021 and can no
+ * longer produce that value, so the union above no longer admits it; conversely "unset"
+ * was undeclarable here while the server had already been emitting it.
+ *
+ * This rationale sits BELOW the interface on purpose: `target_source` must stay on line
+ * 196, which `server/core/cards.py:100`, `server/tests/core/test_card_blocks.py:233` and
+ * the 53.5 record all cite by line.
+ */
 
 /** funnel block payload — ordered stages with pass-through rate (first rate = 1.0). */
 export interface FunnelBlockData {
@@ -311,8 +380,55 @@ export const CARD_METRIC_LABELS: Record<string, string> = {
   roas: "ROAS",
   ctr: "CTR",
   cpa: "CPA",
+  // A raw token on a screen is a defect: « SCREEN_PAGE_VIEWS » printed as it
+  // stood on `card-journey` for want of a label (story 76-8).
+  screen_page_views: "Pages vues",
+  page_views: "Pages vues",
+  bounce_rate: "Taux de rebond",
 };
 
 export function metricLabel(metric: string): string {
   return CARD_METRIC_LABELS[metric] ?? metric;
+}
+
+/**
+ * WHAT IS ASKED ONCE IS NOT ASKED TWICE (story 76-8).
+ *
+ * Measured on 2026-09-05 across the cards at HEAD: « CLICS (CLICS) »,
+ * « CONVERSIONS (CONVERSIONS) », « SESSIONS (SÉANCES) », « IMPRESSIONS
+ * (IMPRESSIONS) ». The parenthesis repeated the label and added nothing.
+ *
+ * The rule is DERIVED rather than a list of forbidden words: a unit earns its
+ * parenthesis when it changes HOW THE NUMBER READS (a currency, a percentage, a
+ * ratio); a unit that is a plain word only renames what the label already said.
+ * `unitWorthShowing` carries the rule, here and everywhere else.
+ */
+export function metricUnitSuffix(unit: string | null | undefined): string {
+  return unitWorthShowing(unit) ? ` (${unit!.trim()})` : "";
+}
+
+/**
+ * AN IDENTIFIER IS SHOWN IN DOUBLE, OR NOT AT ALL (`console-presentation.md` §4,
+ * applied to the cards by story 76-8).
+ *
+ * The card footer read « Source : google-search-console » — the technical slug,
+ * alone, in a sentence addressed to a human. This function returns the LABEL;
+ * the caller prints the slug beside it, in discreet monospace.
+ *
+ * The transformation is DERIVED, not a catalogue: separators become spaces, each
+ * word takes its capital, and a word with no vowel is not a word — it is an
+ * acronym, and it is written in capitals (`gsc` gives `GSC`).
+ */
+export function sourceSystemLabel(slug: string | null | undefined): string | null {
+  const trimmed = slug?.trim();
+  if (!trimmed) return null;
+  return trimmed
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((word) =>
+      /[aeiouyàâäéèêëîïôöùûü]/i.test(word)
+        ? word.charAt(0).toUpperCase() + word.slice(1)
+        : word.toUpperCase(),
+    )
+    .join(" ");
 }

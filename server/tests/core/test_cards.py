@@ -9,7 +9,19 @@ build_asgi_app is in test_cards_api.py (the G-14 lesson).
 from __future__ import annotations
 
 import os
+from datetime import date
 from unittest.mock import patch
+
+#: The day `_rows()` is dated against. `get_card`'s default window is
+#: `today - _DEFAULT_WINDOW_DAYS .. today` -- RELATIVE -- while these rows carry
+#: FIXED dates, so a test that reads window-dependent data and lets `today`
+#: default is green only while the wall clock stays within 30 days of the
+#: fixture. One did, and went red on 2026-08-05 without a single line of
+#: production code changing. Any test asserting on `data.connectors`,
+#: `data.metrics` or `data.series` must pin `today=_FIXTURE_TODAY` or pass an
+#: explicit `date_from`/`date_to`; the ones that read module packs or template
+#: shape do not care.
+_FIXTURE_TODAY = date(2026, 7, 6)
 
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
@@ -205,7 +217,9 @@ def test_get_card_carries_r6_definitions_via_report_ref():
 def test_get_card_is_source_agnostic_canonical_only():
     """AD-2: a non-GA connector's canonical sessions drives the SAME KPI card."""
     with patch("core.warehouse.query_daily_report", return_value=_rows(connector="some-crm")):
-        _s, envelope, uri = cards_module.get_card([], "default", metrics=["sessions"])
+        _s, envelope, uri = cards_module.get_card(
+            [], "default", metrics=["sessions"], today=_FIXTURE_TODAY
+        )
     assert uri == "ui://core/card-kpi"
     assert envelope["data"]["connectors"] == ["some-crm"]
 
@@ -564,15 +578,15 @@ def test_get_card_keywords_populates_composition_blocks():
     # review-epic-9-integration F-1: the keywords card now has TWO table blocks -- "Top
     # requêtes" and "Opportunités". Select by title (dict-by-type would drop the first).
     tables = {b.get("title"): b for b in composition if b["type"] == "table"}
-    assert tables["Top requêtes"]["data"]["rows"]
-    # Opportunités block is ALWAYS present (designed empty when no opportunity).
-    assert "Opportunités" in tables
-    assert "rows" in tables["Opportunités"]["data"]
+    assert tables["Top queries"]["data"]["rows"]
+    # Opportunities block is ALWAYS present (designed empty when no opportunity).
+    assert "Opportunities" in tables
+    assert "rows" in tables["Opportunities"]["data"]
     assert comp["comment"]["data"]["text"].strip()
 
 
 def test_get_card_keywords_opportunities_block_populates():
-    """review-epic-9-integration F-1: the keywords Opportunités table surfaces high-
+    """review-epic-9-integration F-1: the keywords Opportunities table surfaces high-
     impression / weak-position queries end-to-end through get_card."""
     rows = _multi_rows(
         [
@@ -599,7 +613,7 @@ def test_get_card_keywords_opportunities_block_populates():
         )
     assert uri == "ui://core/card-keywords"
     tables = {b.get("title"): b for b in envelope["data"]["composition"] if b["type"] == "table"}
-    opp = tables["Opportunités"]["data"]
+    opp = tables["Opportunities"]["data"]
     labels = [r["_dim"] for r in opp["rows"]]
     assert "chaussures ete" in labels  # the opportunity surfaced
     assert "brand" not in labels  # strong rank excluded
@@ -725,10 +739,16 @@ _DEV_DUCKDB = os.path.join(
 )
 
 
-@pytest.mark.skipif(not os.path.exists(_DEV_DUCKDB), reason="dev DuckDB seed not present")
-def test_live_usertypes_and_journey_against_dev_duckdb(monkeypatch):
+def test_live_usertypes_and_journey_against_dev_duckdb(monkeypatch, duckdb_seed_copy):
+    # AI-130 : ce test pointait TOOROW_DUCKDB_PATH sur le fichier PARTAGE. DuckDB
+    # verrouille le fichier en exclusif, donc sous `-n 8` deux workers qui
+    # l'ouvrent en meme temps se marchent dessus et l'un echoue en « Device or
+    # resource busy » -- une fois sur trois, sur un test par ailleurs correct.
+    # `duckdb_seed_copy` (server/tests/conftest.py) rend une copie privee au
+    # worker ; la lecture est identique, la course disparait. Le skip quand le
+    # seed est absent est porte par la fixture, et il DIT pourquoi.
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
-    monkeypatch.setenv("TOOROW_DUCKDB_PATH", _DEV_DUCKDB)
+    monkeypatch.setenv("TOOROW_DUCKDB_PATH", duckdb_seed_copy(_DEV_DUCKDB))
 
     # usertypes: GA4 active_users + sessions, device_category present in the seed.
     _s, env_u, uri_u = cards_module.get_card(
@@ -951,7 +971,7 @@ def test_attribution_last_click_bar_uses_session_source_medium_only():
     # Second block = last-click bar (session_source_medium)
     last_bar_block = envelope["data"]["composition"][1]
     assert last_bar_block["type"] == "bar"
-    assert last_bar_block["title"] == "Canaux — dernier clic (top-N)"
+    assert last_bar_block["title"] == "Channels — last click (top-N)"
     bars = last_bar_block["data"]["bars"]
     assert len(bars) >= 1
     # Top bar = cpc / google (120 conv/day * 3 = 360)
@@ -979,7 +999,7 @@ def test_attribution_first_click_bar_uses_first_user_source_medium_only():
     # Third block = first-click bar (first_user_source_medium)
     first_bar_block = envelope["data"]["composition"][2]
     assert first_bar_block["type"] == "bar"
-    assert first_bar_block["title"] == "Canaux — premier clic (top-N)"
+    assert first_bar_block["title"] == "Channels — first click (top-N)"
     bars = first_bar_block["data"]["bars"]
     assert len(bars) >= 1
     # Top first-click bar = organic / google (140 conv/day * 3 = 420)
@@ -1006,7 +1026,7 @@ def test_attribution_campaign_table_uses_session_campaign_only():
     # Fourth block = campaign table
     table_block = envelope["data"]["composition"][3]
     assert table_block["type"] == "table"
-    assert table_block["title"] == "Campagnes — dernier clic (top-N)"
+    assert table_block["title"] == "Campaigns — last click (top-N)"
     rows_data = table_block["data"]["rows"]
     assert len(rows_data) >= 1
     # Top campaign = summer_sale (130 conv/day * 3 = 390)
@@ -1450,7 +1470,7 @@ def test_dedup_null_verified_rate_stays_null():
     # The comment must signal absence, never a rate
     comment = envelope["data"]["rendered_comment"]
     lowered = comment.lower()
-    assert "indisponible" in lowered or "indetermine" in lowered or "absente" in lowered
+    assert "unavailable" in lowered or "indetermine" in lowered or "absente" in lowered
     # Must not contain a numeric rate like '0,0x' or '0.0x'
     assert "0,0x" not in comment
     assert "0.0x" not in comment
@@ -1478,7 +1498,7 @@ def test_dedup_opt_out_project_designed_empty():
     # Comment must mention missing source
     comment = data["rendered_comment"]
     lowered = comment.lower()
-    assert "source" in lowered or "verification" in lowered or "vérification" in lowered
+    assert "source" in lowered or "verification" in lowered or "verification" in lowered
     # Must not crash (degrade-never-raise)
     assert "composition" in data
     assert len(data["composition"]) == 4
@@ -1515,7 +1535,7 @@ def test_dedup_comment_cites_formula_and_source():
         )
     comment = envelope["data"]["rendered_comment"]
     # Formula cited
-    assert "revendiqué" in comment.lower() or "réel" in comment.lower()
+    assert "claimed" in comment.lower() or "actual" in comment.lower()
     # Source cited (ga4 in this fixture)
     assert "ga4" in comment.lower()
 
@@ -1540,3 +1560,247 @@ def test_dedup_bar_block_has_series():
     assert "deduplicated_contribution" in metrics
     # estimate_label in bar data (AD-9)
     assert bar_block["data"].get("estimate_label") == "Estimation"
+
+
+# ---------------------------------------------------------------------------
+# Story 52.3 AC3 -- the knowledge fields ride on EVERY return path of get_card.
+#
+# review-epic-52 D-2: the Story 52.3 block was written in the generic path only,
+# and `get_card` has four envelope return paths. Measured on 2026-08-01, before
+# this test existed, the `dedup` card came back with NO `knowledge_citations` key
+# and NO `knowledge_status` -- literally "the absence of the field", which AC3
+# forbids in those words, and which also meant the AC5 refusal could never fire on
+# a context card whatever the topic declared.
+#
+# Parametrised over the four paths rather than the one that broke: a defect on one
+# card is a defect on its family (CLAUDE.md section 4).
+# ---------------------------------------------------------------------------
+
+_KNOWLEDGE_PATHS = [
+    # (label, template, kwargs, warehouse patch target, rows)
+    ("generic", "kpi", {}, "core.warehouse.query_daily_report", _rows()),
+    ("dedup", "dedup", {}, "core.warehouse.query_dedup_estimate", []),
+    ("connectors", "connectors", {}, "core.warehouse.query_daily_report", []),
+    (
+        "mediaplan_pacing",
+        "mediaplan_pacing",
+        {"plan_id": "plan_EXAMPLE"},
+        # This path never touches query_daily_report; without a seeded DuckDB the
+        # pacing mart raises rather than degrades, so the seam that IS on the path
+        # is the one to stub.
+        "core.warehouse.query_plan_vs_actual",
+        {"lines": [], "channels": [], "plan": []},
+    ),
+]
+
+
+@pytest.mark.parametrize("label,template,kwargs,target,rows", _KNOWLEDGE_PATHS)
+def test_every_return_path_of_get_card_carries_the_knowledge_fields(
+    label, template, kwargs, target, rows
+):
+    with patch(target, return_value=rows):
+        _summary, envelope, _uri = cards_module.get_card(
+            [],
+            "default",
+            template=template,
+            date_from="2026-07-04",
+            date_to="2026-07-06",
+            **kwargs,
+        )
+    data = envelope["data"]
+    assert "knowledge_citations" in data, (
+        f"the {label!r} path returns a card with no knowledge_citations key at all -- "
+        "AC3 forbids the ABSENCE of the field, not just a wrong value"
+    )
+    assert isinstance(data["knowledge_citations"], list)
+    assert "knowledge_status" in data, (
+        f"the {label!r} path cannot tell 'this topic declares nothing' from "
+        "'its context could not be read': both arrive as a missing field"
+    )
+
+
+def test_the_knowledge_block_lives_in_one_place_so_a_fifth_path_inherits_it():
+    """The class, not the instance: a new return path must not re-implement this."""
+    import inspect
+
+    source = inspect.getsource(cards_module)
+    assert source.count('data["knowledge_citations"] =') == 1, (
+        "the knowledge block was copied instead of called -- the next return path "
+        "added to get_card will be the one that forgets it"
+    )
+    assert source.count("attach_knowledge(") >= 3, (
+        "get_card's context family and generic path must both call the one helper"
+    )
+
+
+# ---------------------------------------------------------------------------
+# AI-169 -- un evenement pose sur une mesure ne partage pas sa frontiere de jour
+#
+# C'est ICI qu'un humain VOIT l'evenement sur la mesure : l'overlay d'une carte. Les deux
+# dates ne sont pas tirees sur la meme horloge -- `app.context_events` valide un
+# `YYYY-MM-DD` nu et ne stocke aucun fuseau, tandis que le jour de la mesure vient de
+# l'horloge de la source (observee et enregistree par run depuis AI-161). Une epingle
+# atterrit donc sur le jour calendaire ou on l'a saisie, a cote d'une serie dont le jour
+# peut commencer des heures plus tot ou plus tard.
+#
+# Dit, pas corrige : au grain DATE il n'y a pas de sous-journee a re-decouper, et un
+# evenement saisi par un humain n'a pas d'horloge a recuperer.
+# ---------------------------------------------------------------------------
+
+
+def test_an_event_overlaid_on_a_measure_declares_it_carries_no_source_clock():
+    from core.cards import EVENT_DAY_BOUNDARY_UNALIGNED, _serialize_context_events
+
+    out = _serialize_context_events([
+        {"id": "evt_1", "event_date": "2026-08-04", "type": "campaign", "label": "Launch"},
+    ])
+    assert out[0]["day_boundary"] == EVENT_DAY_BOUNDARY_UNALIGNED
+    # La date brute reste intacte a cote : on DIT l'ecart, on ne le corrige pas.
+    assert out[0]["event_date"] == "2026-08-04"
+
+
+def test_the_disclosure_is_carried_by_EVERY_event_not_only_the_first():
+    """Une divulgation qui ne tient que sur une ligne se lit comme une exception."""
+    from core.cards import EVENT_DAY_BOUNDARY_UNALIGNED, _serialize_context_events
+
+    out = _serialize_context_events([
+        {"id": "evt_1", "event_date": "2026-08-04", "type": "campaign", "label": "A"},
+        {"id": "evt_2", "event_date": "2026-08-05", "type": "promo", "label": "B"},
+        {"id": "evt_3", "event_date": "2026-08-06", "type": "outage", "label": "C"},
+    ])
+    assert [e["day_boundary"] for e in out] == [EVENT_DAY_BOUNDARY_UNALIGNED] * 3
+
+
+def test_the_vocabulary_admits_no_aligned_member():
+    """Aucun evenement de ce produit ne porte d'horloge.
+
+    Un vocabulaire qui admet une valeur qu'il ne peut jamais prendre invite le lecteur a
+    supposer que l'autre cas existe.
+    """
+    from core.cards import EVENT_DAY_BOUNDARY_UNALIGNED
+
+    assert "aligned" not in EVENT_DAY_BOUNDARY_UNALIGNED.replace("unaligned", "")
+    assert EVENT_DAY_BOUNDARY_UNALIGNED == "calendar_date_no_source_clock"
+
+
+# ---------------------------------------------------------------------------
+# Story 60.2 — a block resolver reads the DECLARED additivity too
+#
+# `cards._NON_ADDITIVE_METRICS` is the same four literal names `rollup` carries,
+# and a block resolver consulted it directly. A donut over a client ratio was
+# therefore a share of a sum of rates, and a bar chart added two days of it. The
+# effective set now arrives on `_BlockContext`, resolved once per card from the
+# same authority `compute_rollup` reads, so a card and the rollup printed beside
+# it cannot disagree about whether a number may be added.
+# ---------------------------------------------------------------------------
+
+CLIENT_RATIO = "efficiency_index"
+
+
+def _client_ratio_group_rows():
+    """The same client ratio on two groups, one row each, plus its evidence."""
+    return [
+        {
+            "date": "2026-07-12",
+            "connector": "example-connector",
+            "metric": CLIENT_RATIO,
+            "breakdown_dimension": "channel",
+            "breakdown_value": group,
+            "value": value,
+            "pull_id": "pull_EXAMPLE",
+            "loaded_at": "2026-07-12T00:00:00",
+        }
+        for group, value in (("paid", 11.90), ("organic", 4.10))
+    ] + [
+        {
+            "date": "2026-07-13",
+            "connector": "example-connector",
+            "metric": CLIENT_RATIO,
+            "breakdown_dimension": "channel",
+            "breakdown_value": group,
+            "value": value,
+            "pull_id": "pull_EXAMPLE",
+            "loaded_at": "2026-07-13T00:00:00",
+        }
+        for group, value in (("paid", 11.90), ("organic", 4.10))
+    ]
+
+
+def test_the_client_ratio_used_here_matches_no_hardcoded_name():
+    from core.metric_semantics import is_ratio_name
+
+    assert is_ratio_name(CLIENT_RATIO) is False
+    assert CLIENT_RATIO not in cards_module._NON_ADDITIVE_METRICS
+
+
+def test_undeclared_the_platform_default_sums_the_two_days_per_group():
+    """The behaviour that stands when nobody declared anything: 11.90 + 11.90."""
+    agg = cards_module._aggregate_by_group(
+        _client_ratio_group_rows(), CLIENT_RATIO, "channel"
+    )
+    assert agg["paid"] == pytest.approx(23.80)
+
+
+def test_declared_non_additive_the_two_days_are_not_added():
+    """The declaration reaches the block resolver: 11.90, not 23.80.
+
+    Without numerator/denominator components (none are registered for a client
+    metric) the documented fallback applies — the per-row mean, which for two
+    identical days IS the day value. What it is emphatically not is their sum.
+    """
+    agg = cards_module._aggregate_by_group(
+        _client_ratio_group_rows(),
+        CLIENT_RATIO,
+        "channel",
+        frozenset({CLIENT_RATIO}),
+    )
+    assert agg["paid"] == pytest.approx(11.90)
+    assert agg["organic"] == pytest.approx(4.10)
+
+
+def test_an_empty_declared_set_is_an_answer_and_not_a_fallback():
+    """`frozenset()` means "this Project declared nothing extra", and must not be
+    silently widened back to the platform defaults — the `or` versus `is None`
+    trap this story exists to remove elsewhere."""
+    rows = [
+        {
+            "date": day,
+            "connector": "example-connector",
+            "metric": "ctr",
+            "breakdown_dimension": "channel",
+            "breakdown_value": "paid",
+            "value": 0.10,
+            "pull_id": "pull_EXAMPLE",
+            "loaded_at": f"{day}T00:00:00",
+        }
+        for day in ("2026-07-12", "2026-07-13")
+    ]
+    # `ctr` IS a platform default; passing an explicit empty set removes it, and
+    # the rows are summed. Stated so the semantics of the parameter are pinned.
+    assert cards_module._aggregate_by_group(
+        rows, "ctr", "channel", frozenset()
+    )["paid"] == pytest.approx(0.20)
+    # None keeps the platform default: the mean fallback, 0.10.
+    assert cards_module._aggregate_by_group(rows, "ctr", "channel")["paid"] == pytest.approx(0.10)
+
+
+def test_a_donut_over_a_declared_non_additive_metric_is_empty_not_a_share_of_a_sum():
+    ctx = cards_module._BlockContext(
+        current_rows=_client_ratio_group_rows(),
+        prior_rows=[],
+        rollup={},
+        metric_definitions=None,
+        resolved_metrics=[CLIENT_RATIO],
+        start="2026-07-12",
+        end="2026-07-13",
+        non_additive=cards_module._NON_ADDITIVE_METRICS | {CLIENT_RATIO},
+    )
+    payload = cards_module._resolve_donut(
+        {"binding": {"metrics": CLIENT_RATIO, "dimensions": ["channel"]}}, ctx
+    )
+    assert payload == {
+        "total": 0.0,
+        "dimension": None,
+        "dimension_label": None,
+        "slices": [],
+    }

@@ -101,6 +101,43 @@ def test_execute_operation_runs_mutation_audit_and_outbox_without_committing():
     assert "request-123" not in repr(cur.execute.call_args_list)
 
 
+def test_an_operation_may_pin_the_plan_and_mapping_versions_it_ran_against():
+    """The two names the schema declares and the validator refused.
+
+    Migration 070 states the vocabulary in the column's own comment -- "the
+    immutable plan/mapping/policy/catalog/tool versions the proposal was pinned
+    to" -- and `_VERSION_KEYS` carried three of the five. Every operation that
+    pinned the plan and mapping versions it ran against was refused before any
+    SQL, with a message that named a key and not the tool.
+
+    That was BOTH MCP tools of `datastream_first_candidate`, so a Datastream that
+    reached a Ready candidate had no way to be published at all.
+
+    Measured on the EFFECT: the operation runs, and the versions it pinned reach
+    the INSERT. A test that only asserted the set had grown would stay green over
+    a validator that dropped them on the way to SQL.
+    """
+    from core.operations import MutationResult, execute_operation
+
+    conn, cur = _conn(None, ("op-1",))
+    mutation = MagicMock(
+        return_value=MutationResult(
+            outcome="succeeded", before_hash=None, after_hash="c" * 64,
+            result={}, outbox_payload={},
+        )
+    )
+
+    result = execute_operation(
+        conn,
+        _spec(versions={"plan": "dsp_1", "mapping": "dmap_1", "tool": "publish"}),
+        mutation=mutation,
+    )
+
+    assert result.outcome == "succeeded"
+    written = repr(cur.execute.call_args_list)
+    assert "dsp_1" in written and "dmap_1" in written
+
+
 def test_execute_operation_replay_returns_original_without_mutation():
     from core.operations import execute_operation, prepare_operation
 
@@ -238,10 +275,91 @@ def test_reconciliation_only_resolves_outcome_unknown_once():
     assert "state = 'outcome_unknown'" in cur.execute.call_args.args[0]
 
 
-def test_migration_060_contains_operation_audit_outbox_contract():
-    from pathlib import Path
+@pytest.mark.live_pg
+def test_live_pg_reconciliation_actually_runs_against_a_real_server(pg_conn):
+    """Le test ci-dessus etait VERT sur une fonction qui ne pouvait jamais marcher.
 
-    sql = Path("infra/nango/migrations/060_operation_audit_outbox.sql").read_text()
+    Il passe un curseur `MagicMock`, qui accepte n'importe quel SQL et ne
+    verifie aucun type -- exactement ce que l'en-tete de
+    `conformance/test_sql_parameter_typing.py` decrit comme rendant cette classe
+    STRUCTURELLEMENT invisible aux doubles de test.
+
+    La requete portait `jsonb_build_object('reconciliation_evidence_hash', %s)`.
+    `jsonb_build_object` accepte `any` : un `%s` nu n'a aucun contexte de type,
+    et Postgres refuse la requete ENTIERE. Mesure le 2026-08-09 contre un
+    serveur reel :
+
+        SELECT jsonb_build_object('k', %s)        -> IndeterminateDatatype
+        SELECT jsonb_build_object('k', %s::text)  -> {"k": "abc"}
+
+    Consequence : AUCUNE operation `outcome_unknown` ne pouvait quitter cet
+    etat. La seule sortie prevue levait a chaque appel. C'est le meme defaut,
+    par le meme mecanisme, que `advance_state` en 2026-08-04 -- ou aucun
+    candidat ne pouvait quitter `created`.
+
+    Ce test-ci exerce la vraie requete contre la vraie base, et c'est la seule
+    forme de preuve qui aurait attrape celui-la.
+    """
+    import hashlib
+
+    import ulid as _ulid
+    from core.operations import reconcile_operation_outcome
+
+    op_id = f"op_{_ulid.ULID()}"
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO app.operations "
+            "(id, effective_org_id, command_type, actor, resource_path, "
+            " host_context, versions, request_hash, provider_references, "
+            " confirmation_mode, idempotency_key_hash, state) "
+            "VALUES (%s, NULL, 'test.reconciliation', 'test', '[]'::jsonb, "
+            "        '{}'::jsonb, '{}'::jsonb, %s, '{}'::jsonb, 'server', %s, "
+            "        'outcome_unknown')",
+            (
+                op_id,
+                hashlib.sha256(f"req:{op_id}".encode()).hexdigest(),
+                hashlib.sha256(f"idem:{op_id}".encode()).hexdigest(),
+            ),
+        )
+
+    evidence = "f" * 64
+    assert (
+        reconcile_operation_outcome(
+            pg_conn,
+            operation_id=op_id,
+            resolved_outcome="succeeded",
+            evidence_hash=evidence,
+        )
+        is True
+    )
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT state, outcome, result->>'reconciliation_evidence_hash' "
+            "FROM app.operations WHERE id = %s",
+            (op_id,),
+        )
+        state, outcome, stored = cur.fetchone()
+    assert (state, outcome, stored) == ("succeeded", "succeeded", evidence)
+
+    # EXACTEMENT UNE FOIS. La seconde tentative ne trouve plus d'operation dans
+    # `outcome_unknown` et rend False -- c'est ce que l'AC4 de 38.17 appelle
+    # << reconciled without blind resubmission >>.
+    assert (
+        reconcile_operation_outcome(
+            pg_conn,
+            operation_id=op_id,
+            resolved_outcome="failed",
+            evidence_hash="a" * 64,
+        )
+        is False
+    )
+
+
+def test_migration_060_contains_operation_audit_outbox_contract():
+    from tests.conftest import REPO_ROOT
+
+    sql = (REPO_ROOT / "infra/nango/migrations/060_operation_audit_outbox.sql").read_text()
     assert "CREATE TABLE IF NOT EXISTS app.operations" in sql
     assert "CREATE TABLE IF NOT EXISTS app.operation_outbox" in sql
     assert "idempotency_key_hash" in sql

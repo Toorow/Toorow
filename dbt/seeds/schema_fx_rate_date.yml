@@ -1,0 +1,68 @@
+version: 2
+
+# Story 58.7 -- the FX fixture declares itself HERE and not in dbt/seeds/schema.yml.
+# That file is frozen by
+# tests/conformance/test_epic41_verification_overlay_additive.py
+# (`_SHARED_CONFIG_FILES`): a story adds its seed entries in its OWN schema file,
+# which is what schema_country_absence.yml / schema_epic41*.yml already do and what
+# that guard's own failure message instructs.
+
+seeds:
+  - name: fx_rate_date_fixture
+    description: >
+      Story 58.7 FX-provenance fixture, AS VERSIONED DATA. A rate carries TWO dates
+      and the staging models read the wrong one: `valid_from` is where the validity
+      WINDOW opens, `rate_date` is when the rate was QUOTED. Publishing the first
+      under the name of the second is why `fx_as_of_date` was `2020-01-01` on 43 of
+      the 43 converted rows of `fact_daily_kpi` -- a constant wearing the clothes of
+      a measurement, and it was about to be printed under every amount on screen.
+      dbt/seeds/fx_rates.csv holds two rates whose windows are identical, so it
+      cannot show that the window is what SELECTS while the quotation date is what
+      DATES. This fixture holds both facts at once: three `open_window` rows sharing
+      one `valid_from` and carrying three different `rate_date` values, and two
+      `bounded_window` rows of the same pair in disjoint windows, so a probe date
+      selects exactly one of them. It is consumed by
+      dbt/tests/test_fx_rate_date_is_the_quotation_date.sql and by no model -- no
+      production total can be perturbed by it, the same isolation discipline as
+      country_absence_fixture and epic39_validation_fixture.
+      `dbt seed` loads it in every environment, so the evidence travels with the
+      repository instead of depending on a script somebody has to remember to run.
+    columns:
+      - name: from_currency
+        description: "Base currency of the quotation."
+        tests:
+          - not_null
+      - name: to_currency
+        description: "Quote currency of the quotation."
+        tests:
+          - not_null
+      - name: rate
+        description: "The rate itself."
+        tests:
+          - not_null
+      - name: rate_date
+        description: >
+          THE DAY THE RATE WAS QUOTED -- what a person reads under an amount, and
+          the only one of the two dates that is a measurement.
+        tests:
+          - not_null
+      - name: valid_from
+        description: >
+          Where the validity WINDOW opens. It CHOOSES the rate (the staging join is
+          `raw.date BETWEEN valid_from AND valid_to`) and it dates nothing.
+        tests:
+          - not_null
+      - name: valid_to
+        description: "Where the validity window closes."
+        tests:
+          - not_null
+      - name: scenario
+        description: >
+          Which fact this row stands for. The test keys its anti-vacuity guard on
+          both values: without them every assertion below is a zero-row pass.
+        tests:
+          - not_null
+          - accepted_values:
+              name: fx_rate_date_fixture_scenario_accepted
+              arguments:
+                values: ["open_window", "bounded_window"]

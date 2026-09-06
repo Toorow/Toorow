@@ -6,7 +6,7 @@ sources:
       Source brute Google Sheets. Les lignes sont inserees par le connector
       google-sheets (Story 15.6, Epic 15). Chaque pull correspond a une lecture
       de la plage declaree dans le column_mapping du datastream.
-    schema: main
+    schema: "{{ var('raw_schema', 'main') }}"  # 24.4 AC2: org_<wslug>_raw injected by orchestrator, 'main' without var (bit-identique)
     tables:
       - name: raw_google_sheets_daily
         description: >

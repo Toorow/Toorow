@@ -1,9 +1,30 @@
 ---
 title: Add a connector
-description: "toorow's extensibility contract: manifest, connector.py, dbt staging, 4-layer conformance, and Mailgun step-by-step walkthrough."
+description: "toorow's extensibility contract: manifest, connector.py, dbt staging, and the conformance suite — walked through on a shipped connector."
 ---
 
 > **Canonical reference**: This guide describes the extensibility contract as it is *actually* implemented in the repository. Read it **in full** before creating a single file.
+
+---
+
+## Eight traps, each one measured
+
+Every item below is a place where an earlier version of this guide described something the
+repository does not do. Each carries the command that re-establishes the fact and the gate
+that catches it — or the honest admission that nothing does.
+
+| # | The trap | What happens if you ignore it | Proof / gate |
+|---|---|---|---|
+| 1 | The manifest is `"1.2"` **with `source_capabilities`**, never `"1"` | Layer 1 fails immediately | `grep -h '"schema_version"' server/modules/*/manifest.json \| sort \| uniq -c` → 39 × `"1.2"` (measured 2026-08-03). Gate: `test_all_module_capabilities.py` |
+| 2 | The worker does **not** call `pull` by convention — it resolves `source_capabilities.reports[].dispatch.callable` and **fails closed** | The connector is installed, cataloged, green — and silent: no pull ever leaves | `core/main.py` `get_module_pull_fn`. Gate: `server/tests/conformance/test_pull_contract.py` |
+| 3 | `pull` has a **closed signature**: `(connection_id, date_from, date_to, project_id, pull_id)` | `TypeError: pull() missing 1 required positional argument: 'site_url'` on the first real call — this happened to `gsc` on 2026-07-31. A reporting account is resolved by `account_topology`; if the connector needs it, it takes an **optional kwarg** whose name is declared in `account_topology.pull_parameter` | `test_pull_contract.py`; the worker side is `core/queue.py:712` |
+| 4 | Raw rows are **not** landed with a bare `duckdb.connect` | A bare connection writes into schema `main` — i.e. into everyone's raw zone once `TOOROW_ORG_SCHEMAS=1` | 37 of 39 connectors go through `core.warehouse_write.open_raw_writer` (measured 2026-08-03). No gate: this is a review item |
+| 5 | Only `core.raw_landing` honours `TOOROW_DB_MODE=bigquery` | A hand-rolled `_insert_raw_rows` raises `unsupported db_mode`: the mode is accepted by config and silently not kept | `core/raw_landing.py` + the manifest's `raw_landing` block (reference: `server/modules/bigquery/`) |
+| 6 | Never a `RuntimeError` on a non-200 | The worker cannot tell `auth_expired` from a 400: no reconnection offered, no breaker, no provider evidence kept | `classify_http_error(status, body, error_map)` — `core/pull_errors.py` |
+| 7 | A Google connector must be declared in the **consent screen** | Measured 2026-07-31: 10 connectors declared `google_direct`, 7 scopes were requested. Three connectors were installed, cataloged, tested — and unreachable in production | Manifest `auth` block. Gate: `server/tests/conformance/test_google_consent.py` |
+| 8 | Without `seeds/load_*.py`, the staging model has **never produced a row** | `dbt run` without `--select` breaks on `stg_<name>_daily`, and the connector counts as covered while its warehouse half was never exercised | Reference: `server/modules/brevo/seeds/load_brevo_seed.py` |
+
+There are **six** conformance layers, not four (see the table at the end of this page).
 
 ---
 
@@ -11,11 +32,11 @@ description: "toorow's extensibility contract: manifest, connector.py, dbt stagi
 
 ### What You Get for Free (The Shared Base)
 
-Any module that respects the contract inherits the following mechanisms without writing a single line in `server/core/`:
+Any connector that respects the contract inherits the following mechanisms without writing a single line in `server/core/`:
 
 | Mechanism | Core file | What you get |
 |---|---|---|
-| **Journaling** | `core/datastreams.py`, `core/audit.py` | Append-only ULID `pull_id` (AD-7), `audit_log` rows, daily ledger (ok/partial/failed/missing statuses). |
+| **Journaling** | `core/datastreams.py`, `core/audit.py` | Append-only ULID `pull_id` -- a run's provenance is written once and never rewritten -- plus `audit_log` rows and a daily ledger (ok/partial/failed/missing statuses). |
 | **Queue / Retry / Quota** | `core/queue.py`, `core/quota.py` | Worker with retry, dead-letter, deduplication, per-provider circuit-breaker; `RateLimitError` automatically handled. |
 | **Dictionary / Mappings** | `app.target_fields`, `app.datastream_mappings` | Auto-seeded from the manifest's `canonical_metric_mapping` + `canonical_dimension_mapping` on the first `backfill_datastreams()`. |
 | **Quality Monitors** | `core/dq_monitors.py` | 5 universal monitors (volume, timeliness, duplication, schema drift, date format). |
@@ -28,16 +49,25 @@ Any module that respects the contract inherits the following mechanisms without 
 
 ```
 server/modules/<kebab-name>/
-  manifest.json                      # Required (schema version 1.2)
+  manifest.json                      # Required (schema version 1.2, with source_capabilities)
   connector.py                       # Required (pull + transform functions)
-  dbt/staging/stg_<name>_daily.sql   # Recommended (QUALIFY supersede AD-7)
+  api_catalog.json                   # Required — GENERATED by scripts/build_api_catalog.py
+  catalog_sources/                   # Required — official + enrichment sources, pinned api_version
+  dbt/staging/stg_<name>_daily.sql   # Recommended: QUALIFY keeps the latest pull per key
   dbt/staging/schema.yml             # Recommended (grain_unique test)
+  seeds/load_<name>_seed.py          # Required if there is a staging model (trap 8)
   reports/<id>.json                  # ≥ 1 report pack
   tests/fixtures/golden_pull.json    # Required (Layer 4 conformance)
   tests/fixtures/expected_facts.json # Required (Layer 4 conformance)
 ```
 
-No file inside `server/core/` may be modified (AD-2). Add the module's staging path to `dbt/dbt_project.yml` under `model-paths`.
+No file inside `server/core/` may be modified: a connector is added by its own folder and its manifest, never by editing the platform.
+
+A new daily connector is registered in **two** places, and skipping the second one produces rows
+nothing reads:
+
+1. `dbt/dbt_project.yml` → `model-paths`: add `../server/modules/<name>/dbt`, then `dbt parse`.
+2. `dbt/models/marts/fact_daily_kpi.sql`: add the connector's `stg_<name>_daily` to the UNION.
 
 ---
 
@@ -47,290 +77,166 @@ The `module_kind` field in `manifest.json` declares the structure of rows produc
 
 | Kind | Row Structure | Typical Examples |
 |---|---|---|
-| `kpi` | `(project_id, date, metric, value, breakdown_dimension, breakdown_value, pull_id, loaded_at)` — long format | GA4, Meta Ads, TikTok, LinkedIn, Shopify, Stripe, Mailgun delivery stats. |
+| `kpi` | `(project_id, date, metric, value, breakdown_dimension, breakdown_value, pull_id, loaded_at)` — long format | GA4, Meta Ads, TikTok, LinkedIn, Shopify, Stripe, Brevo. |
 | `context` | `(project_id, date, event_type, event_payload)` — point-in-time events | GitHub releases, CI/CD deployments, CRM milestones, campaign launches. |
 | `generic` | Arbitrary tabular data mapped via `datastream_mappings` | CSV exports, generic webhooks. |
 
 ---
 
-## Step-by-Step Walkthrough: Building a Mailgun Connector
+## Walkthrough: read a shipped connector, then copy its shape
 
-This section demonstrates initializing and implementing a new connector module step-by-step using **Mailgun** (`server/modules/mailgun/`) as a concrete example.
+The fastest way to write a connector is to open one that works. **`server/modules/brevo/`**
+is complete and passes every conformance layer — manifest `1.2`, `connector.py`, dbt staging
+model, seed loader, fixtures, generated catalog. Every excerpt below is copied from it.
 
-### Step 1 — Scaffolding the Directory Structure
+<Note>
+  `server/modules/README.md` carries the **Connector Standard Playbook** — the exhaustive
+  field catalog, the doc↔code contract, account topology and the error taxonomy. Read it
+  alongside this page: it is what separates a connector that runs from one that can be
+  operated. `server/modules/meta-ads/` is its most complete implementation.
+</Note>
 
-Create the target directory `server/modules/mailgun/`:
+### Step 1 — What lives on disk
 
 ```
-server/modules/mailgun/
-  manifest.json
-  connector.py
-  dbt/staging/
-    stg_mailgun_daily.sql
-    schema.yml
-  reports/
-    daily_delivery.json
-  tests/fixtures/
-    golden_pull.json
-    expected_facts.json
+server/modules/brevo/
+  manifest.json                    # contract: auth, profiles, mappings, dispatch
+  connector.py                     # pull + transform
+  api_catalog.json                 # GENERATED — scripts/build_api_catalog.py
+  catalog_sources/                 # official + enrichment sources, pinned api_version
+  dbt/staging/stg_brevo_daily.sql  # QUALIFY supersede
+  dbt/staging/schema.yml           # grain_unique test
+  seeds/load_brevo_seed.py         # proves the warehouse half offline
+  tests/fixtures/golden_pull.json
+  tests/fixtures/expected_facts.json
 ```
 
----
+No file under `server/core/` may be touched.
 
-### Step 2 — Manifest Declaration (`server/modules/mailgun/manifest.json`)
+### Step 2 — The manifest is the contract
 
-Declare schema version `"1.2"`, metadata, metric mappings, and `source_capabilities`:
+The header declares who you are and how you authenticate:
 
 ```json
 {
   "schema_version": "1.2",
-  "name": "mailgun",
-  "display_name": "Mailgun Email Analytics",
-  "auth_type": "api_key",
+  "name": "brevo",
+  "display_name": "Brevo",
+  "auth_type": "oauth2",
   "module_kind": "kpi",
-  "report_profiles": [
-    {
-      "id": "daily",
-      "display_name": "Daily Email Delivery",
-      "metrics": ["accepted", "delivered", "opened", "clicked", "failed"],
-      "dimensions": ["date", "domain"],
-      "extraction_capabilities": {
-        "row_limit": 25000,
-        "filters_supported": true,
-        "realtime": false
-      },
-      "extraction_path": "custom_pull"
-    }
-  ],
-  "canonical_metric_mapping": {
-    "accepted": "accepted_events",
-    "delivered": "delivered_events",
-    "opened": "open_events",
-    "clicked": "click_events",
-    "failed": "failed_events"
-  },
-  "canonical_dimension_mapping": {
-    "domain": "domain"
-  },
-  "source_capabilities": {
-    "contract_version": "1",
-    "field_discovery": { "mode": "static", "allowed_targets": [] },
-    "fields": [
-      { "field_id": "accepted", "source_field": "accepted", "kind": "metric", "physical_type": "integer", "description": "Accepted email count.", "semantic_hints": ["email"], "canonical_target": "accepted_events", "aggregation": "sum", "non_additive": false },
-      { "field_id": "delivered", "source_field": "delivered", "kind": "metric", "physical_type": "integer", "description": "Delivered email count.", "semantic_hints": ["email"], "canonical_target": "delivered_events", "aggregation": "sum", "non_additive": false },
-      { "field_id": "opened", "source_field": "opened", "kind": "metric", "physical_type": "integer", "description": "Opened email count.", "semantic_hints": ["email"], "canonical_target": "open_events", "aggregation": "sum", "non_additive": false },
-      { "field_id": "clicked", "source_field": "clicked", "kind": "metric", "physical_type": "integer", "description": "Clicked link count.", "semantic_hints": ["email"], "canonical_target": "click_events", "aggregation": "sum", "non_additive": false },
-      { "field_id": "failed", "source_field": "failed", "kind": "metric", "physical_type": "integer", "description": "Failed delivery count.", "semantic_hints": ["email"], "canonical_target": "failed_events", "aggregation": "sum", "non_additive": false },
-      { "field_id": "date", "source_field": "time", "kind": "dimension", "physical_type": "date", "description": "Reporting date.", "semantic_hints": ["date"], "canonical_target": "date", "aggregation": "none", "non_additive": false },
-      { "field_id": "domain", "source_field": "domain", "kind": "dimension", "physical_type": "string", "description": "Sending domain.", "semantic_hints": ["domain"], "canonical_target": "domain", "aggregation": "none", "non_additive": false }
-    ],
-    "reports": [{
-      "id": "daily",
-      "selection_mode": "exact_bundle",
-      "availability": { "status": "selectable" },
-      "dispatch": { "callable": "pull" },
-      "metrics": ["accepted", "delivered", "opened", "clicked", "failed"],
-      "dimensions": ["date", "domain"],
-      "supported_grains": [["date", "domain"]],
-      "compatibility": [],
-      "filters": [{ "field_id": "date", "operators": ["gte", "lte"] }],
-      "pagination": { "mode": "none", "completeness": "hard_limit", "max_pages": null, "row_limit": 25000, "truncation_signal": "explicit" },
-      "quota_cost": { "read_points": 1, "unit": "request" },
-      "incremental": { "mode": "date_window", "cursor_field": null },
-      "cadence": { "minimum_interval_minutes": 1440, "supported_modes": ["manual", "daily"] }
-    }]
-  },
-  "quota": {
-    "window_seconds": 60,
-    "budget_points": 300,
-    "read_cost": 1,
-    "write_cost": 1
-  }
+  "provider_api_version": "v3",
+  "provider_api_base": "https://api.brevo.com/v3"
 }
 ```
 
----
+`source_capabilities.reports[]` declares what can actually be asked for — the metrics, the
+dimensions, the **supported grains**, and the function the worker will call:
 
-### Step 3 — Implementation (`server/modules/mailgun/connector.py`)
-
-Implement `pull()` to fetch Mailgun Total Stats API (`/v3/{domain}/stats/total`) and manifest-driven `transform()`:
-
-```python
-"""Mailgun Email Analytics connector.
-
-AD-2: module name never hardcoded in core/.
-AD-3: API key used immediately, never persisted or logged.
-AD-7: pull_id minted by the core scheduler, passed in.
-"""
-
-from __future__ import annotations
-import json
-import logging
-import os
-from pathlib import Path
-import httpx
-from fastmcp import FastMCP
-
-logger = logging.getLogger(__name__)
-mcp_app = FastMCP("mailgun")
-
-def _insert_raw_rows(rows: list[dict], pull_id: str, project_id: str) -> int:
-    import duckdb
-    duckdb_path = os.environ.get("TOOROW_DUCKDB_PATH", "local.duckdb")
-    con = duckdb.connect(duckdb_path)
-    con.execute("""
-        CREATE TABLE IF NOT EXISTS raw_mailgun_daily (
-            date VARCHAR, metric VARCHAR, value DOUBLE,
-            breakdown_dimension VARCHAR, breakdown_value VARCHAR,
-            pull_id VARCHAR, loaded_at VARCHAR, project_id VARCHAR
-        )
-    """)
-    values = [
-        (
-            r.get("date", ""),
-            r.get("metric", ""),
-            float(r.get("value", 0.0) or 0.0),
-            r.get("breakdown_dimension", "domain"),
-            r.get("breakdown_value", r.get("domain", "")),
-            pull_id,
-            "2026-07-25T00:00:00Z",
-            project_id
-        )
-        for r in rows
-    ]
-    if values:
-        con.executemany("INSERT INTO raw_mailgun_daily VALUES (?, ?, ?, ?, ?, ?, ?, ?)", values)
-    con.close()
-    return len(values)
-
-def pull(
-    connection_id: str,
-    date_from: str,
-    date_to: str,
-    project_id: str,
-    pull_id: str,
-) -> dict:
-    """Fetch Mailgun stats and land raw rows."""
-    from core import nango_client  # AD-2
-
-    api_key = nango_client.get_fresh_token(connection_id, provider="mailgun")
-    domain = os.environ.get("MAILGUN_DOMAIN", "mg.example.com")
-
-    resp = httpx.get(
-        f"https://api.mailgun.net/v3/{domain}/stats/total",
-        auth=("api", api_key),
-        params={"event": ["accepted", "delivered", "opened", "clicked", "failed"], "start": date_from, "end": date_to},
-        timeout=30.0
-    )
-
-    if resp.status_code == 429:
-        from core.quota import RateLimitError
-        raise RateLimitError("mailgun", retry_after=60)
-    if resp.status_code != 200:
-        raise RuntimeError(f"Mailgun API error {resp.status_code}: {resp.text}")
-
-    raw_items = resp.json().get("stats") or []
-    canonical_rows = transform(raw_items)
-    row_count = _insert_raw_rows(canonical_rows, pull_id, project_id)
-
-    return {"pull_id": pull_id, "row_count": row_count, "date_from": date_from, "date_to": date_to}
-
-def transform(raw_rows: list[dict]) -> list[dict]:
-    """Map Mailgun API response fields to canonical target metrics."""
-    manifest = json.loads((Path(__file__).parent / "manifest.json").read_text(encoding="utf-8"))
-    metric_map = manifest.get("canonical_metric_mapping", {})
-
-    canonical = []
-    for item in raw_rows:
-        dt = item.get("time", "")[:10]
-        for src_metric, canonical_name in metric_map.items():
-            if src_metric in item:
-                val = item[src_metric].get("total", 0) if isinstance(item[src_metric], dict) else item[src_metric]
-                canonical.append({
-                    "date": dt,
-                    "metric": canonical_name,
-                    "value": val,
-                    "breakdown_dimension": "domain",
-                    "breakdown_value": item.get("domain", "default")
-                })
-    return canonical
+```json
+{
+  "id": "email_campaign_daily",
+  "selection_mode": "exact_bundle",
+  "metrics": ["sent", "delivered", "opens", "clicks", "hard_bounces", "unsubscribed"],
+  "dimensions": ["date", "account_id", "source_id", "channel"],
+  "supported_grains": [["date", "account_id", "source_id", "channel"]],
+  "filters": [{ "field_id": "date", "operators": ["gte", "lte"] }]
+}
 ```
 
----
+`canonical_metric_mapping` translates the provider's vocabulary into the platform's, so the
+same figure is comparable across sources:
 
-### Step 4 — Staging dbt Layer (`stg_mailgun_daily.sql` & `schema.yml`)
+```json
+{ "sent": "messages_sent", "delivered": "messages_delivered", "opens": "opens", "clicks": "clicks" }
+```
 
-Create `server/modules/mailgun/dbt/staging/stg_mailgun_daily.sql`:
+<Warning>
+  The worker resolves `source_capabilities.reports[].dispatch.callable` and **fails closed**
+  if that function does not exist. A connector can be installed, cataloged and green while
+  no pull ever leaves — this is trap 2 above, and `test_pull_contract.py` is what catches it.
+</Warning>
+
+### Step 3 — `connector.py`: a closed signature
+
+```python
+def pull(connection_id, date_from, date_to, project_id, pull_id, selection=None):
+    ...
+```
+
+Those five positional parameters are the whole contract. Anything a connector needs beyond
+them — a reporting account, a site URL — arrives as an **optional keyword argument** whose
+name is declared in `account_topology.pull_parameter`. Make it required and the first real
+call dies with `TypeError`, which is exactly what happened to `gsc` on 2026-07-31.
+
+Two more rules the shared base enforces:
+
+- land rows through `core.warehouse_write.open_raw_writer`, never a bare `duckdb.connect`
+  — a bare connection writes into everyone's raw zone;
+- raise through `classify_http_error(status, body, error_map)` from `core/pull_errors.py`.
+  A bare `RuntimeError` on a non-200 means the worker cannot tell an expired token from a
+  bad request: no reconnection offered, no breaker, no evidence kept.
+
+### Step 4 — The staging model deduplicates by pull
+
+Re-running an extraction must not double a figure. The staging model keeps the newest pull
+per grain, and that is the whole of it:
 
 ```sql
--- QUALIFY supersede (AD-7): latest pull per grain wins
 {{ config(materialized='view') }}
-
-SELECT
-    date,
-    metric,
-    value,
-    breakdown_dimension,
-    breakdown_value,
-    pull_id,
-    loaded_at,
-    project_id
-FROM {{ source('raw_mailgun', 'raw_mailgun_daily') }}
+SELECT * FROM {{ source('raw_brevo', 'raw_brevo_daily') }}
 QUALIFY ROW_NUMBER() OVER (
-    PARTITION BY project_id, date, metric, breakdown_dimension, breakdown_value
-    ORDER BY pull_id DESC
+  PARTITION BY project_id, profile, account_id, source_id, date, channel,
+    event_type, protected_identifier, metric
+  ORDER BY pull_id DESC
 ) = 1
 ```
 
-Create `server/modules/mailgun/dbt/staging/schema.yml` with mandatory `grain_unique` test:
+`dbt/staging/schema.yml` carries the `grain_unique` test that fails if that partition ever
+lets a duplicate through.
 
-```yaml
-version: 2
-sources:
-  - name: raw_mailgun
-    schema: main
-    tables:
-      - name: raw_mailgun_daily
-models:
-  - name: stg_mailgun_daily
-    columns:
-      - name: date
-        tests: [not_null]
-      - name: metric
-        tests: [not_null]
-      - name: pull_id
-        tests: [not_null]
-    tests:
-      - unique:
-          name: stg_mailgun_daily_grain_unique
-          arguments:
-            column_name: "project_id || '|' || date || '|' || metric || '|' || breakdown_dimension || '|' || breakdown_value"
-```
+### Step 5 — Register in two places
 
----
+Skipping the second produces rows nothing reads:
 
-### Step 5 — Test Fixtures & 4-Layer Conformance Suite
+1. `dbt/dbt_project.yml` → `model-paths`: add `../server/modules/<name>/dbt`, then `dbt parse`.
+2. `dbt/models/marts/fact_daily_kpi.sql`: add `stg_<name>_daily` to the UNION.
 
-Populate fixture files in `server/modules/mailgun/tests/fixtures/`:
+### Step 6 — Prove it offline
 
-- `golden_pull.json`: Raw Mailgun API JSON payload.
-- `expected_facts.json`: Expected output of `transform(golden_pull.json)`.
-
-Execute the repository conformance suite:
+`seeds/load_<name>_seed.py` loads a fixture into the local warehouse so the staging model
+runs without a single API call. Without it, `dbt run` breaks on your model and the connector
+counts as covered while its warehouse half was never exercised.
 
 ```bash
-uv run pytest server/tests/conformance/ --module-path server/modules/mailgun/ -v
+uv run python server/modules/brevo/seeds/load_brevo_seed.py
+cd dbt && dbt build --select stg_brevo_daily
+```
+
+`tests/fixtures/golden_pull.json` and `expected_facts.json` are the recorded provider
+response and the facts it must produce. The conformance suite replays one into the other, so
+a change in your transform that alters a figure fails before it reaches a warehouse.
+
+```bash
+cd server && uv run python -m pytest tests/conformance -q
 ```
 
 ---
 
 ## Final Conformance Checklist
 
-- [ ] `manifest.json` schema version `1.2` valid (`conformance_layer_1` pass).
-- [ ] `connector.py` implements `pull()` and manifest-driven `transform()` (no hardcoded field names).
-- [ ] `QUALIFY` supersede staging model created with mandatory `stg_mailgun_daily_grain_unique` test.
+- [ ] `manifest.json` schema version `1.2` with `source_capabilities` (`conformance_layer_1` pass).
+- [ ] `source_capabilities.reports[].dispatch.callable` names a function that EXISTS (`test_pull_contract`).
+- [ ] `pull()` keeps the closed signature; every reachable return carries `pull_id`, `row_count`, `date_from`, `date_to`.
+- [ ] `transform()` is manifest-driven (no hardcoded field names).
+- [ ] Rows land through `core.raw_landing` / `warehouse_write` — no bare `duckdb.connect`.
+- [ ] Non-200 raises through `classify_http_error` + `error_map` — no bare `RuntimeError`.
+- [ ] No account in an environment variable, and none as a required argument.
+- [ ] Google connector: manifest `auth` block with its scope (`test_google_consent.py` green).
+- [ ] `QUALIFY` supersede staging model with the mandatory `stg_<name>_daily_grain_unique` test.
+- [ ] Registered in `dbt_project.yml → model-paths` **and** in the `fact_daily_kpi` UNION.
+- [ ] Seed loader written and run; `dbt build --select stg_<name>_daily` green.
 - [ ] Fixture files `golden_pull.json` and `expected_facts.json` verified (`conformance_layer_4` pass).
-- [ ] All 4 conformance layers pass cleanly before merging.
+- [ ] All six conformance layers pass cleanly before merging.
 
 ---
 

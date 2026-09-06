@@ -145,15 +145,15 @@ Browser authentication is a separate BFF contract. A self-hosted console uses
 `TOOROW_BROWSER_AUTH_MODE=oidc`, Authorization Code + PKCE and an encrypted
 HttpOnly session cookie; provider tokens never enter JavaScript. The ID-token
 audience is the explicit `TOOROW_OIDC_CLIENT_ID`, not the API Bearer audience
-above. Protected new setups also require `TOOROW_CANONICAL_IDENTITY_ENABLED=1`.
+above. Canonical identity needs no variable: it is the only authorization key.
 See `infra/docs/self-hosting.md` and `.env.example` for the complete environment
 and CSRF/public-Origin contract.
 **Identity in tool responses:**
 All core tools (`health`, `list_modules`, `get_daily_report`) include
 `data.identity` in their response envelopes. In disabled mode this is
-`"anonymous"`. In static/oauth mode it is the `sub` claim from the token
-(or `client_id` as fallback). Epic 7 will add the full identity-to-project
-ACL mapping; the field is present now per AD-14.
+`"anonymous"`. In static/oauth mode it is the canonical `person_<ULID>` the
+token's verified `(issuer, subject)` resolves to -- never the raw `sub`, and
+never `client_id`, which answers "which client" and not "which person".
 
 ## Tool naming convention (normative — AD-2)
 

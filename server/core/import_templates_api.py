@@ -52,8 +52,11 @@ async def _check_auth(request: Request) -> tuple[bool, str]:
 
 
 def _idempotency_key(request: Request) -> str | None:
-    """Extract and return the Idempotency-Key header value, or None."""
-    return request.headers.get("Idempotency-Key") or None
+    """Extract and normalize the Idempotency-Key header value."""
+    value = request.headers.get("Idempotency-Key")
+    if value is None:
+        return None
+    return value.strip() or None
 
 
 def _trace_id(request: Request) -> str | None:
@@ -68,10 +71,10 @@ def _trace_id(request: Request) -> str | None:
 
 def _check_project_member(project_id: str, identity: str, conn) -> bool:
     """Return True when identity has at least member access to project_id."""
-    from core.project_access import identity_has_project_access  # noqa: PLC0415
+    from core.project_access import identity_has_project_role  # noqa: PLC0415
 
     try:
-        return identity_has_project_access(project_id, identity, conn)
+        return identity_has_project_role(project_id, identity, "member", conn)
     except Exception as exc:  # noqa: BLE001
         logger.error("import_templates_api: project access check failed: %s", exc)
         return False
@@ -163,16 +166,20 @@ async def _post_inbound_datastream(request: Request) -> Response:
     try:
         body_bytes = await request.body()
         body: dict = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
+    except Exception:
         return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
+            {"code": "invalid_body", "message": "Request body must be valid JSON"},
+            status_code=400,
+        )
+    if not isinstance(body, dict):
+        return JSONResponse(
+            {"code": "invalid_body", "message": "Request body must be a JSON object"},
             status_code=400,
         )
 
     project_id = (body.get("project_id") or "").strip()
     name = (body.get("name") or "").strip()
     template_code = (body.get("template_code") or "").strip()
-    org_id = (body.get("org_id") or "").strip()
     channels = body.get("channels") or []
 
     if not project_id:
@@ -190,14 +197,11 @@ async def _post_inbound_datastream(request: Request) -> Response:
             {"code": "missing_param", "message": "template_code is required"},
             status_code=400,
         )
-    if not org_id:
-        return JSONResponse(
-            {"code": "missing_param", "message": "org_id is required"},
-            status_code=400,
-        )
-
     try:
-        template_version = int(body.get("template_version") or 0)
+        raw_template_version = body.get("template_version")
+        if isinstance(raw_template_version, bool):
+            raise ValueError("boolean is not a version")
+        template_version = int(raw_template_version or 0)
         if template_version < 1:
             raise ValueError("must be >= 1")
     except (TypeError, ValueError):
@@ -221,6 +225,15 @@ async def _post_inbound_datastream(request: Request) -> Response:
         with get_connection() as conn:
             if not _check_project_member(project_id, identity, conn):
                 return JSONResponse(_NOT_FOUND, status_code=404)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT org_id FROM app.projects WHERE id = %s AND status = 'active'",
+                    (project_id,),
+                )
+                project_row = cur.fetchone()
+            if project_row is None or not project_row[0]:
+                return JSONResponse(_NOT_FOUND, status_code=404)
+            authoritative_org_id = str(project_row[0])
     except Exception as exc:
         logger.error(
             "import_templates_api: project access check failed project=%s: %s",
@@ -232,6 +245,7 @@ async def _post_inbound_datastream(request: Request) -> Response:
     try:
         from core.db import get_connection  # noqa: PLC0415
         from core.import_templates import (  # noqa: PLC0415
+            ConnectorActivationRequired,
             TemplateChannelError,
             TemplateNotFound,
             create_inbound_datastream,
@@ -242,19 +256,28 @@ async def _post_inbound_datastream(request: Request) -> Response:
                 conn,
                 project_id=project_id,
                 name=name,
+                connector_name=connector_name,
                 template_code=template_code,
                 template_version=template_version,
                 channels=channels,
                 created_by=identity,
-                org_id=org_id,
+                org_id=authoritative_org_id,
                 idempotency_key=idempotency_key,
                 host_context={},
                 trace_id=trace,
             )
             conn.commit()
-    except TemplateNotFound as exc:
+    except ConnectorActivationRequired:
         return JSONResponse(
-            {"code": "template_not_found", "message": str(exc)},
+            {
+                "code": "connector_unavailable",
+                "message": "Connector activation is required before Datastream creation",
+            },
+            status_code=422,
+        )
+    except TemplateNotFound:
+        return JSONResponse(
+            {"code": "template_not_found", "message": "Template version is unavailable"},
             status_code=422,
         )
     except TemplateChannelError as exc:

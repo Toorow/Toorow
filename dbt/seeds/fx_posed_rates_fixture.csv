@@ -1,0 +1,9 @@
+project_id,observation_id,base_currency,quote_currency,rate,effective_date,valid_from,valid_to,condition_key_count,provider,rate_set_version_id,scenario
+fxp_plain,fxo_PLAIN_0001,USD,EUR,0.500000,2026-07-02,2026-07-01,2026-07-31,0,operator,fxsv_EXAMPLE_PLAIN,plain
+fxp_specific,fxo_SPEC_BASE01,USD,EUR,0.500000,2026-07-02,2026-07-01,2026-07-31,0,operator,fxsv_EXAMPLE_SPEC,specific
+fxp_specific,fxo_SPEC_META01,USD,EUR,0.600000,2026-07-03,2026-07-01,2026-07-31,1,operator,fxsv_EXAMPLE_SPEC,specific
+fxp_tie,fxo_TIE_META001,USD,EUR,0.600000,2026-07-02,2026-07-01,2026-07-31,1,operator,fxsv_EXAMPLE_TIE,tie
+fxp_tie,fxo_TIE_META002,USD,EUR,0.700000,2026-07-02,2026-07-01,2026-07-31,1,operator,fxsv_EXAMPLE_TIE,tie
+fxp_unresolved,fxo_UNRES_BASE1,USD,EUR,0.500000,2026-07-02,2026-07-01,2026-07-31,0,operator,fxsv_EXAMPLE_UNRES,unresolved
+fxp_unresolved,fxo_UNRES_CTRY1,USD,EUR,0.900000,2026-07-02,2026-07-01,2026-07-31,1,operator,fxsv_EXAMPLE_UNRES,unresolved
+fxp_window,fxo_WINDOW_0001,USD,EUR,0.500000,2026-07-02,2026-07-01,2026-07-10,0,operator,fxsv_EXAMPLE_WINDOW,window

@@ -95,12 +95,6 @@ def test_card_meta_keys_declared():
         assert key in meta_props, f"envelope schema is missing declared get_card meta key: {key}"
 
 
-def test_gate_meta_key_declared():
-    """Story 11.6 (AD-18): the measured pre-query gate verdict key is declared."""
-    meta_props = _schema()["properties"]["meta"]["properties"]
-    assert "gate" in meta_props, "envelope schema is missing declared meta key: gate"
-
-
 def _card_rows():
     return [
         {

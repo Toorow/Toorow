@@ -424,3 +424,228 @@ def test_plan_validates_against_strict_schema():
     )
     assert plan["projection_contract_version"] == "1"
     assert plan["mapping_version_id"] == "dmap_01"
+
+
+# --------------------------------------------------------------------------- #
+# Story 60.6: exclusion, and what a produced column came from
+#
+# The compiler has read `binding.status == "excluded"` since Epic 12 in three
+# places, and NOTHING covered any of them -- which is how the activation defect
+# of AI-249 could sit beside a green suite. These read the three, plus the new
+# key that makes a joined column accountable.
+# --------------------------------------------------------------------------- #
+
+def _excluding(field_id: str):
+    mv = _base_mapping()
+    for field in mv["mapping_payload"]["fields"]:
+        if field["field_id"] == field_id:
+            field["binding"]["status"] = "excluded"
+    return mv
+
+
+def test_an_excluded_measure_leaves_the_full_grain_relation_and_gate_1():
+    """It never lands, so it is neither a column nor an additive measure."""
+    plan = compile_projection(_excluding("sessions"))
+
+    assert plan["full_grain_relation"]["source_fields"] == []
+    assert plan["additive_measures"] == []
+    assert plan["executable"] is True
+
+
+def test_excluding_the_only_governed_dimension_is_refused_with_its_code():
+    """Gate 2 elects ONE governed dimension, and an excluded one is not a candidate.
+
+    The refusal names the codes that remain choosable rather than silently
+    projecting nothing -- `country` is gone from the repair list precisely
+    because it was excluded.
+    """
+    plan = compile_projection(
+        _excluding("country"),
+        dimension_projection="country",
+        connector_canonical_breakdown="brand",
+    )
+
+    codes = [issue["code"] for issue in plan["issues"]]
+    assert REJECT_UNGOVERNED_DIMENSION in codes
+    assert plan["executable"] is False
+    assert plan["governed_dimension_projection"] is None
+    repair = next(i for i in plan["issues"] if i["code"] == REJECT_UNGOVERNED_DIMENSION)["repair"]
+    assert "country" not in repair["choose_governed_dimension"]
+
+
+def test_a_plan_names_the_columns_a_joined_concept_came_from():
+    """Story 60.6, Acceptance 4: N sources, and WHICH ones."""
+    mv = _base_mapping()
+    mv["mapping_payload"]["column_treatments"] = {
+        "joins": [{"target": "event_date", "sources": ["country", "date"], "separator": "-"}],
+        "splits": [],
+    }
+
+    plan = compile_projection(mv)
+
+    assert plan["produced_columns"] == [
+        {"target": "event_date", "kind": "join", "sources": ["country", "date"]}
+    ]
+
+
+def test_a_mapping_with_no_treatment_carries_no_produced_columns_key():
+    """An empty list on every plan in the repository would be a measure nobody took."""
+    assert "produced_columns" not in compile_projection(_base_mapping())
+
+
+# --------------------------------------------------------------------------- #
+# 2026-08-13: an estimate made of default values is not an estimate
+# --------------------------------------------------------------------------- #
+#
+# MEASURED ON PRODUCTION. The `audience by age and gender` feed could no longer be
+# modified at all: every change preparation recompiles the projection, and the
+# projection refused it for `cardinality_over_limit` -- 10^12 grain combinations
+# and 112 TB of scan, against ceilings of 10^6 and 10 GB.
+#
+# The feed carries five columns. Reality is about SEVEN THOUSAND rows: seven age
+# brackets x two genders x three hundred and sixty-five days x one channel.
+#
+# The twelve zeroes came from nowhere in the data: four grain dimensions carried
+# `cardinality_signal: None`, the estimator fell back to `unknown = 1000` each,
+# and multiplied. The neighbouring feed passed for the single reason that it has
+# two grain dimensions instead of four.
+#
+# The rule these tests pin: a product of defaults is an ABSENCE of measurement,
+# not a high measurement, and the two never read alike.
+
+
+def _unprofiled_mapping():
+    """Same shape as the base mapping, with no cardinality profile on the grain."""
+    fields = [
+        _field("date", physical_type="date", semantic_role="primary_date",
+               aggregation="none", non_additive=False, canonical_target="date",
+               cardinality_signal=None),
+        _field("country", physical_type="string", semantic_role="dimension",
+               aggregation="none", non_additive=False, canonical_target="country",
+               cardinality_signal=None),
+        _field("sessions", physical_type="integer", semantic_role="measure",
+               aggregation="sum", non_additive=False, canonical_target="sessions"),
+    ]
+    return _mapping_version(fields, ["country", "date"])
+
+
+def test_an_estimate_says_whether_its_number_was_measured():
+    measured = compile_projection(_base_mapping())["estimate"]
+    assumed = compile_projection(_unprofiled_mapping())["estimate"]
+
+    assert measured["cardinality_is_measured"] is True
+    assert measured["unprofiled_grain_fields"] == []
+    assert assumed["cardinality_is_measured"] is False
+    #  `date` n'y est PAS : son type dit sa forme. Ce qui reste est ce que
+    #  personne ne peut deviner -- une colonne texte libre.
+    assert assumed["unprofiled_grain_fields"] == ["country"]
+
+
+def test_an_unmeasured_over_limit_offers_to_PROFILE_never_to_approve():
+    """Approving a figure nobody measured is how a guard is taught to be bypassed."""
+    fields = [
+        _field(name, physical_type="string", semantic_role="dimension",
+               aggregation="none", non_additive=False, canonical_target=name,
+               cardinality_signal=None)
+        for name in ("age_group", "channel_id", "gender")
+    ] + [
+        _field("date", physical_type="date", semantic_role="primary_date",
+               aggregation="none", non_additive=False, canonical_target="date",
+               cardinality_signal=None),
+        _field("sessions", physical_type="integer", semantic_role="measure",
+               aggregation="sum", non_additive=False, canonical_target="sessions"),
+    ]
+    plan = compile_projection(
+        _mapping_version(fields, ["age_group", "channel_id", "date", "gender"])
+    )
+
+    assert plan["executable"] is False
+    over = [issue for issue in plan["issues"] if issue["code"] == "cardinality_over_limit"]
+    assert len(over) == 1
+    #  The repair NAMES the columns to profile, and the approval door is absent.
+    assert "profile_the_grain_columns" in over[0]["repair"]
+    assert "approve_or_reduce_grain" not in over[0]["repair"]
+    #  Trois colonnes, pas quatre : la date se reconnait a son type et ne fait
+    #  pas partie de ce qu'on demande a une personne de mesurer.
+    assert over[0]["field_ids"] == ["age_group", "channel_id", "gender"]
+
+
+def test_a_measured_over_limit_still_offers_the_approval_it_always_did():
+    """The guard is not softened: a number READ from the data keeps its door."""
+    fields = [
+        _field("visitor_id", physical_type="string", semantic_role="dimension",
+               aggregation="none", non_additive=False, canonical_target="visitor_id",
+               cardinality_signal="unique"),
+        _field("date", physical_type="date", semantic_role="primary_date",
+               aggregation="none", non_additive=False, canonical_target="date",
+               cardinality_signal="high"),
+        _field("sessions", physical_type="integer", semantic_role="measure",
+               aggregation="sum", non_additive=False, canonical_target="sessions"),
+    ]
+    plan = compile_projection(_mapping_version(fields, ["date", "visitor_id"]))
+
+    assert plan["executable"] is False
+    over = [issue for issue in plan["issues"] if issue["code"] == "cardinality_over_limit"]
+    assert len(over) == 1
+    assert "approve_or_reduce_grain" in over[0]["repair"]
+    assert "profile_the_grain_columns" not in over[0]["repair"]
+
+
+def test_a_date_column_is_recognised_by_its_TYPE_and_never_counts_as_unprofiled():
+    """Jean, 2026-08-13: « par defaut tu devrais etre capable d identifier un champ date ».
+
+    A day is bounded by the retention window, not by a placeholder. Counting a
+    DATE column as `unknown` made an ordinary axis carry the same risk as a
+    visitor id -- and it is the type, already declared, that says otherwise.
+    """
+    fields = [
+        _field("date", physical_type="date", semantic_role="primary_date",
+               aggregation="none", non_additive=False, canonical_target="date",
+               cardinality_signal=None),
+        _field("country", physical_type="string", semantic_role="dimension",
+               aggregation="none", non_additive=False, canonical_target="country",
+               cardinality_signal="low"),
+        _field("sessions", physical_type="integer", semantic_role="measure",
+               aggregation="sum", non_additive=False, canonical_target="sessions"),
+    ]
+    estimate = compile_projection(_mapping_version(fields, ["country", "date"]))["estimate"]
+
+    #  The date is not among the columns a person is asked to profile...
+    assert estimate["unprofiled_grain_fields"] == []
+    assert estimate["cardinality_is_measured"] is True
+    #  ...and it weighs what the shared vocabulary says a `medium` weighs,
+    #  never a number invented in this module.
+    assert estimate["estimated_grain_cardinality"] == 20 * 500
+
+
+def test_a_declared_domain_IS_the_cardinality_and_asks_nobody_to_profile():
+    """Etape 2 du plan de dette : « le produit demande ce qu il sait deja ».
+
+    Les catalogues de connecteur ecrivent le domaine EN PROSE -- « age13-17,
+    age18-24, age25-34, age35-44, age45-54, age55-64, age65- » -- et le produit
+    reclamait un profilage humain pour sept valeurs qu il avait sous les yeux.
+    Un domaine declare est le compte EXACT, pas une classe.
+    """
+    fields = [
+        dict(
+            _field("age_group", physical_type="string", semantic_role="dimension",
+                   aggregation="none", non_additive=False, canonical_target="age_group",
+                   cardinality_signal=None),
+            allowed_values=["age13-17", "age18-24", "age25-34", "age35-44",
+                            "age45-54", "age55-64", "age65-"],
+        ),
+        _field("date", physical_type="date", semantic_role="primary_date",
+               aggregation="none", non_additive=False, canonical_target="date",
+               cardinality_signal=None),
+        _field("sessions", physical_type="integer", semantic_role="measure",
+               aggregation="sum", non_additive=False, canonical_target="sessions"),
+    ]
+    plan = compile_projection(_mapping_version(fields, ["age_group", "date"]))
+    estimate = plan["estimate"]
+
+    #  Personne n'a rien profile, et il ne reste rien a profiler.
+    assert estimate["unprofiled_grain_fields"] == []
+    assert estimate["cardinality_is_measured"] is True
+    #  Sept valeurs x le domaine borne d'une date : le compte, pas un placeholder.
+    assert estimate["estimated_grain_cardinality"] == 7 * 500
+    assert plan["executable"] is True

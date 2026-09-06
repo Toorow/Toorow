@@ -25,9 +25,9 @@ graph TD
 
 - **37+ Pre-Built Connectors**: Metrics from GA4, Search Console, Meta Ads, TikTok Ads, LinkedIn Ads, Shopify, Stripe, and Klaviyo converge into a canonical semantic model built with dbt.
 - **Audited & Traceable Analysis**: Freshness, data provenance, quality checks (DQ baselines), and alerts accompany every metric served to AI agents.
-- **Isolated Multi-Tenant Access**: Inbound identity, provider OAuth scopes, and dataset access are strictly isolated per project (AD-5 resource graph).
+- **Isolated Multi-Tenant Access**: Inbound identity, provider OAuth scopes, and dataset access are strictly isolated per project.
 - **Dual-Channel Response Model**: Agents receive a short, contextual text summary while the accompanying MCP widget receives a rich, structured data payload (`structuredContent`) for rendering visual cards.
-- **Extensible Module Architecture**: Connectors are self-contained modules auto-discovered at boot, featuring manifests, staging SQL, dbt marts, and golden-pull conformance tests.
+- **Extensible Connector Architecture**: Connectors are self-contained and auto-discovered at boot, featuring manifests, staging SQL, dbt marts, and golden-pull conformance tests.
 
 ---
 
@@ -48,7 +48,7 @@ toorow is designed as a sovereign control plane for agentic analytics rather tha
 
 <CardGroup cols={2}>
   <Card title="Supported Connectors" icon="grid-2" href="/supported-connectors">
-    Browse all 37 pre-built connector modules available in toorow.
+    Browse all 39 pre-built connectors available in toorow.
   </Card>
   <Card title="MCP Host Integration" icon="network-wired" href="/mcp-host-integration">
     Connect Claude Desktop, Cursor, or custom AI agents via FastMCP HTTP.

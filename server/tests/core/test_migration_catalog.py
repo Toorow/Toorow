@@ -23,10 +23,26 @@ def test_repository_catalog_is_unique_and_continuous():
     )
 
     assert migrations[0].name.startswith("001_")
-    # 117/118 = epic-44 wave 5 (context_graph target_field nodes + owner column);
-    # manifest regenerated via check_migration_catalog.py --write-manifest.
-    assert migrations[-1].name == "118_context_owner_column.sql"
-    assert len(migrations) == 118
+
+    # This assertion used to pin the head FILENAME and the exact count, with a
+    # comment instructing the next author to bump both by hand. That convention
+    # failed eleven consecutive times: the catalog reached 150 while the test
+    # still named 139, so it was red for every session that ran it and told none
+    # of them anything true. A ceiling that must be edited to stay correct is a
+    # ceiling that measures who remembered, not whether the catalog is sound.
+    #
+    # What the test is NAMED for is unique and continuous, so that is what it
+    # asserts now, and it holds at any size:
+    #   * identifiers are 001..N with no gap and no duplicate;
+    #   * the count equals the highest identifier.
+    # Manifest agreement is already proven by `verify_manifest=True` above, which
+    # is the check that actually catches an unreviewed SQL edit.
+    identifiers = [int(migration.name.split("_", 1)[0]) for migration in migrations]
+
+    assert identifiers == sorted(identifiers)
+    assert len(set(identifiers)) == len(identifiers), "duplicate migration identifier"
+    assert identifiers == list(range(1, len(identifiers) + 1)), "gap in the migration catalog"
+    assert identifiers[-1] == len(migrations)
 
 
 def test_invitation_person_binding_migration_installs_immutable_trigger():

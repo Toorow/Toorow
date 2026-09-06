@@ -65,7 +65,7 @@ class TestRollupWeightedAveragePosition:
         # Patch is_non_additive so average_position is treated as non-additive.
         _is_nonadd = lambda m: m == "average_position"  # noqa: E731
         with patch("core.report_dictionary.is_non_additive", side_effect=_is_nonadd):
-            result = _rollup(rows, report)
+            result, _refused = _rollup(rows, report)
 
         # Impression-weighted: (2*900 + 10*100) / (900+100) = 2.8
         assert "average_position" in result
@@ -93,7 +93,7 @@ class TestRollupWeightedAveragePosition:
         report = {"metrics": ["average_position"]}
         _is_nonadd = lambda m: m == "average_position"  # noqa: E731
         with patch("core.report_dictionary.is_non_additive", side_effect=_is_nonadd):
-            result = _rollup(rows, report)
+            result, _refused = _rollup(rows, report)
 
         # Simple mean: (3 + 5) / 2 = 4.0 (not sum 8.0)
         assert "average_position" in result
@@ -119,7 +119,7 @@ class TestRollupWeightedAveragePosition:
         ]
         report = {"metrics": ["clicks"]}
         with patch("core.report_dictionary.is_non_additive", return_value=False):
-            result = _rollup(rows, report)
+            result, _refused = _rollup(rows, report)
 
         assert result["clicks"] == 300.0
 
@@ -453,11 +453,18 @@ class TestNFR1BriefingLineCap:
 
 
 # ---------------------------------------------------------------------------
-# Confidence 3 terms: freshness, provenance, score
+# Confidence: three terms, and NO fourth number over them
 # ---------------------------------------------------------------------------
 
 class TestConfidenceThreeTerms:
-    """confidence.py must return freshness, provenance, and score terms."""
+    """confidence.py returns completeness, freshness and provenance -- and nothing
+    that merges them.
+
+    The `score` key these tests were written around is GONE.
+    `proactive-assertions.md` ("Incomplete if": a single score merges evidence of
+    different natures) refuses it, so each assertion on it below became an
+    assertion on the terms it used to compress -- and on `limiting_term`, which is
+    the only summary the three support."""
 
     def test_compute_freshness_within_grace_returns_one(self):
         """loaded_at within 48h of date_to -> freshness = 1.0."""
@@ -489,12 +496,31 @@ class TestConfidenceThreeTerms:
         result = _compute_freshness(rows, "2026-07-10")
         assert 0.0 < result < 1.0
 
-    def test_compute_freshness_no_rows_returns_one(self):
-        """No rows -> freshness = 1.0 (best-effort: no penalty for empty result)."""
+    def test_compute_freshness_no_rows_is_unknown_not_perfect(self):
+        """No rows -> freshness is UNKNOWN (None), never 1.0.
+
+        This test previously asserted 1.0 ("no penalty for empty result"). An
+        empty result has no freshness to state, and asserting the maximum is the
+        posture `docs/product-architecture/overview.md:38` forbids: *"Missing
+        evidence is `Unknown` or `Unavailable`, never Healthy."* (It cited
+        `README.md:123`, which is a line about `NANGO_ENCRYPTION_KEY` -- the same
+        fabricated citation repaired in `core/confidence.py`.)
+        """
         from core.confidence import _compute_freshness
 
-        result = _compute_freshness([], "2026-07-10")
-        assert result == 1.0
+        assert _compute_freshness([], "2026-07-10") is None
+
+    def test_compute_freshness_rows_without_timestamps_is_unknown(self):
+        """Rows exist but carry no loaded_at -> unknown, not maximum freshness.
+
+        The regression that mattered: a report whose rows had lost their load
+        timestamps used to score MAXIMUM freshness, so an unmeasurable report
+        outranked a measured, slightly stale one.
+        """
+        from core.confidence import _compute_freshness
+
+        rows = [{"pull_id": "p1"}, {"pull_id": "p2", "loaded_at": None}]
+        assert _compute_freshness(rows, "2026-07-10") is None
 
     def test_compute_provenance_all_rows_have_pull_id(self):
         """All rows with pull_id -> provenance = 1.0."""
@@ -517,14 +543,47 @@ class TestConfidenceThreeTerms:
         rows = [{"pull_id": "p1"}, {"pull_id": None}]
         assert _compute_provenance(rows) == 0.5
 
-    def test_compute_provenance_empty_rows(self):
-        """No rows -> provenance = 1.0 (best-effort)."""
+    def test_compute_provenance_empty_rows_is_unknown(self):
+        """No rows -> provenance is UNKNOWN (None), never 1.0.
+
+        A fraction with a zero denominator is not 1.0. `overview.md:124`: every
+        count names its denominator, and a zero with unknown coverage is not an
+        all-clear.
+        """
         from core.confidence import _compute_provenance
 
-        assert _compute_provenance([]) == 1.0
+        assert _compute_provenance([]) is None
+
+    def test_an_unknown_term_is_named_and_never_absorbed(self):
+        """An unknown factor must not enter any product as 1.0.
+
+        Before the fix the score was a bare `completeness * freshness *
+        provenance`, so a report with no derivable freshness scored HIGHER than a
+        measured, imperfect one -- the compensation that made the number
+        unreadable.
+        """
+        from unittest.mock import MagicMock, patch
+
+        from core.confidence import compute_confidence
+
+        conn, cur = MagicMock(), MagicMock()
+        conn.cursor.return_value.__enter__.return_value = cur
+        cur.fetchone.return_value = (0.9,)
+        with patch("core.db.get_connection", return_value=conn):
+            conn.__enter__ = MagicMock(return_value=conn)
+            conn.__exit__ = MagicMock(return_value=False)
+            # rows=[] -> freshness and provenance are both unknown.
+            result = compute_confidence("proj1", ["gsc"], rows=[], date_to="2026-07-10")
+
+        assert result is not None
+        assert result["completeness"] == 0.9
+        assert "score" not in result
+        assert result["unknown_terms"] == ["freshness", "provenance"]
+        assert result["limiting_term"] == "completeness"
+        assert "this project's Datastreams" in result["completeness_scope"]
 
     def test_compute_confidence_returns_all_three_terms(self, tmp_path):
-        """compute_confidence must return completeness, freshness, provenance, score."""
+        """compute_confidence must return completeness, freshness and provenance."""
         from core.confidence import compute_confidence
 
         rows = [
@@ -562,17 +621,25 @@ class TestConfidenceThreeTerms:
         assert "completeness" in result
         assert "freshness" in result
         assert "provenance" in result
-        assert "score" in result
+        assert "score" not in result
         assert result["completeness"] == 0.95
         # freshness: loaded_at=2026-07-10T06:00:00 is within grace window of date_to=2026-07-10
         assert result["freshness"] == 1.0
         # provenance: 1 row, 1 with pull_id -> 1.0
         assert result["provenance"] == 1.0
-        # score = completeness * freshness * provenance = 0.95 * 1.0 * 1.0
-        assert abs(result["score"] - 0.95) < 1e-6
+        # The weakest term is the only summary offered, and it is named.
+        assert result["limiting_term"] == "completeness"
 
     def test_compute_confidence_backward_compat_completeness_key_present(self):
-        """Existing consumers reading completeness must still find it in the dict."""
+        """Existing consumers reading completeness must still find it in the dict.
+
+        Story 53.3, second pass: this test used to call with NO `date_to` and
+        assert `0.80`, so it encoded the silent default it was written before --
+        `_date_to` fell back to `datetime.now()` and the query ran over today.
+        The key is what backward compatibility owes a consumer; the number owes a
+        window. The companion below states what the same call returns when no
+        window is given.
+        """
         from core.confidence import compute_confidence
 
         mock_cur = MagicMock()
@@ -590,24 +657,55 @@ class TestConfidenceThreeTerms:
             yield c
 
         with patch("core.db.get_connection", return_value=_conn_ctx(mock_conn)):
-            result = compute_confidence("proj1", ["gsc"])
+            result = compute_confidence("proj1", ["gsc"], date_to="2026-07-10")
 
         assert result is not None
         # Key that existing consumers read must still exist
         assert "completeness" in result
         assert result["completeness"] == 0.80
 
+    def test_compute_confidence_without_a_window_keeps_the_key_and_drops_the_number(self):
+        """No window: the key survives for its consumers, the value is unknown.
+
+        The DB is not even reached -- an unrestricted completeness lookup returns
+        another period's verification, which is the defect story 53.3 closed on
+        the completeness half. Refusing to run it is the same rule applied to the
+        missing-window case.
+        """
+        from core.confidence import compute_confidence
+
+        with patch("core.db.get_connection", side_effect=AssertionError("must not query")):
+            result = compute_confidence("proj1", ["gsc"])
+
+        assert result is not None
+        assert "completeness" in result
+        assert result["completeness"] is None
+        assert "score" not in result
+        assert "window could not be read" in result["completeness_scope"]
+
     def test_compute_confidence_db_error_returns_none(self):
-        """DB error -> compute_confidence returns None (best-effort, never raises)."""
+        """DB error -> compute_confidence returns None (best-effort, never raises).
+
+        The window is now passed explicitly: without one the function refuses
+        before it ever opens a connection, so this test would have proven the
+        refusal instead of the error handling it was written for.
+        """
         from core.confidence import compute_confidence
 
         with patch("core.db.get_connection", side_effect=RuntimeError("db down")):
-            result = compute_confidence("proj1", ["gsc"])
+            result = compute_confidence("proj1", ["gsc"], date_to="2026-07-10")
 
         assert result is None
 
-    def test_compute_confidence_score_is_product_of_three_terms(self):
-        """score must equal completeness * freshness * provenance."""
+    def test_compute_confidence_never_merges_the_three_terms(self):
+        """The three terms travel apart, and the weakest one is named.
+
+        This test used to assert `score == completeness * freshness * provenance`.
+        The product is exactly what `proactive-assertions.md` refuses, so what is
+        proven now is its ABSENCE plus the disclosure that replaced it: with
+        provenance at 0.5 and completeness at 1.0, no key reads 0.5 as an overall
+        verdict, and `limiting_term` says which of the three holds the report back.
+        """
         from core.confidence import compute_confidence
 
         # rows: half have pull_id -> provenance = 0.5
@@ -634,7 +732,14 @@ class TestConfidenceThreeTerms:
             result = compute_confidence("proj1", ["gsc"], rows=rows, date_to="2026-07-10")
 
         assert result is not None
-        expected_score = round(
-            result["completeness"] * result["freshness"] * result["provenance"], 4
-        )
-        assert result["score"] == expected_score
+        assert result["completeness"] == 1.0
+        assert result["freshness"] == 1.0
+        assert result["provenance"] == 0.5
+        assert "score" not in result
+        # No key other than `provenance` itself carries the product the removed
+        # `score` used to.
+        product = round(1.0 * 1.0 * 0.5, 4)
+        assert product not in [
+            value for key, value in result.items() if key != "provenance"
+        ]
+        assert result["limiting_term"] == "provenance"

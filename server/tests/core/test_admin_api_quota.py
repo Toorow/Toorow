@@ -15,6 +15,8 @@ import os
 from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from core import connections_api  # AD-43 : l etranglement vit chez son sujet
+
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
 
@@ -93,9 +95,8 @@ class TestRefreshHealthRateLimit:
             return mono_values[0]
 
         # Reset the module-level rate limit dict to avoid cross-test contamination
-        import core.admin_api as _admin_api
-        original_last = _admin_api._refresh_health_last.copy()
-        _admin_api._refresh_health_last.clear()
+        original_last = connections_api._refresh_health_last.copy()
+        connections_api._refresh_health_last.clear()
 
         try:
             app = build_asgi_app()
@@ -109,7 +110,7 @@ class TestRefreshHealthRateLimit:
                 # First call at t=0 -- may or may not succeed depending on deeper DB mocking;
                 # we only care about the rate-limit behaviour. Record the timestamp manually.
                 client.post("/api/connections/conn_rl_test/refresh-health")
-                _admin_api._refresh_health_last["conn_rl_test"] = 0.0
+                connections_api._refresh_health_last["conn_rl_test"] = 0.0
 
                 # Second call at t=10 (within 30s window)
                 mono_values[0] = 10.0
@@ -124,8 +125,8 @@ class TestRefreshHealthRateLimit:
             assert body["retry_after"] > 0
 
         finally:
-            _admin_api._refresh_health_last.clear()
-            _admin_api._refresh_health_last.update(original_last)
+            connections_api._refresh_health_last.clear()
+            connections_api._refresh_health_last.update(original_last)
 
     # ---------------------------------------------------------------------------
     # AI-24 (Story 4.1, AC12): quota_state in GET /api/jobs/{id}
@@ -218,11 +219,9 @@ class TestQuotaStateInJobStatus:
 
     def test_refresh_health_allowed_after_window(self):
         """After 30s have elapsed, a refresh is allowed again."""
-        import core.admin_api as _admin_api
-
-        original_last = _admin_api._refresh_health_last.copy()
-        _admin_api._refresh_health_last.clear()
-        _admin_api._refresh_health_last["conn_window_test"] = 0.0
+        original_last = connections_api._refresh_health_last.copy()
+        connections_api._refresh_health_last.clear()
+        connections_api._refresh_health_last["conn_window_test"] = 0.0
 
         try:
             mono_values = [35.0]  # 35s elapsed -- past the 30s window
@@ -267,5 +266,5 @@ class TestQuotaStateInJobStatus:
             )
 
         finally:
-            _admin_api._refresh_health_last.clear()
-            _admin_api._refresh_health_last.update(original_last)
+            connections_api._refresh_health_last.clear()
+            connections_api._refresh_health_last.update(original_last)

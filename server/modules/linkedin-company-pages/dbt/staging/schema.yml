@@ -1,7 +1,7 @@
 version: 2
 sources:
   - name: raw_linkedin_company_pages
-    schema: main
+    schema: "{{ var('raw_schema', 'main') }}"  # 24.4 AC2: org_<wslug>_raw injected by orchestrator, 'main' without var (bit-identique)
     tables:
       - name: raw_linkedin_company_pages_daily
 models:

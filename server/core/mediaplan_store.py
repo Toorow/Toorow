@@ -27,14 +27,25 @@ from uuid import UUID
 import psycopg
 
 from core.audit import (
-    ACTION_MEDIA_PLAN_CREATED,
-    ACTION_MEDIA_PLAN_VERSION_CREATED,
-    ACTION_MEDIA_PLAN_VERSION_PUBLISHED,
+    declare_action,
     insert_audit_row,
 )
 from core.reshape import CENT as _CENT
 from core.reshape import ReshapeValidationError
 from core.reshape import compute_spread as _reshape_compute_spread
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12) : declarees ICI, a cote du code qui les ecrit, et non
+# dans `core/audit.py`. Ce fichier etait un carrefour -- 43 editions de 29
+# sujets depuis juin, dont 34 n'ajoutaient qu'une constante -- et 45 % des
+# actions reellement ecrites en production n'y etaient meme pas declarees,
+# parce que la liste etait trop loin pour valoir le detour. `write_audit_row`
+# refuse desormais une action que personne n'a declaree.
+ACTION_MEDIA_PLAN_CREATED = declare_action("media_plan.created")
+ACTION_MEDIA_PLAN_VERSION_CREATED = declare_action("media_plan.version.created")
+ACTION_MEDIA_PLAN_VERSION_PUBLISHED = declare_action("media_plan.version.published")
+
 
 # ``_CENT`` (the exact one-cent Decimal quantum) now has a single source of truth
 # in ``core.reshape`` (Story 22.9). Re-exported here so existing importers of
@@ -63,6 +74,28 @@ class MediaPlanStateError(MediaPlanError):
     """An operation is illegal in the current state (e.g. publishing twice)."""
 
     code = "invalid_state"
+
+
+class MediaPlanAmountError(MediaPlanValidationError):
+    """The amount a caller sent is not the amount that would land (maps to 422).
+
+    THE MONEY INVARIANT OF A CANDIDATE, AND IT HAS EXACTLY ONE IMPLEMENTATION.
+    The file path proves `file total == landed + rejected` before it lands
+    (`file_source_resolution.prepare_for_landing`, `amount_reconciliation_failed`)
+    precisely so that no plan line lands money the source did not carry. Below
+    that check, `_parse_budget` used to `quantize(_CENT)` in silence: a row
+    carrying 10000.005 landed 10000.00 and NOTHING said so -- on BOTH doors, the
+    file one included, because the store is where the quantization happens.
+
+    A rounded amount is the same defect the file-side invariant exists to refuse,
+    one layer lower. It is refused here, in the ONE seam both doors go through
+    (`create_version_with_lines`), so the JSON door and `run_import`'s
+    plan-store landing refuse it with the same code and the same sentence -- which
+    `test_mediaplan_candidate_seam.py` asserts by comparing the two messages
+    character for character rather than by trusting this note.
+    """
+
+    code = "amount_not_to_the_cent"
 
 
 # ---------------------------------------------------------------------------
@@ -119,10 +152,10 @@ def _parse_date(value: Any, *, field: str) -> date:
             return date.fromisoformat(value.strip())
         except ValueError as exc:
             raise MediaPlanValidationError(
-                f"Le champ « {field} » doit être une date ISO (AAAA-MM-JJ)."
+                f"Field '{field}' must be an ISO date (YYYY-MM-DD)."
             ) from exc
     raise MediaPlanValidationError(
-        f"Le champ « {field} » doit être une date ISO (AAAA-MM-JJ)."
+        f"Field '{field}' must be an ISO date (YYYY-MM-DD)."
     )
 
 
@@ -131,14 +164,26 @@ def _parse_budget(value: Any) -> Decimal:
         budget = Decimal(str(value))
     except Exception as exc:
         raise MediaPlanValidationError(
-            "Le budget doit être un nombre décimal."
+            "The budget must be a decimal number."
         ) from exc
     if not budget.is_finite():
-        raise MediaPlanValidationError("Le budget doit être un nombre fini.")
+        raise MediaPlanValidationError("The budget must be a finite number.")
     if budget < 0:
-        raise MediaPlanValidationError("Le budget ne peut pas être négatif.")
-    # Normalise to the cent so storage and spread agree exactly.
-    return budget.quantize(_CENT)
+        raise MediaPlanValidationError("The budget cannot be negative.")
+    # Normalise to the cent so storage and spread agree exactly -- and REFUSE
+    # rather than round. `quantize` alone turned 10000.005 into 10000.00 and
+    # returned it as if the caller had sent that: the version then carried money
+    # the source never declared, which is the very thing the file path's
+    # `file total == landed + rejected` invariant exists to make impossible.
+    # Value equality, not exponent equality: "100.5" and "100.50" are the same
+    # money and only a genuine sub-cent digit refuses.
+    landed = budget.quantize(_CENT)
+    if landed != budget:
+        raise MediaPlanAmountError(
+            f"The amount {value} is not an exact number of cents: it would land "
+            f"as {format(landed, 'f')}. Send the amount to the cent."
+        )
+    return landed
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +199,26 @@ _PLAN_COLS = [
     "created_at",
     "updated_at",
     "archived_at",
+    # WHICH DATASTREAM CARRIES THIS PLAN (migration 303, ratified 2026-08-24).
+    # It travels on EVERY plan read and not only on the creation reply: the
+    # console follows it to open the carrier's Workbench, and a link that only
+    # existed on the reply to the write would be unreadable to every screen that
+    # did not perform the write.
+    "carrier_datastream_id",
 ]
+
+
+class MediaPlanCarrierTakenError(MediaPlanStateError):
+    """This Datastream already carries a live plan (maps to 409).
+
+    ITS OWN TYPE because it is the ONE refusal the ratified relation produces,
+    and it is not a validation fault: the caller asked for something coherent and
+    the answer is that the carrier is taken. The sentence names the gesture that
+    repairs -- create the second plan on a second Datastream -- because "each plan
+    on its own carrier" is precisely what makes a second plan possible.
+    """
+
+    code = "carrier_already_carries_a_plan"
 
 
 def create_plan(
@@ -164,23 +228,53 @@ def create_plan(
     name: str,
     currency: str = "EUR",
     created_by: str,
+    carrier_datastream_id: str | None = None,
 ) -> dict[str, Any]:
-    """Create a media plan (no version yet)."""
+    """Create a media plan (no version yet), on the Datastream that carries it.
+
+    ``carrier_datastream_id`` is the file-source Datastream whose Workbench hosts
+    this plan (ratified 2026-08-24). It is OPTIONAL at this seam and not at the
+    console's: the older ``POST /api/projects/{id}/mediaplans`` contract predates
+    the decision and its callers must keep working, while the Workbench always
+    sends one. Nothing here provisions a Datastream -- the carrier is a
+    Datastream a person already created, and a plan whose carrier is absent is a
+    plan that arrived by the older path, said as such rather than repaired by
+    inventing one.
+
+    Raises ``MediaPlanCarrierTakenError`` when that Datastream already carries a
+    live plan: one carrier holds one plan, and a second plan of the same project
+    lives on a second Datastream with its own template.
+    """
     if not isinstance(name, str) or not name.strip():
-        raise MediaPlanValidationError("Le nom du plan ne peut pas être vide.")
+        raise MediaPlanValidationError("The plan name cannot be empty.")
     clean_name = name.strip()
     clean_currency = (currency or "EUR").strip() or "EUR"
+    carrier = (carrier_datastream_id or "").strip() or None
+
+    # ASKED BEFORE THE INSERT, so the refusal is a sentence and not a constraint
+    # violation surfacing as a 500. The unique index stays the authority -- two
+    # concurrent creations still meet it -- and this read is what lets the answer
+    # name the plan already sitting there.
+    if carrier is not None:
+        existing = get_carrier_plan(conn, datastream_id=carrier)
+        if existing is not None:
+            raise MediaPlanCarrierTakenError(
+                f"This Datastream already carries the media plan "
+                f"'{existing['name']}'. A second plan of this project is created "
+                f"on a second file-source Datastream, with its own template."
+            )
 
     with conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO app.media_plans
-                (project_id, name, currency, created_by, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, now(), now())
+                (project_id, name, currency, created_by, created_at, updated_at,
+                 carrier_datastream_id)
+            VALUES (%s, %s, %s, %s, now(), now(), %s)
             RETURNING id, project_id, name, currency, created_by,
-                      created_at, updated_at, archived_at
+                      created_at, updated_at, archived_at, carrier_datastream_id
             """,
-            (project_id, clean_name, clean_currency, created_by),
+            (project_id, clean_name, clean_currency, created_by, carrier),
         )
         row = cur.fetchone()
         plan = _row_to_dict(row, _PLAN_COLS)
@@ -191,7 +285,12 @@ def create_plan(
             action=ACTION_MEDIA_PLAN_CREATED,
             provider_account="platform",
             connection_ref="",
-            metadata={"plan_id": plan["id"], "project_id": project_id, "name": clean_name},
+            metadata={
+                "plan_id": plan["id"],
+                "project_id": project_id,
+                "name": clean_name,
+                "carrier_datastream_id": carrier,
+            },
         )
     return plan
 
@@ -202,7 +301,7 @@ def list_plans(conn: Any, *, project_id: str) -> list[dict[str, Any]]:
         cur.execute(
             """
             SELECT id, project_id, name, currency, created_by,
-                   created_at, updated_at, archived_at
+                   created_at, updated_at, archived_at, carrier_datastream_id
             FROM app.media_plans
             WHERE project_id = %s AND archived_at IS NULL
             ORDER BY created_at DESC
@@ -210,6 +309,96 @@ def list_plans(conn: Any, *, project_id: str) -> list[dict[str, Any]]:
             (project_id,),
         )
         return [_row_to_dict(r, _PLAN_COLS) for r in cur.fetchall()]
+
+
+def get_carrier_plan(conn: Any, *, datastream_id: str) -> dict[str, Any] | None:
+    """The live plan this Datastream carries, or ``None``.
+
+    ONE ROW BY CONSTRUCTION (`uq_media_plans_carrier_datastream`): a carrier holds
+    one live plan. `LIMIT 1` is not a tie-break, it is the shape the index already
+    guarantees, kept explicit so a reader does not have to go and check.
+    """
+    clean = (datastream_id or "").strip()
+    if not clean:
+        return None
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, project_id, name, currency, created_by,
+                   created_at, updated_at, archived_at, carrier_datastream_id
+            FROM app.media_plans
+            WHERE carrier_datastream_id = %s AND archived_at IS NULL
+            LIMIT 1
+            """,
+            (clean,),
+        )
+        row = cur.fetchone()
+    return _row_to_dict(row, _PLAN_COLS) if row else None
+
+
+def list_carrier_datastreams(conn: Any, *, project_id: str) -> list[dict[str, Any]]:
+    """The file-source Datastreams of this project able to carry a media plan.
+
+    A CARRIER IS A DATASTREAM WHOSE TEMPLATE SAYS SO -- `landing_target =
+    'plan_store'`, read from the sealed contract `import_runner` routes on. It is
+    not a naming convention and not a flag of its own: one declaration, one
+    answer, and a screen that offered a door to a Datastream the import would
+    refuse would be the dead door this decision was taken to end.
+
+    Each row says whether it already carries a plan, because that is what decides
+    which gesture the door leads to: an empty carrier is where a plan is CREATED,
+    a taken one is where its next dated revision is imported.
+
+    Returns ``[]`` -- never raises -- when the project has no file source at all;
+    the caller then names the gesture that makes one rather than a broken door.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, name, current_mapping_version_id
+            FROM app.datastreams
+            WHERE project_id = %s
+              AND source_kind = 'managed_feed'
+              AND archived_at IS NULL
+            ORDER BY name
+            """,
+            (project_id,),
+        )
+        rows = cur.fetchall()
+
+    from core.file_source_resolution import (  # noqa: PLC0415
+        resolve_file_source_producer,
+    )
+    from core.file_source_template import LANDING_PLAN_STORE  # noqa: PLC0415
+
+    carriers: list[dict[str, Any]] = []
+    for row in rows:
+        datastream_id = str(row[0])
+        # NO PRIVATE SWALLOW IN THE LOOP. A failed statement aborts the whole
+        # Postgres transaction, so a `continue` past an exception would keep
+        # reading a connection that answers nothing -- and hand back a SHORTER
+        # list of carriers than the project has, which is a door quietly missing
+        # rather than an error. `resolve_file_source_producer` returns `None`
+        # for an absent or unreadable binding, which is the case that matters.
+        producer = resolve_file_source_producer(
+            conn,
+            project_id=project_id,
+            datastream_id=datastream_id,
+            mapping_version_id=row[2],
+        )
+        contract = (getattr(producer, "template", None) or {}).get("contract") or {}
+        if contract.get("landing_target") != LANDING_PLAN_STORE:
+            continue
+        plan = get_carrier_plan(conn, datastream_id=datastream_id)
+        carriers.append(
+            {
+                "datastream_id": datastream_id,
+                "name": str(row[1]),
+                "plan_id": plan["id"] if plan else None,
+                "plan_name": plan["name"] if plan else None,
+            }
+        )
+    return carriers
 
 
 def get_plan(conn: Any, *, plan_id: str) -> dict[str, Any] | None:
@@ -327,22 +516,22 @@ def _normalise_lines(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
     duplicate is rejected loudly).
     """
     if not isinstance(lines, list) or not lines:
-        raise MediaPlanValidationError("La version doit contenir au moins une ligne.")
+        raise MediaPlanValidationError("The version must contain at least one row.")
 
     seen: set[str] = set()
     normalised: list[dict[str, Any]] = []
     for idx, raw in enumerate(lines):
         if not isinstance(raw, dict):
-            raise MediaPlanValidationError("Chaque ligne doit être un objet.")
+            raise MediaPlanValidationError("Each row must be an object.")
 
         line_key = (raw.get("line_key") or "").strip()
         if not line_key:
             raise MediaPlanValidationError(
-                "La clé de ligne (line_key) ne peut pas être vide."
+                "The row key (line_key) cannot be empty."
             )
         if line_key in seen:
             raise MediaPlanValidationError(
-                f"La clé de ligne « {line_key} » est dupliquée dans la version."
+                f"Row key '{line_key}' is duplicated in the version."
             )
         seen.add(line_key)
 
@@ -350,7 +539,7 @@ def _normalise_lines(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
         end = _parse_date(raw.get("end_date"), field="end_date")
         if start > end:
             raise MediaPlanValidationError(
-                "La date de début doit précéder la date de fin."
+                "The start date must precede the end date."
             )
         budget = _parse_budget(raw.get("budget"))
 
@@ -382,6 +571,17 @@ def create_version_with_lines(
 
     version_number = max(existing) + 1. The version is created inactive and
     unpublished; publish_version() materialises allocations and flips the pointer.
+
+    THE ONE SEAM ONTO A CANDIDATE, AND THERE ARE TWO DOORS ONTO IT (2026-08-31,
+    AI-331). The file door is `import_runner.run_import` ->
+    `import_landing.land_plan_store_rows`; the JSON door is
+    `POST /api/mediaplans/{plan_id}/versions`. Everything that governs the shape
+    of a version -- the zero-line refusal, the duplicate-key refusal, the date
+    order, the money invariant, the audit row -- lives HERE and not in either
+    caller, so the two doors cannot drift into two rules. What the file door adds
+    on top of this seam is the ledger, the rejection gate and the drift gate:
+    those govern a FILE (a content hash, a rejected-row ratio, a confirmed
+    mapping), and a JSON body is not a file.
     """
     normalised = _normalise_lines(lines)
 
@@ -419,10 +619,29 @@ def create_version_with_lines(
             # Concurrent create computed the same MAX(version_number)+1 (F-1):
             # the UNIQUE (plan_id, version_number) makes the loser retryable.
             raise MediaPlanStateError(
-                "Modification concurrente du plan, veuillez réessayer."
+                "Concurrent change on the plan, please try again."
             ) from exc
         version = _row_to_dict(cur.fetchone(), _VERSION_COLS)
         version_id = version["id"]
+
+        # PUBLICATION IS NEVER A SIDE EFFECT OF CREATION. The INSERT above writes
+        # 'candidate'/false literally, so this reads the row BACK from the
+        # database rather than re-asserting the tuple this function just built --
+        # a guard that reads its own copy proves nothing. What it catches is the
+        # only way a candidate could ever come out published without anyone
+        # deciding to: a column default, a trigger or a migration that changes
+        # what the write means. It fails closed, inside the caller's transaction,
+        # so nothing is committed.
+        cur.execute(
+            "SELECT status, is_active FROM app.media_plan_versions WHERE id = %s",
+            (version_id,),
+        )
+        stored_status, stored_active = cur.fetchone()
+        if stored_status != "candidate" or stored_active:
+            raise MediaPlanStateError(
+                "A new version must be created as a candidate; publication is a "
+                "separate act."
+            )
 
         for line in normalised:
             cur.execute(
@@ -457,6 +676,15 @@ def create_version_with_lines(
                 "version_id": version_id,
                 "version_number": next_number,
                 "line_count": len(normalised),
+                # THE MONEY, IN THE AUDIT ROW. A line count says a version was
+                # created; it does not say what it was worth, so a candidate that
+                # changed a plan's budget left no readable trace of by how much.
+                # Written by BOTH doors, because it is written by the seam.
+                "total_budget": format(
+                    sum((line["budget"] for line in normalised), Decimal("0.00")),
+                    "f",
+                ),
+                "created_status": "candidate",
             },
         )
 
@@ -497,10 +725,10 @@ def publish_version(
         if plan_archived_at is not None:
             # F-5: a candidate must never be published onto an archived plan.
             raise MediaPlanStateError(
-                "Impossible de publier une version d'un plan archivé."
+                "Cannot publish a version of an archived plan."
             )
         if status != "candidate":
-            raise MediaPlanStateError("Seule une version candidate peut être publiée.")
+            raise MediaPlanStateError("Only a candidate version can be published.")
 
         cur.execute(
             """
@@ -514,7 +742,7 @@ def publish_version(
         line_rows = cur.fetchall()
         if not line_rows:
             raise MediaPlanStateError(
-                "Impossible de publier une version sans ligne."
+                "Cannot publish a version with no row."
             )
 
         # (a) + (b): materialise + invariant check per line.
@@ -524,7 +752,7 @@ def publish_version(
             if total != budget:
                 # Defensive: compute_spread guarantees this; a mismatch is a bug.
                 raise MediaPlanStateError(
-                    "Invariant d'allocation rompu : la somme diffère du budget."
+                    "Allocation invariant broken: the sum differs from the budget."
                 )
             for day, amount in allocations:
                 cur.execute(
@@ -561,7 +789,7 @@ def publish_version(
             # Concurrent first-publish race (F-1): the partial unique index
             # (plan_id) WHERE is_active blocks the loser -- surface a clean 409.
             raise MediaPlanStateError(
-                "Publication concurrente sur ce plan, veuillez réessayer."
+                "Concurrent publication on this plan, please try again."
             ) from exc
         version = _row_to_dict(cur.fetchone(), _VERSION_COLS)
 

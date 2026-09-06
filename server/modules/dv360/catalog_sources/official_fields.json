@@ -61,7 +61,7 @@
     "kind": "dimension",
     "data_type": "string",
     "section": "FILTER",
-    "description": "Provider country value."
+    "description": "Country name (e.g. 'France', 'United States'); FILTER_COUNTRY_ID is the separate provider identifier."
   },
   {
     "field_id": "currency",

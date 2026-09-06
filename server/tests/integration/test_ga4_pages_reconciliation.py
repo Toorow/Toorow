@@ -45,7 +45,9 @@ ASCII-only (AI-03). No live GA4 / Postgres required.
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 from datetime import date
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -68,6 +70,29 @@ _SEEDS_DIR = (
     / "seeds"
 )
 
+
+# ---------------------------------------------------------------------------
+# The scope check needs a CONNECTION, not only a verdict.
+#
+# `core.cards_api` opens `core.db.get_connection()` and only then asks
+# `identity_can_read_project`. Since the fail-closed fix (commit `5e6e9356`,
+# "le controle de portee des cartes REST refuse au lieu de passer outre"), a
+# scope check that cannot be PERFORMED is a refusal -- it used to swallow the
+# exception and continue. So on a machine with no reachable Postgres these seams
+# stopped at 404 `forbidden` before the `identity_can_read_project` mock was ever
+# consulted: the verdict was mocked, the connection was not.
+#
+# Patching the connection is what the sibling seam suites already do
+# (`tests/core/test_cards_api.py`, `tests/integration/test_cards_integration_seams.py`);
+# these three GA4 files were the ones that never did. It also makes them
+# hermetic, which they were only pretending to be -- they passed or failed
+# depending on whether the developer happened to have a database running.
+# ---------------------------------------------------------------------------
+
+@contextmanager
+def _scope_check_connection():
+    """A connection the scope check can open; the verdict itself stays mocked."""
+    yield MagicMock()
 
 def _load_generate_seed():
     spec = importlib.util.spec_from_file_location(
@@ -548,7 +573,9 @@ def test_journey_card_endpoint_carries_page_rows_through_asgi():
 
     with patch("core.warehouse.query_daily_report", return_value=rows) as _mart, patch(
         "core.cards_api._check_auth", new=AsyncMock(return_value=(True, "test@test"))
-    ), patch("core.project_access.identity_has_project_access", return_value=True):
+    ), patch("core.project_access.identity_can_read_project", return_value=True), patch(
+        "core.db.get_connection", new=_scope_check_connection
+    ):
         with TestClient(app, raise_server_exceptions=True) as c:
             resp = c.get(
                 "/api/cards?project_id=default&template=journey"
@@ -643,7 +670,9 @@ def test_journey_card_composition_carries_entry_bar_and_top_table_blocks():
 
     with patch("core.warehouse.query_daily_report", return_value=rows), patch(
         "core.cards_api._check_auth", new=AsyncMock(return_value=(True, "test@test"))
-    ), patch("core.project_access.identity_has_project_access", return_value=True):
+    ), patch("core.project_access.identity_can_read_project", return_value=True), patch(
+        "core.db.get_connection", new=_scope_check_connection
+    ):
         with TestClient(app, raise_server_exceptions=True) as c:
             resp = c.get(
                 "/api/cards?project_id=default&template=journey"
@@ -657,14 +686,14 @@ def test_journey_card_composition_carries_entry_bar_and_top_table_blocks():
     composition = body["envelope"]["data"].get("composition") or []
     assert composition, "Journey composition must not be empty"
 
-    # --- Entry bar: Pages d'entree (AC 1) ---
+    # --- Entry bar: Entry pages (AC 1) ---
     entry_bar = next(
         (b for b in composition
-         if b.get("type") == "bar" and "Pages" in (b.get("title") or "")),
+         if b.get("type") == "bar" and "Entry" in (b.get("title") or "")),
         None,
     )
     assert entry_bar is not None, (
-        "No bar block found in journey composition (expected 'Pages d entree'); "
+        "No bar block found in journey composition (expected 'Entry pages'); "
         f"composition types: {[b.get('type') for b in composition]}"
     )
     bar_data = entry_bar.get("data") or {}
@@ -679,13 +708,13 @@ def test_journey_card_composition_carries_entry_bar_and_top_table_blocks():
     )
     assert bars[0]["value"] > 0, "Top entry page sessions must be > 0"
 
-    # --- Top pages table: Pages les plus vues (AC 2) ---
+    # --- Top pages table: Top viewed pages (AC 2) ---
     top_table = next(
         (b for b in composition if b.get("type") == "table"),
         None,
     )
     assert top_table is not None, (
-        "No table block found in journey composition (expected 'Pages les plus vues')"
+        "No table block found in journey composition (expected 'Top viewed pages')"
     )
     table_data = top_table.get("data") or {}
     table_rows = table_data.get("rows") or []

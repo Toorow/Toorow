@@ -19,6 +19,12 @@ from core.self_hosted_instance_claim import (
     provision_bootstrap_capability,
 )
 
+from tests.support.statement_router import (
+    StatementInventory,
+    UnknownStatement,
+    describe,
+)
+
 
 def _confirmation(
     *, actor: str = "person_claimant", idempotency_key: str = "claim-request-1"
@@ -56,11 +62,110 @@ class _Transaction:
         return False
 
 
+# EVERY STATEMENT the self-hosted claim seam issues on a tested path, NAMED.
+# Twelve of the twenty-five used to fall into an `else` that answered no rows:
+# the two `LOCK TABLE`s, the two `revoked` rotations, the capability INSERT,
+# every write of the first tenant scope (`instance_members`, `org_members`,
+# `projects`, `project_preferences`) and every write of the Getting Started
+# journey bootstrap (`setup_journeys`, `setup_tasks`, `setup_task_events`).
+# None of their results is read, so the silence answered correctly BY LUCK --
+# and a fake that is right by luck stays quiet when the query beside it moves
+# (AI-317).
+#
+# Each `UPDATE` pair names the relation AND the state it writes: the three
+# capability updates ('revoked', 'exchanged', 'consumed') and the two exchange
+# updates ('revoked', 'consumed') would otherwise collapse onto one fragment.
+_CLAIM = StatementInventory(
+    "_Cursor (self-hosted instance claim)",
+    # provision_bootstrap_capability
+    lock_bootstrap_tables="lock table app.instance_bootstrap_capabilities",
+    instance_claim_probe="select 1 from app.instance_claims limit 1",
+    # `bootstrap_exchange_session_is_ready` carries three EXISTS in one
+    # statement, one of which reads app.organizations -- so it is declared
+    # before the standalone non-seed probe and pinned on its own first relation.
+    exchange_session_ready="select exists ( select 1 from app.instance_bootstrap_exchange_sessions",
+    non_seed_organizations="select exists ( select 1 from app.organizations",
+    exchange_revoked=(
+        "update app.instance_bootstrap_exchange_sessions",
+        "set state = 'revoked'",
+    ),
+    capability_revoked=(
+        "update app.instance_bootstrap_capabilities",
+        "set state = 'revoked'",
+    ),
+    capability_insert="insert into app.instance_bootstrap_capabilities",
+    # exchange_bootstrap_capability
+    capability_by_hash="select id, expires_at from app.instance_bootstrap_capabilities",
+    capability_exchanged=(
+        "update app.instance_bootstrap_capabilities",
+        "set state = 'exchanged'",
+    ),
+    exchange_insert="insert into app.instance_bootstrap_exchange_sessions",
+    # claim_self_hosted_instance -> mutation
+    exchange_for_update="select exchange.id, capability.id",
+    lock_scope_tables="lock table app.organizations, app.projects",
+    claim_insert="insert into app.instance_claims",
+    instance_member_insert="insert into app.instance_members",
+    organization_insert="insert into app.organizations",
+    org_member_insert="insert into app.org_members",
+    project_insert="insert into app.projects",
+    project_preferences_insert="insert into app.project_preferences",
+    # Story 46.4 routed the claim through the ONE Getting Started bootstrap,
+    # which reads the Project it is about to open a journey for.
+    project_org="select org_id from app.projects",
+    journey_probe="select id from app.setup_journeys",
+    journey_insert="insert into app.setup_journeys",
+    setup_task_event_insert="insert into app.setup_task_events",
+    setup_task_insert="insert into app.setup_tasks",
+    exchange_consumed=(
+        "update app.instance_bootstrap_exchange_sessions",
+        "set state = 'consumed'",
+    ),
+    capability_consumed=(
+        "update app.instance_bootstrap_capabilities",
+        "set state = 'consumed'",
+    ),
+)
+
+# The statements that genuinely return NO RESULT SET. `description = None` is
+# what psycopg reserves for exactly those; everywhere else it is DERIVED from
+# the statement, never restated here.
+_NO_RESULT_SET = frozenset(
+    {
+        "lock_bootstrap_tables",
+        "exchange_revoked",
+        "capability_revoked",
+        "capability_insert",
+        "capability_exchanged",
+        "lock_scope_tables",
+        "instance_member_insert",
+        "organization_insert",
+        "org_member_insert",
+        "project_insert",
+        "project_preferences_insert",
+        "journey_insert",
+        "setup_task_insert",
+        "setup_task_event_insert",
+        "exchange_consumed",
+        "capability_consumed",
+    }
+)
+
+# The only two projections `describe` refuses -- a parenthesis in the select
+# list. psycopg labels a bare `SELECT EXISTS (...)` "exists", and the
+# readiness conjunction of three EXISTS "?column?".
+_NAMED_DESCRIPTION = {
+    "non_seed_organizations": [("exists",)],
+    "exchange_session_ready": [("?column?",)],
+}
+
+
 class _Cursor:
     def __init__(self, conn):
         self.conn = conn
         self._row = None
         self.rowcount = 0
+        self.description = None
 
     def __enter__(self):
         return self
@@ -72,50 +177,73 @@ class _Cursor:
         normalized = " ".join(sql.split())
         self.conn.statements.append((normalized, params))
         self.rowcount = 0
-        if normalized.startswith("SELECT 1 FROM app.instance_claims"):
-            self._row = (1,) if self.conn.already_claimed else None
-        elif normalized.startswith("SELECT EXISTS ( SELECT 1 FROM app.organizations"):
-            self._row = (self.conn.has_non_seed_organizations,)
-        elif normalized.startswith(
-            "SELECT EXISTS ( SELECT 1 FROM app.instance_bootstrap_exchange_sessions"
-        ):
-            self._row = (
-                self.conn.exchange_available
-                and not self.conn.already_claimed
-                and not self.conn.has_non_seed_organizations,
-            )
-        elif normalized.startswith(
-            "SELECT id, expires_at FROM app.instance_bootstrap_capabilities"
-        ):
-            self._row = (
-                (self.conn.capability_id, self.conn.capability_expiry)
-                if self.conn.capability_available
-                else None
-            )
-        elif normalized.startswith("SELECT exchange.id, capability.id"):
-            self._row = (
-                (self.conn.exchange_id, self.conn.capability_id)
-                if self.conn.exchange_available
-                else None
-            )
-        elif normalized.startswith(
-            "UPDATE app.instance_bootstrap_capabilities SET state = 'exchanged'"
-        ):
-            self._row = None
-            self.rowcount = 1 if self.conn.exchange_winner else 0
-        elif normalized.startswith("INSERT INTO app.instance_bootstrap_exchange_sessions"):
-            self._row = (self.conn.exchange_expiry,)
-        elif normalized.startswith("INSERT INTO app.instance_claims"):
-            self._row = ("iclaim_winner",) if self.conn.singleton_winner else None
-        elif normalized.startswith(
-            "UPDATE app.instance_bootstrap_exchange_sessions SET state = 'consumed'"
-        ) or normalized.startswith(
-            "UPDATE app.instance_bootstrap_capabilities SET state = 'consumed'"
-        ):
-            self._row = None
-            self.rowcount = 1 if self.conn.consume_winner else 0
-        else:
-            self._row = None
+        statement = _CLAIM.match(normalized)
+        self.description = (
+            None
+            if statement in _NO_RESULT_SET
+            else _NAMED_DESCRIPTION.get(statement) or describe(normalized)
+        )
+        match statement:
+            case "instance_claim_probe":
+                self._row = (1,) if self.conn.already_claimed else None
+            case "non_seed_organizations":
+                self._row = (self.conn.has_non_seed_organizations,)
+            case "exchange_session_ready":
+                self._row = (
+                    self.conn.exchange_available
+                    and not self.conn.already_claimed
+                    and not self.conn.has_non_seed_organizations,
+                )
+            case "capability_by_hash":
+                self._row = (
+                    (self.conn.capability_id, self.conn.capability_expiry)
+                    if self.conn.capability_available
+                    else None
+                )
+            case "capability_exchanged":
+                self._row = None
+                self.rowcount = 1 if self.conn.exchange_winner else 0
+            case "exchange_insert":
+                self._row = (self.conn.exchange_expiry,)
+            case "exchange_for_update":
+                self._row = (
+                    (self.conn.exchange_id, self.conn.capability_id)
+                    if self.conn.exchange_available
+                    else None
+                )
+            case "claim_insert":
+                self._row = ("iclaim_winner",) if self.conn.singleton_winner else None
+            case "organization_insert":
+                self.conn.org_id = params[0] if params else self.conn.org_id
+                self._row = None
+            case "project_org":
+                self._row = (self.conn.org_id,)
+            case "journey_probe":
+                # No journey exists yet for the Project the claim just created.
+                self._row = None
+            case "exchange_consumed" | "capability_consumed":
+                self._row = None
+                self.rowcount = 1 if self.conn.consume_winner else 0
+            case (
+                "lock_bootstrap_tables"
+                | "lock_scope_tables"
+                | "exchange_revoked"
+                | "capability_revoked"
+                | "capability_insert"
+                | "instance_member_insert"
+                | "org_member_insert"
+                | "project_insert"
+                | "project_preferences_insert"
+                | "journey_insert"
+                | "setup_task_insert"
+                | "setup_task_event_insert"
+            ):
+                # Writes and locks the product issues without reading anything
+                # back. Named so a REWRITE of one of them is a failure, not a
+                # shrug.
+                self._row = None
+            case _:  # pragma: no cover - a name added to the inventory, unanswered
+                raise _CLAIM.unknown(normalized)
 
     def fetchone(self):
         return self._row
@@ -129,6 +257,8 @@ class _Connection:
         self.transaction_rollbacks = 0
         self.already_claimed = False
         self.has_non_seed_organizations = False
+        # Echoed back to the journey bootstrap; the real id is minted at runtime.
+        self.org_id = "org_claim"
         self.capability_available = True
         self.capability_id = "iboot_1"
         self.capability_expiry = datetime.now(timezone.utc) + timedelta(hours=1)
@@ -162,10 +292,6 @@ def _claim(conn, monkeypatch, *, bearer="b" * 48):
         )
 
     monkeypatch.setattr("core.self_hosted_instance_claim.execute_operation", execute_operation)
-    monkeypatch.setattr(
-        "core.setup_responsibilities.bootstrap_journey_from_acceptance",
-        lambda *_args, **_kwargs: "setup_claim",
-    )
     result = claim_self_hosted_instance(
         conn,
         deployment_mode="self_hosted",
@@ -177,8 +303,34 @@ def _claim(conn, monkeypatch, *, bearer="b" * 48):
         project_slug="first-project",
         idempotency_key="claim-request-1",
         confirmation=_confirmation(),
+        # AI-77/AI-81: the confirmation payload records EUR and Europe/Paris as
+        # the claimant's choice, so the call states them. They used to be
+        # signature defaults, which is what let a fallback reach the row wearing
+        # the label of a suggestion nobody made.
+        currency="EUR",
+        timezone_name="Europe/Paris",
     )
     return result, captured["spec"]
+
+
+def test_the_fake_refuses_a_statement_it_was_never_taught():
+    """AI-317: an unrecognised statement must NAME itself, not answer no rows.
+
+    The old `else` answered `None`. Twelve of the seam's statements landed
+    there -- every lock, every rotation, every INSERT of the first tenant scope
+    and of the journey bootstrap -- and none of them is read, so the fake was
+    right for no reason. The moment one of the reads BESIDE them is rewritten
+    (the capability lookup, the singleton `RETURNING id`, the journey probe),
+    the same `else` answers "no rows" and the claim fails closed in a test that
+    is meant to prove it opens.
+    """
+
+    cursor = _Cursor(_Connection())
+    with pytest.raises(UnknownStatement) as raised:
+        cursor.execute("SELECT owner_person_id FROM app.instance_claims WHERE singleton_key = 1")
+    message = str(raised.value)
+    assert "owner_person_id" in message
+    assert "instance_claim_probe" in message
 
 
 def test_provision_hashes_and_rotates_without_persisting_raw_bearer():
@@ -308,7 +460,11 @@ def test_claim_creates_singleton_scope_owner_and_transactional_evidence(
     assert "INSERT INTO app.organizations" in sql
     assert "INSERT INTO app.org_members" in sql
     assert "INSERT INTO app.projects" in sql
-    assert "INSERT INTO app.project_members" in sql
+    # Story 46.4 retired `app.project_members`: the claimer holds the owner floor
+    # through Organization membership, and 46.3 moved the Project defaults into
+    # a `project_preferences` row.
+    assert "INSERT INTO app.project_members" not in sql
+    assert "INSERT INTO app.project_preferences" in sql
     assert "SET state = 'consumed'" in sql
     assert spec.command_type == "instance.claim"
     assert spec.actor == "person_claimant"
@@ -321,7 +477,9 @@ def test_claim_creates_singleton_scope_owner_and_transactional_evidence(
     assert result.outbox_event_id == "opout_claim"
     assert result.org_id.startswith("org_")
     assert result.project_id.startswith("proj_")
-    assert result.journey_id == "setup_claim"
+    # The single journey bootstrap mints the id; the invariant is that one was
+    # opened, not which literal it carries.
+    assert result.journey_id.startswith("setup_")
     assert conn.transaction_successes == 1
 
 
@@ -376,10 +534,10 @@ def test_claim_rejects_hosted_mode_and_noncanonical_identity(monkeypatch):
 
 
 def test_migration_has_singleton_hash_expiry_and_immutable_claim():
-    sql = (
-        __import__("pathlib")
-        .Path("infra/nango/migrations/114_self_hosted_instance_claim.sql")
-        .read_text(encoding="utf-8")
+    from tests.conftest import REPO_ROOT
+
+    sql = (REPO_ROOT / "infra/nango/migrations/114_self_hosted_instance_claim.sql").read_text(
+        encoding="utf-8"
     )
     assert "bearer_hash" in sql
     assert "expires_at" in sql

@@ -57,15 +57,15 @@ def compute_spread(
     """
     if not isinstance(budget, Decimal):
         # Defensive: refuse silent float coercion (would break cent-exactness).
-        raise ReshapeValidationError("Le budget doit être un Decimal.")
+        raise ReshapeValidationError("The budget must be a Decimal.")
     if not budget.is_finite():
         # NaN/Infinity compare False to 0 and would blow up in quantize/divmod.
-        raise ReshapeValidationError("Le budget doit être un nombre fini.")
+        raise ReshapeValidationError("The budget must be a finite number.")
     if budget < 0:
-        raise ReshapeValidationError("Le budget ne peut pas être négatif.")
+        raise ReshapeValidationError("The budget cannot be negative.")
     if start_date > end_date:
         raise ReshapeValidationError(
-            "La date de début doit précéder la date de fin."
+            "The start date must precede the end date."
         )
 
     n_days = (end_date - start_date).days + 1

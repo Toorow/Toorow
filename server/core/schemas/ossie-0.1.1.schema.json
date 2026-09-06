@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://toorow.dev/schemas/ossie-0.1.1.schema.json",
+  "title": "Apache Ossie 0.1.1 interchange schema",
+  "$comment": "Transcribed from the normative field table of apache/ossie core-spec/spec.md at tag osi-0.1.1-rc1, commit faf581054dcf7964d5fe0ceae7d6f415c8ce32a5. The verification record, including the six measured divergences of the older ossie-0.1.1-profile.schema.json, is in ossie-0.1.1-verification.json. This file is the interchange BOUNDARY of a published Semantic View: toorow lifecycle, MDM and quality metadata live in a namespaced custom_extension, never as extra top-level properties, so a conformant reader that ignores extensions still reads a correct model.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ossie_spec_version", "semantic_model"],
+  "properties": {
+    "ossie_spec_version": { "const": "0.1.1" },
+    "semantic_model": { "$ref": "#/$defs/semantic_model" }
+  },
+  "$defs": {
+    "semantic_model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "datasets"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "ai_context": { "$ref": "#/$defs/ai_context" },
+        "datasets": { "type": "array", "items": { "$ref": "#/$defs/dataset" } },
+        "relationships": { "type": "array", "items": { "$ref": "#/$defs/relationship" } },
+        "metrics": { "type": "array", "items": { "$ref": "#/$defs/metric" } },
+        "custom_extensions": { "type": "array", "items": { "$ref": "#/$defs/custom_extension" } }
+      }
+    },
+    "dataset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "source"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "primary_key": { "type": "array", "items": { "type": "string" } },
+        "unique_keys": {
+          "type": "array",
+          "items": { "type": "array", "items": { "type": "string" } }
+        },
+        "description": { "type": "string" },
+        "ai_context": { "$ref": "#/$defs/ai_context" },
+        "fields": { "type": "array", "items": { "$ref": "#/$defs/field" } },
+        "custom_extensions": { "type": "array", "items": { "$ref": "#/$defs/custom_extension" } }
+      }
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "expression"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "expression": { "$ref": "#/$defs/expression" },
+        "dimension": { "$ref": "#/$defs/dimension" },
+        "label": { "type": "string" },
+        "description": { "type": "string" },
+        "ai_context": { "$ref": "#/$defs/ai_context" },
+        "custom_extensions": { "type": "array", "items": { "$ref": "#/$defs/custom_extension" } }
+      }
+    },
+    "dimension": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "is_time": { "type": "boolean" } }
+    },
+    "metric": {
+      "$comment": "No `dataset` property: a 0.1.1 metric does not carry one. Which datasets a metric can be sliced by is a property of the relationship graph, not of the metric.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "expression"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "expression": { "$ref": "#/$defs/expression" },
+        "description": { "type": "string" },
+        "ai_context": { "$ref": "#/$defs/ai_context" },
+        "custom_extensions": { "type": "array", "items": { "$ref": "#/$defs/custom_extension" } }
+      }
+    },
+    "relationship": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "from", "to", "from_columns", "to_columns"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "from": { "type": "string", "minLength": 1 },
+        "to": { "type": "string", "minLength": 1 },
+        "from_columns": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "to_columns": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "ai_context": { "$ref": "#/$defs/ai_context" },
+        "custom_extensions": { "type": "array", "items": { "$ref": "#/$defs/custom_extension" } }
+      }
+    },
+    "expression": {
+      "$comment": "The contract types an expression as an object and leaves its interior to the producer. toorow's producer is the restricted typed contract in core/semantic_expressions.py; the compiled dialect SQL travels in a namespaced extension beside it, never in its place.",
+      "type": "object"
+    },
+    "ai_context": {
+      "anyOf": [{ "type": "string" }, { "type": "object" }]
+    },
+    "custom_extension": {
+      "$comment": "vendor_name is an enumeration in 0.1.1 and `toorow` is not one of its values. The conformant namespacing is COMMON with the toorow payload under a `toorow` key inside the `data` string.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vendor_name", "data"],
+      "properties": {
+        "vendor_name": {
+          "enum": ["COMMON", "SNOWFLAKE", "SALESFORCE", "DBT", "DATABRICKS", "GOODDATA"]
+        },
+        "data": { "type": "string" }
+      }
+    }
+  }
+}

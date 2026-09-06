@@ -16,22 +16,13 @@
  */
 
 import { useState } from "react";
-import Dialog from "@mui/material/Dialog";
-import DialogTitle from "@mui/material/DialogTitle";
-import DialogContent from "@mui/material/DialogContent";
-import IconButton from "@mui/material/IconButton";
-import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
-import Table from "@mui/material/Table";
-import TableBody from "@mui/material/TableBody";
-import TableCell from "@mui/material/TableCell";
-import TableHead from "@mui/material/TableHead";
-import TableRow from "@mui/material/TableRow";
-import Collapse from "@mui/material/Collapse";
+
 import { InfoIcon } from "./icons";
 import { getRowsForDate, breakdownLabel } from "./dataUtils";
 import { METRIC_LABELS, provenanceList } from "./types";
 import type { Row, DailyReportMeta, ProvenanceEntry } from "./types";
+import { formatValue } from "./format";
+import { Box, Collapse, Dialog, DialogContent, DialogTitle, IconButton, Table, TableBody, TableCell, TableHead, TableRow, Typography } from "@toorow/shell";
 
 interface DayDetailProps {
   date: string | null;
@@ -57,7 +48,7 @@ function ProvenanceRow({
       <TableRow>
         <TableCell>{row.connector}</TableCell>
         <TableCell>{METRIC_LABELS[row.metric] ?? row.metric}</TableCell>
-        <TableCell align="right">{Number(row.value).toLocaleString("fr-FR")}</TableCell>
+        <TableCell align="right">{formatValue(Number(row.value))}</TableCell>
         <TableCell>
           {row.breakdown_dimension}
           {row.breakdown_value ? `: ${breakdownLabel(row.breakdown_value)}` : ""}
@@ -81,10 +72,10 @@ function ProvenanceRow({
                 source_system : <strong>{sourceSystem}</strong>
               </Typography>
               <Typography variant="caption" component="div" color="text.secondary">
-                pull_id : <code>{provEntry?.pull_id ?? row.pull_id}</code>
+                Run: <code>{provEntry?.pull_id ?? row.pull_id}</code>
               </Typography>
               <Typography variant="caption" component="div" color="text.secondary">
-                loaded_at : <code>{row.loaded_at}</code>
+                Loaded at: <code>{row.loaded_at}</code>
               </Typography>
             </Box>
           </Collapse>
@@ -119,7 +110,7 @@ export default function DayDetail({ date, rows, meta, onClose }: DayDetailProps)
       <DialogContent dividers>
         {dayRows.length === 0 ? (
           <Typography variant="body2" color="text.secondary">
-            Aucune donnée pour ce jour.
+            No data for this day.
           </Typography>
         ) : (
           <Table size="small">

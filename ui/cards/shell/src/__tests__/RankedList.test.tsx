@@ -9,9 +9,10 @@
 
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { ThemeProvider, createTheme, decomposeColor } from "@mui/material/styles";
+
 import RankedList from "../RankedList";
 import type { RankedListEntry } from "../RankedList";
+import { ThemeProvider, createTheme, decomposeColor } from "@toorow/shell";
 
 const theme = createTheme();
 
@@ -91,7 +92,7 @@ describe("RankedList — semanticDirection up_good (défaut)", () => {
     );
     const symbol = screen.getByTestId("ranked-list-delta-symbol") as HTMLElement;
     expect(symbol.textContent).toBe("▲");
-    // sx={{ color: theme.palette.success.main }} est injecté en style inline par MUI/jsdom.
+    // sx={{ color: theme.palette.success.main }} est injecté en style inline par resolveSx.
     // Un swap success/error dans resolveColor ferait échouer cette assertion.
     expect(inlineRgb(symbol)).toEqual(rgbOf(theme.palette.success.main));
   });

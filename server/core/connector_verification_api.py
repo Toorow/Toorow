@@ -38,6 +38,19 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
+from core.audit import declare_action
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12) : declarees ICI, a cote du code qui les ecrit, et non
+# dans `core/audit.py`. Ce fichier etait un carrefour -- 43 editions de 29
+# sujets depuis juin, dont 34 n'ajoutaient qu'une constante -- et 45 % des
+# actions reellement ecrites en production n'y etaient meme pas declarees,
+# parce que la liste etait trop loin pour valoir le detour. `write_audit_row`
+# refuse desormais une action que personne n'a declaree.
+ACTION_CONNECTOR_VERIFICATION_DENIED = declare_action("connector.verification.denied")
+
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -59,21 +72,28 @@ async def _check_auth(request: Request) -> tuple[bool, str]:
 
 
 def _is_platform_admin(identity: str) -> bool:
-    """Return True iff identity is in the TOOROW_SUPER_ADMINS allow-list."""
-    from core.super_admin import is_super_admin  # noqa: PLC0415
+    """Return True iff *identity* resolves to a TOOROW_SUPER_ADMINS super-admin.
 
-    return is_super_admin(identity)
+    THE one resolution (audit 12, P1-2). Comparing the raw identity against the
+    allow-list was dead in canonical mode: the caller is a ``person_<ULID>`` and
+    the allow-list is keyed by email.
+    """
+    from core.super_admin import identity_is_super_admin  # noqa: PLC0415
+
+    return identity_is_super_admin(identity)
 
 
 def _idempotency_key(request: Request) -> str | None:
-    """Extract and return the Idempotency-Key header value, or None."""
-    return request.headers.get("Idempotency-Key") or None
+    """Extract and normalize the Idempotency-Key header."""
+    value = request.headers.get("Idempotency-Key")
+    if value is None:
+        return None
+    return value.strip() or None
 
 
 def _audit_denied(identity: str, connector_name: str, method: str, reason: str) -> None:
     """Write a nondisclosing denial audit row (best-effort)."""
     from core.audit import (  # noqa: PLC0415
-        ACTION_CONNECTOR_VERIFICATION_DENIED,
         write_audit_row,
     )
 
@@ -101,7 +121,9 @@ async def _get_connector_verification(request: Request) -> Response:
     Platform-admin: returns the safe read-model of the latest verification run
       {connector_name, environment, installation_state, last_outcome,
        evidence_class, first_seen_at, last_run_at, blocking_reason,
-       synthetic_delivery, safe_next_action}.
+       synthetic_delivery, ttl_seconds, safe_next_action}.
+      ``ttl_seconds`` is the re-check interval the evidence row carries; the
+      expiry instant is NOT sent -- ``last_run_at + ttl_seconds`` is derivable.
     Non-admin: nondisclosing 404 (surface hidden).
 
     200 with ``verified: false`` when no run has ever been recorded.
@@ -230,7 +252,7 @@ async def _post_connector_verify(request: Request) -> Response:
         logger.error(
             "connector_verification_api: check build error cn=%s: %s", connector_name, exc
         )
-        checks = []  # Run with empty checks -> always passes (operator must configure).
+        checks = []  # Fail closed as not_configured; no evidence row or state advance.
 
     try:
         from core.connector_verification import (  # noqa: PLC0415
@@ -252,6 +274,17 @@ async def _post_connector_verify(request: Request) -> Response:
                 host_context={},
                 trace_id=trace_id,
             )
+            if read_model.get("last_outcome") == "passed":
+                from core.data_identities import (  # noqa: PLC0415
+                    snapshot_verified_connector_contract,
+                )
+
+                snapshot_verified_connector_contract(
+                    conn,
+                    environment=environment,
+                    connector_id=connector_name,
+                    actor=identity,
+                )
             conn.commit()
     except OperationIdempotencyConflict:
         return JSONResponse(
@@ -261,9 +294,12 @@ async def _post_connector_verify(request: Request) -> Response:
             },
             status_code=409,
         )
-    except ConnectorVerificationUnavailable as exc:
+    except ConnectorVerificationUnavailable:
         return JSONResponse(
-            {"code": "installation_unavailable", "message": str(exc)},
+            {
+                "code": "installation_unavailable",
+                "message": "Connector verification prerequisites are unavailable",
+            },
             status_code=409,
         )
     except ConnectorVerificationError as exc:
@@ -346,7 +382,7 @@ async def _post_connector_test_delivery(request: Request) -> Response:
         logger.error(
             "connector_verification_api: runner build error cn=%s: %s", connector_name, exc
         )
-        delivery_runner = lambda: (True, "no_runner_configured")  # noqa: E731
+        delivery_runner = lambda: (False, "synthetic_verification_failed")  # noqa: E731
 
     try:
         from core.connector_verification import (  # noqa: PLC0415
@@ -377,9 +413,12 @@ async def _post_connector_test_delivery(request: Request) -> Response:
             },
             status_code=409,
         )
-    except ConnectorVerificationUnavailable as exc:
+    except ConnectorVerificationUnavailable:
         return JSONResponse(
-            {"code": "installation_unavailable", "message": str(exc)},
+            {
+                "code": "installation_unavailable",
+                "message": "Connector verification prerequisites are unavailable",
+            },
             status_code=409,
         )
     except ConnectorVerificationError as exc:
@@ -411,6 +450,111 @@ async def _post_connector_test_delivery(request: Request) -> Response:
 # ---------------------------------------------------------------------------
 
 
+#: The authorization paths a connector manifest may declare, and what each one
+#: needs THIS DEPLOYMENT to hold. Authorization vocabulary, not provider
+#: vocabulary -- the same status mart names hold in `metric_reconciliation`.
+_AUTH_PATH_GOOGLE_DIRECT = "google_direct"
+_AUTH_PATH_NANGO = "nango"
+_AUTH_PATH_NONE = "none"
+
+#: The legacy `auth_type` scalars, and why each one resolves to the Nango path.
+#:
+#: A scalar names a MECHANISM -- "this provider speaks OAuth2" -- not a path, so
+#: it cannot say which platform configuration the deployment must hold. It is
+#: resolved rather than refused, and the resolution is derived from a ratified
+#: decision instead of guessed: Google products authorize DIRECTLY and every one
+#: of them declares `google_direct` explicitly; everything else goes through
+#: Nango, key/secret included (Nango Basic extends `nango_client` rather than
+#: holding a direct credential).
+#:
+#: MEASURED BEFORE MAPPING, 2026-08-17: 20 of the 39 shipped manifests carry a
+#: legacy scalar, and NOT ONE of them is a Google product. Had a single Google
+#: connector been on this list, mapping it here would have sent it to the wrong
+#: configuration -- which is why the count was taken before the branch was
+#: written, not after it went green.
+_LEGACY_SCALARS_ON_NANGO = frozenset({"oauth2", "api_key", "basic"})
+
+#: The one bounded cause a platform check can report. `sanitize_blocking_cause`
+#: would collapse anything else to it anyway; naming it here keeps the check and
+#: the ledger speaking the same word.
+_CAUSE_NOT_CONFIGURED = "dependency_unavailable"
+
+
+def _declared_auth_path(connector_name: str) -> str | None:
+    """The authorization path *connector_name* declares, or ``None`` if unreadable.
+
+    Read from the module's own manifest -- ``auth.auth_path`` when the newer
+    object form is present, else the legacy ``auth_type`` scalar. ``None`` means
+    the manifest could not be read or declares nothing, which fails closed
+    rather than guessing a path.
+    """
+    import json  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    manifest = Path(__file__).parents[1] / "modules" / connector_name / "manifest.json"
+    try:
+        declared = json.loads(manifest.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 -- an unreadable manifest is "no declared path"
+        return None
+    auth = declared.get("auth")
+    if isinstance(auth, dict):
+        path = auth.get("auth_path") or auth.get("type")
+        if isinstance(path, str) and path.strip():
+            return path.strip()
+    legacy = declared.get("auth_type")
+    return legacy.strip() if isinstance(legacy, str) and legacy.strip() else None
+
+
+def _platform_authorization_is_configured(connector_name: str) -> tuple[bool, str, str]:
+    """Can THIS DEPLOYMENT present the authorization path this connector declares?
+
+    THE SCOPE IS THE WHOLE POINT (AI-206). An installation is PLATFORM-scoped --
+    `environment` + `connector_name` -- while every authorization in this product
+    is a client's OAuth consent, held per PROJECT. So a platform check cannot ask
+    "has someone authorized this connector"; nobody can answer that here, and
+    minting a platform credential to make the question answerable would
+    contradict the ratified Google-stack decision of 2026-08-11.
+
+    What IS platform-scoped is the environment's own readiness: a Google-direct
+    connector needs this deployment's OAuth client, a Nango-backed one needs the
+    Nango secret, and a connector declaring no authorization needs nothing. The
+    path is read from the module's manifest, never assumed.
+
+    WHAT THIS DELIBERATELY DOES NOT PROVE, because a verification that overclaims
+    is worse than none: that any client can connect, that a token is valid, or
+    that the provider is reachable. Those are per-project facts, answered by the
+    OAuth flow and by account discovery on a different surface.
+
+    Returns the core's check contract ``(passed, evidence_class, reason)``. The
+    class is always ``auth_check``: migration 268 requires exactly that for a run
+    carrying no routing contract, and a module connector never has one.
+    """
+    # Imported here rather than at module scope: the core module imports this
+    # one's route table, and the class name is the only thing needed from it.
+    from core.connector_verification import EVIDENCE_CLASS_AUTH  # noqa: PLC0415
+
+    path = _declared_auth_path(connector_name)
+    if path == _AUTH_PATH_NONE:
+        # A real answer, not an unknown: nothing to configure, so nothing missing.
+        return True, EVIDENCE_CLASS_AUTH, ""
+    if path == _AUTH_PATH_GOOGLE_DIRECT:
+        from core.google_oauth import load_client_config  # noqa: PLC0415
+
+        try:
+            load_client_config()
+        except Exception:  # noqa: BLE001 -- the config names its own missing vars
+            return False, EVIDENCE_CLASS_AUTH, _CAUSE_NOT_CONFIGURED
+        return True, EVIDENCE_CLASS_AUTH, ""
+    if path == _AUTH_PATH_NANGO or path in _LEGACY_SCALARS_ON_NANGO:
+        from core.nango_client import NANGO_SECRET_KEY_ENV  # noqa: PLC0415
+
+        configured = bool(os.environ.get(NANGO_SECRET_KEY_ENV, "").strip())
+        return configured, EVIDENCE_CLASS_AUTH, "" if configured else _CAUSE_NOT_CONFIGURED
+    # No readable path, or one this deployment does not implement. Fail closed:
+    # a connector whose authorization nobody can describe must not read READY.
+    return False, EVIDENCE_CLASS_AUTH, _CAUSE_NOT_CONFIGURED
+
+
 def _build_checks(
     connector_name: str,
     environment: str,
@@ -419,12 +563,17 @@ def _build_checks(
 
     Each callable is ``() -> (bool, str, str)`` -- (passed, evidence_class, reason).
 
-    This stub returns an empty list (always-pass: no checks configured). The
-    operator wires real checks by replacing this function at deploy time or in
-    integration tests. Keeping this stub empty means offline unit tests never
-    need a live adapter (AD-2: no provider vocabulary here).
+    IT RETURNED `[]` UNTIL 2026-08-17, and that is why no installation had ever
+    reached READY: the core reads an empty list as `not_configured`, writes no
+    evidence and advances no state. The stub said an operator would "wire real
+    checks by replacing this function at deploy time", which no deployment
+    mechanism in this repository can do -- replacing it means editing it.
+
+    ONE platform question, one check. See
+    :func:`_platform_authorization_is_configured` for what it does and does not
+    prove.
     """
-    return []
+    return [lambda: _platform_authorization_is_configured(connector_name)]
 
 
 def _build_delivery_runner(
@@ -435,12 +584,13 @@ def _build_delivery_runner(
 
     The runner exercises only the receipt-adapter authentication seam (auth-only;
     it MUST NOT write any durable receipt, quarantine, or import). The default
-    stub returns (True, 'no_runner_configured') -- a no-op pass.
+    stub returns a failed safe classification so missing wiring cannot produce
+    false verification evidence.
 
     Operators and integration tests replace this function to inject a real
     adapter seam runner (from server/inbound) without touching core (AD-2).
     """
-    return lambda: (True, "no_runner_configured")
+    return lambda: (False, "synthetic_verification_failed")
 
 
 # ---------------------------------------------------------------------------

@@ -42,7 +42,6 @@ import json
 import logging
 import os
 import re
-import uuid
 from datetime import datetime, timezone
 
 from starlette.applications import Starlette
@@ -63,17 +62,18 @@ _MANIFEST_FILENAME = "_manifest.json"
 
 #: Extracts the routing token from a ``ds_<token>@<domain>`` recipient. The
 #: recipient has already passed ``_RECIPIENT_RE`` when this is applied.
-_TOKEN_RE = re.compile(r"^ds_([A-Za-z0-9]{1,64})@")
+_TOKEN_RE = re.compile(r"^ds_([A-Za-z0-9_-]{32,128})@")
 
 # Recipient shape gate (AC "recipient must parse to a ds_<token> shape"). Token
 # RESOLUTION to an ENABLED Datastream is Story 38.8 — here we only validate the
 # lexical shape ``ds_<token>@<domain>``.
-_RECIPIENT_RE = re.compile(r"^ds_[A-Za-z0-9]{1,64}@[A-Za-z0-9.\-]{1,255}$")
+_RECIPIENT_RE = re.compile(r"^ds_[A-Za-z0-9_-]{32,128}@[A-Za-z0-9.\-]{1,255}$")
 
 # Constant-shape rejection body. IDENTICAL for every failure class so an attacker
 # cannot distinguish "unsigned" from "unknown recipient" from "oversize". No
 # existence disclosure, no secret, no capability.
 _FORBIDDEN_BODY = {"code": "forbidden", "message": "forbidden"}
+_INTERNAL_BODY = {"code": "internal", "message": "internal"}
 
 
 def _env_int(name: str, default: int) -> int:
@@ -134,201 +134,465 @@ def _sha256_hex(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def _resolve_org_id(conn, *, datastream_id: str) -> str:
+    """Resolve the organization before deriving any quarantine object key."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT d.org_id FROM app.datastreams d WHERE d.id = %s",
+            (datastream_id,),
+        )
+        row = cur.fetchone()
+    if row is None or not row[0]:
+        raise ValueError("datastream organization is unresolved")
+    return str(row[0])
+
+
+def _retention_days() -> int:
+    """Return the versioned quarantine retention duration (default 30 days)."""
+    days = _env_int("INBOUND_QUARANTINE_RETENTION_DAYS", 30)
+    if days < 1 or days > 3650:
+        raise ValueError("INBOUND_QUARANTINE_RETENTION_DAYS must be in 1..3650")
+    return days
+
+
+def _internal() -> JSONResponse:
+    """Generic retryable failure with no tenant, credential or storage detail."""
+    return JSONResponse(_INTERNAL_BODY, status_code=500)
+
+
+def _presented_capability(recipient: str, *, channel: str) -> str | None:
+    """Extract the capability while accepting webhook tokens without an address."""
+    address_match = _TOKEN_RE.match(recipient)
+    if address_match is not None and _RECIPIENT_RE.fullmatch(recipient):
+        return address_match.group(1)
+    if channel == "webhook" and re.fullmatch(r"[A-Za-z0-9_-]{32,128}", recipient):
+        return recipient
+    return None
+
+
 async def _handle(request: Request, *, channel: str) -> Response:
-    """Shared receipt path for both the email and file routes.
-
-    ``channel`` is bound per route ("email" for the email route, "webhook" for
-    the file route) and recorded verbatim in the manifest; it is opaque declared
-    data, never provider vocabulary.
-    """
+    """Authenticate, authorize, durably record, then acknowledge one delivery."""
     limits = _limits()
-
-    # (3a) Header-size bound — cheap, do it before touching the body.
     if _header_bytes(request) > limits["max_header_bytes"]:
         return _forbidden()
-
-    # (3b) Body-size bound — reject declared-oversize before reading the body.
     declared = _content_length(request)
     if declared is not None and declared > limits["max_body_bytes"]:
         return _forbidden()
-
-    # Read the body with a hard cap even if Content-Length lied/absent, then
-    # cache it on the request so the subsequent form parse re-reads it (Starlette
-    # streams from ``request._body`` once set — a manual stream() alone would
-    # exhaust the body before ``form()`` could see it).
     body = b""
     async for chunk in request.stream():
         body += chunk
         if len(body) > limits["max_body_bytes"]:
             return _forbidden()
-    request._body = body  # noqa: SLF001 — cache the bounded body for form()
+    request._body = body  # noqa: SLF001 - cache bounded body for form()
 
-    # Parse the form defensively, with field/file caps so an unauthenticated
-    # body cannot make the multipart parser do unbounded work. A malformed or
-    # over-cap body is a forbidden-shape request. Attachment BYTES are retained
-    # ONLY when a quarantine backend is configured (bounded by max_body_bytes,
-    # already enforced above); otherwise we keep the 38.1 metadata-only parse.
-    retain_bytes = _quarantine_enabled()
+    if not _quarantine_enabled():
+        logger.error("inbound: durable quarantine backend is not configured")
+        return _internal()
     try:
         form = await _parse_form(
-            request,
-            max_files=limits["max_attachments"] + 50,
-            max_fields=200,
-            retain_bytes=retain_bytes,
+            request, max_files=limits["max_attachments"] + 50,
+            max_fields=200, retain_bytes=True,
         )
-    except Exception:  # noqa: BLE001 — any parse failure is a constant-shape 403
+    except Exception:  # noqa: BLE001
         return _forbidden()
-
-    # (1) select adapter (deploy-time config). An unknown provider is an operator
-    # misconfiguration, not a client-shaped condition -> 500, not a 403 (and we
-    # do NOT echo the provider name to the client).
-    provider = os.environ.get("INBOUND_PROVIDER") or "mailgun"
     try:
-        adapter = get_adapter(provider)
+        adapter = get_adapter(os.environ.get("INBOUND_PROVIDER") or "mailgun")
     except ValueError:
         logger.error("inbound: unknown INBOUND_PROVIDER configured")
-        return JSONResponse(
-            {"code": "misconfigured", "message": "receipt runtime misconfigured"},
-            status_code=500,
-        )
-
-    signing_secret = os.environ.get("INBOUND_SIGNING_SECRET", "")
-
+        return _internal()
     receipt_request = ReceiptRequest(
         headers={k.lower(): v for k, v in request.headers.items()},
-        form=form["fields"],
-        files=form["files"],
-        signing_secret=signing_secret,
+        form=form["fields"], files=form["files"],
+        signing_secret=os.environ.get("INBOUND_SIGNING_SECRET", ""),
     )
-
-    # (2) verify signature/replay before trusting anything in the body. Any
-    # verifier error (e.g. a malformed attacker signature) must fail closed with
-    # the constant-shape 403 — never propagate into a distinguishable 500.
     try:
         delivery = adapter.verify(receipt_request)
-    except Exception:  # noqa: BLE001 — verifier failure must not leak or 500
+    except Exception:  # noqa: BLE001
         return _forbidden()
-    if delivery is None:
+    if delivery is None or len(delivery.attachments_meta) > limits["max_attachments"]:
         return _forbidden()
-
-    # (3c) attachment-count bound.
-    if len(delivery.attachments_meta) > limits["max_attachments"]:
-        return _forbidden()
-
-    # (4) recipient must parse to the ds_<token> shape (resolution is 38.8).
-    if not delivery.recipient or not _RECIPIENT_RE.match(delivery.recipient):
+    raw_capability = _presented_capability(delivery.recipient or "", channel=channel)
+    if raw_capability is None:
         return _forbidden()
 
-    # Verified + bounded + well-shaped -> accept.
-    correlation_id = f"inbrx_{uuid.uuid4().hex}"
-
-    # Durable write (gated). Only past this point -- i.e. AFTER signature
-    # verification -- do we ever trust or persist body bytes. When no quarantine
-    # backend is configured we skip it entirely (unchanged 38.1 behaviour).
-    if retain_bytes:
-        write_error = _write_to_quarantine(
-            delivery=delivery,
-            channel=channel,
-            attachments=form["files"],
-            correlation_id=correlation_id,
-        )
-        if write_error is not None:
-            # A storage failure AFTER a valid delivery is a SERVER condition, not
-            # a client-shaped one: return a generic 500 (lets the provider retry)
-            # rather than the constant-shape 403. Never leak token/recipient or
-            # any internal detail -- log only the correlation id.
-            logger.error(
-                "inbound: quarantine write failed correlation_id=%s",
-                correlation_id,
-            )
-            return JSONResponse(
-                {"code": "internal", "message": "internal"},
-                status_code=500,
-            )
-
-    logger.info(
-        "inbound: accepted delivery correlation_id=%s provider_event_id=%s",
-        correlation_id,
-        delivery.provider_event_id,
+    from core.db import get_connection  # noqa: PLC0415
+    from core.inbound_credentials import resolve_for_delivery  # noqa: PLC0415
+    from core.inbound_raw_imports import (  # noqa: PLC0415
+        list_raw_imports_for_receipt,
+        record_raw_import,
     )
+    from core.inbound_receipts import (  # noqa: PLC0415
+        InboundReceiptFingerprintMismatch,
+        assert_provider_event_fingerprint,
+        canonical_receipt_fingerprint,
+        get_receipt_by_provider_event,
+        hash_recipient,
+        record_receipt,
+    )
+    from core.operations import OperationIdempotencyConflict  # noqa: PLC0415
+
+    token_hash = _sha256_hex(raw_capability)
+    recipient_hash = hash_recipient(delivery.recipient)
+    fingerprint_attachments = []
+    for ordinal, attachment in enumerate(form["files"]):
+        data = attachment.get("data")
+        if not isinstance(data, bytes):
+            return _internal()
+        fingerprint_attachments.append({
+            "ordinal": ordinal,
+            "filename": attachment.get("name") or "attachment",
+            "content_type": attachment.get("content_type"),
+            "size": len(data),
+            "content_sha256": hashlib.sha256(data).hexdigest(),
+        })
+
+    try:
+        with get_connection() as conn:
+            try:
+                resolution = resolve_for_delivery(conn, raw_token=raw_capability)
+                raw_capability = ""
+                scope = resolution.get("scope") or {}
+                if not resolution.get("allowed") or scope.get("channel") != channel:
+                    conn.commit()
+                    return _forbidden()
+                datastream_id = str(scope["datastream_id"])
+                credential_id = str(scope["credential_id"])
+                org_id = _resolve_org_id(conn, datastream_id=datastream_id)
+                receipt_fingerprint = canonical_receipt_fingerprint(
+                    datastream_id=datastream_id, credential_id=credential_id,
+                    channel=channel, recipient_hash=recipient_hash,
+                    attachments=fingerprint_attachments,
+                )
+                assert_provider_event_fingerprint(
+                    conn, datastream_id=datastream_id,
+                    provider_event_id=delivery.provider_event_id,
+                    receipt_fingerprint=receipt_fingerprint,
+                )
+                configured_retention_days = _retention_days()
+                existing_receipt = get_receipt_by_provider_event(
+                    conn, datastream_id=datastream_id,
+                    provider_event_id=delivery.provider_event_id,
+                )
+                trace_id = hashlib.sha256(
+                    delivery.provider_event_id.encode("utf-8")
+                ).hexdigest()[:32]
+                if existing_receipt is not None:
+                    existing_raws = list_raw_imports_for_receipt(
+                        conn, receipt_id=existing_receipt["receipt_id"],
+                        datastream_id=datastream_id,
+                    )
+                    staged, retention_days = _stage_existing_replay(
+                        org_id=org_id, datastream_id=datastream_id,
+                        receipt_fingerprint=receipt_fingerprint,
+                        provider_reference_hash=_sha256_hex(
+                            delivery.provider_event_id
+                        ),
+                        fingerprint_attachments=fingerprint_attachments,
+                        existing_raws=existing_raws,
+                    )
+                    receipt = {
+                        **existing_receipt, "operation_outcome": "replayed"
+                    }
+                else:
+                    retention_days = configured_retention_days
+                    staged = _stage_quarantine(
+                        delivery=delivery, org_id=org_id,
+                        datastream_id=datastream_id,
+                        receipt_fingerprint=receipt_fingerprint,
+                        provider_reference_hash=_sha256_hex(
+                            delivery.provider_event_id
+                        ),
+                        attachments=form["files"],
+                        fingerprint_attachments=fingerprint_attachments,
+                        retention_days=retention_days,
+                    )
+                    quarantine_uri = (
+                        staged["attachments"][0]["quarantine_uri"]
+                        if staged["attachments"] else None
+                    )
+                    total_bytes = sum(
+                        item["size"] for item in staged["attachments"]
+                    )
+                    receipt = record_receipt(
+                        conn, datastream_id=datastream_id,
+                        credential_id=credential_id, channel=channel,
+                        provider_event_id=delivery.provider_event_id,
+                        recipient_hash=recipient_hash,
+                        receipt_fingerprint=receipt_fingerprint,
+                        attachment_count=len(staged["attachments"]),
+                        total_bytes=total_bytes, quarantine_uri=quarantine_uri,
+                        actor="inbound-receipt", host_context={},
+                        trace_id=trace_id,
+                        idempotency_key=(
+                            f"receipt:{datastream_id}:"
+                            f"{delivery.provider_event_id}"
+                        ),
+                    )
+                    for attachment in staged["attachments"]:
+                        record_raw_import(
+                            conn, receipt_id=receipt["receipt_id"],
+                            datastream_id=datastream_id,
+                            ordinal=attachment["ordinal"],
+                            size_bytes=attachment["size"],
+                            content_hash=attachment["content_sha256"],
+                            filename=attachment["filename"],
+                            media_type_declared=attachment.get("content_type"),
+                            quarantine_uri=attachment["quarantine_uri"],
+                            retention_policy_version=(
+                                "quarantine-retention-v1"
+                            ),
+                            retention_days=retention_days,
+                            actor="inbound-receipt", host_context={},
+                            trace_id=trace_id,
+                            idempotency_key=(
+                                f"raw-import:{receipt['receipt_id']}:"
+                                f"{attachment['ordinal']}"
+                            ),
+                        )
+                quarantine_uri = (
+                    staged["attachments"][0]["quarantine_uri"]
+                    if staged["attachments"] else None
+                )
+                # HTTP 202 is impossible until receipt and attachment evidence
+                # exist durably. An exact replay reuses that evidence unchanged.
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+    except (InboundReceiptFingerprintMismatch, OperationIdempotencyConflict):
+        return _forbidden()
+    except Exception:  # noqa: BLE001
+        logger.exception("inbound: durable receipt failed")
+        return _internal()
+
+    manifest_error = _publish_manifest(
+        staged=staged, delivery=delivery, channel=channel,
+        token_hash=token_hash, recipient_hash=recipient_hash,
+        receipt=receipt, receipt_fingerprint=receipt_fingerprint,
+        quarantine_uri=quarantine_uri,
+    )
+    if manifest_error is not None:
+        logger.error(
+            "inbound: manifest publication failed receipt_id=%s error_type=%s",
+            receipt["receipt_id"],
+            type(manifest_error).__name__,
+        )
+        return _internal()
+    logger.info("inbound: accepted durable receipt receipt_id=%s", receipt["receipt_id"])
     return JSONResponse(
-        {"status": "accepted", "correlation_id": correlation_id},
+        {"status": "accepted", "receipt_id": receipt["receipt_id"],
+         "outcome": receipt.get("operation_outcome") or "succeeded"},
         status_code=202,
     )
 
 
-def _write_to_quarantine(
+def _stage_quarantine(
     *,
-    delivery,  # noqa: ANN001 — InboundDelivery (no import needed here)
-    channel: str,
+    delivery,  # noqa: ANN001
+    org_id: str,
+    datastream_id: str,
+    receipt_fingerprint: str,
+    provider_reference_hash: str,
     attachments: list[dict],
-    correlation_id: str,
-) -> Exception | None:
-    """Write attachment bytes + a manifest to the quarantine store.
+    fingerprint_attachments: list[dict],
+    retention_days: int,
+) -> dict:
+    """Create immutable replay-safe attachments without the trigger marker."""
+    from core.inbound_quarantine import (  # noqa: PLC0415
+        content_scope_partition,
+        open_quarantine_store,
+    )
 
-    Returns ``None`` on success, or the caught exception on any failure (the
-    caller maps a non-None result to a generic 500). The raw routing token and
-    the raw recipient address are NEVER written -- only their sha256 hashes. The
-    manifest schema is fixed and consumed verbatim by ``core.inbound_processing``.
-    """
-    from core.inbound_quarantine import open_quarantine_store  # noqa: PLC0415
-
-    try:
-        # Extract the routing token from ds_<token>@<domain>. The recipient has
-        # already matched _RECIPIENT_RE, so this match is expected to succeed.
-        match = _TOKEN_RE.match(delivery.recipient or "")
-        if match is None:
-            # Defensive: treat an unexpected shape as a server condition rather
-            # than persisting an un-partitionable delivery.
-            return ValueError("recipient did not yield a routing token")
-        token = match.group(1)
-        token_hash = _sha256_hex(token)
-        recipient_hash = _sha256_hex(delivery.recipient)
-
-        store = open_quarantine_store()
-        message_id = delivery.provider_event_id
-
-        manifest_attachments: list[dict] = []
-        for att in attachments:
-            filename = att.get("name") or att.get("filename") or "attachment"
-            content_type = att.get("content_type")
-            data = att.get("data")
-            if data is None:
-                # Bytes must have been retained for a durable write.
-                return ValueError("attachment bytes missing for quarantine write")
-            obj = store.put(
-                partition=token_hash,
-                message_id=message_id,
-                filename=filename,
-                data=data,
-                content_type=content_type,
-            )
-            manifest_attachments.append(
-                {
-                    "filename": filename,
-                    "quarantine_uri": obj.uri,
-                    "size": obj.size,
-                    "content_type": content_type,
-                }
-            )
-
-        manifest = {
-            "schema": _MANIFEST_SCHEMA,
-            "provider_event_id": delivery.provider_event_id,
-            "channel": channel,
-            "token_hash": token_hash,
-            "recipient_hash": recipient_hash,
-            "received_at": datetime.now(timezone.utc).isoformat(),
-            "attachments": manifest_attachments,
+    store = open_quarantine_store()
+    partition = content_scope_partition(org_id=org_id, datastream_id=datastream_id)
+    manifest_attachments: list[dict] = []
+    for ordinal, (attachment, evidence) in enumerate(
+        zip(attachments, fingerprint_attachments, strict=True)
+    ):
+        data = attachment.get("data")
+        if not isinstance(data, bytes):
+            raise ValueError("attachment bytes missing for quarantine write")
+        filename = str(attachment.get("name") or "attachment")
+        content_sha256 = evidence["content_sha256"]
+        # Full content SHA-256 is the address; organization and Datastream are
+        # explicit ancestors. Ordinal keeps two identical attachments distinct
+        # while still grouping them below the same content identity.
+        object_name = f"{provider_reference_hash}-{ordinal:04d}"
+        metadata = {
+            "receipt_fingerprint": receipt_fingerprint,
+            "receipt_reference": receipt_fingerprint,
+            "attachment_ordinal": str(ordinal),
+            "media_type": str(attachment.get("content_type") or "application/octet-stream"),
+            "size_bytes": str(len(data)),
+            "content_sha256": content_sha256,
+            "provider_reference_sha256": provider_reference_hash,
+            "retention_days": str(retention_days),
+            "legal_hold": "false",
         }
-        store.put(
-            partition=token_hash,
-            message_id=message_id,
-            filename=_MANIFEST_FILENAME,
-            data=json.dumps(manifest).encode("utf-8"),
-            content_type="application/json",
+        obj = store.put(
+            partition=partition,
+            message_id=content_sha256,
+            filename=object_name,
+            data=data,
+            content_type=attachment.get("content_type"),
+            metadata=metadata,
         )
-    except Exception as exc:  # noqa: BLE001 — any storage failure -> generic 500
+        manifest_attachments.append({
+            "ordinal": ordinal,
+            "filename": filename,
+            "quarantine_uri": obj.uri,
+            "size": obj.size,
+            "content_type": attachment.get("content_type"),
+            "content_sha256": content_sha256,
+        })
+    return {
+        "store": store,
+        "partition": partition,
+        "message_id": (
+            "manifest-"
+            + _sha256_hex(f"{receipt_fingerprint}:{provider_reference_hash}")
+        ),
+        "retention_policy": {
+            "version": "quarantine-retention-v1", "days": retention_days,
+        },
+        "attachments": manifest_attachments,
+    }
+
+
+def _stage_existing_replay(
+    *,
+    org_id: str,
+    datastream_id: str,
+    receipt_fingerprint: str,
+    provider_reference_hash: str,
+    fingerprint_attachments: list[dict],
+    existing_raws: list[dict],
+) -> tuple[dict, int]:
+    """Reload immutable evidence for an exact event replay.
+
+    This deliberately ignores current deployment retention configuration: the
+    original operation policy is immutable and must be replayed byte-for-byte.
+    """
+    from core.inbound_quarantine import (  # noqa: PLC0415
+        content_scope_partition,
+        open_quarantine_store,
+    )
+
+    if len(existing_raws) != len(fingerprint_attachments):
+        raise ValueError("receipt replay attachment evidence is incomplete")
+    attachments: list[dict] = []
+    policy_pairs: set[tuple[str, int]] = set()
+    for ordinal, (raw, expected) in enumerate(
+        zip(existing_raws, fingerprint_attachments, strict=True)
+    ):
+        actual = (
+            raw.get("ordinal"), raw.get("filename"),
+            raw.get("media_type_declared"), raw.get("size_bytes"),
+            raw.get("content_hash"),
+        )
+        wanted = (
+            ordinal, expected["filename"], expected.get("content_type"),
+            expected["size"], expected["content_sha256"],
+        )
+        if actual != wanted or not raw.get("quarantine_uri"):
+            raise ValueError("receipt replay immutable attachment evidence differs")
+        version = raw.get("retention_policy_version")
+        days = raw.get("retention_days")
+        if version != "quarantine-retention-v1" or not isinstance(days, int):
+            raise ValueError("receipt replay retention evidence is incomplete")
+        policy_pairs.add((version, days))
+        attachments.append({
+            "ordinal": ordinal, "filename": raw["filename"],
+            "quarantine_uri": raw["quarantine_uri"],
+            "size": raw["size_bytes"],
+            "content_type": raw.get("media_type_declared"),
+            "content_sha256": raw["content_hash"],
+        })
+    if len(policy_pairs) != 1:
+        raise ValueError("receipt replay retention policy is inconsistent")
+    version, retention_days = next(iter(policy_pairs))
+    return ({
+        "store": open_quarantine_store(),
+        "partition": content_scope_partition(
+            org_id=org_id, datastream_id=datastream_id
+        ),
+        "message_id": (
+            "manifest-"
+            + _sha256_hex(f"{receipt_fingerprint}:{provider_reference_hash}")
+        ),
+        "retention_policy": {"version": version, "days": retention_days},
+        "attachments": attachments,
+    }, retention_days)
+
+
+def _sender_digests(address: str) -> dict:
+    """``{sender_hash, sender_domain_hash}`` for a signed delivery, or ``{}``.
+
+    Hashing happens HERE, in the internet-facing process, so the raw address
+    never reaches durable storage. The declared allowlist is compared against
+    these digests at processing (``core.inbound_sender_policy``); this process
+    holds no database and makes no allow/deny decision of its own -- its answer
+    stays the constant 403.
+    """
+    normalized = (address or "").strip().lower()
+    if not normalized or "@" not in normalized:
+        return {}
+    domain = normalized.rsplit("@", 1)[1]
+    if not domain:
+        return {}
+    return {
+        "sender_hash": _sha256_hex(normalized),
+        "sender_domain_hash": _sha256_hex(domain),
+    }
+
+
+def _publish_manifest(
+    *,
+    staged: dict,
+    delivery,  # noqa: ANN001
+    channel: str,
+    token_hash: str,
+    recipient_hash: str,
+    receipt: dict,
+    receipt_fingerprint: str,
+    quarantine_uri: str | None,
+) -> Exception | None:
+    """Publish the reserved marker only after the receipt transaction commits."""
+    # THE SENDER TRAVELS HASHED, never raw -- the same rule this module already
+    # applies to the routing token and the recipient address. Two digests rather
+    # than one so a Datastream can allow a whole domain without any address being
+    # written down. Both are absent for a transport that carries no sender (a
+    # webhook), and a manifest written before story 57.3 simply has neither.
+    sender_digests = _sender_digests(getattr(delivery, "sender", ""))
+    manifest = {
+        "schema": _MANIFEST_SCHEMA,
+        "receipt_id": receipt["receipt_id"],
+        "receipt_fingerprint": receipt_fingerprint,
+        "provider_event_id": delivery.provider_event_id,
+        "channel": channel,
+        "token_hash": token_hash,
+        "recipient_hash": recipient_hash,
+        **sender_digests,
+        "received_at": receipt.get("created_at")
+        or datetime.now(timezone.utc).isoformat(),
+        "quarantine_uri": quarantine_uri,
+        "retention_policy": staged["retention_policy"],
+        "attachments": staged["attachments"],
+    }
+    try:
+        staged["store"].put(
+            partition=staged["partition"],
+            message_id=staged["message_id"],
+            filename=_MANIFEST_FILENAME,
+            data=json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+            content_type="application/json",
+            metadata={
+                "receipt_id": str(receipt["receipt_id"]),
+                "receipt_fingerprint": receipt_fingerprint,
+                "provider_reference_sha256": _sha256_hex(delivery.provider_event_id),
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
         return exc
     return None
 

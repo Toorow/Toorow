@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      AD-11: no external font or asset URL. @toorow/shell inlines the type faces;
+      the CI bundle gate fails the build on any http(s) reference. There is no
+      nested iframe and no third-party app embedded here (AC10).
+    -->
+    <title>Capability impact</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

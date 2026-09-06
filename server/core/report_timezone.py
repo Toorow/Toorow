@@ -52,13 +52,15 @@ Design mirrors ``server/core/money.py`` (stateless, zero-provider-name core help
 functions kept separate from I/O so the fail-closed invariant is testable offline without a
 warehouse or a network call).
 
-Windows/CI note: all message strings use ASCII-safe characters only (except the French user
-message body, which is UTF-8 like the CURRENCY_GAP message it mirrors).
+Windows/CI note: all message strings are ASCII-safe. The user-facing body used to be
+French, mirroring CURRENCY_GAP; Story 48.3 AC11 made English the rule for every string
+that reaches a screen, and this one does.
 """
 
 from __future__ import annotations
 
 import logging
+from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -94,6 +96,38 @@ TIMEZONE_GAP_CODE = "TIMEZONE_GAP"
 # date-grain field trips the gap), and this tuple is the DOCUMENTED SEAM for the read layer
 # to surface the per-stream report_timezone provenance captured here.
 _TIMEZONE_PROVENANCE_KEYS = ("report_timezone", "reporting_timezone", "source_timezone")
+
+#: THE key a ``pull()`` result returns its OBSERVED report timezone under (AI-161).
+#:
+#: 39.7 declared the capture contract and connectors honoured half of it: they resolve the
+#: zone and bury it in the landed row. The pull result carried ``{pull_id, row_count,
+#: date_from, date_to}`` and nothing else, so the worker -- the only place that knows the
+#: datastream, the project and that the run SUCCEEDED -- could not record what the pull
+#: observed. ``time_boundary.record_boundary_evidence`` therefore had zero callers while
+#: ``capability_compilers`` read the table it fills, and told the operator "Run this
+#: Datastream so its publication records the source day boundary". They could run it
+#: forever.
+#:
+#: The zone is per-DATASTREAM, not per-row: every figure in one pull is drawn on the same
+#: day boundary (that is why 39.7 put the declaration at descriptor level). So the pull
+#: returns ONE zone, resolved through ``resolve_capture``, or None when it observed none --
+#: and None is a RESULT, recorded as such, never a silence.
+PULL_RESULT_TIMEZONE_KEY = "report_timezone"
+
+
+def observed_zone_from_pull(result: Any) -> str | None:
+    """Read the observed report timezone a ``pull()`` returned, or None (PURE, AI-161).
+
+    Fail-closed like every other read here: a blank string, a non-string, a missing key or
+    a non-dict result all mean "this pull observed no zone", never a fabricated default.
+    Validation is deliberately NOT done here -- ``record_boundary_evidence`` canonicalises,
+    and a zone that fails canonicalisation must be recorded as the gap it is rather than
+    dropped on the floor by the reader.
+    """
+    if not isinstance(result, dict):
+        return None
+    value = result.get(PULL_RESULT_TIMEZONE_KEY)
+    return value.strip() if isinstance(value, str) and value.strip() else None
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +301,180 @@ def declared_zone(declared: dict | None) -> str | None:
     return None
 
 
+#: Loci whose zone is a SETTING at the source, hence changeable there. Heuristic shipped
+#: by story 48.3 (``capability_compilers._lever``), kept here as the fallback. It is wider
+#: than epic 39's wording ("dimension filters (rare)") and that is deliberate: the question
+#: put to the user is "can I act at the source?", and a network's or a property's zone is
+#: indeed changed at the source.
+_LEVER_LOCI = frozenset({LOCUS_NETWORK, LOCUS_PROPERTY, LOCUS_ACCOUNT})
+
+_LEVER_LOCUS_HINT = "The source exposes a reporting-timezone setting; change it at the source."
+_LEVER_NONE_HINT = "This source is fixed on its detected boundary; no adjustment lever exists."
+
+
+def resolve_lever(declaration: dict | None, observed: Any = None) -> dict:
+    """THE adjustment-lever resolution -- one, for the whole product (AI-132).
+
+    THERE WERE TWO, AND THEY CONTRADICTED EACH OTHER. ``capability_compilers._lever``
+    (shipped under 48.3) derived the lever from the locus; a second resolution added later
+    for the day-offset signal required an explicit declaration. On a declaration carrying
+    ``locus='network'`` the capability screen said "a lever exists" while the mapping signal
+    said "no lever available" -- the same product, two opposite answers about the same
+    source. Two producers, one of them wrong, is worse than none: nobody knows which to
+    believe.
+
+    Precedence, strongest first:
+
+    1. **what a run OBSERVED** (``observed.adjustment_lever``) -- a declared lever no run
+       ever exercised is a promise, not a lever;
+    2. **an EXPLICIT declaration** (``time_context.adjustment_lever``) -- strictly more
+       specific than the heuristic, so it wins over it. It is the only way to state "this
+       source exposes a setting in its dimension filters", the rare case epic 39 describes,
+       and equally the only way to say NO where the locus would wrongly say yes;
+    3. **the locus** (``network``/``property``/``account``) -- 48.3's fallback;
+    4. otherwise: no lever, which is a SENTENCE and not a silence.
+
+    Returns 48.3's shape (``{available, locus, origin, hint}``): that is what the capability
+    screen already renders, and changing a shipped shape to unify two paths would make the
+    screen -- which was correct -- pay for the merge.
+    """
+    locus = (declaration or {}).get("locus") if isinstance(declaration, dict) else None
+
+    observed_lever = getattr(observed, "adjustment_lever", None) if observed is not None else None
+    if observed_lever:
+        lever = dict(observed_lever)
+        if lever.get("available") is not None:
+            lever.setdefault("origin", "observed")
+            lever.setdefault("locus", locus)
+            return lever
+
+    declared = lever_from_declaration(declaration)
+    if declared["has_lever"]:
+        return {
+            "available": True,
+            "locus": locus,
+            "origin": "declaration",
+            "hint": declared["lever_hint"],
+        }
+    # An explicit declaration that says NO also decides: it is more specific than the locus,
+    # and ignoring it would make it impossible to contradict the heuristic.
+    if _declares_lever_explicitly(declaration):
+        return {"available": False, "locus": locus, "origin": "declaration",
+                "hint": _LEVER_NONE_HINT}
+
+    if locus in _LEVER_LOCI:
+        return {"available": True, "locus": locus, "origin": "declaration",
+                "hint": _LEVER_LOCUS_HINT}
+    return {
+        "available": False,
+        "locus": locus,
+        "origin": "declaration" if declaration else "none",
+        "hint": _LEVER_NONE_HINT,
+    }
+
+
+def _declares_lever_explicitly(declared: dict | None) -> bool:
+    """True when the connector took a position on the lever, whichever way it answered."""
+    if not isinstance(declared, dict):
+        return False
+    lever = declared.get("adjustment_lever")
+    return isinstance(lever, dict) and lever.get("available") is not None
+
+
+def signal_lever(declaration: dict | None, observed: Any = None) -> dict:
+    """The same resolution, in the shape the signal engine expects.
+
+    ``{has_lever, lever_hint}``. An available lever with NO hint is reported as absent:
+    pointing someone at "somewhere in the source" is worse than saying nothing, and the pure
+    engine already takes that posture.
+    """
+    lever = resolve_lever(declaration, observed)
+    hint = lever.get("hint")
+    if lever.get("available") is not True or not isinstance(hint, str) or not hint.strip():
+        return {"has_lever": False, "lever_hint": None}
+    return {"has_lever": True, "lever_hint": hint.strip()}
+
+
+def lever_from_declaration(declared: dict | None) -> dict:
+    """Return the source's ADJUSTMENT-LEVER posture from its declaration (PURE) -- AI-132.
+
+    Answers the ratified question *"can the user act at the source?"*
+    (`capabilities/reporting-timezone.md`: « the user cannot tell whether the source offers an
+    adjustment lever »). The epic is precise about what a lever IS, and it is narrow: *"a few
+    platforms expose a report-timezone setting in their dimension filters (rare); when present,
+    the user is pointed to it to act at the source; when absent, the datastream is reported as
+    'fixed on the detected timezone, no lever available'"*
+    (`epic-39-shared-money-and-timezone-modules.md:191-193`).
+
+    So a lever is NOT derivable from the locus. `locus='property'` means the zone is read from
+    property metadata -- it says nothing about whether a report query can override it. Deriving
+    one from the other would have been inventing a product fact, which is why it is DECLARED::
+
+        "time_context": {
+          "locus": "network",
+          "fallback": "gap",
+          "adjustment_lever": {"available": true, "hint": "..."}
+        }
+
+    A lever declared WITHOUT a hint is reported as absent: pointing a user at "somewhere in the
+    source" is worse than saying there is nothing to point at. Same posture the pure engine
+    already takes (`timezone_signal.py`), applied one step earlier so both agree.
+
+    AD-2 holds for CORE, not for a connector describing its OWN provider: this function never
+    names a provider; the hint is authored by the connector that owns that provider.
+
+    Returns ``{"has_lever": bool, "lever_hint": str | None}`` -- never None, so a caller can
+    always state a posture. No declaration => no lever, which is a STATEMENT ("fixed on the
+    detected timezone, no lever available"), not a silence.
+    """
+    absent = {"has_lever": False, "lever_hint": None}
+    if not isinstance(declared, dict):
+        return absent
+    lever = declared.get("adjustment_lever")
+    if not isinstance(lever, dict) or lever.get("available") is not True:
+        return absent
+    hint = lever.get("hint")
+    if not isinstance(hint, str) or not hint.strip():
+        # Declared but unusable: an "available" lever nobody can find is not a lever.
+        return absent
+    return {"has_lever": True, "lever_hint": hint.strip()}
+
+
+def lever_for_module(module_name: str | None) -> dict:
+    """Resolve a module's adjustment-lever posture from its manifest (fail-soft) -- AI-132.
+
+    Keyed on ``module_name`` and NOT on ``datastream_id`` on purpose: a used-by row already
+    carries the module (``datamodel``'s SELECT), and the day-offset signal resolves a posture
+    for EVERY stream it reports. Going through ``datastream_id`` would mean one DB round-trip
+    per stream to learn something the manifest already knows.
+
+    FAIL-SOFT, like ``report_timezone_for_datastream``: any registry/loader problem yields the
+    absent posture rather than a crash -- an unknown lever reads as no lever, never as one.
+    """
+    if not isinstance(module_name, str) or not module_name.strip():
+        return {"has_lever": False, "lever_hint": None}
+    try:
+        from core.main import _loaded_modules  # noqa: PLC0415
+
+        manifest = next(
+            (m.manifest for m in _loaded_modules
+             if getattr(m, "name", None) == module_name.strip()),
+            None,
+        )
+        if not isinstance(manifest, dict):
+            return {"has_lever": False, "lever_hint": None}
+        caps = manifest.get("source_capabilities")
+        tc = caps.get("time_context") if isinstance(caps, dict) else None
+        # `signal_lever` et non `lever_from_declaration` : LA resolution unique, celle
+        # que l'ecran de capacite utilise aussi. Court-circuiter ici recreerait la
+        # contradiction que cette fusion supprime.
+        return signal_lever(tc)
+    except Exception as exc:  # noqa: BLE001 -- fail-soft, never crash the read path.
+        logger.warning("report_timezone: lever_for_module fell back to absent for %s: %s",
+                       module_name, exc)
+        return {"has_lever": False, "lever_hint": None}
+
+
 def report_timezone_for_datastream(datastream_id: str) -> str | None:
     """Return the resolvable report timezone for a datastream, or None (fail-soft accessor).
 
@@ -347,7 +555,7 @@ def timezone_gap(field: dict, used_by: list[dict]) -> dict | None:
     """Build the typed ``TIMEZONE_GAP`` conflict dict, or None when every stream carries a zone.
 
     Shape-aligned with ``datamodel.CURRENCY_GAP`` so ``conflict_resolutions.list_conflicts``
-    renders it without a new currency-resolution branch: ``code`` / ``message`` (French, like
+    renders it without a new currency-resolution branch: ``code`` / ``message`` (English, like
     the CURRENCY_GAP message) / ``affected_streams`` / ``severity='refusal'`` / ``metric`` /
     ``resolvable_via='source_timezone_declaration'``.
 
@@ -359,12 +567,12 @@ def timezone_gap(field: dict, used_by: list[dict]) -> dict | None:
     affected = [ub.get("datastream_name") or ub.get("module_name", "") for ub in used_by]
     return {
         "code": TIMEZONE_GAP_CODE,
+        # English: this string reaches a screen (Story 48.3 AC11).
         "message": (
-            "Aucun fuseau de reporting resolvable pour ce flux a grain journalier : "
-            "aucun flux ne declare le fuseau utilise par la source pour tracer ses "
-            "frontieres de journee. Fail-closed : un jour qu'on ne sait pas situer sur "
-            "un fuseau n'est ni aligne ni compare avec un autre flux tant que ce fuseau "
-            "n'est pas resolu (declarez le fuseau de reporting de la source par flux)."
+            "No reporting timezone resolves for this day-grain field: no feeding stream "
+            "states the clock its source used to draw day boundaries. Fail closed -- a day "
+            "that cannot be placed on a timezone is neither aligned nor compared with "
+            "another stream until it is. Record the source reporting timezone per stream."
         ),
         "affected_streams": affected,
         # --- shape-aligned with CURRENCY_GAP (datamodel) ---

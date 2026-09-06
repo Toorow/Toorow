@@ -23,13 +23,19 @@ DATE grain. It does exactly three things and only three things:
      the source; when no lever is declared, the stream is reported as "fixed on the detected
      timezone, no lever available" (the honest posture).
 
-NO FALSE POSITIVES (E39-NFR06): fewer than 2 DISTINCT KNOWN timezones -> ``None`` (no
-advisory). Single-timezone data, or data where all compared sources share one timezone, flags
-NOTHING. A stream whose ``report_timezone`` is unknown/None (Story 39.7's undetermined GAP) is
-EXCLUDED from the comparison here -- it never fabricates a UTC to force (or suppress) an offset
-(fail-closed, defer-to-39.7). This engine reads and reports; it never writes a figure, never
-mutates a date, never re-buckets -- so E39-NFR06 ("existing totals provably unchanged") holds
-BY CONSTRUCTION (this module opens no warehouse cursor and does no total math at all).
+NO FALSE POSITIVES (E39-NFR06): a single known timezone, with nothing unplaceable, flags
+NOTHING. This engine reads and reports; it never writes a figure, never mutates a date, never
+re-buckets -- so E39-NFR06 ("existing totals provably unchanged") holds BY CONSTRUCTION (this
+module opens no warehouse cursor and does no total math at all).
+
+STORY 48.3 CORRECTION. A stream whose ``report_timezone`` was unknown used to be EXCLUDED
+from the comparison, and the function returned ``None`` when fewer than two known zones
+remained. Two streams agreeing and three unplaceable therefore rendered as "no offset" -- an
+incomplete comparison presented as a healthy one, which is the Reporting Timezone criterion
+"cross-source daily reconciliation ignores different day boundaries" arriving through the back
+door. Unplaceable streams are now RETAINED in ``unplaced_streams`` and reported. It still
+never fabricates a UTC to force or suppress an offset: unknown stays unknown, it is simply
+visible now.
 
 STATELESS & SOURCE-AGNOSTIC (AD-2, E39-NFR05): this module contains ZERO provider/connector
 names and names NO provider field. Timezones arrive as captured provenance strings (generic
@@ -41,7 +47,7 @@ DETERMINISM: ``distinct_timezones`` is sorted; ``report_timezones`` is sorted by
 ``datastream`` then ``report_timezone``. No wall-clock, no randomness -- byte-identical output
 for identical input (tests + UI stability).
 
-Windows/CI note: all identifiers/labels use ASCII-safe characters; the FR user message body is
+Windows/CI note: all identifiers/labels use ASCII-safe characters; the user message body is
 UTF-8 like the CURRENCY_CONFLICT message it mirrors.
 """
 
@@ -50,6 +56,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from core import time_boundary as _tb
 
 logger = logging.getLogger(__name__)
 
@@ -113,26 +121,25 @@ def check_cross_source_day_offset(
 ) -> dict | None:
     """Return a typed ``TIMEZONE_DAY_OFFSET`` advisory dict, or None when no offset applies.
 
-    None (NO signal -- AC3, no false positive) when:
-      * fewer than 2 streams carry a KNOWN ``report_timezone`` (nothing to compare), OR
-      * every KNOWN ``report_timezone`` is identical (all sources share one timezone).
-    A stream whose ``report_timezone`` is UNKNOWN/None (Story 39.7's undetermined GAP) is
-    EXCLUDED from the comparison here -- its gap is 39.7's to surface; this engine never
-    fabricates a UTC to force a false offset (fail-closed, defer-to-39.7, E39-NFR02).
+    None (NO signal -- AC3, no false positive) ONLY when every stream carries a KNOWN
+    ``report_timezone`` and they are all identical. That is the single case in which the
+    comparison is both complete and aligned.
 
-    Advisory (returns a typed dict -- AC1) when:
-      * >= 2 DISTINCT known report timezones across the compared streams.
+    Advisory (returns a typed dict -- AC1) when EITHER:
+      * >= 2 DISTINCT known report timezones across the compared streams, OR
+      * at least one stream has no resolvable timezone (Story 48.3): an unplaceable stream is
+        exactly the one whose day might not line up, so hiding it is the defect.
     The payload carries per-stream tz + lever posture (AC2), the sorted distinct timezone set,
-    ``realignable: False`` (constant -- the amendment), ``severity: "advisory"``, and an honest
-    FR message naming the timezones. Deterministic: ``distinct_timezones`` and per-stream order
-    are SORTED; no wall-clock, no randomness.
+    ``unplaced_streams``, ``realignable: False`` (constant -- the amendment),
+    ``severity: "advisory"`` and an English message. Deterministic: ``distinct_timezones`` and
+    per-stream order are SORTED; no wall-clock, no randomness.
 
     Args:
         metric:  the canonical metric being compared (echoed into the payload), or None.
         streams: per-stream provenance dicts, each ``{datastream, report_timezone, has_lever?,
-                 lever_hint?}``. ``report_timezone`` None/blank => the stream is EXCLUDED
-                 (defer to 39.7's GAP). ``has_lever``/``lever_hint`` come from the caller's
-                 descriptor read (AD-2 -- this engine never names a provider).
+                 lever_hint?}``. ``report_timezone`` None/blank => the stream is reported in
+                 ``unplaced_streams`` rather than dropped. ``has_lever``/``lever_hint`` come
+                 from the caller's descriptor read (AD-2 -- this engine never names a provider).
 
     Returns:
         A typed ``TIMEZONE_DAY_OFFSET`` advisory dict, or None when the signal does not apply.
@@ -172,11 +179,23 @@ def check_cross_source_day_offset(
             }
         )
 
-    # 2. NO false positives (AC3, E39-NFR06): < 2 DISTINCT known timezones flags NOTHING.
-    #    Equality is on IANA NAME (not computed offset): two names sharing an offset seasonally
-    #    are still distinct provenance (B.2).
+    # 1b. Story 48.3: the excluded streams are RETAINED and reported.
+    #     Dropping them was the defect. With two known streams agreeing and three
+    #     unplaceable, this function used to return None -- "no offset" -- and an
+    #     incomplete comparison rendered as a healthy one. A stream that cannot be
+    #     placed on a clock is exactly the stream whose day might not line up.
+    unplaced = [
+        {"datastream": s.get("datastream"), "reason": "source_report_timezone_unknown"}
+        for s in streams
+        if isinstance(s, dict)
+        and not (isinstance(s.get("report_timezone"), str) and s["report_timezone"].strip())
+    ]
+
+    # 2. Equality is on IANA NAME (not computed offset): two names sharing an offset
+    #    seasonally are still distinct provenance (B.2). Fewer than 2 distinct known
+    #    zones AND nothing unplaceable is the one case that flags nothing.
     distinct = sorted({s["report_timezone"] for s in known})
-    if len(distinct) < 2:
+    if len(distinct) < 2 and not unplaced:
         return None
 
     # 3. Deterministic ordering of the per-stream payload (datastream, then timezone). None
@@ -191,26 +210,93 @@ def check_cross_source_day_offset(
     )
     affected_streams = [s["datastream"] for s in report_timezones]
 
-    # 4. Build the honest FR message naming the ACTUAL timezones + metric, and stating no
+    # 4. Build the honest message naming the ACTUAL timezones + metric, and stating no
     #    realignment is possible (the amendment). Deterministic (sorted distinct set).
-    tz_phrase = " vs ".join(_label_for(s) for s in _first_two_distinct(report_timezones))
-    metric_phrase = f" pour la metrique '{metric}'" if metric else ""
-    message = (
-        f"Ce champ{metric_phrase} est alimente par des flux dont le fuseau de reporting "
-        f"differe ({tz_phrase}). Les totaux journaliers peuvent etre legerement decales d'un "
-        "jour a la frontiere : une 'journee' n'est pas decoupee sur la meme horloge selon la "
-        "source. Aucune realignement n'est possible (grain = DATE, pas d'heure) -- c'est un "
-        "signal de provenance, pas une erreur de donnee."
+    #    English: this string reaches a screen, and Story 48.3 AC11 makes that the rule.
+    metric_phrase = f" for '{metric}'" if metric else ""
+    parts: list[str] = []
+    if len(distinct) > 1:
+        tz_phrase = " vs ".join(_label_for(s) for s in _first_two_distinct(report_timezones))
+        parts.append(
+            f"This field{metric_phrase} is fed by streams that draw their reporting day on "
+            f"different clocks ({tz_phrase}). Daily totals can be one day out at the boundary. "
+            "No realignment is possible -- the grain is DATE, there is no hour to re-slice -- "
+            "so this is a provenance signal, not a data error."
+        )
+    if unplaced:
+        parts.append(
+            f"{len(unplaced)} stream(s) have no resolvable reporting timezone, so their days "
+            "cannot be declared equivalent to any other stream's. They are listed rather than "
+            "excluded: an unplaceable stream is exactly the one whose day might not line up."
+        )
+
+    # AI-132: SAY the lever posture, do not merely carry it.
+    #
+    # `report_timezones[]` has carried `has_lever`/`lever_hint` since 39.8 and the message
+    # never mentioned them. But the mapping screen renders only `code`, `message` and
+    # `affected_streams`: the lever was travelling in a key nobody displays, so the
+    # criterion "the user cannot tell whether the source offers an adjustment lever"
+    # stayed true even once the flag had a producer.
+    #
+    # The ratified AC requires both faces: "the platform says the adjustment lever exists
+    # and points the user to act at the source; a source with no such lever is reported as
+    # 'fixed on the detected timezone, no lever available'". The absence of a lever is
+    # therefore a SENTENCE, not a silence -- without it, "nobody told me" and "there is
+    # nothing to do" read the same.
+    actionable = sorted(
+        (s for s in known if s["has_lever"]),
+        key=lambda s: (s["datastream"] is None, str(s["datastream"] or ""), s["report_timezone"]),
     )
+    if actionable:
+        for stream in actionable:
+            # Name the STREAM, not just its zone: the stream is what one opens at the
+            # source in order to act.
+            who = stream["datastream"] or _label_for(stream)
+            parts.append(
+                f"'{who}' reports in {_label_for(stream)} and that can be changed at the "
+                f"source: {stream['lever_hint']}"
+            )
+    if len(actionable) < len(known):
+        stuck = len(known) - len(actionable)
+        parts.append(
+            f"{stuck} stream(s) are fixed on the detected timezone, no lever available at the "
+            "source."
+        )
+
+    # AI-167. ONE code covered TWO different problems, and they are repaired by two
+    # different gestures. « These sources draw their day on different clocks » is
+    # settled by a policy decision; « we could not place this source on any clock »
+    # is settled by RUNNING the Datastream so its publication records one. The
+    # message already said which -- measured 2026-08-16, both cases read correctly
+    # -- but a message is prose, and a consumer that switches on `code` saw the
+    # same value for both and could offer only one gesture.
+    #
+    # The vocabulary is `core.time_boundary`'s, not a third one invented here.
+    # `compare_boundaries` was written to answer this exact question with a typed
+    # verdict and had no caller: rather than wire a second comparison beside the
+    # live one -- two engines answering one question, which is the shape this
+    # repository keeps paying for -- its REASON CODES become the typed half of
+    # the signal that is already wired. There is still one comparison.
+    reasons: list[str] = []
+    if len(distinct) > 1:
+        reasons.append(_tb.SIGNAL_BOUNDARY_DIFFERS)
+    if unplaced:
+        reasons.append(_tb.GAP_NO_SOURCE_ZONE)
 
     return {
         "code": SIGNAL_TIMEZONE_DAY_OFFSET,
-        "message": message,
-        "affected_streams": affected_streams,
+        # BOTH can hold at once -- some sources on different clocks AND others
+        # unplaceable -- so this is a list. Collapsing it to the "worst" one would
+        # hide a repair the operator can actually perform today.
+        "reasons": reasons,
+        "message": " ".join(parts),
+        "affected_streams": affected_streams + [item["datastream"] for item in unplaced],
         # --- 39.8 additive keys ---
         "severity": SEVERITY_ADVISORY,  # NOT "refusal" -- a day-offset is not a wrong total
         "report_timezones": report_timezones,  # per-stream tz + lever posture (AC1 + AC2)
-        "distinct_timezones": distinct,  # sorted distinct captured tz (>=2 => signal fired)
+        "distinct_timezones": distinct,  # sorted distinct captured tz
+        # Story 48.3: the streams that could NOT be placed, retained rather than dropped.
+        "unplaced_streams": unplaced,
         "realignable": False,  # ALWAYS false -- grain=DATE, no sub-day data (amendment)
         "metric": metric,  # the canonical metric involved
     }

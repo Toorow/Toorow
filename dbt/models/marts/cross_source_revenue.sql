@@ -30,7 +30,7 @@
 --   et ne pas traiter la serie comme homogene sans verification.
 
 WITH rev AS (
-    SELECT project_id, date, connector, breakdown_dimension, value, pull_id
+    SELECT project_id, date, connector, breakdown_dimension, value, money_gap_code, pull_id
     FROM {{ ref('fact_daily_kpi') }}
     WHERE metric = 'revenue'
 ),
@@ -67,7 +67,28 @@ canonical_dim AS (
 SELECT
     f.project_id,
     f.date,
-    SUM(f.value)     AS revenue_total,
+    -- A DAY WHOSE REVENUE COULD NOT BE CONVERTED STATES NO TOTAL (Story 48.3).
+    -- `SUM()` SKIPS NULLs, and that is the whole defect this expression removes:
+    -- over a winning source whose rows are partly unconvertible, a bare
+    -- `SUM(f.value)` returned the convertible PART under the name of the day's
+    -- total -- a silently understated figure, indistinguishable from a complete
+    -- one. `MIN(CASE ... 0 ELSE 1 END) = 0` says "at least one contributing row
+    -- carries no converted amount", and the total is then withheld rather than
+    -- partial.
+    CASE
+        WHEN MIN(CASE WHEN f.value IS NULL THEN 0 ELSE 1 END) = 0 THEN NULL
+        ELSE SUM(f.value)
+    END              AS revenue_total,
+    -- ... AND IT SAYS WHY, which is the other half of the same contract. The code
+    -- is CARRIED from the contributing row that could not convert, never minted
+    -- here: `fact_daily_kpi` already names WHICH thing is missing
+    -- (`native_currency_missing`, an FX governance refusal, `fx_rate_unavailable`)
+    -- and a second vocabulary for the same gap is a second thing to keep true.
+    -- `MIN` ignores NULLs, so this is non-NULL EXACTLY when the CASE above yields
+    -- NULL -- the pair `cross_source_revenue_total_null_iff_money_gap` asserts.
+    -- Deterministic on a day carrying two different codes, like the `MIN` the
+    -- money_evidence macro uses for the native currency.
+    MIN(CASE WHEN f.value IS NULL THEN f.money_gap_code END) AS money_gap_code,
     MAX(f.connector) AS revenue_source,
     MAX(f.pull_id)   AS pull_id
 FROM rev f

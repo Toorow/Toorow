@@ -1,7 +1,8 @@
 """Adjust connector — mobile measurement (Report Service API).
 
-Exposes a ``mcp_app: FastMCP`` instance that the core loader mounts under the
-``adjust`` namespace (AD-2). Built to the epic-25 industrial standard from day
+Exposes a ``mcp_app: FastMCP`` instance as the conformance surface (AD-1
+envelope); since AD-42 the core no longer mounts it — execution uses the
+Datastream-parameterized core tools. Built to the epic-25 industrial standard from day
 one: generated api_catalog.json (Datascape metrics glossary + reports endpoint
 dimensions), status-keyed error_map (Adjust publishes no sub-codes), and a
 declared single-level app topology (Filters Data discovery).
@@ -40,7 +41,9 @@ from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-# Module-level FastMCP instance — the public surface the loader mounts.
+# Module-level FastMCP instance, kept as the conformance surface (AD-1 envelope,
+# validated by server/tests/conformance/test_envelope.py). Since AD-42 the core
+# no longer mounts it: execution uses the Datastream-parameterized core tools.
 mcp_app = FastMCP("adjust")
 
 # Base URL for the Adjust Report Service API (unversioned; snapshot pinned in
@@ -176,7 +179,7 @@ def _insert_raw_rows(
     duckdb_path: str,
 ) -> int:
     """Insert canonical (post-transform) rows into raw_adjust_daily (DuckDB)."""
-    if db_mode != "duckdb":
+    if db_mode not in ("duckdb", "bigquery"):
         raise ValueError(
             f"_insert_raw_rows: unsupported db_mode {db_mode!r} at P-dev "
             "(BigQuery path not yet implemented)"
@@ -208,10 +211,67 @@ def _insert_raw_rows(
         )
         for r in rows
     ]
-    if values:
-        con.executemany(_RAW_INSERT_SQL, values)
-    con.close()
-    return len(values)
+    if db_mode == "bigquery":
+        from core.raw_landing import land_raw_rows  # noqa: PLC0415
+
+        raw_rows = [
+            {
+                "date": v[0],
+                "app_token": v[1],
+                "app": v[2],
+                "network": v[3],
+                "campaign_id": v[4],
+                "campaign_name": v[5],
+                "cost": v[6],
+                "installs": v[7],
+                "clicks": v[8],
+                "impressions": v[9],
+                "sessions": v[10],
+                "revenue": v[11],
+                "ad_revenue": v[12],
+                "all_revenue": v[13],
+                "pull_id": v[14],
+                "loaded_at": v[15],
+                "project_id": v[16],
+                "cost_source_currency": v[17],
+            }
+            for v in values
+        ]
+        columns = [
+            ("date", "STRING"),
+            ("app_token", "STRING"),
+            ("app", "STRING"),
+            ("network", "STRING"),
+            ("campaign_id", "STRING"),
+            ("campaign_name", "STRING"),
+            ("cost", "FLOAT"),
+            ("installs", "INTEGER"),
+            ("clicks", "INTEGER"),
+            ("impressions", "INTEGER"),
+            ("sessions", "INTEGER"),
+            ("revenue", "FLOAT"),
+            ("ad_revenue", "FLOAT"),
+            ("all_revenue", "FLOAT"),
+            ("pull_id", "STRING"),
+            ("loaded_at", "STRING"),
+            ("project_id", "STRING"),
+            ("cost_source_currency", "STRING"),
+        ]
+        land_raw_rows(
+            "raw_adjust_daily",
+            raw_rows,
+            columns=columns,
+            project_id=project_id,
+            backend="bigquery",
+        )
+        return len(values)
+    else:
+        con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
+        con.execute(_RAW_CREATE_DDL)
+        if values:
+            con.executemany(_RAW_INSERT_SQL, values)
+        con.close()
+        return len(values)
 
 
 # ---------------------------------------------------------------------------
@@ -518,12 +578,12 @@ def _query_bigquery(sql: str, params: dict) -> list[dict]:
     return [dict(zip(cols, row)) for row in result]
 
 
-def _get_mart_table(db_mode: str) -> str:
+def _get_mart_table(db_mode: str, project_id: str | None) -> str:
     """Fully-qualified mart table reference per engine (F-02)."""
     if db_mode == "duckdb":
         from core import warehouse_tenancy  # noqa: PLC0415
 
-        return f"{warehouse_tenancy.mart_prefix(None)}fact_daily_kpi"
+        return f"{warehouse_tenancy.mart_prefix(project_id)}fact_daily_kpi"
     dataset = os.environ.get("BQ_MARTS_DATASET", "marts")
     gcp_project = os.environ.get("GCP_PROJECT", "")
     prefix = f"{gcp_project}.{dataset}" if gcp_project else dataset
@@ -554,7 +614,7 @@ def _query_mart(date_from: str, date_to: str, project_id: str = "default") -> li
     # AD-12: MCP server reads marts only — never raw_* tables or CSV
     """
     db_mode = _get_db_mode()
-    table = _get_mart_table(db_mode)
+    table = _get_mart_table(db_mode, project_id)
 
     if db_mode == "duckdb":
         sql = _MART_QUERY.format(table=table, p_project="?", p_from="?", p_to="?")

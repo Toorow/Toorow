@@ -14,8 +14,8 @@ Test taxonomy (spec 24.6):
      ``provision_org_schemas`` + written with distinct rows, read through the
      SAME builder ``warehouse._build_query`` that production uses. The org-A
      scoped prefix returns ZERO org-B rows AND cannot even name org-B's table.
-  2. Grant marts-only -- ``_simulate_bq_iam_grant`` refuses raw / mirror_* and the
-     simulated grant scope is the marts dataset only (end-to-end at the isolation
+  2. Grant marts-only -- the dataset ACL seam refuses raw / mirror_* and the
+     mocked-cloud scope is the marts dataset only (end-to-end at the isolation
      level, complementing the unit assertions in test_dataset_access_grants.py).
   3. Provision / drop idempotent -- provision x2 == same state; drop is
      human-gated (X-Confirm-Delete); re-provision after drop is clean.
@@ -37,10 +37,10 @@ Gating (pattern 7.4 / 21.5 / 24.5):
     ``warehouse_tenancy`` (invariant epic-24, mirrored by the naming guard).
 
 ------------------------------------------------------------------------------
-Phase B candidates (deferred, AI-08 -- documented here so 24.6 owns the ledger):
-  - Real IAM/BigQuery execution: the isolation proof today is DuckDB-native +
-    an IAM STUB (_simulate_bq_iam_grant). Phase B replaces the stub with a real
-    ``set_iam_policy`` against a live ``org_<wslug>_marts`` dataset and asserts a
+External release qualification (never run in this local suite):
+  - Real IAM/BigQuery execution: the local proof is DuckDB-native plus a mocked
+    public dataset-ACL client. Qualification uses an isolated QA
+    ``org_<wslug>_marts`` dataset and asserts a
     ``dataViewer`` on marts cannot ``SELECT`` from raw/mirror/another-org dataset
     (the physical BigQuery twin of test #1).
   - BYO warehouse / dedicated GCP project per large account (spike §4) -- the
@@ -323,26 +323,38 @@ def test_org_b_table_absent_from_org_a_schema(two_org_duckdb):
 
 
 # ---------------------------------------------------------------------------
-# 2. Grant marts-only (OFFLINE) -- end-to-end IAM stub scoping at isolation level
+# 2. Grant marts-only (OFFLINE) -- public dataset-ACL seam with a fake client
 # ---------------------------------------------------------------------------
 
 
-def test_grant_scope_is_marts_only_never_raw_or_mirror(two_org_duckdb):
-    """A simulated client grant targets ONLY org_<wslug>_marts (never raw/mirror).
+def test_grant_scope_is_marts_only_never_raw_or_mirror(two_org_duckdb, monkeypatch):
+    """A client grant targets ONLY org_<wslug>_marts (never raw/mirror).
 
     End-to-end at the isolation boundary: we take the SAME OrgSchemas that back
-    the two real DuckDB schemas and prove the IAM stub (a) accepts the marts
+    the two real DuckDB schemas and prove the dataset ACL seam (a) accepts marts
     dataset and (b) hard-refuses raw and mirror_* datasets (ValueError, survives
     python -O per review 24.5 F-6). This is the "give a client access to ITS
     marts, structurally incapable of reaching raw/mirror/another-org" invariant.
     """
-    from core.warehouse_tenancy import OrgSchemas, _simulate_bq_iam_grant
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from core.warehouse_tenancy import OrgSchemas, mutate_bigquery_dataset_access
 
     _db, schemas_a, _schemas_b = two_org_duckdb
 
-    # Accepts marts (the ONLY legitimate grant surface).
-    _simulate_bq_iam_grant(
-        schemas_a, "serviceAccount:client@proj.iam.gserviceaccount.com", "grant"
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "configured-project")
+    client = MagicMock(project="credentials-default-project")
+    client.get_dataset.return_value = SimpleNamespace(access_entries=[], etag="etag")
+    result = mutate_bigquery_dataset_access(
+        schemas_a,
+        "serviceAccount:client@proj.iam.gserviceaccount.com",
+        "grant",
+        client=client,
+    )
+    assert result["dataset_id"] == schemas_a.marts
+    client.get_dataset.assert_called_once_with(
+        f"configured-project.{schemas_a.marts}"
     )
 
     # Refuses a grant whose "marts" field is actually the raw dataset.
@@ -354,7 +366,9 @@ def test_grant_scope_is_marts_only_never_raw_or_mirror(two_org_duckdb):
         marts=schemas_a.raw,  # raw sneaked into the marts slot
     )
     with pytest.raises(ValueError, match="_raw"):
-        _simulate_bq_iam_grant(raw_as_marts, "user:x@example.com", "grant")
+        mutate_bigquery_dataset_access(
+            raw_as_marts, "user:x@example.com", "grant", client=client
+        )
 
     # Refuses a mirror_* dataset (the central control-plane mirror, AD-8).
     mirror_as_marts = OrgSchemas(
@@ -365,15 +379,17 @@ def test_grant_scope_is_marts_only_never_raw_or_mirror(two_org_duckdb):
         marts="mirror_context_events",
     )
     with pytest.raises(ValueError, match="mirror_"):
-        _simulate_bq_iam_grant(mirror_as_marts, "user:x@example.com", "grant")
+        mutate_bigquery_dataset_access(
+            mirror_as_marts, "user:x@example.com", "grant", client=client
+        )
 
 
 def test_grant_on_org_a_marts_cannot_target_org_b(two_org_duckdb):
     """The grant surface is one org's marts -- it never names another org's schema.
 
-    The stub is invoked per-org with that org's OWN OrgSchemas; there is no code
+    The seam is invoked per-org with that org's OWN OrgSchemas; there is no code
     path that would let an org-A grant reference org_b_marts. We assert the
-    dataset the stub would bind is exactly org-A's marts and shares no prefix
+    dataset the seam would bind is exactly org-A's marts and shares no prefix
     with org-B's marts beyond the common ``org_`` sentinel.
     """
     _db, schemas_a, schemas_b = two_org_duckdb
@@ -460,7 +476,7 @@ async def test_org_delete_endpoint_is_human_gated():
     """DELETE org warehouse without X-Confirm-Delete -> 422 (human-gated, RGPD)."""
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from core.admin_api import _delete_org
+    from core.organizations_api import _delete_org  # noqa: PLC0415
 
     req = MagicMock()
     req.path_params = {"org_id": "org_gated"}
@@ -657,9 +673,14 @@ def test_provision_idempotent_through_real_org_resolution(tmp_path):
         assert _schema_exists(db_path, resolved.marts)
     finally:
         wt._reset_cache()
+        # Le marcheur de production, pas un DELETE nu : provisionner une org lui
+        # cree un arbre (mdm_business_domains, ...) dont les cles etrangeres ne
+        # cascadent pas. Le DELETE echouait APRES des assertions passees, donc ce
+        # test rapportait un echec qu'il n'avait pas subi -- et laissait l'org.
+        from tests.conftest import purge_fixture_org
+
         with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM app.organizations WHERE id = %s", (org_id,))
+            purge_fixture_org(conn, org_id)
             conn.commit()
         if prev_path is None:
             os.environ.pop("TOOROW_DUCKDB_PATH", None)

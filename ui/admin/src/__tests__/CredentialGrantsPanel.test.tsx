@@ -15,12 +15,12 @@
  */
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ThemeProvider } from "@mui/material";
-import { adminTheme } from "../theme";
 import CredentialGrantsPanel from "../orgs/CredentialGrantsPanel";
 
+// AD-35 (AI-208): no MUI `ThemeProvider` -- the subject renders none of its
+// components, and the import made this suite uncollectable (zero tests, never red).
 function renderWithTheme(ui: React.ReactElement) {
-  return render(<ThemeProvider theme={adminTheme}>{ui}</ThemeProvider>);
+  return render(ui);
 }
 
 afterEach(() => {
@@ -113,7 +113,7 @@ describe("CredentialGrantsPanel — chargement", () => {
     });
   });
 
-  it("affiche le libellé des comptes (ou — si absent)", async () => {
+  it("affiche le libellé en tête et l'identifiant dessous", async () => {
     mockFetchAccountsAndGrants();
     renderWithTheme(
       <CredentialGrantsPanel orgId="org_acme01" credentialId="cred_ga4_001" />
@@ -121,9 +121,12 @@ describe("CredentialGrantsPanel — chargement", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Compte GA4 principal")).toBeInTheDocument();
-      // Label null → "—" (le compte GSC rend "—" pour le libellé ET la date)
-      expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(1);
     });
+    // The identifier is kept, demoted, and titled — never the row's headline.
+    const id = screen.getByText("ga4-account-123");
+    expect(id).toHaveAttribute("title", "Account identifier: ga4-account-123");
+    // A missing discovery time is a statement, not a blank (`Timestamp`).
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(1);
   });
 
   it("affiche un Alert si le GET accounts retourne 403 (AD-9)", async () => {
@@ -148,15 +151,18 @@ describe("CredentialGrantsPanel — chargement", () => {
     });
   });
 
-  it("affiche 'Aucun compte trouvé' quand accounts est vide", async () => {
+  it("nomme le geste qui remplit la liste quand accounts est vide", async () => {
     mockFetchAccountsAndGrants([], []);
     renderWithTheme(
       <CredentialGrantsPanel orgId="org_acme01" credentialId="cred_ga4_001" />
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/no accounts found/i)).toBeInTheDocument();
+      expect(screen.getByTestId("credential-accounts-empty")).toBeInTheDocument();
     });
+    expect(screen.getByText("No account discovered on this Authorization")).toBeInTheDocument();
+    // The gesture, not only the absence: discovery is what writes this list.
+    expect(screen.getByText(/Reconnect this source from Data > Sources/i)).toBeInTheDocument();
   });
 });
 
@@ -224,6 +230,9 @@ describe("CredentialGrantsPanel — grants existants", () => {
     await user.click(
       screen.getByTestId(`revoke-grant-${ACCOUNT_GA4.external_account_id}`)
     );
+    expect(screen.getByText("Revoke this account exposure?")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([, opts]) => opts?.method === "DELETE")).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Revoke exposure" }));
 
     await waitFor(() => {
       const deleteCall = fetchMock.mock.calls.find(
@@ -295,6 +304,13 @@ describe("CredentialGrantsPanel — exposer un compte", () => {
       expect(postCall).toBeTruthy();
       const body = JSON.parse(postCall![1].body as string);
       expect(body.grantee_org_id).toBe("org_acme01");
+      // `_create_account_grant` answers 422 `missing_idempotency_key` without
+      // this header, so until 2026-08-04 every click of Expose was refused —
+      // and this test passed throughout, because a stubbed `fetch` demands no
+      // header. It was found by walking the button against a real server
+      // (AI-188). Asserted here so the walk is not the only thing that can see it.
+      const headers = postCall![1].headers as Record<string, string>;
+      expect(headers["Idempotency-Key"]).toBeTruthy();
     });
   });
 
@@ -408,11 +424,24 @@ describe("CredentialGrantsPanel — exposer un compte", () => {
 // ---------------------------------------------------------------------------
 
 describe("CredentialGrantsPanel — saisie manuelle credential ID", () => {
-  it("affiche le champ 'Identifiant de la connexion'", () => {
+  it("affiche le champ 'Identifiant de la connexion' sur un montage autonome", () => {
     renderWithTheme(<CredentialGrantsPanel orgId="org_acme01" />);
     expect(
       screen.getByLabelText(/connection identifier/i)
     ).toBeInTheDocument();
+  });
+
+  it("ne demande PAS l'identifiant quand le parent le fournit", () => {
+    // `OrgSettings` chooses the connection and hands it over; asking for the
+    // same fact a second time, as a `cred_…` to recall, is the contradiction
+    // that section's own docstring named (AI audit 2026-08-17).
+    mockFetchAccountsAndGrants();
+    renderWithTheme(
+      <CredentialGrantsPanel orgId="org_acme01" credentialId="cred_ga4_001" />
+    );
+    expect(screen.queryByTestId("credential-id-input")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("credential-load-button")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/connection identifier/i)).not.toBeInTheDocument();
   });
 
   it("le bouton 'Charger' déclenche le chargement quand un ID est saisi", async () => {

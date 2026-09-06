@@ -16,6 +16,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from tests.conftest import enrol_fixture_identity, purge_fixture_org
+
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
@@ -45,6 +47,9 @@ pg_available = pytest.mark.skipif(not _pg_reachable(), reason="platform Postgres
 _AUTH = "core.admin_api._check_auth"
 _AUTH_OK = (True, "tester@example.com")
 _AUTH_ANON = (False, "")
+
+#: The canonical person `_create_test_org_pg` enrols, rebound on every setup.
+_PG_CALLER = "admin@example.com"
 
 
 # ---------------------------------------------------------------------------
@@ -134,14 +139,6 @@ async def test_bootstrap_requires_auth():
         resp = await _trigger_bootstrap(_post_request({"org_id": "org_x"}))
     assert resp.status_code == 401
 
-
-@pytest.mark.anyio
-async def test_create_definition_requires_auth():
-    from core.metric_semantics_api import _create_definition
-
-    with patch(_AUTH, return_value=_AUTH_ANON):
-        resp = await _create_definition(_post_request({}))
-    assert resp.status_code == 401
 
 
 # ---------------------------------------------------------------------------
@@ -267,38 +264,8 @@ async def test_list_mappings_non_member_404():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.anyio
-async def test_create_definition_platform_forbidden():
-    """scope_level=PLATFORM in POST /definitions -> 403 (seeds are the authority)."""
-    from core.metric_semantics_api import _create_definition
-
-    with patch(_AUTH, return_value=_AUTH_OK):
-        resp = await _create_definition(
-            _post_request(
-                {
-                    "scope_level": "PLATFORM",
-                    "canonical_name": "cost",
-                    "aggregation_type": "sum",
-                    "additive": True,
-                }
-            )
-        )
-    assert resp.status_code == 403
 
 
-@pytest.mark.anyio
-async def test_delete_definition_platform_forbidden():
-    """scope_level=PLATFORM in DELETE /definitions/{name} -> 403."""
-    from core.metric_semantics_api import _delete_definition
-
-    with patch(_AUTH, return_value=_AUTH_OK):
-        resp = await _delete_definition(
-            _delete_request(
-                params={"scope_level": "PLATFORM", "org_id": "org_x"},
-                path_params={"canonical_name": "cost"},
-            )
-        )
-    assert resp.status_code == 403
 
 
 # ---------------------------------------------------------------------------
@@ -349,8 +316,8 @@ async def test_rename_unknown_canonical_422():
         )
     assert resp.status_code == 422
     body = json.loads(resp.body)
-    # French error message
-    assert "introuvable" in body.get("message", "").lower()
+    # English error message (the product's English ratchet)
+    assert "not found" in body.get("message", "").lower()
 
 
 # ---------------------------------------------------------------------------
@@ -453,140 +420,8 @@ async def test_idor_reject_cross_org_404_no_upsert():
     upsert.assert_not_called()
 
 
-@pytest.mark.anyio
-async def test_cross_org_create_project_missing_404_no_write():
-    """F-2: create PROJECT def on a non-existent project -> 404, no upsert."""
-    from core.metric_semantics_api import _create_definition
-
-    # Project lookup returns no row (project does not exist).
-    fake_cursor = MagicMock()
-    fake_cursor.__enter__ = lambda s: fake_cursor
-    fake_cursor.__exit__ = MagicMock(return_value=False)
-    fake_cursor.fetchone.return_value = None
-    fake_conn = _conn_mock()
-    fake_conn.cursor = MagicMock(return_value=fake_cursor)
-
-    upsert = MagicMock()
-    with (
-        patch(_AUTH, return_value=_AUTH_OK),
-        patch("core.project_access.identity_can_manage_org", return_value=True),
-        patch("core.db.get_connection", return_value=fake_conn),
-        patch("core.metric_semantics.upsert_metric_definition", upsert),
-    ):
-        resp = await _create_definition(
-            _post_request(
-                {
-                    "scope_level": "PROJECT",
-                    "project_id": "prj_ghost",
-                    "canonical_name": "cost",
-                    "aggregation_type": "sum",
-                    "additive": True,
-                }
-            )
-        )
-    assert resp.status_code == 404
-    upsert.assert_not_called()
 
 
-@pytest.mark.anyio
-async def test_cross_org_create_project_null_org_404_no_write():
-    """F-2: create PROJECT def where project has a NULL org_id -> 404, no write."""
-    from core.metric_semantics_api import _create_definition
-
-    # Project exists but org_id column is NULL (legacy row).
-    fake_cursor = MagicMock()
-    fake_cursor.__enter__ = lambda s: fake_cursor
-    fake_cursor.__exit__ = MagicMock(return_value=False)
-    fake_cursor.fetchone.return_value = (None,)
-    fake_conn = _conn_mock()
-    fake_conn.cursor = MagicMock(return_value=fake_cursor)
-
-    upsert = MagicMock()
-    with (
-        patch(_AUTH, return_value=_AUTH_OK),
-        patch("core.project_access.identity_can_manage_org", return_value=True),
-        patch("core.db.get_connection", return_value=fake_conn),
-        patch("core.metric_semantics.upsert_metric_definition", upsert),
-    ):
-        resp = await _create_definition(
-            _post_request(
-                {
-                    "scope_level": "PROJECT",
-                    "project_id": "prj_legacy",
-                    "canonical_name": "cost",
-                    "aggregation_type": "sum",
-                    "additive": True,
-                }
-            )
-        )
-    assert resp.status_code == 404
-    upsert.assert_not_called()
-
-
-@pytest.mark.anyio
-async def test_create_definition_invalid_scope_does_not_leak_internal_message():
-    """S-1: an InvalidScope from the store returns a CONSTANT FR message; the internal
-    exception text is NOT propagated to the client (only logged)."""
-    from core.metric_semantics import InvalidScope
-    from core.metric_semantics_api import _create_definition
-
-    secret = "org_id 'org_A' inconsistent with project_id 'prj-SECRET-INTERNAL'"
-
-    def _raise(**_kw):
-        raise InvalidScope(secret)
-
-    with (
-        patch(_AUTH, return_value=_AUTH_OK),
-        patch("core.metric_semantics_api._require_org_manage", return_value=True),
-        patch("core.db.get_connection", return_value=_conn_mock()),
-        patch("core.metric_semantics.upsert_metric_definition", _raise),
-    ):
-        resp = await _create_definition(
-            _post_request(
-                {
-                    "scope_level": "ORG",
-                    "org_id": "org_A",
-                    "canonical_name": "cost",
-                    "aggregation_type": "sum",
-                    "additive": True,
-                }
-            )
-        )
-    assert resp.status_code == 422
-    body = json.loads(resp.body)
-    assert body["code"] == "invalid_scope"
-    assert body["message"] == "Scope invalide."
-    assert "prj-SECRET-INTERNAL" not in json.dumps(body)
-
-
-@pytest.mark.anyio
-async def test_cross_org_delete_project_unresolvable_404_no_delete():
-    """F-2: delete PROJECT def where org cannot be resolved -> 404, no delete."""
-    from core.metric_semantics_api import _delete_definition
-
-    # Project lookup returns no row.
-    fake_cursor = MagicMock()
-    fake_cursor.__enter__ = lambda s: fake_cursor
-    fake_cursor.__exit__ = MagicMock(return_value=False)
-    fake_cursor.fetchone.return_value = None
-    fake_conn = _conn_mock()
-    fake_conn.cursor = MagicMock(return_value=fake_cursor)
-
-    delete_fn = MagicMock()
-    with (
-        patch(_AUTH, return_value=_AUTH_OK),
-        patch("core.project_access.identity_can_manage_org", return_value=True),
-        patch("core.db.get_connection", return_value=fake_conn),
-        patch("core.metric_semantics.delete_metric_definition", delete_fn),
-    ):
-        resp = await _delete_definition(
-            _delete_request(
-                params={"scope_level": "PROJECT", "project_id": "prj_ghost"},
-                path_params={"canonical_name": "cost"},
-            )
-        )
-    assert resp.status_code == 404
-    delete_fn.assert_not_called()
 
 
 @pytest.mark.anyio
@@ -777,16 +612,17 @@ async def test_reference_contract_shape():
         }
     ]
 
-    fake_rec_rows = [
-        {
-            "canonical_name": "cost",
-            "method": "PRIORITY",
-            "priority_order": ["connector-a", "connector-b"],
-            "join_key": None,
-            "truth_connector": None,
-            "scope_level": "PLATFORM",
-        }
-    ]
+    # AI-295: the reference serves the Project's GOVERNED rule, so the fake is a
+    # governed runtime rule and its scope is PROJECT -- there is no cascade left
+    # for a PLATFORM row to win.
+    fake_rec_rule = {
+        "method": "PRIORITY",
+        "priority_order": ["connector-a", "connector-b"],
+        "join_key": None,
+        "truth_connector": None,
+        "resolved_scope": "PROJECT",
+        "rule_set_version_id": "grsv_EXAMPLE",
+    }
 
     fake_cursor = MagicMock()
     fake_cursor.__enter__ = lambda s: fake_cursor
@@ -809,15 +645,11 @@ async def test_reference_contract_shape():
         patch("core.db.get_connection", return_value=fake_conn),
         patch("core.metric_semantics._load_definition_rows", return_value=fake_def_rows),
         patch(
-            "core.metric_semantics._load_reconciliation_rows", return_value=fake_rec_rows
+            "core.metric_semantics.reference_reconciliation", return_value=fake_rec_rule
         ),
         patch(
             "core.metric_semantics.reduce_definitions_by_specificity",
             return_value={"cost": fake_def_rows[0]},
-        ),
-        patch(
-            "core.metric_semantics.reduce_reconciliation_by_specificity",
-            return_value=fake_rec_rows[0],
         ),
     ):
         resp = await _reference(_get_request({"org_id": "org_test"}))
@@ -865,7 +697,7 @@ async def test_reference_contract_shape():
 
 @pytest.mark.anyio
 async def test_reference_null_reconciliation():
-    """reconciliation=null when resolve_reconciliation_by_specificity returns None."""
+    """reconciliation=null when no governed Rule Set answers for the metric."""
     from core.metric_semantics_api import _reference
 
     fake_def_rows = [
@@ -908,12 +740,11 @@ async def test_reference_null_reconciliation():
         patch("core.project_access.identity_has_org_access", return_value=True),
         patch("core.db.get_connection", return_value=fake_conn),
         patch("core.metric_semantics._load_definition_rows", return_value=fake_def_rows),
-        patch("core.metric_semantics._load_reconciliation_rows", return_value=[]),
+        patch("core.metric_semantics.reference_reconciliation", return_value=None),
         patch(
             "core.metric_semantics.reduce_definitions_by_specificity",
             return_value={"cost": fake_def_rows[0]},
         ),
-        patch("core.metric_semantics.reduce_reconciliation_by_specificity", return_value=None),
     ):
         resp = await _reference(_get_request({"org_id": "org_test"}))
 
@@ -937,9 +768,17 @@ def _create_test_org_pg(slug: str | None = None) -> str:
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO app.organizations (id, name, slug, status, created_at) "
-                "VALUES (%s, %s, %s, 'active', now())",
+                "INSERT INTO app.organizations "
+                "(id, name, slug, status, created_at, created_by) "
+                "VALUES (%s, %s, %s, 'active', now(), 'test-fixture')",
                 (org_id, f"API Test org {slug}", slug),
+            )
+            # THE CALLER MUST HOLD THE ORG. These routes take a production org
+            # decision; an identity that is a member of nothing is refused 403,
+            # which is what these tests were measuring instead of the bootstrap.
+            # `_PG_CALLER` is the person the routes will see.
+            globals()["_PG_CALLER"] = enrol_fixture_identity(
+                cur, "admin@example.com", org_id=org_id
             )
         conn.commit()
     return org_id
@@ -949,8 +788,9 @@ def _delete_test_org_pg(org_id: str) -> None:
     from core.db import get_connection
 
     with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM app.organizations WHERE id = %s", (org_id,))
+        # `mdm_business_domains` holds an org by ON DELETE RESTRICT; the graph the
+        # production purge walks knows it, a hand-written DELETE does not.
+        purge_fixture_org(conn, org_id)
         conn.commit()
 
 
@@ -964,7 +804,7 @@ async def test_pg_bootstrap_via_api():
     import_platform_defaults(identity="system")
     org_id = _create_test_org_pg()
     try:
-        with patch(_AUTH, return_value=(True, "admin@example.com")):
+        with patch(_AUTH, return_value=(True, _PG_CALLER)):
             resp = await _trigger_bootstrap(_post_request({"org_id": org_id}))
 
         assert resp.status_code == 200
@@ -997,7 +837,7 @@ async def test_pg_bootstrap_idempotent_no_new_audit():
     import_platform_defaults(identity="system")
     org_id = _create_test_org_pg()
     try:
-        with patch(_AUTH, return_value=(True, "admin@example.com")):
+        with patch(_AUTH, return_value=(True, _PG_CALLER)):
             await _trigger_bootstrap(_post_request({"org_id": org_id}))
 
         with get_connection() as conn:
@@ -1008,7 +848,7 @@ async def test_pg_bootstrap_idempotent_no_new_audit():
                 )
                 audit_before = cur.fetchone()[0]
 
-        with patch(_AUTH, return_value=(True, "admin@example.com")):
+        with patch(_AUTH, return_value=(True, _PG_CALLER)):
             resp2 = await _trigger_bootstrap(_post_request({"org_id": org_id}))
 
         report2 = json.loads(resp2.body)
@@ -1039,11 +879,11 @@ async def test_pg_confirm_mapping():
     import_platform_defaults(identity="system")
     org_id = _create_test_org_pg()
     try:
-        with patch(_AUTH, return_value=(True, "admin@example.com")):
+        with patch(_AUTH, return_value=(True, _PG_CALLER)):
             await _trigger_bootstrap(_post_request({"org_id": org_id}))
 
         # Fetch the first proposed mapping id.
-        with patch(_AUTH, return_value=(True, "admin@example.com")):
+        with patch(_AUTH, return_value=(True, _PG_CALLER)):
             list_resp = await _list_mappings(_get_request({"org_id": org_id, "status": "proposed"}))
         mappings = json.loads(list_resp.body)["mappings"]
         assert len(mappings) > 0
@@ -1059,7 +899,7 @@ async def test_pg_confirm_mapping():
                 audit_before = cur.fetchone()[0]
 
         # Confirm.
-        with patch(_AUTH, return_value=(True, "admin@example.com")):
+        with patch(_AUTH, return_value=(True, _PG_CALLER)):
             confirm_resp = await _confirm_mapping(
                 _post_request({"org_id": org_id}, path_params={"id": mapping_id})
             )
@@ -1078,7 +918,7 @@ async def test_pg_confirm_mapping():
         assert audit_after > audit_before
 
         # Re-confirm is idempotent (no extra audit).
-        with patch(_AUTH, return_value=(True, "admin@example.com")):
+        with patch(_AUTH, return_value=(True, _PG_CALLER)):
             await _confirm_mapping(
                 _post_request({"org_id": org_id}, path_params={"id": mapping_id})
             )
@@ -1104,22 +944,22 @@ async def test_pg_confirmed_preserved_after_bootstrap():
     import_platform_defaults(identity="system")
     org_id = _create_test_org_pg()
     try:
-        with patch(_AUTH, return_value=(True, "admin@example.com")):
+        with patch(_AUTH, return_value=(True, _PG_CALLER)):
             await _trigger_bootstrap(_post_request({"org_id": org_id}))
 
-        with patch(_AUTH, return_value=(True, "admin@example.com")):
+        with patch(_AUTH, return_value=(True, _PG_CALLER)):
             list_resp = await _list_mappings(
                 _get_request({"org_id": org_id, "status": "proposed"})
             )
         mapping_id = json.loads(list_resp.body)["mappings"][0]["id"]
 
-        with patch(_AUTH, return_value=(True, "admin@example.com")):
+        with patch(_AUTH, return_value=(True, _PG_CALLER)):
             await _confirm_mapping(
                 _post_request({"org_id": org_id}, path_params={"id": mapping_id})
             )
 
         # Re-bootstrap.
-        with patch(_AUTH, return_value=(True, "admin@example.com")):
+        with patch(_AUTH, return_value=(True, _PG_CALLER)):
             resp3 = await _trigger_bootstrap(_post_request({"org_id": org_id}))
         report3 = json.loads(resp3.body)
         assert report3["preserved"] >= 1
@@ -1149,11 +989,11 @@ async def test_pg_rename_mapping():
     import_platform_defaults(identity="system")
     org_id = _create_test_org_pg()
     try:
-        with patch(_AUTH, return_value=(True, "admin@example.com")):
+        with patch(_AUTH, return_value=(True, _PG_CALLER)):
             await _trigger_bootstrap(_post_request({"org_id": org_id}))
 
         # Get a proposed mapping and identify a different target canonical.
-        with patch(_AUTH, return_value=(True, "admin@example.com")):
+        with patch(_AUTH, return_value=(True, _PG_CALLER)):
             list_resp = await _list_mappings(
                 _get_request({"org_id": org_id, "status": "proposed"})
             )
@@ -1169,7 +1009,7 @@ async def test_pg_rename_mapping():
         if other is None:
             pytest.skip("Only one canonical available, cannot rename to a different one")
 
-        with patch(_AUTH, return_value=(True, "admin@example.com")):
+        with patch(_AUTH, return_value=(True, _PG_CALLER)):
             resp = await _rename_mapping(
                 _post_request(
                     {"org_id": org_id, "canonical_name": other},
@@ -1194,16 +1034,16 @@ async def test_pg_reject_mapping():
     import_platform_defaults(identity="system")
     org_id = _create_test_org_pg()
     try:
-        with patch(_AUTH, return_value=(True, "admin@example.com")):
+        with patch(_AUTH, return_value=(True, _PG_CALLER)):
             await _trigger_bootstrap(_post_request({"org_id": org_id}))
 
-        with patch(_AUTH, return_value=(True, "admin@example.com")):
+        with patch(_AUTH, return_value=(True, _PG_CALLER)):
             list_resp = await _list_mappings(
                 _get_request({"org_id": org_id, "status": "proposed"})
             )
         mapping_id = json.loads(list_resp.body)["mappings"][0]["id"]
 
-        with patch(_AUTH, return_value=(True, "admin@example.com")):
+        with patch(_AUTH, return_value=(True, _PG_CALLER)):
             resp = await _reject_mapping(
                 _post_request({"org_id": org_id}, path_params={"id": mapping_id})
             )
@@ -1223,10 +1063,10 @@ async def test_pg_reference_endpoint():
     import_platform_defaults(identity="system")
     org_id = _create_test_org_pg()
     try:
-        with patch(_AUTH, return_value=(True, "admin@example.com")):
+        with patch(_AUTH, return_value=(True, _PG_CALLER)):
             await _trigger_bootstrap(_post_request({"org_id": org_id}))
 
-        with patch(_AUTH, return_value=(True, "admin@example.com")):
+        with patch(_AUTH, return_value=(True, _PG_CALLER)):
             resp = await _reference(_get_request({"org_id": org_id}))
 
         assert resp.status_code == 200
@@ -1243,59 +1083,6 @@ async def test_pg_reference_endpoint():
     finally:
         _delete_test_org_pg(org_id)
 
-
-@pg_available
-@pytest.mark.anyio
-async def test_pg_definitions_crud_cascade():
-    """Live DB: POST ORG def -> resolved_scope=ORG in /reference; DELETE -> PLATFORM resurfaces."""
-    from core.metric_semantics import import_platform_defaults
-    from core.metric_semantics_api import _create_definition, _delete_definition, _reference
-
-    import_platform_defaults(identity="system")
-    org_id = _create_test_org_pg()
-    try:
-        # Create ORG override for 'cost'.
-        with patch(_AUTH, return_value=(True, "admin@example.com")):
-            create_resp = await _create_definition(
-                _post_request(
-                    {
-                        "scope_level": "ORG",
-                        "org_id": org_id,
-                        "canonical_name": "cost",
-                        "aggregation_type": "sum",
-                        "additive": True,
-                        "display_name": "Coût (ORG)",
-                    }
-                )
-            )
-        assert create_resp.status_code in (200, 201)
-
-        with patch(_AUTH, return_value=(True, "admin@example.com")):
-            ref_resp = await _reference(_get_request({"org_id": org_id}))
-        body = json.loads(ref_resp.body)
-        cost = next((m for m in body["metrics"] if m["canonical_name"] == "cost"), None)
-        assert cost is not None
-        assert cost["resolved_scope"] == "ORG"
-
-        # Delete ORG override.
-        with patch(_AUTH, return_value=(True, "admin@example.com")):
-            del_resp = await _delete_definition(
-                _delete_request(
-                    params={"scope_level": "ORG", "org_id": org_id},
-                    path_params={"canonical_name": "cost"},
-                )
-            )
-        assert del_resp.status_code == 200
-
-        # PLATFORM resurfaces.
-        with patch(_AUTH, return_value=(True, "admin@example.com")):
-            ref_resp2 = await _reference(_get_request({"org_id": org_id}))
-        body2 = json.loads(ref_resp2.body)
-        cost2 = next((m for m in body2["metrics"] if m["canonical_name"] == "cost"), None)
-        assert cost2 is not None
-        assert cost2["resolved_scope"] == "PLATFORM"
-    finally:
-        _delete_test_org_pg(org_id)
 
 
 @pg_available
@@ -1335,3 +1122,151 @@ def test_pg_org_cascade_removes_mappings():
     finally:
         if not deleted:
             _delete_test_org_pg(org_id)
+
+
+# ---------------------------------------------------------------------------
+# THE TWO DEFINITION WRITE DOORS REFUSE -- story 49.3 AC1, cutover of 2026-08-25.
+#
+# WHAT THESE TESTS REPLACE, and it is ten of them: every test that proved POST
+# and DELETE /definitions wrote -- the auth guard, the PLATFORM refusal, the two
+# `additive` refusals of story 60.2, the three F-2 cross-org guards, the S-1
+# no-leak test, and the pg-gated `test_pg_definitions_crud_cascade` which drove
+# the ORG override / PLATFORM resurface round trip through the API. They proved
+# guards on a door that no longer opens; a guard on a closed door is the greenest
+# way there is to hide that it closed.
+#
+# WHAT REPLACES THEM IS NOT A WEAKER TEST. The cascade the pg test exercised is
+# still covered where it lives -- `test_metric_semantics.py` drives
+# `upsert_metric_definition` / `delete_metric_definition` and the PROJECT > ORG >
+# PLATFORM resolution directly, on live Postgres, and `import_platform_defaults`
+# (the ONE writer that remains) has its own test there. What is gone from here is
+# the HTTP round trip, because the HTTP round trip is gone.
+# ---------------------------------------------------------------------------
+
+
+_DEFINITION_BODY = {
+    "scope_level": "ORG",
+    "org_id": "org_EXAMPLE",
+    "canonical_name": "cost",
+    "aggregation_type": "sum",
+    "additive": True,
+}
+
+
+@pytest.mark.anyio
+async def test_create_definition_refuses_with_legacy_store_is_read_only():
+    from core.metric_semantics_api import _create_definition
+
+    with patch(_AUTH, return_value=_AUTH_OK):
+        resp = await _create_definition(_post_request(dict(_DEFINITION_BODY)))
+
+    assert resp.status_code == 409
+    assert json.loads(bytes(resp.body))["code"] == "legacy_store_is_read_only"
+
+
+@pytest.mark.anyio
+async def test_delete_definition_refuses_with_legacy_store_is_read_only():
+    from core.metric_semantics_api import _delete_definition
+
+    with patch(_AUTH, return_value=_AUTH_OK):
+        resp = await _delete_definition(
+            _delete_request(
+                params={"scope_level": "ORG", "org_id": "org_EXAMPLE"},
+                path_params={"canonical_name": "cost"},
+            )
+        )
+
+    assert resp.status_code == 409
+    assert json.loads(bytes(resp.body))["code"] == "legacy_store_is_read_only"
+
+
+@pytest.mark.anyio
+async def test_the_refusal_names_the_semantic_model_and_never_a_table():
+    """A refusal names the gesture that works, not the store that failed."""
+    from core.metric_semantics_api import _create_definition
+
+    with patch(_AUTH, return_value=_AUTH_OK):
+        resp = await _create_definition(_post_request(dict(_DEFINITION_BODY)))
+    message = json.loads(bytes(resp.body))["message"]
+
+    assert "Semantic Model" in message, message
+    for db_word in ("metric_definitions", "app.", "table", "column"):
+        assert db_word not in message, (db_word, message)
+
+
+@pytest.mark.anyio
+async def test_a_refused_definition_write_never_reaches_the_store():
+    """No connection is opened and no store function is called -- refusal comes first."""
+    from core.metric_semantics_api import _create_definition, _delete_definition
+
+    upsert, delete_fn = MagicMock(), MagicMock()
+    with (
+        patch(_AUTH, return_value=_AUTH_OK),
+        patch("core.db.get_connection") as get_conn,
+        patch("core.metric_semantics.upsert_metric_definition", upsert),
+        patch("core.metric_semantics.delete_metric_definition", delete_fn),
+    ):
+        await _create_definition(_post_request(dict(_DEFINITION_BODY)))
+        await _delete_definition(
+            _delete_request(
+                params={"scope_level": "ORG", "org_id": "org_EXAMPLE"},
+                path_params={"canonical_name": "cost"},
+            )
+        )
+
+    get_conn.assert_not_called()
+    upsert.assert_not_called()
+    delete_fn.assert_not_called()
+
+
+def test_the_module_no_longer_imports_a_definition_writer():
+    """The permanent attack: re-wiring a handler needs the import back, and goes red here.
+
+    Read as an AST rather than as text, because `_create_definition` and
+    `_delete_definition` are still the NAMES of the refusing handlers. The
+    question is what this module imports from `core.metric_semantics`, and the
+    READS must still be there or the guard is reading nothing.
+    """
+    import ast
+    import inspect
+
+    from core import metric_semantics_api
+
+    tree = ast.parse(inspect.getsource(metric_semantics_api))
+    imported = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module == "core.metric_semantics"
+        for alias in node.names
+    }
+
+    assert "get_metric_definition" in imported, sorted(imported)
+    assert "list_metric_definitions_by_scope" in imported, sorted(imported)
+
+    forbidden = imported & {"upsert_metric_definition", "delete_metric_definition"}
+    assert not forbidden, sorted(forbidden)
+
+
+def test_the_bootstrap_seed_import_is_the_one_writer_that_stayed():
+    """`import_platform_defaults` is a DERIVATION of the delivered catalogue.
+
+    It reads `dbt/seeds/dim_metric.csv` and upserts the PLATFORM rows. That is not
+    a declaration anyone authored through a screen -- it is the product's own
+    catalogue, the same doctrine as `platform_canonical_vocabulary` -- so it did
+    not go with the authoring doors, and this test says so out loud rather than
+    leaving the asymmetry to be rediscovered as a bug.
+    """
+    import ast
+    import inspect
+
+    from core import metric_semantics_api
+
+    tree = ast.parse(inspect.getsource(metric_semantics_api))
+    imported = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module == "core.metric_semantics"
+        for alias in node.names
+    }
+
+    assert "import_platform_defaults" in imported, sorted(imported)

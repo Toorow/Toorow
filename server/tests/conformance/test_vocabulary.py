@@ -17,7 +17,9 @@ HG-4: both GA4 and Meta Ads modules must pass this layer.
 from __future__ import annotations
 
 import csv
+import json
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -301,18 +303,14 @@ def test_vocabulary_dim_country_previously_missing_countries_are_selectable() ->
     }
 
     missing = sorted(code for code in regression_cases if code not in rows)
-    assert not missing, (
-        f"[vocabulary] dim_country.csv is missing regression countries: {missing}"
-    )
+    assert not missing, f"[vocabulary] dim_country.csv is missing regression countries: {missing}"
 
     wrong_name = {
         code: rows[code]["display_name"]
         for code, expected in regression_cases.items()
         if rows[code]["display_name"] != expected
     }
-    assert not wrong_name, (
-        f"[vocabulary] unexpected display names in dim_country.csv: {wrong_name}"
-    )
+    assert not wrong_name, f"[vocabulary] unexpected display names in dim_country.csv: {wrong_name}"
 
 
 def test_vocabulary_dim_country_aliases_never_collide() -> None:
@@ -494,7 +492,11 @@ def test_vocabulary_ga4_manifest_country_dimension(module_path: Path, manifest: 
     if "country" in canonical_dims:
         # The module maps some source field to 'country' (vocabulary-governed).
         # Verify the seed's alias map covers at least the canonical ISO codes.
-        # (We cannot know the exact values without running dbt, so we check alias coverage.)
+        # NOTE (Story 37.7 repair): this is a FLOOR, not a guard — a non-empty seed
+        # proves nothing about the spellings the module actually emits. GSC declared
+        # ISO alpha-3 ('fra') while the seed carried none, and this assertion stayed
+        # green while every GSC country landed in Unknown. The real guard is
+        # test_vocabulary_declared_spellings_resolve below.
         country_isos = set(alias_map_country.values())
         if not country_isos:
             errors.append(
@@ -534,8 +536,7 @@ def test_vocabulary_canonical_dims_covered(module_path: Path, manifest: dict) ->
         seed_path = _SEEDS_DIR / csv_file
         if not seed_path.exists():
             errors.append(
-                f"[{module_name}] Vocabulary seed missing for dimension '{voc_dim}': "
-                f"{seed_path}"
+                f"[{module_name}] Vocabulary seed missing for dimension '{voc_dim}': {seed_path}"
             )
             continue
 
@@ -546,7 +547,270 @@ def test_vocabulary_canonical_dims_covered(module_path: Path, manifest: dict) ->
                 f"no canonical values for dimension '{voc_dim}'"
             )
 
-    assert not errors, (
-        "[vocabulary] Vocabulary coverage failures:\n"
-        + "\n".join(f"  - {e}" for e in errors)
+    assert not errors, "[vocabulary] Vocabulary coverage failures:\n" + "\n".join(
+        f"  - {e}" for e in errors
+    )
+
+
+# ---------------------------------------------------------------------------
+# Story 37.7 (repair) — the guard that could not fail
+#
+# Everything above checks that the SEED is well formed and non-empty. Nothing
+# checked that the spellings a module DECLARES it emits actually resolve against
+# that seed. GSC's api_catalog declares ISO 3166-1 alpha-3 ("e.g. 'fra', 'gbr'"),
+# dim_country.csv carried no alpha-3 alias, and the whole vocabulary layer stayed
+# green while every GSC country silently landed in Unknown.
+#
+# The two tests below read each module's OWN api_catalog.json (HG-1: no
+# module-specific string here) and confront its declared spellings with the seed,
+# on both reader paths:
+#   * Python  — core.country_vocabulary, case-INsensitive;
+#   * dbt/SQL — normalize_dimension + list_contains, exact and case-SENSITIVE.
+# ---------------------------------------------------------------------------
+
+#: Values quoted inside a parenthetical that carries an "e.g." — the catalogs'
+#: convention for declaring the graphies a provider emits.
+_EG_PARENTHETICAL_RE = re.compile(r"\(([^)]*\be\.?g\.?\b[^)]*)\)", re.IGNORECASE)
+_QUOTED_RE = re.compile(r"['\"‘’“”]([^'\"‘’“”]+)")
+
+#: An explicitly declared encoding family for a country field, and the alias
+#: length it obliges the seed to carry for EVERY country.
+_COUNTRY_ENCODING_RE = re.compile(r"alpha-?([23])", re.IGNORECASE)
+
+#: The OTHER declared encoding family, and the one that went unproven. A provider
+#: emitting English country names obliges the seed to carry a name alias for every
+#: country, exactly as alpha-3 obliges a three-letter one. Until 2026-08-17 this
+#: family matched no pattern, so the whole-seed test skipped for every connector
+#: that declares names -- CM360, DV360 and GA4 -- and their proof stopped at the two
+#: exemplars in the parenthetical.
+_COUNTRY_NAME_FAMILY_RE = re.compile(r"country\s+name|country\s+from\s+which", re.IGNORECASE)
+
+
+def _declared_spellings(description: str) -> list[str]:
+    """Extract the example values a catalog description declares, if any.
+
+    Only quoted tokens inside an "(e.g. …)" parenthetical count: a quoted field
+    name elsewhere in the prose ("when 'country' is in the dimensions list") is
+    documentation, not a value.
+    """
+    spellings: list[str] = []
+    for group in _EG_PARENTHETICAL_RE.findall(description or ""):
+        for raw in _QUOTED_RE.findall(group):
+            token = raw.strip().strip(",").strip()
+            if token and token not in spellings:
+                spellings.append(token)
+    return spellings
+
+
+def _catalog_fields_by_source(module_path: Path) -> dict[str, dict]:
+    catalog_path = module_path / "api_catalog.json"
+    if not catalog_path.exists():
+        return {}
+    catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+    fields = catalog.get("fields", []) if isinstance(catalog, dict) else catalog
+    by_source: dict[str, dict] = {}
+    for field in fields:
+        if not isinstance(field, dict):
+            continue
+        for key in (field.get("source_field"), field.get("field_id")):
+            if key:
+                by_source.setdefault(key, field)
+    return by_source
+
+
+def test_vocabulary_declared_spellings_resolve(module_path: Path, manifest: dict) -> None:
+    """Every graphy a module's own catalog declares must resolve against the seed.
+
+    This is the guard whose absence let Story 37.7 ship with GSC countries in
+    Unknown. It fails, per module, when a declared spelling resolves on neither
+    reader path — or when the two paths disagree.
+    """
+    module_name = manifest.get("name", "unknown")
+    dim_mapping = manifest.get("canonical_dimension_mapping", {}) or {}
+    by_source = _catalog_fields_by_source(module_path)
+
+    errors: list[str] = []
+    undeclared: list[str] = []
+    checked = 0
+
+    for source_field, canonical in dim_mapping.items():
+        if canonical not in _VOCABULARY_DIMS:
+            continue
+        csv_file, alias_col, canonical_col = _VOCABULARY_DIMS[canonical]
+        alias_map = _load_alias_map(csv_file, alias_col, canonical_col)
+        exact_aliases = set(alias_map)
+        folded_aliases = {alias.casefold(): value for alias, value in alias_map.items()}
+
+        field = by_source.get(source_field)
+        if field is None:
+            # The catalog is the contract; a mapped source field must exist in it.
+            errors.append(
+                f"[{module_name}] '{source_field}' is mapped onto the "
+                f"vocabulary-governed dimension '{canonical}' but is absent from "
+                f"api_catalog.json — its emitted graphies cannot be verified"
+            )
+            continue
+
+        spellings = _declared_spellings(field.get("description", ""))
+        if not spellings:
+            undeclared.append(f"{source_field} -> {canonical}")
+            continue
+
+        for spelling in spellings:
+            checked += 1
+            resolved = folded_aliases.get(spelling.casefold())
+            if resolved is None:
+                errors.append(
+                    f"[{module_name}] declared '{canonical}' value {spelling!r} does not "
+                    f"resolve against {csv_file} — every row carrying it lands in Unknown"
+                )
+                continue
+            if spelling not in exact_aliases and spelling.upper() not in exact_aliases:
+                errors.append(
+                    f"[{module_name}] declared '{canonical}' value {spelling!r} resolves in "
+                    f"Python but not on the dbt path: neither {spelling!r} nor "
+                    f"{spelling.upper()!r} is an alias in {csv_file} (list_contains is exact)"
+                )
+            if canonical == "country":
+                from core.country_vocabulary import normalize_country_value  # noqa: PLC0415
+
+                python_reader = normalize_country_value(spelling)
+                if python_reader != resolved:
+                    errors.append(
+                        f"[{module_name}] readers disagree on {spelling!r}: seed says "
+                        f"{resolved!r}, core.country_vocabulary says {python_reader!r}"
+                    )
+
+    assert not errors, "[vocabulary] declared graphies unresolved:\n" + "\n".join(
+        f"  - {e}" for e in errors
+    )
+
+    if not checked:
+        if undeclared:
+            pytest.skip(
+                f"[{module_name}] api_catalog declares no example graphy for "
+                f"{undeclared} — the emitted values cannot be confronted with the seed"
+            )
+        pytest.skip(f"[{module_name}] maps no vocabulary-governed dimension")
+
+
+def test_vocabulary_declared_country_encoding_is_carried_by_the_seed(
+    module_path: Path, manifest: dict
+) -> None:
+    """A declared encoding binds the WHOLE seed, not just the two example values.
+
+    GSC declares alpha-3 for every country it returns, so making 'fra' and 'gbr'
+    resolve while leaving the other 247 unmapped would repair the exemplar and
+    leave the class broken.
+    """
+    module_name = manifest.get("name", "unknown")
+    dim_mapping = manifest.get("canonical_dimension_mapping", {}) or {}
+    by_source = _catalog_fields_by_source(module_path)
+
+    declared_lengths: dict[int, str] = {}
+    declared_names: dict[str, str] = {}
+    for source_field, canonical in dim_mapping.items():
+        if canonical != "country":
+            continue
+        field = by_source.get(source_field)
+        if field is None:
+            continue
+        description = field.get("description", "") or ""
+        match = _COUNTRY_ENCODING_RE.search(description)
+        if match:
+            declared_lengths[int(match.group(1))] = source_field
+        elif _COUNTRY_NAME_FAMILY_RE.search(description):
+            declared_names[source_field] = description
+
+    if not declared_lengths and not declared_names:
+        pytest.skip(f"[{module_name}] declares no country encoding for its country field")
+
+    gaps: list[str] = []
+    for length, source_field in sorted(declared_lengths.items()):
+        for row in _read_country_rows():
+            code = row["iso_code"]
+            if code in _EXCEPTIONAL_RESERVATIONS:
+                # XK is a reservation, not an officially assigned code: ISO gives it
+                # no alpha-3. Whatever a provider emits for Kosovo is not ISO and
+                # belongs to per-client conformance, not to this seed.
+                continue
+            if not any(
+                len(alias) == length and alias.isalpha() for alias in _split_aliases(row["aliases"])
+            ):
+                gaps.append(code)
+        assert not gaps, (
+            f"[{module_name}] '{source_field}' is declared as ISO alpha-{length}, but "
+            f"dim_country.csv carries no {length}-letter alias for {len(gaps)} countries: "
+            f"{sorted(gaps)[:12]}{' …' if len(gaps) > 12 else ''}\n"
+            "  Each one is a real country that lands in Unknown."
+        )
+
+    # Story 37.7, closed 2026-08-17. A NAME is an encoding family too, and it was the
+    # unproven one: CM360, DV360 and GA4 declare "Country name (e.g. 'France', 'United
+    # States')", which matches no `alpha-N`, so this test SKIPPED for all three and the
+    # proof stopped at two exemplars. Two names resolving proved nothing about the other
+    # 248 -- exactly the shape of the defect 37.7 was opened for, where 'fra' and 'gbr'
+    # would have resolved while GSC's remaining countries landed in Unknown.
+    #
+    # A provider emitting English country names obliges the seed to carry a name alias
+    # for EVERY country, and `display_name` is not enough on its own: the dbt path is
+    # `list_contains` over `aliases`, which is exact, so a name present only in
+    # `display_name` resolves in Python and not in the warehouse.
+    for source_field in sorted(declared_names):
+        name_gaps: list[str] = []
+        for row in _read_country_rows():
+            aliases = _split_aliases(row["aliases"])
+            display = str(row["display_name"]).strip()
+            # A "name" alias is any alias longer than an alpha-3 code that is not a
+            # bare code: the seed writes them upper-cased AND in display form, and
+            # either resolves, so requiring one specific casing would fail a seed that
+            # is correct.
+            if not any(len(alias) > 3 for alias in aliases):
+                name_gaps.append(row["iso_code"])
+            elif display and display.casefold() not in {
+                alias.casefold() for alias in aliases
+            }:
+                # The display name itself must be reachable on the exact dbt path.
+                name_gaps.append(row["iso_code"])
+        assert not name_gaps, (
+            f"[{module_name}] '{source_field}' is declared as a country NAME, but "
+            f"dim_country.csv carries no matching name alias for {len(name_gaps)} "
+            f"countries: {sorted(name_gaps)[:12]}{' …' if len(name_gaps) > 12 else ''}\n"
+            "  A provider that emits names and a seed that only carries codes puts "
+            "every one of them in Unknown."
+        )
+
+
+def test_vocabulary_country_mappings_normalize_in_module_staging(
+    module_path: Path, manifest: dict
+) -> None:
+    """Country mappings must cross the shared dbt vocabulary boundary.
+
+    Catalog examples prove that declared spellings are representable, but they
+    cannot prove that the warehouse actually performs the lookup. Requiring the
+    shared macro and the retained source spelling closes the gap where DV360
+    passed its raw country column straight through staging.
+    """
+    module_name = manifest.get("name", "unknown")
+    dim_mapping = manifest.get("canonical_dimension_mapping", {}) or {}
+    if "country" not in dim_mapping.values():
+        pytest.skip(f"[{module_name}] maps no country dimension")
+
+    staging_dir = module_path / "dbt" / "staging"
+    sql_files = sorted(staging_dir.glob("*.sql")) if staging_dir.exists() else []
+    sql_by_path = {path: path.read_text(encoding="utf-8") for path in sql_files}
+    normalized = [
+        path
+        for path, sql in sql_by_path.items()
+        if "normalize_dimension" in sql and "dim_country" in sql
+    ]
+    assert normalized, (
+        f"[{module_name}] maps a source field to canonical country but no staging "
+        "model routes it through normalize_dimension(..., dim_country, ...)"
+    )
+
+    source_preserved = [path for path in normalized if "country_source" in sql_by_path[path]]
+    assert source_preserved, (
+        f"[{module_name}] normalizes country without retaining country_source; "
+        "unresolved values cannot produce actionable DQ evidence"
     )

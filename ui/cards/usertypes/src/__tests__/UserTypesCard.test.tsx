@@ -17,7 +17,7 @@ import type { CardEnvelope } from "@toorow/card-shell";
 describe("User types card — fixture renders without throwing", () => {
   it("renders the card title", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
-    expect(screen.getByTestId("card-title")).toHaveTextContent("Types d'utilisateurs");
+    expect(screen.getByTestId("card-title")).toHaveTextContent("User Types");
   });
 
   it("renders kpi_row with active_users and sessions from block.data", () => {

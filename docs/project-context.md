@@ -18,6 +18,8 @@ control plane for trustworthy agentic analytics. It combines managed or external
 ingestion, semantic governance, shared business context, DQ/provenance,
 post-click attribution without a proprietary pixel and a measurable evaluation
 loop. `docs/product-direction.md` is the concise direction statement.
+`docs/product-architecture/README.md` is the concise control map of product
+views, cross-project capabilities and pending contract corrections.
 
 ## Repository model
 
@@ -50,6 +52,7 @@ private until reviewed.
   the full desktop administration workspace is not appropriate.
 - Public GitHub availability does not mean open source by itself. Do not claim
   an open-source license until one is selected and added.
+
 ## Architecture
 
 The application follows a microkernel/plugin design:
@@ -145,8 +148,10 @@ Module manifests are schema-versioned. Tools mount under
   `ui/cards/*/src/main.tsx`.
 - dbt project: `dbt/dbt_project.yml`.
 - Local platform: `infra/nango/docker-compose.yml`.
-- CI: `.github/workflows/ci.yml`; human-gated deploy:
-  `.github/workflows/deploy.yml`.
+- CI: `.github/workflows/ci.yml` (checks only — it does NOT deploy).
+- Deploy: `infra/scripts/deploy.sh`, run BY HAND. There is no automatic
+  deployment; the GitHub deploy workflow was removed 2026-08-02 because it had
+  never authenticated once.
 
 ## Development rules
 
@@ -164,6 +169,110 @@ Module manifests are schema-versioned. Tools mount under
   create explicit atomic commits, then hand off with evidence and open risks.
 - Treat `doc/` as research/proposal input. SPEC, ratified architecture, accepted
   stories and executable contracts determine what is binding or already shipped.
+
+## Definition of Done — per story
+
+A story is not done because its tests pass. It is done when all of the following
+hold. Each line is checkable by the person reviewing, in one command or one look.
+
+**1. The target was read first.** The story names the architecture document of the
+surface it touches (`docs/product-architecture/*.md`) and quotes the requirement
+it implements. If no document covers the surface, the story says so explicitly
+before any code is written — it never invents a design decision and presents it
+as an implementation choice.
+
+**2. Acceptance is the document's own `Incomplete if` list.** The story states
+which of those criteria it turns from true to false, and re-evaluates them at the
+end. A criterion still true is stated as still true, not omitted.
+
+```bash
+python scripts/finished_work_audit.py <surface>   # must be run; exits 1 while open
+python scripts/finished_work_audit.py --plan      # the delivery plan, generated
+```
+
+The audit runs on its own: `.claude/settings.json` fires `--gate` on every turn
+end, and blocks on any finding not already in `known-debt.json` — a component
+mounted nowhere, a contracted tab swallowed by a `default:`, non-English copy, a
+duplicated selector.
+
+**A server route with no door is REPORTED, not blocked, and only since
+2026-08-01.** Until that date the scanner read `server/core/admin_api.py` alone,
+which merely *mounts* routes while 32 of the 48 `server/core/*_api.py` modules
+*declare* them: it saw 137 of the 393 mounted `/api/` routes and was blind to 256.
+Two Epic 52 routes shipped with no caller at all under a green gate. The scanner
+now reads the declaring modules and sees 358 — which takes the doorless count from
+22 to 59. Those 37 are not new debt; they were invisible. Making them block at once
+would redden the gate for every session simultaneously, so they are listed by
+`--plan` and triaged by hand into `known-debt.json` before the switch
+(`_ROUTE_FINDINGS_BLOCK`) is flipped. **Until then, `--gate → 0` is not evidence
+that a route has a door** — the evidence is a caller, named. Accepting one requires writing
+it into that file, deliberately, where it stays visible in git history. The
+perimeter is enumerated from the inventory, never from the diff: eleven explicit
+requests to audit produced seven audits and zero detections precisely because
+the perimeter was chosen each time from the code just touched.
+
+Clearing a criterion means recording it in `docs/product-architecture/completeness-ledger.json`
+with the command, route or screen that produced the verdict. An unrecorded
+criterion counts as still true, so forgetting to evaluate one can never read as
+progress. The audit also runs live structural checks that no verdict can silence.
+
+**2b. Say `rebuild` when it is a rebuild.** When the shipped object is not the
+contracted object, the honest answer is "this view has to be rebuilt", or "to
+repair it, here is everything required" — with the list. A partial repair
+presented as a fix is worse than no repair: it spends the person's trust and
+they discover the gap by clicking. Announcing a rebuild is never the wrong
+answer; announcing a fix that isn't one always is.
+
+**3. The whole class is treated.** A defect or a change applies to every instance
+of its class: all screens, all 37 connectors, all routes of the family — never
+only the one that was reported. The story names the class and the count.
+
+**4. The user's path was executed end to end.** Not a mocked unit test: the real
+sequence a person performs, from the first click to the screen that shows the
+result. A harness that stops at the first link is not evidence.
+
+**5. Nothing new was invented in the shared layers.** Three standing rules, each
+now measured by the audit rather than merely written down:
+
+- **All visible copy is English.** Not identifiers, not directory names — what
+  reaches the screen. `Extraits` and `Réglages` shipped as tab labels for months.
+- **One stylesheet, primitives first.** No new base class, no hardcoded colour,
+  no literal spacing value. Use an `ui/admin/src/app.css` primitive or change the
+  foundation deliberately.
+- **No second copy for convenience.** Duplicating is cheaper than reading once,
+  and more expensive than reading every time after — and it hides which copy is
+  live. Consolidating 46 stylesheets into one while leaving 434 duplicated
+  selectors inside is not consolidation.
+- **A recurring thing is a component, never a local class.** Before writing any
+  markup, read `ui/admin/src/ui/index.ts` and use what is there; if the concept
+  is missing, add it there. A class carrying a screen prefix and a vocabulary
+  word — `dso-btn`, `imports-dialog`, `kg-drawer`, `render-field` — is a
+  component re-implemented locally, and the audit now reports it. The console
+  holds **170** of them, including three separate button scales, because the
+  written rule to re-read first has never once prevented one.
+
+**6. Server capability and UI door ship together.** A route without a screen and a
+screen without a route are both incomplete. A module whose functions no route
+exposes is not delivered — the most common failure in this repository.
+
+**7. Nothing was written to the production database.** Test artefacts belong in a
+test database. Some rows here are immutable by trigger and cannot be removed.
+
+**8. Every number reported carries the command that produced it.** No claim of
+completeness without the measurement that supports it.
+
+**9. Traces of missing work are preserved, not cleaned up.** A disabled tab, an
+unrendered stylesheet block or an unwired capability is the inventory of what is
+left to build. Deleting it destroys the only evidence that absence leaves.
+
+## What a story must never do
+
+- Ship a screen that renders another screen's component under a different route.
+- Apply a request from conversation that contradicts a ratified document, without
+  saying so and asking whether it is an amendment.
+- Report progress at the boundary of what was touched rather than what the person
+  can now do.
+- Replace a measurement with an audit when a correction is possible.
 
 ## Verification baseline
 
@@ -196,6 +305,7 @@ Focused local commands are documented in the root `README.md` and
 - Epic 13 owns dictionary approval and cross-stream conflict resolution. Story
   15.6 remains the delivered read-only Google Sheets adapter/objectives preset;
   Epic 12 consumes it for arbitrary recurring managed feeds.
+
 ## Known publication risks
 
 - The shareable application is intended for public GitHub publication. There is

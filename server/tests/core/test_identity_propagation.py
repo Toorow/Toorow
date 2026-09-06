@@ -134,21 +134,21 @@ async def test_get_daily_report_identity_field_present():
 
 
 # ---------------------------------------------------------------------------
-# T7.4 / T7.5 — list_modules also carries identity
+# T7.4 / T7.5 — list_connectors also carries identity
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
-async def test_list_modules_identity_field_present():
-    """list_modules envelope data must contain 'identity' field (AC3)."""
+async def test_list_connectors_identity_field_present():
+    """list_connectors envelope data must contain 'identity' field (AC3)."""
     async with Client(FastMCPTransport(mcp)) as client:
-        result = await client.call_tool("list_modules", {})
+        result = await client.call_tool("list_connectors", {})
 
-    assert not result.is_error, f"list_modules returned error: {result}"
+    assert not result.is_error, f"list_connectors returned error: {result}"
     payload = result.structured_content or {}
     data = payload.get("data", {})
     assert "identity" in data, (
-        f"Expected 'identity' in list_modules data: {list(data.keys())}"
+        f"Expected 'identity' in list_connectors data: {list(data.keys())}"
     )
     assert data["identity"] == "anonymous"
 

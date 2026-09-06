@@ -13,7 +13,7 @@
  *         data-driven from the envelope.
  *    A fallback lookup is provided for legacy envelopes without the server-joined fields.
  *  - AD-9: markers are ADDITIVE — they never modify any metric value.
- *  - AD-11: colors come from the MUI theme palette or org branding (getVizPalette),
+ *  - AD-11: colors come from the theme palette or org branding (getVizPalette),
  *    never from hardcoded hex literals.
  *  - AD-2: source-agnostic — no connector-specific strings in this module.
  */
@@ -99,11 +99,11 @@ export function resolveCategory(event: ContextEventMeta): EventCategory {
 // ---------------------------------------------------------------------------
 // Category/platform colour mapping (for legend + filter chips).
 // Colors are theme-semantic strings (returned as CSS var names or palette keys)
-// so the caller resolves them via MUI useTheme() (AD-11: no hardcoded hex).
+// so the caller resolves them via useTheme() (AD-11: no hardcoded hex).
 // ---------------------------------------------------------------------------
 
 /**
- * Return a MUI palette key for a category, used to tint markers.
+ * Return a theme palette key for a category, used to tint markers.
  * Categories map to semantic palette roles (error=red, warning=orange,
  * info=blue, success=green, secondary=purple, primary=default).
  */

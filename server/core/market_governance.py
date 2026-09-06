@@ -13,8 +13,9 @@ makes a relabel safe, and the guard must not pretend otherwise.
 
 The guard's job is to **say what depends on the market before the change is
 accepted**, inside the governed preview -> confirm lifecycle that already exists
-(``core.geographic_change``), with the market diff recorded in the append-only
-audit. It never decides for the operator: an acknowledged impact proceeds, an
+(``core.country_workspace_commands`` and ``core.governance_surface_api``, which
+replaced the retired ``core.geographic_change``), with the market diff recorded in
+the append-only audit. It never decides for the operator: an acknowledged impact proceeds, an
 unacknowledged one is refused with the dependent list attached.
 
 AD-2: no binding kind is enumerated here. The registry (``app.market_bindings``,
@@ -50,6 +51,18 @@ class MarketUsageBlocked(RuntimeError):
     def __init__(self, message: str, impacts: Sequence["MarketImpact"] = ()) -> None:
         super().__init__(message)
         self.impacts = tuple(impacts)
+
+
+class MarketUsageUnavailable(RuntimeError):
+    """The used-by evidence cannot be read, so no change may be authorized.
+
+    Distinct from :class:`MarketUsageBlocked` on purpose: that one means "we
+    looked and found dependents"; this one means "we could not look". Collapsing
+    them would let a caller report a confident empty dependency list built from
+    an outage -- the exact defect Story 48.2 removes.
+    """
+
+    code = "market_usage_evidence_unavailable"
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,37 +276,55 @@ def assert_market_change_acknowledged(
 
 
 def fetch_market_bindings(project_id: str, conn: object) -> tuple[MarketBinding, ...]:
-    """Read the declared bindings of a project. Fail-soft: unreadable -> ()."""
+    """Read what depends on this Project's markets, or refuse to answer.
+
+    Story 48.2 (AC8) reversed this function's failure mode, and the reversal is
+    the point rather than a detail. It used to swallow the exception and return
+    ``()``, documented as "fail-soft on the READ only". But its one caller is a
+    guard that asks *is anything depending on this market?* before a destructive
+    change -- so an empty tuple from an outage is indistinguishable from a
+    genuine "nothing depends on it", and the guard waves the change through.
+    A used-by check that cannot read its store has not found zero dependents;
+    it has failed, and it now says so.
+
+    Reads the generic Master Data used-by contract, which replaces the mutable
+    ``app.market_bindings`` registry as the authority.
+    """
+
+    from core.master_data import (  # noqa: PLC0415
+        MasterDataUnavailable,
+        fetch_registry,
+        fetch_used_by,
+    )
 
     try:
-        with conn.cursor() as cur:  # type: ignore[attr-defined]
-            cur.execute(
-                """
-                SELECT market_id, binding_kind, binding_id, binding_label
-                FROM app.market_bindings
-                WHERE project_id = %s
-                ORDER BY market_id, binding_kind, binding_id
-                """,
-                (project_id,),
-            )
-            rows = cur.fetchall()
-        return tuple(
-            MarketBinding(
-                market_id=str(row[0]),
-                binding_kind=str(row[1]),
-                binding_id=str(row[2]),
-                binding_label=str(row[3]) if row[3] else None,
-            )
-            for row in rows
-        )
+        registry = fetch_registry(conn, project_id=project_id, object_kind="country")
     except Exception as exc:  # noqa: BLE001
-        # Fail-soft on the READ only. A guard that cannot read its registry
-        # reports no dependency; it never invents one and never blocks a change
-        # on a store outage. The registry is the source of truth, not this call.
-        logger.warning(
-            "market_governance: binding read failed project=%s: %s", project_id, exc
-        )
+        raise MarketUsageUnavailable(
+            "the Country registry is unreadable; the used-by guard cannot decide"
+        ) from exc
+    if registry is None:
+        # No registry is a real, readable answer: this Project governs no
+        # markets, so nothing can be bound to one.
         return ()
+    try:
+        references = fetch_used_by(conn, project_id=project_id, registry_id=registry["id"])
+    except MasterDataUnavailable as exc:
+        logger.warning(
+            "market_governance: used-by store unreadable project=%s: %s", project_id, exc
+        )
+        raise MarketUsageUnavailable(
+            "the used-by store is unreadable; the change is blocked rather than allowed"
+        ) from exc
+    return tuple(
+        MarketBinding(
+            market_id=reference.node_id,
+            binding_kind=reference.consumer_kind,
+            binding_id=reference.consumer_id,
+            binding_label=reference.consumer_label,
+        )
+        for reference in references
+    )
 
 
 def register_market_binding(
@@ -310,30 +341,31 @@ def register_market_binding(
 
     ``binding_kind`` is caller data (AD-2): budgets, objectives and saved reports
     each declare their own, and the platform enumerates none.
+
+    Story 48.2: this writes the generic Master Data used-by contract. There is
+    one writer and one store; ``app.market_bindings`` is no longer either.
     """
 
-    from ulid import ULID  # noqa: PLC0415
+    from core.master_data import (  # noqa: PLC0415
+        UsedByReference,
+        register_used_by,
+        require_registry,
+    )
 
-    with conn.cursor() as cur:  # type: ignore[attr-defined]
-        cur.execute(
-            """
-            INSERT INTO app.market_bindings
-                (id, project_id, market_id, binding_kind, binding_id, binding_label,
-                 created_by, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
-            ON CONFLICT (project_id, binding_kind, binding_id, market_id)
-            DO UPDATE SET binding_label = EXCLUDED.binding_label, updated_at = NOW()
-            """,
-            (
-                f"mkb_{ULID()}",
-                project_id,
-                market_id,
-                binding_kind,
-                binding_id,
-                binding_label,
-                identity,
-            ),
-        )
+    registry = require_registry(conn, project_id=project_id, object_kind="country")
+    register_used_by(
+        conn,
+        project_id=project_id,
+        registry_id=registry["id"],
+        reference=UsedByReference(
+            node_id=market_id,
+            consumer_kind=binding_kind,
+            consumer_id=binding_id,
+            consumer_label=binding_label,
+            hierarchy_version_id=registry["current_version_id"],
+        ),
+        actor=identity,
+    )
 
 
 def unregister_market_binding(
@@ -344,18 +376,23 @@ def unregister_market_binding(
     binding_id: str,
     conn: object,
 ) -> bool:
-    """Drop a declared binding (caller-owned transaction). True when a row went."""
+    """Release a declared binding (caller-owned transaction).
 
-    with conn.cursor() as cur:  # type: ignore[attr-defined]
-        cur.execute(
-            """
-            DELETE FROM app.market_bindings
-            WHERE project_id = %s AND market_id = %s
-              AND binding_kind = %s AND binding_id = %s
-            """,
-            (project_id, market_id, binding_kind, binding_id),
-        )
-        return cur.rowcount > 0
+    Story 48.2: released rather than deleted. A published hierarchy version
+    froze its used-by snapshot, and a row that vanishes makes that snapshot
+    unexplainable; ``released_at`` keeps the history readable.
+    """
+
+    from core.master_data import release_used_by  # noqa: PLC0415
+
+    release_used_by(
+        conn,
+        project_id=project_id,
+        node_id=market_id,
+        consumer_kind=binding_kind,
+        consumer_id=binding_id,
+    )
+    return True
 
 
 def collect_market_usage(

@@ -1,7 +1,8 @@
 """Meta Ads connector — Story 3.6.
 
-Exposes a ``mcp_app: FastMCP`` instance that the core loader mounts under the
-``meta-ads`` namespace (AD-2). This is the second module on the shared base —
+Exposes a ``mcp_app: FastMCP`` instance as the conformance surface (AD-1
+envelope); since AD-42 the core no longer mounts it — execution uses the
+Datastream-parameterized core tools. This is the second module on the shared base —
 the FR2 "drop a folder" proof: zero edits to server/core, one mart UNION.
 
 # AD-12: MCP server reads the fact_daily_kpi mart only — no raw_* tables, no CSV.
@@ -35,8 +36,9 @@ from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-# Module-level FastMCP instance — the public surface the loader mounts.
-# The core does: mcp.mount(loaded.connector_module.mcp_app, namespace=loaded.name)
+# Module-level FastMCP instance, kept as the conformance surface (AD-1 envelope,
+# validated by server/tests/conformance/test_envelope.py). Since AD-42 the core
+# no longer mounts it: execution uses the Datastream-parameterized core tools.
 mcp_app = FastMCP("meta-ads")
 
 # ---------------------------------------------------------------------------
@@ -109,7 +111,7 @@ def _query_bigquery(sql: str, params: dict) -> list[dict]:
     return [dict(zip(cols, row)) for row in result]
 
 
-def _get_mart_table(db_mode: str) -> str:
+def _get_mart_table(db_mode: str, project_id: str | None) -> str:
     """Fully-qualified mart table reference per engine.
 
     DuckDB: dbt materialises marts into the main_marts schema.
@@ -119,7 +121,7 @@ def _get_mart_table(db_mode: str) -> str:
     if db_mode == "duckdb":
         from core import warehouse_tenancy  # noqa: PLC0415
 
-        return f"{warehouse_tenancy.mart_prefix(None)}fact_daily_kpi"
+        return f"{warehouse_tenancy.mart_prefix(project_id)}fact_daily_kpi"
     dataset = os.environ.get("BQ_MARTS_DATASET", "marts")
     gcp_project = os.environ.get("GCP_PROJECT", "")
     prefix = f"{gcp_project}.{dataset}" if gcp_project else dataset
@@ -151,7 +153,7 @@ def _query_mart(date_from: str, date_to: str, project_id: str = "default") -> li
     # AD-12: MCP server reads marts only — never raw_* tables or CSV
     """
     db_mode = _get_db_mode()
-    table = _get_mart_table(db_mode)
+    table = _get_mart_table(db_mode, project_id)
 
     if db_mode == "duckdb":
         sql = _MART_QUERY.format(table=table, p_project="?", p_from="?", p_to="?")
@@ -305,6 +307,20 @@ _API_LEVEL_BY_PROFILE: dict[str, str] = {
 # adset/creative-grain row -> the campaign_id series would sum BOTH and double-count the
 # campaign inside its own series. Each mart series now reads ONLY the rows of its own
 # data_level, so the grains never bleed into one another (EXACT tiktok-ads F-1 pattern).
+# `cost_source_currency` CARRIES NO DEFAULT, DELIBERATELY (AD-9).
+#
+# It was declared `VARCHAR DEFAULT 'USD'` until 2026-08-17. A default currency is
+# a value nobody measured: a row whose account currency the Graph API did not
+# return landed as dollars and became indistinguishable from a row that really is
+# in dollars. Downstream that is worse than missing -- `core.currency_refusal`
+# can refuse an UNKNOWN currency (UNKNOWN_CURRENCY_GAP) but cannot doubt a stated
+# one, so a fabricated 'USD' would convert silently at the wrong rate into a
+# canonical total. An absent currency lands NULL; `stg_meta_ads_daily` then joins
+# no FX rate and `fx_gap_code` says why, which is the honest answer.
+#
+# Measured 2026-08-17 (BigQuery INFORMATION_SCHEMA over every prod raw dataset of
+# the toorow project): no `raw_meta_ads_daily` table exists in production, so the
+# fabricated currency never landed and no existing row needs marking.
 _RAW_CREATE_DDL = """
 CREATE TABLE IF NOT EXISTS raw_meta_ads_daily (
     date                  VARCHAR,
@@ -322,7 +338,8 @@ CREATE TABLE IF NOT EXISTS raw_meta_ads_daily (
     pull_id               VARCHAR,
     loaded_at             VARCHAR,
     project_id            VARCHAR,
-    cost_source_currency  VARCHAR DEFAULT 'USD'
+    cost_source_currency  VARCHAR,
+    report_timezone       VARCHAR
 )
 """
 
@@ -330,9 +347,68 @@ _RAW_INSERT_SQL = """
 INSERT INTO raw_meta_ads_daily
     (date, data_level, campaign_id, campaign_name, adset_id, adset_name, ad_id, creative_id,
      spend, impressions, clicks, conversions, pull_id, loaded_at, project_id,
-     cost_source_currency)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     cost_source_currency, report_timezone)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
+
+#: This connector's declared time context -- mirrors manifest.json
+#: source_capabilities.time_context (Story 39.7). The report timezone is an
+#: ACCOUNT setting: Meta Insights daily rows are bucketed in the ad account's
+#: reporting timezone (set in Business Manager -- see stg_meta_ads_daily.sql's
+#: timezone policy), and the ad account object exposes it as `timezone_name`
+#: (catalog_sources/fusion-report.json). Captured live at pull, one read per
+#: pull; fallback 'gap' -- undetermined lands NULL, never a silent zone.
+_TIME_CONTEXT = {"locus": "account", "fallback": "gap"}
+
+
+def _capture_report_timezone(token: str, account_digits: str) -> str | None:
+    """Best-effort read of the ad account's timezone_name (Story 39.7).
+
+    The Insights API buckets daily rows in the account's reporting timezone but
+    never RETURNS it, so the zone is read from the ad account object
+    (GET /act_<id>?fields=timezone_name) with the token the pull already holds.
+
+    FAIL-SOFT on purpose: the zone is provenance. A pull whose figures landed
+    must not be failed because a metadata read hiccuped -- an undetermined zone
+    resolves to NULL (a read-time TIMEZONE_GAP), never a fabricated one
+    (E39-NFR02).
+    """
+    try:
+        resp = httpx.get(
+            f"{META_GRAPH_API_BASE}/act_{account_digits}",
+            params={"fields": "timezone_name"},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30.0,
+        )
+        if resp.status_code != 200:
+            logger.warning(
+                "meta_ads_timezone_capture_failed: status=%d -- report_timezone "
+                "lands NULL (TIMEZONE_GAP)",
+                resp.status_code,
+            )
+            return None
+        zone = resp.json().get("timezone_name")
+        return zone.strip() if isinstance(zone, str) and zone.strip() else None
+    except Exception as exc:  # noqa: BLE001 -- fail-soft provenance read
+        logger.warning(
+            "meta_ads_timezone_capture_failed: %s -- report_timezone lands NULL "
+            "(TIMEZONE_GAP)",
+            type(exc).__name__,
+        )
+        return None
+
+
+def _resolved_report_timezone(token: str, account_digits: str) -> str | None:
+    """Capture the account zone and resolve it via the 39.7 contract brain.
+
+    core.report_timezone owns validate/fallback/gap; the connector only hands
+    over the zone it read. None is a RESULT (the gap), never a silence.
+    """
+    from core import report_timezone as _rtz  # noqa: PLC0415
+
+    return _rtz.resolve_capture(
+        _TIME_CONTEXT, _capture_report_timezone(token, account_digits)
+    )["report_timezone"]
 
 
 def _insert_raw_rows(
@@ -342,21 +418,36 @@ def _insert_raw_rows(
     project_id: str,
     db_mode: str,
     duckdb_path: str,
+    report_timezone: str | None = None,
 ) -> int:
-    """Insert canonical rows into raw_meta_ads_daily (DuckDB only at P3-dev).
+    """Insert canonical rows into raw_meta_ads_daily (DuckDB or BigQuery per TOOROW_DB_MODE).
 
     Same self-contained pattern as GA4's _insert_raw_rows: the connector owns
     its raw table DDL and never imports from a non-package seeds/ folder.
+
+    Story 39.7: *report_timezone* is the pull's resolved report-timezone
+    provenance (one zone per pull -- the account's), landed UNCHANGED on every
+    row (E39-AD2 immutable capture; never a day-grain conversion, HG-4). None
+    lands NULL -- the fail-closed TIMEZONE_GAP, never a silent default.
     """
-    if db_mode == "duckdb":
+    if db_mode in ("duckdb", "bigquery"):
+        # BOTH BACKENDS, ONE PATH. `open_raw_writer` resolves DuckDB or
+        # BigQuery from TOOROW_DB_MODE itself, so this branch already covers
+        # bigquery. An `elif db_mode == "bigquery"` used to sit below it,
+        # unreachable because this test captures both modes -- dead code that
+        # had quietly drifted to a different set of column names and would
+        # have become live the day someone narrowed this condition.
         from core import warehouse_write  # noqa: PLC0415
 
         con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
         con.execute(_RAW_CREATE_DDL)
         # G-04: add cost_source_currency to existing tables created before this fix.
+        # No DEFAULT (AD-9) -- see _RAW_CREATE_DDL. Rows that predate the column
+        # keep it NULL, which is the honest statement about them: their currency
+        # was never captured.
         con.execute(
             "ALTER TABLE raw_meta_ads_daily ADD COLUMN IF NOT EXISTS "
-            "cost_source_currency VARCHAR DEFAULT 'USD'"
+            "cost_source_currency VARCHAR"
         )
         # review-15-9 F-1: additive/idempotent guard for data_level on pre-existing
         # tables (migrates raw_meta_ads_daily created before the 3-grain fix). Legacy
@@ -364,6 +455,14 @@ def _insert_raw_rows(
         # grain the historical pull produced). Documented in stg_meta_ads_daily.
         con.execute(
             "ALTER TABLE raw_meta_ads_daily ADD COLUMN IF NOT EXISTS data_level VARCHAR"
+        )
+        # Story 39.7 migration guard: additive report_timezone provenance column on
+        # tables created before 39.7. Idempotent; NULL default (fail-closed ->
+        # TIMEZONE_GAP, never a silent 'UTC'). E39-NFR06: additive column, no
+        # existing total moves.
+        con.execute(
+            "ALTER TABLE raw_meta_ads_daily ADD COLUMN IF NOT EXISTS "
+            "report_timezone VARCHAR"
         )
         values = [
             (
@@ -382,18 +481,25 @@ def _insert_raw_rows(
                 pull_id,
                 loaded_at,
                 project_id,
-                r.get("cost_source_currency", "USD"),
+                # AD-9: no fabricated currency. An absent one lands NULL.
+                r.get("cost_source_currency") or None,
+                # Story 39.7: the pull's resolved zone, or NULL (the honest gap).
+                report_timezone,
             )
             for r in rows
         ]
-        con.executemany(_RAW_INSERT_SQL, values)
+        # Une fenetre sans donnee est un RESULTAT, pas une panne : nouvelle
+        # propriete, week-end, campagne en pause. `executemany` sur une liste vide
+        # leve `InvalidInputException` en DuckDB, donc le pull mourait la ou il
+        # aurait du rendre row_count=0. Mesure du 2026-08-01 : premier pull GA4
+        # reel contre l'API, fenetre de cinq jours, zero ligne -> plantage.
+        # gsc portait deja cette garde ; ces deux-la ne l'avaient pas.
+        if values:
+            con.executemany(_RAW_INSERT_SQL, values)
         con.close()
         return len(values)
     else:
-        raise ValueError(
-            f"_insert_raw_rows: unsupported db_mode {db_mode!r} at P3-dev "
-            "(BigQuery path not yet implemented)"
-        )
+        raise ValueError(f"_insert_raw_rows: unsupported db_mode {db_mode!r}")
 
 
 def _extract_conversions(insight_row: dict) -> int:
@@ -443,8 +549,14 @@ def _parse_insight_row(api_row: dict, profile: str = "campaign_daily") -> dict:
         "clicks": api_row.get("clicks", 0),
         "conversions": _extract_conversions(api_row),
         # G-04: account_currency is returned by the Graph API insights endpoint
-        # when requested via the fields param. Default 'USD' when absent (mocks/backfill).
-        "cost_source_currency": api_row.get("account_currency", "USD"),
+        # when requested via the fields param (see the fields list below, which
+        # asks for it). When the response does not carry it, the currency of this
+        # spend is UNKNOWN and stays None -- it is not 'USD'. That fallback stood
+        # here until 2026-08-17 and made an unmeasured currency indistinguishable
+        # from a measured one; AD-9 forbids defaulting a currency, and
+        # `core.currency_refusal` exists precisely to answer the None honestly
+        # (UNKNOWN_CURRENCY_GAP) rather than convert a guess.
+        "cost_source_currency": api_row.get("account_currency") or None,
     }
 
 
@@ -508,12 +620,14 @@ def _pull(
         raise ValueError(f"Unknown meta-ads report profile: {profile!r}")
 
     # T4.8: AD_ACCOUNT_ID env-var fallback when the parameter is not supplied.
-    if ad_account_id is None:
-        ad_account_id = os.environ.get("META_ADS_AD_ACCOUNT_ID")
     if not ad_account_id:
         raise ValueError(
-            "META_ADS_AD_ACCOUNT_ID env var required for pull "
-            "(set it to your Meta ad account id digits, without the 'act_' prefix)"
+            "pull  requires a selected account: the operator picks "
+            "one in the Datastream wizard (discover_accounts lists what the "
+            "token can reach) and the worker passes it under the name the "
+            "manifest declares in account_topology.pull_parameter. There is "
+            "no deployment-wide default: one would pull the same account for "
+            "every project."
         )
     # Normalize: accept both 'act_123' and '123'; the API path needs 'act_<digits>'.
     account_digits = ad_account_id[4:] if ad_account_id.startswith("act_") else ad_account_id
@@ -523,6 +637,10 @@ def _pull(
 
     # AD-3: token obtained immediately before use; falls out of scope after the call.
     token = nango_client.get_fresh_token(connection_id, provider="meta-ads")
+
+    # Story 39.7: capture the account report timezone at pull (one metadata
+    # read, fail-soft) and resolve it through the generic contract.
+    report_timezone = _resolved_report_timezone(token, account_digits)
 
     params = {
         "fields": "campaign_id,campaign_name,adset_id,adset_name,ad_id,"
@@ -573,7 +691,8 @@ def _pull(
 
     loaded_at = datetime.now(tz=timezone.utc).isoformat().replace("+00:00", "Z")
     row_count = _insert_raw_rows(
-        canonical_rows, pull_id, loaded_at, project_id, db_mode, duckdb_path
+        canonical_rows, pull_id, loaded_at, project_id, db_mode, duckdb_path,
+        report_timezone,
     )
 
     # AD-3: no token in log — only pull_id and row_count (safe metadata).
@@ -587,6 +706,10 @@ def _pull(
         "row_count": row_count,
         "date_from": date_from,
         "date_to": date_to,
+        # AI-161 (Story 39.7): the zone this pull OBSERVED, returned so the
+        # worker records it as boundary evidence. None is a RESULT (the zone
+        # was undetermined), recorded as the gap it is.
+        "report_timezone": report_timezone,
     }
 
 
@@ -755,16 +878,22 @@ def pull_campaign_launch(
         persist_context_event,
     )
 
-    if ad_account_id is None:
-        ad_account_id = os.environ.get("META_ADS_AD_ACCOUNT_ID")
     if not ad_account_id:
         raise ValueError(
-            "META_ADS_AD_ACCOUNT_ID env var required for pull "
-            "(set it to your Meta ad account id digits, without the 'act_' prefix)"
+            "pull  requires a selected account: the operator picks "
+            "one in the Datastream wizard (discover_accounts lists what the "
+            "token can reach) and the worker passes it under the name the "
+            "manifest declares in account_topology.pull_parameter. There is "
+            "no deployment-wide default: one would pull the same account for "
+            "every project."
         )
     account_digits = ad_account_id[4:] if ad_account_id.startswith("act_") else ad_account_id
 
     token = nango_client.get_fresh_token(connection_id, provider="meta-ads")
+
+    # Story 39.7: same account, same report timezone -- capture it so this pull
+    # also returns the observed zone (AI-161 contract key on every pull*).
+    report_timezone = _resolved_report_timezone(token, account_digits)
 
     # Paginate the campaigns edge (Graph cursor paging via paging.next).
     raw_rows: list[dict] = []
@@ -853,8 +982,11 @@ def pull_campaign_launch(
     return {
         "pull_id": pull_id,
         "event_count": event_count,
+        "row_count": event_count,
         "date_from": date_from,
         "date_to": date_to,
+        # AI-161 (Story 39.7): the zone this pull observed for its account.
+        "report_timezone": report_timezone,
     }
 
 
@@ -1157,12 +1289,14 @@ def pull_catalog_daily(
             catalog, catalog_default_selection(catalog)
         )
 
-    if ad_account_id is None:
-        ad_account_id = os.environ.get("META_ADS_AD_ACCOUNT_ID")
     if not ad_account_id:
         raise ValueError(
-            "META_ADS_AD_ACCOUNT_ID env var required for pull "
-            "(set it to your Meta ad account id digits, without the 'act_' prefix)"
+            "pull  requires a selected account: the operator picks "
+            "one in the Datastream wizard (discover_accounts lists what the "
+            "token can reach) and the worker passes it under the name the "
+            "manifest declares in account_topology.pull_parameter. There is "
+            "no deployment-wide default: one would pull the same account for "
+            "every project."
         )
     account_digits = ad_account_id[4:] if ad_account_id.startswith("act_") else ad_account_id
 
@@ -1173,6 +1307,11 @@ def pull_catalog_daily(
     fields, breakdowns, action_family_map = _build_catalog_request(selection)
 
     token = nango_client.get_fresh_token(connection_id, provider="meta-ads")
+
+    # Story 39.7: capture the account report timezone at pull (one metadata
+    # read, fail-soft) and resolve it through the generic contract.
+    report_timezone = _resolved_report_timezone(token, account_digits)
+
     url = f"{META_GRAPH_API_BASE}/act_{account_digits}/insights"
 
     # Chunk the fields param; structure fields repeat in every chunk so rows merge.
@@ -1237,7 +1376,8 @@ def pull_catalog_daily(
 
     loaded_at = datetime.now(tz=timezone.utc).isoformat().replace("+00:00", "Z")
     row_count = _insert_raw_rows(
-        canonical_rows, pull_id, loaded_at, project_id, db_mode, duckdb_path
+        canonical_rows, pull_id, loaded_at, project_id, db_mode, duckdb_path,
+        report_timezone,
     )
 
     logger.info(
@@ -1251,6 +1391,10 @@ def pull_catalog_daily(
         "row_count": row_count,
         "date_from": date_from,
         "date_to": date_to,
+        # AI-161 (Story 39.7): the zone this pull OBSERVED, returned so the
+        # worker records it as boundary evidence. None is a RESULT (the zone
+        # was undetermined), recorded as the gap it is.
+        "report_timezone": report_timezone,
     }
 
 

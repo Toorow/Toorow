@@ -116,7 +116,7 @@ class TestReportChainRoute:
             patch("core.report_chain.get_report_chain", return_value=None),
             # project_access check: skip by patching it away
             patch(
-                "core.project_access.identity_has_project_access",
+                "core.project_access.identity_can_read_project",
                 return_value=True,
                 create=True,
             ),
@@ -132,7 +132,7 @@ class TestReportChainRoute:
             patch("core.db.get_connection", return_value=self._conn_ctx()),
             patch("core.report_chain.get_report_chain", return_value=_SAMPLE_CHAIN),
             patch(
-                "core.project_access.identity_has_project_access",
+                "core.project_access.identity_can_read_project",
                 return_value=True,
                 create=True,
             ),
@@ -158,7 +158,7 @@ class TestReportChainRoute:
                     "definition": None,
                     "target_field": {
                         "name": "average_position",
-                        "display_name": "Position moyenne",
+                        "display_name": "Average position",
                         "measure": "average",
                         "data_type": "decimal",
                     },
@@ -176,7 +176,7 @@ class TestReportChainRoute:
             "validation": {
                 "ok_count": 0,
                 "warnings": [
-                    "Aucun flux actif n'alimente « Position moyenne » pour ce projet.",
+                    "No active Datastream feeds 'Average position' for this project.",
                     "La métrique « cost_per_click » n'est pas référencée dans le dictionnaire.",
                 ],
             },
@@ -186,7 +186,7 @@ class TestReportChainRoute:
             patch("core.db.get_connection", return_value=self._conn_ctx()),
             patch("core.report_chain.get_report_chain", return_value=chain_with_warnings),
             patch(
-                "core.project_access.identity_has_project_access",
+                "core.project_access.identity_can_read_project",
                 return_value=True,
                 create=True,
             ),

@@ -2,41 +2,41 @@
   {
     "adset_id": "92385123450002000101",
     "metric": "conversions",
-    "total": 540.0
+    "total": 520.0
   },
   {
     "adset_id": "92385123450002000101",
     "metric": "cost",
-    "total": 3114.4392
+    "total": 2770.898
   },
   {
     "adset_id": "92385123450002000102",
     "metric": "conversions",
-    "total": 540.0
+    "total": 520.0
   },
   {
     "adset_id": "92385123450002000102",
     "metric": "cost",
-    "total": 3114.4392
+    "total": 2770.898
   },
   {
     "adset_id": "92385123450002000201",
     "metric": "conversions",
-    "total": 756.0
+    "total": 728.0
   },
   {
     "adset_id": "92385123450002000201",
     "metric": "cost",
-    "total": 1470.528
+    "total": 1308.3200000000002
   },
   {
     "adset_id": "92385123450002000202",
     "metric": "conversions",
-    "total": 756.0
+    "total": 728.0
   },
   {
     "adset_id": "92385123450002000202",
     "metric": "cost",
-    "total": 1470.528
+    "total": 1308.3200000000002
   }
 ]

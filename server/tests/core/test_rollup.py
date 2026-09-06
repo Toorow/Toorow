@@ -13,6 +13,7 @@ os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
 
+import pytest  # noqa: E402
 from core.rollup import compute_rollup  # noqa: E402
 
 
@@ -78,7 +79,7 @@ def test_compute_rollup_basic():
     assert entry["source_system"] == "gsc"
     assert entry["source_field"] == "clicks"
     assert entry["pull_id"] == "pull_abc123"
-    assert entry["period"] == "sem. préc."
+    assert entry["period"] == "prev. wk."
 
 
 # ---------------------------------------------------------------------------
@@ -500,3 +501,380 @@ def test_rollup_byte_identical_across_publication_pointer_swap():
     # BYTE-IDENTICAL: value and canonical pin unchanged by the pointer swap.
     assert rollup_v2["sessions"]["value"] == rollup_v1["sessions"]["value"] == 3000.0
     assert pin_v2["ga4"] == pin_v1["ga4"] == "country"
+
+
+# ---------------------------------------------------------------------------
+# Cross-source provenance: a sum of N connectors must not be cited as one.
+#
+# `_metric_value` pins ONE canonical partition per connector and then adds every
+# connector together. `_provenance` used to return the connector of the FIRST row
+# it met (the loop `break`-ed), so the citation named a single provider for a
+# figure built from several -- and the citation is the entire mechanism by which
+# "every claim is cited" (FR7) is supposed to hold.
+# ---------------------------------------------------------------------------
+
+
+def _cross_source_rows():
+    """Same metric, same days, two different connectors."""
+    rows = []
+    for connector, pull in (("google-ads", "pull_ads"), ("google-analytics", "pull_ga")):
+        for day in ("2026-07-12", "2026-07-13"):
+            rows.append(
+                {
+                    "date": day,
+                    "connector": connector,
+                    "metric": "conversions",
+                    "breakdown_dimension": "campaign",
+                    "breakdown_value": "brand",
+                    "value": 100.0,
+                    "pull_id": pull,
+                    "loaded_at": f"{day}T06:00:00",
+                }
+            )
+    return rows
+
+
+def test_cross_source_total_names_every_contributing_source():
+    rollup = compute_rollup(
+        _cross_source_rows(), ["conversions"], "2026-07-12", "2026-07-13", "default", []
+    )
+    entry = rollup["conversions"]
+
+    # The value really is the sum of both connectors...
+    assert entry["value"] == 400.0
+    # ...so the provenance must say both, not the first one encountered.
+    assert entry["source_systems"] == ["google-ads", "google-analytics"]
+    assert entry["source_count"] == 2
+    assert entry["source_system"] == "google-ads+google-analytics"
+
+
+def test_single_source_provenance_is_unchanged():
+    """The single-source citation keeps its exact previous shape."""
+    rows = [r for r in _cross_source_rows() if r["connector"] == "google-ads"]
+    entry = compute_rollup(
+        rows, ["conversions"], "2026-07-12", "2026-07-13", "default", []
+    )["conversions"]
+
+    assert entry["source_system"] == "google-ads"
+    assert entry["source_systems"] == ["google-ads"]
+    assert entry["source_count"] == 1
+
+
+def test_citation_token_never_presents_a_multi_source_sum_as_one_source():
+    from core.narrative import _metric_citation
+
+    entry = compute_rollup(
+        _cross_source_rows(), ["conversions"], "2026-07-12", "2026-07-13", "default", []
+    )["conversions"]
+    token = _metric_citation(entry)
+
+    assert "google-ads" in token or "2 sources" in token
+    # The regression: a token that names ONE provider for a two-provider total.
+    assert token != "(google-ads:conversions, pull_ads)"
+
+
+def test_citation_collapses_to_a_count_when_the_source_list_is_too_long():
+    """Losing WHICH sources is a display limit; losing HOW MANY is the failure."""
+    from core.narrative import _metric_citation
+
+    token = _metric_citation(
+        {
+            "source_system": "+".join(f"a-very-long-connector-name-{i}" for i in range(4)),
+            "source_field": "conversions",
+            "pull_id": "pull_01JABCDEFGHIJKLMNOPQRSTUV",
+            "source_count": 4,
+        }
+    )
+    assert token.startswith("(4 sources:")
+
+
+# ---------------------------------------------------------------------------
+# Ratio metrics: sum the numerator, sum the denominator, divide ONCE.
+#
+# `roas`/`ctr`/`cpa` used to return sum(values)/len(values) -- the unweighted
+# arithmetic mean over every day AND every connector. That is a different number
+# wearing the same unit. The evidence to do it right was already emitted by
+# `warehouse` (`_SEMANTIC_EVIDENCE_BY_METRIC`) and simply unused.
+# ---------------------------------------------------------------------------
+
+
+def _ctr_rows():
+    """Two days whose daily CTRs are 50% and 1%, on very different volumes.
+
+    mean of the ratios  = (0.50 + 0.01) / 2      = 0.255
+    ratio of the sums   = (5 + 10) / (10 + 1000) = 0.01485...
+
+    A reader deciding on "CTR 25.5%" when the period CTR is 1.5% is the failure.
+    """
+    return [
+        {"date": "2026-07-12", "connector": "gsc", "metric": "ctr", "value": 0.50,
+         "semantic_numerator": 5, "semantic_denominator": 10,
+         "pull_id": "p1", "loaded_at": "2026-07-12T06:00:00"},
+        {"date": "2026-07-13", "connector": "gsc", "metric": "ctr", "value": 0.01,
+         "semantic_numerator": 10, "semantic_denominator": 1000,
+         "pull_id": "p1", "loaded_at": "2026-07-13T06:00:00"},
+    ]
+
+
+def test_ratio_metric_is_the_ratio_of_sums_not_the_mean_of_ratios():
+    entry = compute_rollup(
+        _ctr_rows(), ["ctr"], "2026-07-12", "2026-07-13", "default", []
+    )["ctr"]
+
+    assert entry["value"] == pytest.approx(15 / 1010)
+    # The exact number the old implementation produced.
+    assert entry["value"] != pytest.approx(0.255)
+
+
+def test_ratio_metric_is_refused_when_its_evidence_is_missing():
+    """Fail closed: a wrong number presented as a right one is worse than none.
+
+    Same posture as `geographic_semantics._aggregate`, which this mirrors.
+    """
+    rows = [dict(r) for r in _ctr_rows()]
+    del rows[0]["semantic_numerator"]
+
+    assert "ctr" not in compute_rollup(
+        rows, ["ctr"], "2026-07-12", "2026-07-13", "default", []
+    )
+
+
+def test_ratio_metric_refuses_a_zero_denominator():
+    rows = [dict(r) for r in _ctr_rows()]
+    for row in rows:
+        row["semantic_denominator"] = 0
+
+    assert "ctr" not in compute_rollup(
+        rows, ["ctr"], "2026-07-12", "2026-07-13", "default", []
+    )
+
+
+def test_cross_source_ratio_uses_both_sources_evidence():
+    """Across connectors the mean of ratios is not a ratio of anything."""
+    rows = _ctr_rows() + [
+        {"date": "2026-07-12", "connector": "google-ads", "metric": "ctr", "value": 0.02,
+         "semantic_numerator": 20, "semantic_denominator": 1000,
+         "pull_id": "p2", "loaded_at": "2026-07-12T06:00:00"},
+    ]
+    entry = compute_rollup(rows, ["ctr"], "2026-07-12", "2026-07-13", "default", [])["ctr"]
+
+    assert entry["value"] == pytest.approx(35 / 2010)
+    assert entry["source_count"] == 2
+
+
+# ---------------------------------------------------------------------------
+# The reconciliation gate: two sources without a rule are not added.
+#
+# `metric_reconciliation.resolve_route` has always been able to answer this --
+# it returns UNRULED_OVERLAP when several sources emit the same metric with no
+# resolved rule -- but it declared itself "STRICTLY PASSIVE ... no existing
+# consumer (rollup.py, cards.py, the dbt marts) is touched". Nothing ever asked,
+# so two sources double-counting the same conversion were simply added.
+# ---------------------------------------------------------------------------
+
+
+def test_unruled_overlap_publishes_no_combined_total():
+    rollup = compute_rollup(
+        _cross_source_rows(), ["conversions"], "2026-07-12", "2026-07-13", "default", [],
+        route_resolver=lambda _metric, _sources=(): "UNRULED_OVERLAP",
+    )
+    entry = rollup["conversions"]
+
+    assert entry["value"] is None
+    assert entry["combination_refused"] == "UNRULED_OVERLAP"
+    # The reader is not left empty-handed: each source keeps its own figure.
+    assert entry["per_source"] == {"google-ads": 200.0, "google-analytics": 200.0}
+
+
+def test_a_resolved_rule_still_produces_the_total():
+    entry = compute_rollup(
+        _cross_source_rows(), ["conversions"], "2026-07-12", "2026-07-13", "default", [],
+        route_resolver=lambda _metric, _sources=(): "ROUTED_TO_MART",
+    )["conversions"]
+
+    assert entry["value"] == 400.0
+    assert "combination_refused" not in entry
+
+
+def test_the_gate_is_not_consulted_for_a_single_source():
+    """A single-source figure has no overlap to resolve -- and no DB round-trip."""
+    calls = []
+
+    def resolver(metric, sources=()):
+        calls.append((metric, sources))
+        return "UNRULED_OVERLAP"
+
+    rows = [r for r in _cross_source_rows() if r["connector"] == "google-ads"]
+    entry = compute_rollup(
+        rows, ["conversions"], "2026-07-12", "2026-07-13", "default", [],
+        route_resolver=resolver,
+    )["conversions"]
+
+    assert entry["value"] == 200.0
+    assert calls == []
+
+
+def test_default_behaviour_is_unchanged_without_a_resolver():
+    """No resolver -> the previous behaviour, so call sites migrate one at a time."""
+    entry = compute_rollup(
+        _cross_source_rows(), ["conversions"], "2026-07-12", "2026-07-13", "default", []
+    )["conversions"]
+
+    assert entry["value"] == 400.0
+    assert "combination_refused" not in entry
+
+
+def test_a_raising_resolver_does_not_take_the_report_down():
+    def boom(_metric, _sources=()):
+        raise RuntimeError("reconciliation store unavailable")
+
+    entry = compute_rollup(
+        _cross_source_rows(), ["conversions"], "2026-07-12", "2026-07-13", "default", [],
+        route_resolver=boom,
+    )["conversions"]
+
+    assert entry["value"] == 400.0
+
+
+def test_narrative_states_the_refusal_instead_of_printing_a_total():
+    from core.narrative import build_narrative
+
+    rollup = compute_rollup(
+        _cross_source_rows(), ["conversions"], "2026-07-12", "2026-07-13", "default", [],
+        route_resolver=lambda _metric, _sources=(): "UNRULED_OVERLAP",
+    )
+    text = build_narrative(
+        project_id="default", report_id=None, rollup=rollup,
+        context_events=[], alerts=[], as_of=None, narrative_prompt=None,
+    )
+
+    assert "pas de total combiné" in text
+    assert "UNRULED_OVERLAP" in text
+    # The regression: a plausible total standing in for one nobody may compute.
+    assert "400" not in text
+
+
+# ---------------------------------------------------------------------------
+# Story 60.2 — the render reads the DECLARED additivity, not four literal names
+#
+# `_NON_ADDITIVE_METRICS` holds `average_position, roas, ctr, cpa`, and
+# `metric_semantics.is_ratio_name` adds a suffix rule. Both are PLATFORM
+# DEFAULTS. A client ratio called `efficiency_index` matches neither, so until
+# this story it was summed across days: two days at 11.90 became 23.80. The
+# metric name below is chosen precisely so that a test that passed would prove
+# the declaration and NOT the heuristic — assert that first, or the rest is
+# decoration.
+# ---------------------------------------------------------------------------
+
+CLIENT_RATIO = "efficiency_index"
+
+
+def _client_ratio_rows():
+    """Two days of a client ratio, WITH its numerator/denominator evidence.
+
+    11.90 = 119 / 10 on each day. Summed, the pair reads 23.80; recombined as a
+    ratio of sums it reads 238 / 20 = 11.90 — the same number on one day or on
+    two, which is what "non-additive" means.
+    """
+    return [
+        {
+            "date": day,
+            "connector": "example-connector",
+            "metric": CLIENT_RATIO,
+            "breakdown_dimension": "date",
+            "breakdown_value": day,
+            "value": 11.90,
+            "semantic_numerator": 119.0,
+            "semantic_denominator": 10.0,
+            "pull_id": "pull_EXAMPLE",
+            "loaded_at": f"{day}T00:00:00",
+        }
+        for day in ("2026-07-12", "2026-07-13")
+    ]
+
+
+def test_this_metric_name_defeats_every_heuristic_so_the_test_means_something():
+    from core import cards as cards_module
+    from core import rollup as rollup_module
+    from core.metric_semantics import is_ratio_name
+
+    assert is_ratio_name(CLIENT_RATIO) is False
+    assert CLIENT_RATIO not in rollup_module._NON_ADDITIVE_METRICS
+    assert CLIENT_RATIO not in cards_module._NON_ADDITIVE_METRICS
+
+
+def test_undeclared_the_platform_default_still_sums_it(monkeypatch):
+    """The behaviour BEFORE the declaration exists — stated, not hidden.
+
+    Nobody declared anything, so the platform default answers and the two days
+    are added: 23.80. This is the number the story exists to stop printing, and
+    keeping it visible here is what makes the next test a measurement rather than
+    an assertion about itself.
+    """
+    from core import rollup as rollup_module
+
+    monkeypatch.setattr(
+        rollup_module, "declared_non_additive_metrics", lambda _project: frozenset()
+    )
+    entry = compute_rollup(
+        _client_ratio_rows(), [CLIENT_RATIO], "2026-07-12", "2026-07-13",
+        "proj_EXAMPLE", ["pull_EXAMPLE"],
+    )[CLIENT_RATIO]
+    assert entry["value"] == 23.80
+
+
+def test_declared_non_additive_it_is_recombined_and_not_summed(monkeypatch):
+    """11.90 and not 23.80 — the AD-4 promise, on a metric nobody hardcoded."""
+    from core import rollup as rollup_module
+
+    monkeypatch.setattr(
+        rollup_module,
+        "declared_non_additive_metrics",
+        lambda _project: frozenset({CLIENT_RATIO}),
+    )
+    entry = compute_rollup(
+        _client_ratio_rows(), [CLIENT_RATIO], "2026-07-12", "2026-07-13",
+        "proj_EXAMPLE", ["pull_EXAMPLE"],
+    )[CLIENT_RATIO]
+    assert entry["value"] == pytest.approx(11.90)
+
+
+def test_declared_non_additive_without_evidence_yields_no_number_at_all(monkeypatch):
+    """Fail-CLOSED. A ratio whose numerator/denominator are missing is omitted.
+
+    Not averaged, not summed, not zero. `geographic_semantics` states the posture
+    this reuses: a non-additive metric summed because its evidence was missing is
+    a wrong number presented as a right one, which is worse than no number.
+    """
+    from core import rollup as rollup_module
+
+    monkeypatch.setattr(
+        rollup_module,
+        "declared_non_additive_metrics",
+        lambda _project: frozenset({CLIENT_RATIO}),
+    )
+    bare = [
+        {k: v for k, v in row.items()
+         if k not in {"semantic_numerator", "semantic_denominator"}}
+        for row in _client_ratio_rows()
+    ]
+    rollup = compute_rollup(
+        bare, [CLIENT_RATIO], "2026-07-12", "2026-07-13", "proj_EXAMPLE", ["pull_EXAMPLE"],
+    )
+    assert CLIENT_RATIO not in rollup
+
+
+def test_the_resolver_never_raises_and_never_answers_for_a_missing_project():
+    """Fail-SOFT on the store, and silent without a Project.
+
+    With no database this returns an empty set; with one it returns whatever the
+    PLATFORM defaults of `app.metric_definitions` declare. Neither may raise: a
+    report must not disappear because a governance store is unreachable. The one
+    thing asserted exactly is the no-Project case, because "no Project" is the
+    only input for which an answer would be invented.
+    """
+    from core import rollup as rollup_module
+
+    assert rollup_module.declared_non_additive_metrics(None) == frozenset()
+    assert rollup_module.declared_non_additive_metrics("") == frozenset()
+    assert isinstance(rollup_module.declared_non_additive_metrics("proj_EXAMPLE"), frozenset)

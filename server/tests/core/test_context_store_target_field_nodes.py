@@ -29,19 +29,76 @@ from core.context_store import (
 )
 from core.datamodel import list_target_field_nodes
 
+from tests.support.statement_router import (
+    StatementInventory,
+    UnknownStatement,
+    describe,
+)
+
 # ---------------------------------------------------------------------------
 # A fake app.target_fields that really evaluates the SQL it receives.
 # ---------------------------------------------------------------------------
 
+# The ONE column list still spelled out. `describe()` refuses this projection
+# on purpose -- it carries the `(SELECT COALESCE(MAX(v.version_number), 1) ...)`
+# scalar subquery, and a deriver that guessed a name for it would be inventing
+# the product's alias rather than reading it.
 _NODE_COLS = [
     ("name",), ("display_name",), ("description",), ("field_kind",),
     ("created_by",), ("status",), ("version_number",),
 ]
 
-_EDGE_COLS = [
-    ("id",), ("from_id",), ("from_type",), ("to_id",), ("to_type",),
-    ("edge_type",), ("project_id",), ("created_by",), ("created_at",),
-]
+
+# EVERY STATEMENT THE EXERCISED PATHS ISSUE, NAMED ONCE (AI-317). What this
+# replaces ended in an `else` that set `self._rows = []` and
+# `self.description = None` -- an ANSWER, and the one psycopg reserves for a
+# statement that returned no result set at all.
+#
+# Six of the eleven below were never modelled: story 49-6 moved the write out of
+# `context_store.create_graph_edge` and into `core.context_relationships`, which
+# reads a duplicate, appends a relation head, a version row and a journal row.
+# All six fell into that `else`, and all six happened to want "no row", so the
+# file stayed green while it stopped describing the product it drives. The next
+# read added to `create_relationship` would have been measured as an absence.
+#
+# Declaration order is the order an `if/elif` chain would test in: first match
+# wins. `app.context_relationships` is separated from
+# `app.context_relationship_versions` by the table name itself, and the two
+# reads of `app.target_fields` by their projection -- never by widening one
+# fragment until it swallows both.
+_STATEMENTS = StatementInventory(
+    "test_context_store_target_field_nodes._FakeCursor",
+    # datamodel.py:1589 -- `list_target_field_nodes`, the whole point of the file.
+    field_nodes="from app.target_fields tf",
+    # context_store.py:1763 -- `_node_exists_in_scope`, target_field branch.
+    field_exists="select 1 from app.target_fields",
+    # context_store.py:1710 -- the same predicate, topic branch. Reached because
+    # `create_graph_edge` proves BOTH endpoints before anything is written.
+    topic_exists="select 1 from app.context_topics",
+    # context_relationships.py:338 -- `_project_org_id`. The organization is
+    # DERIVED from the project graph, never taken from the caller.
+    project_org="select org_id from app.projects",
+    # context_relationships.py:841 -- NEVER MODELLED. The courtesy duplicate
+    # check on the authority table, before the projection is written.
+    relation_exists="select status from app.context_relationships",
+    # context_relationships.py:426 -- NEVER MODELLED. `_write_projection` asks
+    # `uq_context_graph_edge` before the INSERT rather than catching a 23505,
+    # because a violation would abort the caller's whole transaction.
+    edge_exists="select 1 from app.context_graph",
+    # context_relationships.py:443 -- the legacy read projection, INSERT ...
+    # RETURNING the nine columns `create_graph_edge` hands back.
+    edge_insert="insert into app.context_graph",
+    # context_relationships.py:885 -- NEVER MODELLED. The relation head.
+    relation_insert="insert into app.context_relationships",
+    # context_relationships.py:742 -- NEVER MODELLED. `_append_version`, the
+    # immutable version row a create always writes as version 1.
+    version_insert="insert into app.context_relationship_versions",
+    # context_relationships.py:764 -- NEVER MODELLED. The head pointed at the
+    # version just appended.
+    relation_head_update="update app.context_relationships",
+    # audit.py:234 -- NEVER MODELLED. `_record`, on the caller's transaction.
+    audit_insert="insert into app.audit_log",
+)
 
 
 class _FieldStore:
@@ -117,22 +174,47 @@ class _FakeCursor:
     def execute(self, sql, params=None):
         flat = " ".join(sql.split())
         self._store.statements.append((flat, params))
-        if "FROM app.target_fields tf" in flat:
-            self._rows = self._store.list_nodes(flat, params)
-            self.description = _NODE_COLS
-        elif "FROM app.target_fields" in flat and flat.startswith("SELECT 1"):
-            self._rows = self._store.exists(flat, params)
-            self.description = [("exists",)]
-        elif "FROM app.context_topics" in flat and flat.startswith("SELECT 1"):
-            self._rows = [(1,)] if params[0] in self._store.topic_ids else []
-            self.description = [("exists",)]
-        elif "INSERT INTO app.context_graph" in flat:
-            self._rows = [self._inserted_edge] if self._inserted_edge else []
-            self.description = _EDGE_COLS
-        else:
-            # audit inserts and anything else: silently no-op.
-            self._rows = []
-            self.description = None
+        self._rows = []
+        self.description = None
+        match _STATEMENTS.match(sql):
+            case "field_nodes":
+                self._rows = self._store.list_nodes(flat, params)
+                self.description = _NODE_COLS
+            case "field_exists":
+                self._rows = self._store.exists(flat, params)
+                self.description = describe(sql)
+            case "topic_exists":
+                self._rows = [(1,)] if params[0] in self._store.topic_ids else []
+                self.description = describe(sql)
+            case "project_org":
+                # Story 49-6 AC5: the relationship authority DERIVES the
+                # organization from the project graph rather than taking one from
+                # the caller, so the door now asks this on the way through. A fake
+                # that answered nothing would make every edge look like an
+                # unreadable project.
+                self._rows = [("org_1",)]
+                self.description = describe(sql)
+            case "relation_exists" | "edge_exists":
+                # Neither a relation nor a projection pre-exists in these stores:
+                # the store holds fields, versions and topic ids, and nothing has
+                # ever been related. `fetchone()` is None -- which is what an empty
+                # table answers, not what silence answers.
+                self.description = describe(sql)
+            case "edge_insert":
+                self._rows = [self._inserted_edge] if self._inserted_edge else []
+                # The nine columns come from the statement's own RETURNING list.
+                self.description = describe(sql)
+            case (
+                "relation_insert"
+                | "version_insert"
+                | "relation_head_update"
+                | "audit_insert"
+            ):
+                # A write with no RETURNING: psycopg reports `description = None`
+                # and no rows, and the product reads neither. MODELLED rather than
+                # fallen into, so the day one of them grows a RETURNING the fake
+                # stops describing it and says so.
+                pass
 
     def fetchall(self):
         return list(self._rows)
@@ -177,8 +259,20 @@ _DELETED = {
 
 
 def test_graph_node_types_now_includes_target_field():
-    """Migration 117 widened the CHECK; the Python enum must agree with it."""
-    assert GRAPH_NODE_TYPES == {"topic", "procedure", "schema_doc", "target_field"}
+    """Migration 117 widened the CHECK; the Python enum must agree with it.
+
+    Story 37.9 added `master_data_node` through migration 272, so the set is pinned
+    EXACTLY rather than by containment: the Python enum and the CHECK constraint
+    drifting apart is how a valid edge starts failing at INSERT with a message about
+    a constraint nobody edited.
+    """
+    assert GRAPH_NODE_TYPES == {
+        "topic",
+        "procedure",
+        "schema_doc",
+        "target_field",
+        "master_data_node",
+    }
 
 
 def test_node_exists_in_scope_target_field_is_name_keyed_and_platform_global():
@@ -278,7 +372,30 @@ def test_create_graph_edge_rejects_deleted_target_field_endpoint():
     store = _FieldStore([_DELETED])
     conn = _FakeConn(store)
 
-    with pytest.raises(ValueError, match="introuvable"):
+    # The refusal message is ENGLISH. AD-34 is ratified (SPEC.md:159, directive
+    # Jean 2026-07-24): all visible application copy is English, and this string
+    # is visible -- `core.context_api` returns `str(exc)` verbatim as the 422
+    # body. `core.context_store` was reconciled to it in `61010019`; this test
+    # kept matching the French it replaced. The product is right and the test was
+    # wrong, which is the same shape as AI-103.
+    #
+    # THE SENTENCE MOVED WITH THE OWNER (story 49-6 AC5, 2026-08-28). The door
+    # no longer writes the edge: it declares a relation through
+    # `core.context_relationships`, and the refusal is that module's. Two things
+    # changed, both deliberate:
+    #
+    #   * it NAMES THE GESTURE ("Pick a source that exists ... or restore it
+    #     first") where the old sentence stated a fact;
+    #   * it NO LONGER PRINTS THE FIELD NAME. `ContextRelationshipRefused` is
+    #     swept by `test_refusals_never_name_an_identifier`, which forbids a
+    #     refusal from rendering the identifier the caller sent -- the old
+    #     message escaped that sweep only by being a bare `ValueError`.
+    #
+    # It is still a `ValueError`, so the 422 the route returns is unchanged.
+    with pytest.raises(
+        ValueError,
+        match=r"Pick a source that exists in this project and is not archived",
+    ):
         create_graph_edge(
             conn,
             project_id="proj_A",
@@ -392,3 +509,29 @@ def test_list_target_field_nodes_deduplicates_and_sorts_names():
     _sql, params = store.statements[-1]
     assert sorted(params[0]) == ["clicks", "viewable_impressions"]
     assert len(params[0]) == 2
+
+
+def test_the_fake_refuses_a_statement_it_was_never_taught():
+    """The property the whole conversion buys: silence is no longer an answer.
+
+    `_next_version_number` (context_relationships.py:702) is the statement a
+    SUPERSEDE issues and a create does not -- a create passes `version_number=1`
+    rather than asking. It is exactly the shape that used to arrive here and be
+    answered "no rows, no description": plausible, adjacent to a table the fake
+    knows, and never taught. It must now name itself.
+    """
+    conn = _FakeConn(_FieldStore([_CLICKS]))
+    unknown = (
+        "SELECT COALESCE(MAX(version_number), 0) + 1 "
+        "FROM app.context_relationship_versions WHERE relationship_id = %s"
+    )
+
+    with pytest.raises(UnknownStatement) as raised:
+        with conn.cursor() as cur:
+            cur.execute(unknown, ("crel_1",))
+
+    message = str(raised.value)
+    # The reader's first question is "which query moved?" ...
+    assert "coalesce(max(version_number), 0) + 1" in message
+    # ... and the second is "what did this fake use to answer?".
+    assert "version_insert" in message

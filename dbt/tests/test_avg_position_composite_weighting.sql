@@ -18,13 +18,23 @@
 -- Cell fra>tablet (zero-impressions guard):
 --   position 12.0 @ 0 impressions -> SUM(impressions)=0 -> NULLIF -> NULL (no divide error).
 
-WITH fixture(country, device, average_position, impressions) AS (
-    SELECT * FROM (VALUES
-        ('fra', 'desktop', 7.3, 850),
-        ('fra', 'desktop', 3.1, 200),
-        ('gbr', 'mobile',  5.4, 180),
-        ('fra', 'tablet',  12.0,  0)
-    ) AS v(country, device, average_position, impressions)
+{#- LES DEUX FORMES QUI NE TRAVERSENT PAS (AI-314, 2026-08-24) : une CTE qui
+    nomme ses colonnes -- `WITH fixture(a, b) AS` -- et `VALUES` comme
+    constructeur de table autonome. BigQuery refuse les deux (*Expected ")" but
+    got identifier "country"*), donc ce test etait REFUSE chaque nuit sur le
+    moteur de la production. Mesure par un dry run a 0 octet. Les valeurs n ont
+    pas bouge d un chiffre : seule leur ECRITURE change, en UNION de SELECT
+    d une ligne, que les deux moteurs portent. #}
+{#- LES LITTERAUX RESTENT NUS, et ce n est pas un detail : `CAST(5.4 AS float)`
+    rend un flottant SIMPLE precision en DuckDB (5.400000095367432) et la
+    comparaison a 1e-9 dessous echoue -- vu au premier tir de cette reecriture.
+    Un litteral decimal nu garde en DuckDB le type que `VALUES` lui donnait, et
+    BigQuery le lit en FLOAT64 : les deux moteurs, une seule ecriture. #}
+WITH fixture AS (
+    SELECT 'fra' AS country, 'desktop' AS device, 7.3 AS average_position, 850 AS impressions
+    UNION ALL SELECT 'fra', 'desktop',  3.1,  200
+    UNION ALL SELECT 'gbr', 'mobile',   5.4,  180
+    UNION ALL SELECT 'fra', 'tablet',  12.0,    0
 ),
 
 weighted AS (
@@ -37,12 +47,11 @@ weighted AS (
     GROUP BY country, device
 ),
 
-expected(country, device, expected_position, expected_is_null) AS (
-    SELECT * FROM (VALUES
-        ('fra', 'desktop', 6.5,  FALSE),
-        ('gbr', 'mobile',  5.4,  FALSE),
-        ('fra', 'tablet',  CAST(NULL AS DOUBLE), TRUE)   -- zero impressions -> NULL
-    ) AS e(country, device, expected_position, expected_is_null)
+expected AS (
+    SELECT 'fra' AS country, 'desktop' AS device, 6.5 AS expected_position, FALSE AS expected_is_null
+    UNION ALL SELECT 'gbr', 'mobile', 5.4,  FALSE
+    -- zero impressions -> NULL
+    UNION ALL SELECT 'fra', 'tablet', NULL, TRUE
 )
 
 SELECT

@@ -112,10 +112,13 @@ class GoogleToken:
 
 
 def _fernet_for(project_id: str) -> Fernet:
-    """Build a Fernet from the project's tenant key.
+    """Build the ENCRYPTION Fernet from the project's tenant key.
 
     The tenant key is raw 32 bytes; a Fernet key is that same 32 bytes,
     urlsafe-base64-encoded. Same key class as Nango's token protection (AD-21).
+
+    Sealing is the one operation allowed to create a key: a project that has
+    never held a credential has no key yet, and this is where it gets one.
 
     Raises:
         GoogleTokenStoreError: if the key cannot be obtained (message redacted --
@@ -129,6 +132,28 @@ def _fernet_for(project_id: str) -> Fernet:
         ) from None
     # Fernet requires a 32-byte urlsafe-base64 key; tenant keys are raw 32 bytes.
     return Fernet(base64.urlsafe_b64encode(key))
+
+
+def _decryption_fernets(project_id: str) -> list[Fernet]:
+    """Every key that may open EXISTING ciphertext, newest first.
+
+    Never creates a key (AI-278). ``get_or_create_key`` here was the whole bug:
+    with the key store empty it minted a brand-new key and then reported the
+    stored blob as "wrong key or tampered", which reads as data corruption and
+    is in fact a lost key. An empty list says the truth instead.
+
+    More than one entry only during a rotation overlap window (AI-42).
+
+    Raises:
+        GoogleTokenStoreError: if the key store itself is unreachable (redacted).
+    """
+    try:
+        keys = get_tenant_key_backend().decryption_keys(project_id)
+    except Exception as exc:  # rewrite without any secret material
+        raise GoogleTokenStoreError(
+            f"tenant key unavailable for project (token redacted): {type(exc).__name__}"
+        ) from None
+    return [Fernet(base64.urlsafe_b64encode(key)) for key in keys]
 
 
 def encrypt_token_payload(payload: dict, project_id: str) -> bytes:
@@ -178,18 +203,31 @@ def decrypt_token_payload(blob: bytes, project_id: str) -> dict:
     """
     if not blob:
         raise GoogleTokenStoreError("no encrypted token blob (token redacted)")
-    fernet = _fernet_for(project_id)
-    try:
-        plaintext = fernet.decrypt(bytes(blob))
-    except InvalidToken:
+    fernets = _decryption_fernets(project_id)
+    if not fernets:
+        # No key at all. Naming this separately matters: it is the ONE failure a
+        # re-consent actually repairs, and the operator must not spend the day
+        # hunting a corrupted blob that is perfectly intact (AI-278).
+        raise GoogleTokenStoreError(
+            "no tenant key for this project -- the credential can no longer be "
+            "opened and must be re-authorized (token redacted)"
+        )
+    plaintext = None
+    for fernet in fernets:  # newest first; later entries are rotation predecessors
+        try:
+            plaintext = fernet.decrypt(bytes(blob))
+            break
+        except InvalidToken:
+            continue
+        except Exception as exc:
+            raise GoogleTokenStoreError(
+                f"token decryption failed (token redacted): {type(exc).__name__}"
+            ) from None
+    if plaintext is None:
         # Wrong key or tampered blob. Do NOT include the blob in the message.
         raise GoogleTokenStoreError(
             "cannot decrypt token blob: wrong key or tampered (token redacted)"
-        ) from None
-    except Exception as exc:
-        raise GoogleTokenStoreError(
-            f"token decryption failed (token redacted): {type(exc).__name__}"
-        ) from None
+        )
     try:
         doc = json.loads(plaintext.decode("utf-8"))
     except Exception as exc:
@@ -253,7 +291,7 @@ def store_google_token(
     AD-5 CONTRACT (review-18-1 F-1): this store does NOT verify that the calling
     identity has access to the connection's project. The caller (the 18.3
     ``get_fresh_token`` facade / the 18.2 OAuth flow) MUST have validated
-    ``identity_has_project_access`` BEFORE calling. Defense in depth: pass
+    ``identity_can_read_project`` BEFORE calling. Defense in depth: pass
     ``expected_project_id`` and the store rejects any mismatch with the row's
     actual project (cross-tenant id confusion becomes a hard error).
 
@@ -319,7 +357,7 @@ def load_google_token(
     the returned object's secret fields (AD-3 on the module side stays true).
 
     AD-5 CONTRACT (review-18-1 F-1): the caller MUST have validated
-    ``identity_has_project_access`` before calling — this store does not
+    ``identity_can_read_project`` before calling — this store does not
     re-check identity. ``expected_project_id`` adds defense in depth.
 
     Raises:

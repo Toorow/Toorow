@@ -17,11 +17,15 @@ from pathlib import Path
 
 import pytest
 
+from tests.conftest import purge_fixture_org
+
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
 
 from core import metric_semantics as ms  # noqa: E402
+
+from tests.support.updated_at_trigger import ensure_set_updated_at
 
 # ---------------------------------------------------------------------------
 # Postgres availability check (calqué sur test_dataset_access_grants.py)
@@ -143,6 +147,7 @@ _EXPECTED_METRICS = [
     "unique_reach",
     "average_frequency",
     "viewability_rate",
+    "profile_views",
 ]
 
 
@@ -154,9 +159,9 @@ _EXPECTED_METRICS = [
 def test_dim_metric_parses_all_metrics():
     """§1: parse_dim_metric reads all metrics of dim_metric.csv (count + names).
 
-    Deliberate tripwire on the seed: the CSV grew 15 -> 19 via connector work
+    Deliberate tripwire on the seed: the CSV grew 15 -> 20 via connector work
     (cm360 / Square added conversions_value, unique_reach, average_frequency,
-    viewability_rate) after Story 27.1; _EXPECTED_METRICS was updated to match.
+    viewability_rate, profile_views) after Story 27.1; _EXPECTED_METRICS was updated to match.
     """
     defs = ms.parse_dim_metric(_SEEDS_DIR)
     assert len(defs) == len(_EXPECTED_METRICS)
@@ -422,15 +427,11 @@ def test_bit_identical_extended_with_target_mart(tmp_path):
     assert by_metric["cost"]["target_mart"] is None
 
 
-def test_cost_pilot_constant_shape():
-    """§33 (offline): the cost pilot constant is KEEP_SEPARATE {doubleverify, ias}, NULLs."""
-    pilot = ms.PLATFORM_COST_VERIFICATION_GROUP
-    assert pilot["canonical_name"] == "cost"
-    assert pilot["name"] == "cost-verification"
-    assert pilot["method"] == ms.METHOD_KEEP_SEPARATE
-    assert set(pilot["members"]) == {"doubleverify", "ias"}
-    assert pilot["truth_connector"] is None
-    assert pilot["target_mart"] is None
+# RETIRE 2026-08-17 (AI-295) -- `test_cost_pilot_constant_shape`.
+# Il tenait la forme de `PLATFORM_COST_VERIFICATION_GROUP`, la constante qui
+# ecrivait un groupe de chevauchement supplementaire a chaque bootstrap d org.
+# La constante et son ecrivain sont partis avec le second modele : la
+# reconciliation est le Rule Set gouverne, publie par un Projet, et rien d autre.
 
 
 # ---------------------------------------------------------------------------
@@ -500,41 +501,12 @@ def test_cascade_deterministic_repeat():
     assert ms.reduce_definitions_by_specificity(rows) == ms.reduce_definitions_by_specificity(rows)
 
 
-def _grp_row(metric, scope, org_id=None, project_id=None, method="PRIORITY", priority_order=None):
-    return {
-        "canonical_name": metric,
-        "scope_level": scope,
-        "org_id": org_id,
-        "project_id": project_id,
-        "method": method,
-        "priority_order": priority_order or [],
-    }
-
-
-def test_reconciliation_platform_priority():
-    """§14: PLATFORM PRIORITY group returned with ordered priority_order."""
-    rows = [_grp_row("conversions", ms.SCOPE_PLATFORM, priority_order=["a", "b", "c"])]
-    resolved = ms.reduce_reconciliation_by_specificity(rows, "conversions")
-    assert resolved is not None
-    assert resolved["method"] == "PRIORITY"
-    assert resolved["priority_order"] == ["a", "b", "c"]
-
-
-def test_reconciliation_org_beats_platform():
-    """§15: an ORG group wins over the homonymous PLATFORM group."""
-    rows = [
-        _grp_row("conversions", ms.SCOPE_PLATFORM, priority_order=["a"]),
-        _grp_row("conversions", ms.SCOPE_ORG, org_id="org_1", priority_order=["b"]),
-    ]
-    resolved = ms.reduce_reconciliation_by_specificity(rows, "conversions")
-    assert resolved["scope_level"] == ms.SCOPE_ORG
-    assert resolved["priority_order"] == ["b"]
-
-
-def test_reconciliation_none_when_uncovered():
-    """§16: a metric with no group at any level -> None."""
-    rows = [_grp_row("conversions", ms.SCOPE_PLATFORM)]
-    assert ms.reduce_reconciliation_by_specificity(rows, "revenue") is None
+# RETIRES 2026-08-17 (AI-295) -- les trois tests de la cascade de reconciliation
+# (`_grp_row`, platform_priority, org_beats_platform, none_when_uncovered).
+# Ils prouvaient que la specificite ORG > PLATFORM se reduisait correctement.
+# C etait exact, et c est precisement le mecanisme retire : une regle appartient
+# au Projet qui l a publiee, il n y a plus d echelle a monter. La cascade
+# repondait pour un projet inexistant, mesure dans le commit precedent.
 
 
 # ---------------------------------------------------------------------------
@@ -612,14 +584,10 @@ def test_definition_change_detector():
     assert ms._definition_changed(before, changed) is True
 
 
-def test_rule_change_detector():
-    """The reconciliation-rule change detector ignores volatile fields only."""
-    after = {"id": "recrule_1", "method": "PRIORITY", "priority_order": ["a", "b"],
-             "created_at": "t0", "updated_at": "t0"}
-    assert ms._rule_changed(None, after) is True
-    before = dict(after, id="recrule_1", updated_at="t-1")
-    assert ms._rule_changed(before, after) is False
-    assert ms._rule_changed(before, dict(after, priority_order=["b", "a"])) is True
+# RETIRE 2026-08-17 (AI-295) -- `test_rule_change_detector`.
+# `_rule_changed` gardait l idempotence de l upsert sur `reconciliation_rules`.
+# Plus personne n ecrit cette table ; le detecteur de changement des DEFINITIONS
+# (`test_definition_change_detector`, juste au-dessus) reste, lui, en service.
 
 
 # ---------------------------------------------------------------------------
@@ -659,20 +627,12 @@ def _apply_migration_049(conn) -> None:
 
 
 def _ensure_set_updated_at(conn) -> None:
-    """Ensure app.set_updated_at() exists (migration 023 provides it in prod)."""
-    with conn.cursor() as cur:
-        cur.execute("CREATE SCHEMA IF NOT EXISTS app")
-        cur.execute(
-            """
-            CREATE OR REPLACE FUNCTION app.set_updated_at() RETURNS trigger AS $$
-            BEGIN NEW.updated_at = now(); RETURN NEW; END;
-            $$ LANGUAGE plpgsql
-            """
-        )
-    conn.commit()
+    """See `tests.support.updated_at_trigger`: ask before replacing."""
+    ensure_set_updated_at(conn)
 
 
 @pg_available
+@pytest.mark.pg_owner
 def test_ddl_creates_tables_replayable():
     """§28: the 5 tables + audit exist after 049; re-applying 049 is a no-op."""
     from core.db import get_connection
@@ -699,6 +659,7 @@ def test_ddl_creates_tables_replayable():
 
 
 @pg_available
+@pytest.mark.pg_owner
 def test_scope_check_enforced():
     """§30: Postgres rejects inconsistent scope triplets."""
     import psycopg
@@ -729,6 +690,7 @@ def test_scope_check_enforced():
 
 
 @pg_available
+@pytest.mark.pg_owner
 def test_coalesce_unicity_on_platform():
     """§31: a second (PLATFORM, NULL, NULL, 'revenue') is rejected (COALESCE unicity)."""
     import psycopg
@@ -773,37 +735,65 @@ def test_coalesce_unicity_on_platform():
 
 
 @pg_available
-def test_import_platform_defaults_idempotent():
-    """§29/§35: import upserts the real rows; re-run is idempotent + live equivalence."""
+@pytest.mark.pg_owner
+def test_import_platform_defaults_writes_definitions_and_nothing_else():
+    """AI-295: the import defines metrics. It no longer writes a reconciliation.
+
+    It used to upsert `app.overlap_groups` / `_members` / `reconciliation_rules`
+    from `metric_source_priority.csv` plus a supplementary cost-verification
+    group -- the SECOND reconciliation model, written on every org bootstrap
+    through a route no screen calls. The runtime stopped reading those rows in
+    Story 49.4 and the two read surfaces stopped the commit before this one, so a
+    writer with no reader is a trap: the next reader finds rows and believes them.
+
+    COUNTED FROM ZERO, not from a delta. The overlap-group assertion below is an
+    absolute count taken after deleting what a previous run may have left. The
+    test it replaces passed on leftover rows -- `cost-verification` was already in
+    the database from an earlier test in the same session, so "exactly one group"
+    was true without the import writing anything.
+    """
     from core.db import get_connection
 
     with get_connection() as conn:
         _ensure_set_updated_at(conn)
         _apply_migration_049(conn)
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM app.overlap_groups WHERE scope_level = 'PLATFORM'")
+        conn.commit()
 
-    # Robustesse seeds mouvants: derive the expected counts from the seed projection,
-    # never hard-code them. groups/rules == (seed PRIORITY groups) + 1 cost pilot.
+    # Robustesse seeds mouvants: derive the expected count from the seed projection,
+    # never hard-code it.
     projection = ms.platform_defaults_from_seeds(_SEEDS_DIR)
     n_defs = len(projection["definitions"])
-    n_groups = len(projection["groups"]) + 1  # + the cost-verification KEEP_SEPARATE pilot
     counts1 = ms.import_platform_defaults(seeds_dir=_SEEDS_DIR)
     assert counts1["definitions"] == n_defs
-    assert counts1["groups"] == n_groups
-    assert counts1["rules"] == n_groups
+    assert counts1["groups"] == 0
+    assert counts1["members"] == 0
+    assert counts1["rules"] == 0
 
     # Re-run: same content, no duplicate rows.
     ms.import_platform_defaults(seeds_dir=_SEEDS_DIR)
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+                # SCOPED TO WHAT THE IMPORT OWNS (2026-08-16). This counted every
+                # PLATFORM row of a SHARED table, so any fixture that ever wrote one
+                # at that scope -- and one did, twice, because its cleanup ran in the
+                # same transaction as a DELETE on an append-only ledger and was rolled
+                # back with it -- made this measure the suite instead of the seed.
+                # `created_by = 'system'` is what the importer stamps.
             cur.execute(
-                "SELECT COUNT(*) FROM app.metric_definitions WHERE scope_level = 'PLATFORM'"
+                "SELECT COUNT(*) FROM app.metric_definitions WHERE scope_level = 'PLATFORM' "
+                "AND created_by = 'system'"
             )
             assert cur.fetchone()[0] == n_defs
+            # THE GUARD: two imports, zero reconciliation rows.
             cur.execute(
                 "SELECT COUNT(*) FROM app.overlap_groups WHERE scope_level = 'PLATFORM'"
             )
-            assert cur.fetchone()[0] == n_groups  # seed PRIORITY groups + 1 cost pilot (27.3)
+            assert cur.fetchone()[0] == 0, (
+                "import_platform_defaults must not write the retired reconciliation store"
+            )
 
     # §35: live re-export of PLATFORM definitions == the seed projection (bit-identical).
     live = ms.list_metric_definitions_by_scope(scope_level=ms.SCOPE_PLATFORM)
@@ -815,80 +805,34 @@ def test_import_platform_defaults_idempotent():
         assert got["ratio_numerator"] == expected["ratio_numerator"]
         assert got["ratio_denominator"] == expected["ratio_denominator"]
 
-    # Live priority_order matches the ordered seed.
+    # The ordered seed is still READ -- by `controls_quality._seed_priorities`, which
+    # turns it into the editable Project draft a governed publication starts from.
+    # The seed was never the problem; the second live store was.
+    from core.controls_quality import _seed_priorities
+
+    seeded = _seed_priorities(_SEEDS_DIR)
     for group in projection["groups"]:
-        rule = ms.resolve_reconciliation_platform(group["canonical_name"])
-        assert rule is not None
-        assert rule["priority_order"] == group["priority_order"]
-
-    # §30 (live): the PRIORITY defaults now carry the derived target_mart.
-    conv_rule = ms.resolve_reconciliation_platform("conversions")
-    assert conv_rule["target_mart"] == "cross_source_conversions"
-    rev_rule = ms.resolve_reconciliation_platform("revenue")
-    assert rev_rule["target_mart"] == "cross_source_revenue"
+        assert seeded[group["canonical_name"]] == group["priority_order"]
 
 
-@pg_available
-def test_cost_pilot_imported_keep_separate():
-    """§33 (live): after import, the cost-verification pilot is a KEEP_SEPARATE group
-    {doubleverify, ias}, truth_connector NULL, target_mart NULL."""
-    from core.db import get_connection
-
-    with get_connection() as conn:
-        _ensure_set_updated_at(conn)
-        _apply_migration_049(conn)
-    ms.import_platform_defaults(seeds_dir=_SEEDS_DIR)
-
-    rule = ms.resolve_reconciliation_platform("cost")
-    assert rule is not None
-    assert rule["method"] == ms.METHOD_KEEP_SEPARATE
-    assert rule["truth_connector"] is None
-    assert rule["target_mart"] is None
-    # Members are the two verifiers.
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT connector FROM app.overlap_group_members "
-                "WHERE overlap_group_id = %s ORDER BY connector",
-                (rule["overlap_group_id"],),
-            )
-            members = {r[0] for r in cur.fetchall()}
-    assert members == {"doubleverify", "ias"}
+# RETIRES 2026-08-17 (AI-295) -- `test_cost_pilot_imported_keep_separate` et
+# `test_cost_pilot_idempotent_no_second_audit`. Ils prouvaient qu un groupe
+# supplementaire etait ecrit, puis qu il n etait ecrit qu une fois. L ecrivain est
+# parti : la reconciliation est le Rule Set gouverne, publie par un Projet.
+# Le second passait d ailleurs sur des lignes laissees par un run precedent --
+# `test_import_platform_defaults_writes_definitions_and_nothing_else` compte
+# desormais a partir de zero.
 
 
 @pg_available
-def test_cost_pilot_idempotent_no_second_audit():
-    """§34 (live): two imports -> a single cost-verification group, no 'upserted' audit."""
-    from core.db import get_connection
+@pytest.mark.pg_owner
+def test_cost_is_defined_once_by_the_seed():
+    """§35 (live): `cost` is defined once, from dim_metric.csv, and only there.
 
-    with get_connection() as conn:
-        _ensure_set_updated_at(conn)
-        _apply_migration_049(conn)
-
-    ms.import_platform_defaults(seeds_dir=_SEEDS_DIR)
-    ms.import_platform_defaults(seeds_dir=_SEEDS_DIR)
-
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT COUNT(*) FROM app.overlap_groups "
-                "WHERE scope_level = 'PLATFORM' AND name = 'cost-verification'"
-            )
-            assert cur.fetchone()[0] == 1
-            # No 'upserted' audit on the group after the first create.
-            cur.execute(
-                "SELECT COUNT(*) FROM app.metric_semantics_audit "
-                "WHERE entity_type = 'overlap_group' "
-                "AND action = 'overlap_group.upserted' "
-                "AND after->>'name' = 'cost-verification'"
-            )
-            assert cur.fetchone()[0] == 0
-
-
-@pg_available
-def test_cost_pilot_no_duplicate_cost_definition():
-    """§35 (live): the pilot adds NO metric_definition -- cost stays defined once
-    (from dim_metric.csv), the PLATFORM definition count remains 15."""
+    Named after the pilot until AI-295, because the pilot was the thing that could
+    have defined it a second time. The pilot is gone; the property it protected --
+    one definition per canonical metric -- is not, so the test stays under a name
+    that says what it checks."""
     from core.db import get_connection
 
     with get_connection() as conn:
@@ -903,13 +847,26 @@ def test_cost_pilot_no_duplicate_cost_definition():
                 "WHERE scope_level = 'PLATFORM' AND canonical_name = 'cost'"
             )
             assert cur.fetchone()[0] == 1
+                # SCOPED TO WHAT THE IMPORT OWNS (2026-08-16). This counted every
+                # PLATFORM row of a SHARED table, so any fixture that ever wrote one
+                # at that scope -- and one did, twice, because its cleanup ran in the
+                # same transaction as a DELETE on an append-only ledger and was rolled
+                # back with it -- made this measure the suite instead of the seed.
+                # `created_by = 'system'` is what the importer stamps.
             cur.execute(
-                "SELECT COUNT(*) FROM app.metric_definitions WHERE scope_level = 'PLATFORM'"
+                "SELECT COUNT(*) FROM app.metric_definitions WHERE scope_level = 'PLATFORM' "
+                "AND created_by = 'system'"
             )
-            assert cur.fetchone()[0] == 15
+            # DERIVED, not a literal. This said `15` while the seed produces 20 --
+            # the seed grew and the number did not, so the test failed for the
+            # catalogue's growth rather than for the duplicate it exists to forbid.
+            assert cur.fetchone()[0] == len(
+                ms.platform_defaults_from_seeds(_SEEDS_DIR)["definitions"]
+            )
 
 
 @pg_available
+@pytest.mark.pg_owner
 def test_fk_cascade_org_delete_keeps_platform():
     """§32/§33: deleting an org drops its ORG definitions; PLATFORM defaults survive."""
     from core.db import get_connection
@@ -939,8 +896,10 @@ def test_fk_cascade_org_delete_keeps_platform():
     try:
         # Delete the org -> ORG row cascades away, PLATFORM survives.
         with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM app.organizations WHERE id = %s", (org_id,))
+            # Through the graph the production purge walks: `mdm_business_domains`
+            # holds an org by ON DELETE RESTRICT, which a hand-written DELETE
+            # cannot know and the next governed table would break again.
+            purge_fixture_org(conn, org_id)
             conn.commit()
 
         assert ms.get_metric_definition(
@@ -960,6 +919,7 @@ def test_fk_cascade_org_delete_keeps_platform():
 
 
 @pg_available
+@pytest.mark.pg_owner
 def test_upsert_writes_audit_and_idempotent():
     """§22/§24: an upsert writes one audit row; a no-op re-upsert writes none."""
     from core.db import get_connection
@@ -993,71 +953,30 @@ def test_upsert_writes_audit_and_idempotent():
         assert rows[0][1] is None  # before=None on create
         assert rows[0][2] is not None  # after present
     finally:
+        # TWO TRANSACTIONS, and the order matters. These ran as one, and
+        # `app.metric_semantics_audit` is APPEND-ONLY: its DELETE is refused --
+        # correctly, an audit trail that can be erased is not one -- and the
+        # refusal rolled the whole block back, so the DEFINITION survived too.
+        # Two rows of PLATFORM-scoped fixture pollution accumulated that way, and
+        # they are what made `test_import_platform_defaults` count 22 where the
+        # seed produces 20.
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "DELETE FROM app.metric_definitions WHERE canonical_name = %s", (name,)
                 )
-                cur.execute(
-                    "DELETE FROM app.metric_semantics_audit "
-                    "WHERE after->>'canonical_name' = %s", (name,)
-                )
             conn.commit()
 
 
-@pg_available
-def test_set_overlap_group_members_is_additive_never_removes():
-    """§(F-3): set_overlap_group_members is ADDITIVE -- a member dropped from a later,
-    smaller call SURVIVES.
-
-    Documents (and pins) the 27.1 behavior: the function adds missing members and is
-    idempotent, but NEVER removes a member no longer listed. Removal semantics are
-    deferred to 27.3. First set {a, b, c}; then set {a} -> b and c must still be there."""
-    from core.db import get_connection
-
-    suffix = uuid.uuid4().hex[:8]
-    name = f"ovgkpi_{suffix}"
-    with get_connection() as conn:
-        _ensure_set_updated_at(conn)
-        _apply_migration_049(conn)
-
-    group = ms.upsert_overlap_group(
-        canonical_name=name, name=f"{name}-priority",
-        scope_level=ms.SCOPE_PLATFORM, created_by="system",
-    )
-    try:
-        ms.set_overlap_group_members(
-            overlap_group_id=group["id"], connectors=["conn_a", "conn_b", "conn_c"],
-            created_by="system", scope_level=ms.SCOPE_PLATFORM,
-        )
-        # A reduced set must NOT remove the extra members (additive-only).
-        remaining = ms.set_overlap_group_members(
-            overlap_group_id=group["id"], connectors=["conn_a"],
-            created_by="system", scope_level=ms.SCOPE_PLATFORM,
-        )
-        connectors = {m["connector"] for m in remaining}
-        assert connectors == {"conn_a", "conn_b", "conn_c"}, (
-            "27.1 set_overlap_group_members is additive: dropped members must survive"
-        )
-    finally:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                # Collect member ids before the CASCADE removes them, to scope the
-                # audit cleanup precisely (entity_id of each member row + the group).
-                cur.execute(
-                    "SELECT id FROM app.overlap_group_members WHERE overlap_group_id = %s",
-                    (group["id"],),
-                )
-                entity_ids = [r[0] for r in cur.fetchall()] + [group["id"]]
-                cur.execute("DELETE FROM app.overlap_groups WHERE id = %s", (group["id"],))
-                cur.execute(
-                    "DELETE FROM app.metric_semantics_audit WHERE entity_id = ANY(%s)",
-                    (entity_ids,),
-                )
-            conn.commit()
+# RETIRE 2026-08-17 (AI-295) -- `test_set_overlap_group_members_is_additive_never_removes`.
+# Il epinglait que `set_overlap_group_members` etait ADDITIVE : un membre retire
+# d un appel ulterieur survivait. La fonction est partie avec le magasin qu elle
+# ecrivait. L equivalent gouverne est ailleurs et se lit autrement : une version
+# publiee EST son appartenance, donc il n y a plus d ajout partiel a proteger.
 
 
 @pg_available
+@pytest.mark.pg_owner
 def test_upsert_idempotent_with_synonyms_and_non_additive_dims():
     """§24 (F-2): a re-upsert IDENTICAL to a row carrying synonyms (JSONB) and
     non_additive_dimensions (TEXT[]) emits NO second audit row.
@@ -1099,19 +1018,23 @@ def test_upsert_idempotent_with_synonyms_and_non_additive_dims():
                     "emit a second audit (JSONB/array round-trip must not diverge)"
                 )
     finally:
+        # TWO TRANSACTIONS, and the order matters. These ran as one, and
+        # `app.metric_semantics_audit` is APPEND-ONLY: its DELETE is refused --
+        # correctly, an audit trail that can be erased is not one -- and the
+        # refusal rolled the whole block back, so the DEFINITION survived too.
+        # Two rows of PLATFORM-scoped fixture pollution accumulated that way, and
+        # they are what made `test_import_platform_defaults` count 22 where the
+        # seed produces 20.
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "DELETE FROM app.metric_definitions WHERE canonical_name = %s", (name,)
                 )
-                cur.execute(
-                    "DELETE FROM app.metric_semantics_audit "
-                    "WHERE after->>'canonical_name' = %s", (name,)
-                )
             conn.commit()
 
 
 @pg_available
+@pytest.mark.pg_owner
 def test_audit_append_only_blocks_update_delete_truncate():
     """§34 (F-1): UPDATE/DELETE/TRUNCATE on the audit table RAISE (owner included).
 

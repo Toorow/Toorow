@@ -105,9 +105,9 @@ describe("CardFeedbackBar", () => {
     expect(screen.getByTestId("card-feedback-confirmation")).toBeInTheDocument();
   });
 
-  it("renders French copy (Cette carte vous a été utile ?)", () => {
+  it("asks its question in English, like every other served string (76-4)", () => {
     render(<CardFeedbackBar {...DEFAULT_PROPS} />);
-    expect(screen.getByText(/Cette carte vous a été utile/)).toBeInTheDocument();
+    expect(screen.getByText(/Was this card useful\?/)).toBeInTheDocument();
   });
 
   // F-11 (9-2b review, câblé pour de vrai en 9.10) : sur le chemin legacy,
@@ -173,9 +173,41 @@ describe("CardFeedbackBar", () => {
       project_id: "proj_test",
       rating: 1,
       trace_id: "trace_abc",
-      report_ref: "card:kpi:2026-07-13",
-      module: "card-kpi",
+      // The tool schema declares `connector`, never `module`, and refuses
+      // additional properties. `report_ref` is empty because the grant names
+      // the Result (amendment of 2026-08-30, mcp-tool-surface.md).
+      report_ref: "",
+      connector: "card-kpi",
+      handle: "",
     });
+    expect(params.arguments).not.toHaveProperty("module");
+  });
+
+  it("forwards the server-minted handle verbatim as `handle`", async () => {
+    const { app, handle: conn } = connectWithMockApp(async () => ({ content: [] }));
+    await conn.ready;
+
+    render(
+      <CardFeedbackBar {...DEFAULT_PROPS} handle="rh_01J0000000000000000000000A" />,
+    );
+    fireEvent.click(screen.getByTestId("card-feedback-thumbs-down"));
+    fireEvent.click(screen.getByTestId("card-feedback-submit"));
+
+    await screen.findByTestId("card-feedback-confirmation");
+    const [params] = app.callServerTool.mock.calls[0];
+    const sent = params.arguments as Record<string, unknown>;
+    expect(sent.handle).toBe("rh_01J0000000000000000000000A");
+    // Every key on the wire is one the tool declares. `additionalProperties` is
+    // false server-side, so an extra key is a refusal, not a spare field.
+    expect(Object.keys(sent).sort()).toEqual([
+      "comment",
+      "connector",
+      "handle",
+      "project_id",
+      "rating",
+      "report_ref",
+      "trace_id",
+    ]);
   });
 
   it("SDK path: rejected callServerTool → état d'erreur designé (F-11 atteint)", async () => {

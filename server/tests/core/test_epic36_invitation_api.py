@@ -5,6 +5,7 @@ import json
 from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock
 
+from core import invitations_api  # AD-43 : le handler vit chez son sujet
 from starlette.requests import Request
 
 
@@ -52,7 +53,6 @@ def test_denied_resource_authority_mints_no_invitation(monkeypatch):
     monkeypatch.setattr(db, "set_local_access_context", MagicMock())
     monkeypatch.setattr(admin_api, "_check_auth", AsyncMock(return_value=(True, "admin-1")))
     monkeypatch.setattr(admin_api, "_enforce_org_manage", lambda *_a: None)
-    monkeypatch.setattr(project_access, "epic36_production_access_enabled", lambda: True)
     monkeypatch.setattr(
         project_access,
         "resolve_strict_resource_access",
@@ -61,7 +61,7 @@ def test_denied_resource_authority_mints_no_invitation(monkeypatch):
     issue = MagicMock()
     monkeypatch.setattr(invitations, "issue_invitation", issue)
     response = asyncio.run(
-        admin_api._issue_invitation(
+        invitations_api._issue_invitation(
             _request(
                 {
                     "invited_identity": "user@example.com",
@@ -77,7 +77,7 @@ def test_denied_resource_authority_mints_no_invitation(monkeypatch):
 
 
 def test_bootstrap_is_no_store_tokenless_and_has_no_third_party_surface():
-    from core.admin_api import _invitation_bootstrap
+    from core.invitations_api import _invitation_bootstrap  # noqa: PLC0415
 
     request = Request({"type": "http", "method": "GET", "path": "/invite", "headers": []})
     response = asyncio.run(_invitation_bootstrap(request))

@@ -1,7 +1,7 @@
 """toorow -- tests for the reshape-to-daily canonical-rows producer (Story 22.10).
 
 OFFLINE / pure: every fixture workbook is built in-memory with openpyxl (no
-committed binaries). Proves the AC on an AXA-shaped messy media plan: a top
+committed binaries). Proves the AC on an agency-shaped messy media plan: a top
 metadata block, a header NOT on row 1, merged cells, grouped lines with
 subtotal/total rows, and per-line Start/Ende date ranges exploded to DAILY rows
 whose amounts sum back to the line total (to the cent), output as a ParseResult
@@ -11,6 +11,8 @@ of canonical rows.
 from __future__ import annotations
 
 import io
+import json
+from datetime import date
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
@@ -25,6 +27,7 @@ from core.file_source_producer import (
     ReshapeSpec,
     canonical_rows_signature,
     detect_source_drift,
+    evaluate_variant_discriminator,
     landed_total,
     produce,
     read_source_columns,
@@ -32,6 +35,7 @@ from core.file_source_producer import (
     reshape_workbook_to_daily,
     stamp_placement,
 )
+from core.file_source_template import compute_content_hash, validate_template_contract
 
 openpyxl = pytest.importorskip("openpyxl")
 
@@ -56,16 +60,16 @@ def _write(ws, rows, *, at_row=1):
             ws.cell(row=r, column=c, value=val)
 
 
-# A realistic AXA-shaped sheet: a top metadata block (rows 1-4), a blank spacer,
+# A realistic agency-shaped sheet: a top metadata block (rows 1-4), a blank spacer,
 # a header on row 6 (NOT row 1), then grouped lines with a subtotal + a grand
 # total, plus per-line German dotted date ranges.
-def _axa_like(wb):
+def _agency_like(wb):
     ws = wb.create_sheet("DV360")
     _write(
         ws,
         [
-            ["Client:", "AXA"],
-            ["Campaign:", "MCC Health"],
+            ["Client:", "EXAMPLE"],
+            ["Campaign:", "Example Campaign"],
             ["Planned Budget:", 3000],
             ["Campaign-Period:", "11.07.2022-31.10.2022"],
             [],  # blank spacer
@@ -103,7 +107,7 @@ _SPEC = ReshapeSpec(
 
 
 def test_reshape_produces_daily_rows_sum_preserving():
-    result = reshape_workbook_to_daily(_wb_bytes(_axa_like), _SPEC)
+    result = reshape_workbook_to_daily(_wb_bytes(_agency_like), _SPEC)
     assert isinstance(result, ParseResult)
 
     # 1-day line (1000) -> 1 row; 3-day line (100) -> 3 rows (33.34/33.33/33.33).
@@ -120,15 +124,15 @@ def test_reshape_produces_daily_rows_sum_preserving():
 
 
 def test_reshape_extracts_metadata_block():
-    result = reshape_workbook_to_daily(_wb_bytes(_axa_like), _SPEC)
-    assert result.metadata["Client"] == "AXA"
-    assert result.metadata["Campaign"] == "MCC Health"
+    result = reshape_workbook_to_daily(_wb_bytes(_agency_like), _SPEC)
+    assert result.metadata["Client"] == "EXAMPLE"
+    assert result.metadata["Campaign"] == "Example Campaign"
     assert result.metadata["Planned Budget"] == "3000"
     assert result.metadata["Campaign-Period"] == "11.07.2022-31.10.2022"
 
 
 def test_reshape_skips_subtotal_total_and_group_rows():
-    result = reshape_workbook_to_daily(_wb_bytes(_axa_like), _SPEC)
+    result = reshape_workbook_to_daily(_wb_bytes(_agency_like), _SPEC)
     rules = {rr.rule for rr in result.rejected}
     assert RULE_SUBTOTAL_OR_TOTAL in rules  # TOTAL Xcross + grand TOTAL
     assert RULE_GROUP_OR_NOISE in rules  # "Xcross Incremental" group-label row
@@ -142,7 +146,7 @@ def test_reshape_skips_subtotal_total_and_group_rows():
 def test_reshape_conserves_total_landed_equals_sum_of_line_totals():
     # F-1 spirit: the landed daily total == the sum of the (skipped-subtotal-free)
     # line totals, 1000 + 100 == 1100, and the grand TOTAL row is NOT added.
-    result = reshape_workbook_to_daily(_wb_bytes(_axa_like), _SPEC)
+    result = reshape_workbook_to_daily(_wb_bytes(_agency_like), _SPEC)
     landed = sum(Decimal(r["cost"]) for r in result.rows)
     assert landed == Decimal("1100.00")
 
@@ -189,7 +193,7 @@ def test_reshape_auto_detects_header_row():
         sheet_name="DV360", header_row=None,  # auto-detect
         metadata_rows=(1, 4), date_format="%d.%m.%Y",
     )
-    result = reshape_workbook_to_daily(_wb_bytes(_axa_like), spec)
+    result = reshape_workbook_to_daily(_wb_bytes(_agency_like), spec)
     assert len(result.rows) == 4  # same as the explicit-header run
 
 
@@ -296,8 +300,8 @@ def test_produce_tabular_remaps_columns_to_canonical_ids():
     result = produce(data, template, mapping)
     assert isinstance(result, ParseResult)
     assert result.rows == [
-        {"mdm_channel": "Google", "mdm_cost": "100", "mdm_date": "2026-03-01"},
-        {"mdm_channel": "Meta", "mdm_cost": "200", "mdm_date": "2026-03-02"},
+        {"mdm_channel": "Google", "mdm_cost": 100, "mdm_date": date(2026, 3, 1)},
+        {"mdm_channel": "Meta", "mdm_cost": 200, "mdm_date": date(2026, 3, 2)},
     ]
     # Columns are keyed by canonical ids.
     assert {c.name for c in result.columns} == {"mdm_channel", "mdm_cost", "mdm_date"}
@@ -322,7 +326,7 @@ def test_produce_dispatches_reshape_when_contract_has_reshape():
             "date_format": "%d.%m.%Y",
         },
     }
-    result = produce(_wb_bytes(_axa_like), {"contract": contract}, None)
+    result = produce(_wb_bytes(_agency_like), {"contract": contract}, None)
     assert len(result.rows) == 4  # same daily explode as Story 22.10
     assert result.rows[0]["cost"] == "1000.00"
 
@@ -347,7 +351,7 @@ def test_run_import_producer_path_lands_via_existing_chain():
                  "no_op": False, "replay": False}
 
     with (
-        patch("core.csv_excel_import.version_contract") as mock_version,
+        patch("core.import_runner.version_contract") as mock_version,
         patch("core.managed_feed_ledger.open_import", return_value=fake_open) as mock_open,
         patch("core.managed_feed_ledger.record_rows", return_value=fake_ledger) as mock_record,
         patch("core.managed_feed_ledger.evaluate_rejection_gate_for_ledger", return_value=None),
@@ -438,13 +442,13 @@ def test_stamp_placement_cell_discriminator_from_metadata():
             "date_format": "%d.%m.%Y",
         },
     }
-    result = produce(_wb_bytes(_axa_like), {"contract": contract}, None)
+    result = produce(_wb_bytes(_agency_like), {"contract": contract}, None)
     stamped = stamp_placement(result, {"contract": contract})
-    assert all(r["mdm_market"] == "AXA" for r in stamped.rows)  # metadata Client -> dimension
+    assert all(r["mdm_market"] == "EXAMPLE" for r in stamped.rows)  # metadata Client -> dimension
 
 
 def test_landed_total_sums_amount_field():
-    result = produce(_wb_bytes(_axa_like), {"contract": {
+    result = produce(_wb_bytes(_agency_like), {"contract": {
         "kind": "catalog",
         "reshape": {
             "fields": {"vendor": "Vermarkter", "start": "Start", "end": "Ende",
@@ -461,14 +465,29 @@ def test_landed_total_sums_amount_field():
 # ---------------------------------------------------------------------------
 
 
-def _locked_tabular_template():
+def _persisted_template(raw_contract: dict) -> dict:
+    """Build a template row EXACTLY as ``create_file_source_template`` persists it.
+
+    The raw contract goes through the REAL validator, is serialised the way the
+    write path serialises it (``json.dumps(normalised)`` into JSONB), and is sealed
+    by its own content hash. Hand-fabricating the contract dict is precisely what
+    let three defects ship green: every fixture here goes through the validator.
+    """
+    normalised = validate_template_contract(raw_contract)
     return {
-        "content_hash": "a" * 64,  # locked (Story 22.11)
-        "contract": {
-            "kind": "catalog", "class": "planned", "format": "csv",
-            "required_fields": ["mdm_cost", "mdm_date"],
-        },
+        "content_hash": compute_content_hash(normalised),
+        "contract": json.loads(json.dumps(normalised)),  # JSONB round-trip
     }
+
+
+def _locked_tabular_template():
+    return _persisted_template({
+        "kind": "catalog", "class": "planned", "format": "csv", "grain": "daily",
+        "required_fields": ["mdm_cost", "mdm_date"],
+        "optional_fields": ["mdm_channel"],
+        "placement": {"metric": "mdm_cost", "period": "mdm_date",
+                      "dimension": ["mdm_channel"]},
+    })
 
 
 _TAB_MAPPING = {"Vendor": "mdm_channel", "Spend": "mdm_cost", "Day": "mdm_date"}
@@ -505,8 +524,8 @@ def test_drift_added_and_reordered_columns_still_land_required():
     assert "Note" in drift["added_columns"]
     # Required fields still land (mapping is by NAME, order-insensitive).
     result = replay_locked_template(drifted, template, _TAB_MAPPING)
-    assert result.rows[0]["mdm_cost"] == "100"
-    assert result.rows[0]["mdm_date"] == "2026-03-01"
+    assert result.rows[0]["mdm_cost"] == 100
+    assert result.rows[0]["mdm_date"] == date(2026, 3, 1)
 
 
 def test_drift_disappearing_required_field_needs_revalidation():
@@ -517,3 +536,190 @@ def test_drift_disappearing_required_field_needs_revalidation():
     drift = detect_source_drift(template, _TAB_MAPPING, cols)
     assert drift["status"] == "needs_revalidation"  # re-enters the AD-7 gate
     assert drift["missing_required_sources"] == ["Spend"]
+
+
+# ---------------------------------------------------------------------------
+# Regression 1 (Story 22.14): a PERSISTED template keeps its discriminator and
+# its layout keys.
+#
+# ``create_file_source_template`` stores ``json.dumps(validate_template_contract(
+# contract))``. Every key the validator drops is unreachable on every persisted
+# template -- and ``stamp_placement`` reads ``contract['discriminator']`` while
+# ``produce`` reads header_row / format / sheet_name / date_format. These tests go
+# through the REAL validator instead of hand-building the contract dict.
+# ---------------------------------------------------------------------------
+
+_VARIANT_CONTRACT = {
+    "kind": "catalog", "class": "actual", "grain": "daily", "format": "csv",
+    "required_fields": ["mdm_cost", "mdm_date"],
+    "optional_fields": ["mdm_channel"],
+    "placement": {"metric": "mdm_cost", "period": "mdm_date",
+                  "dimension": ["mdm_market"]},
+    "discriminator": {"dimension": "mdm_market", "source": "filename",
+                      "pattern": r"_(?P<value>[A-Z]{2})_"},
+}
+
+
+def test_persisted_template_keeps_its_discriminator_reachable():
+    template = _persisted_template(_VARIANT_CONTRACT)
+    data = _csv([["Vendor", "Spend", "Day"], ["Google", "100", "2026-03-01"]])
+    stamped = stamp_placement(
+        produce(data, template, _TAB_MAPPING), template, filename="plan_DE_2026.csv"
+    )
+    assert stamped.rows[0]["mdm_market"] == "DE"  # not None, not absent
+    assert stamped.rows[0]["_placement_class"] == "actual"
+    resolved = evaluate_variant_discriminator(template, filename="plan_DE_2026.csv")
+    assert resolved["dimension"] == "mdm_market"
+    assert resolved["value"] == "DE"
+    assert resolved["flagged"] is False
+
+
+def test_persisted_template_keeps_its_declared_header_row():
+    template = _persisted_template({**_VARIANT_CONTRACT, "header_row": 2})
+    data = _csv([
+        ["# exported by the agency", "", ""],  # a preamble line, not the header
+        ["Vendor", "Spend", "Day"],
+        ["Google", "100", "2026-03-01"],
+    ])
+    result = produce(data, template, _TAB_MAPPING)
+    assert result.rows == [
+        {"mdm_channel": "Google", "mdm_cost": 100, "mdm_date": date(2026, 3, 1)}
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Regression 2 (Story 22.16): "locked" is the SEAL, not a NOT NULL column.
+#
+# 097 declares content_hash NOT NULL and file_source_template computes it
+# unconditionally, so EVERY persisted row has one: ``not
+# template.get("content_hash")`` can only fire on a dict fabricated in a test.
+# The only lock evidence a persisted row actually carries is that its hash is the
+# SHA-256 of the normalised contract it claims to seal.
+# ---------------------------------------------------------------------------
+
+
+def test_replay_refuses_a_content_hash_that_does_not_seal_the_contract():
+    template = _locked_tabular_template()
+    template["content_hash"] = "a" * 64  # well-formed, NOT NULL -- and not the seal
+    with pytest.raises(ReshapeProducerError) as exc:
+        replay_locked_template(
+            _csv([["Vendor", "Spend", "Day"], ["Google", "100", "2026-03-01"]]),
+            template, _TAB_MAPPING,
+        )
+    assert exc.value.code == "template_not_locked"
+
+
+def test_replay_refuses_a_contract_edited_after_its_lock():
+    template = _locked_tabular_template()
+    template["contract"]["class"] = "actual"  # the seal no longer covers the contract
+    with pytest.raises(ReshapeProducerError) as exc:
+        replay_locked_template(
+            _csv([["Vendor", "Spend", "Day"], ["Google", "100", "2026-03-01"]]),
+            template, _TAB_MAPPING,
+        )
+    assert exc.value.code == "template_not_locked"
+
+
+def test_replay_accepts_a_genuinely_sealed_template():
+    template = _locked_tabular_template()
+    result = replay_locked_template(
+        _csv([["Vendor", "Spend", "Day"], ["Google", "100", "2026-03-01"]]),
+        template, _TAB_MAPPING,
+    )
+    assert result.rows[0]["mdm_cost"] == 100
+
+
+# ---------------------------------------------------------------------------
+# Regression 3 (Story 22.16): drift detection must SEE the reshape path.
+#
+# ``detect_source_drift`` indexed entirely on ``mapping`` {source -> canonical},
+# which the reshape / media-plan path NEVER has: ``produce`` ignores ``mapping``
+# when the contract carries ``reshape``, and the reshape spec stores the inverse
+# ({canonical -> source}). Measured: a locked reshape template whose source
+# columns had ALL disappeared returned status 'ok'.
+#
+# On the reshape path EVERY declared column is structurally required --
+# ``reshape_workbook_to_daily`` raises ``column_not_found`` if one does not
+# resolve -- so its disappearance is drift by construction.
+# ---------------------------------------------------------------------------
+
+_MEDIAPLAN_HEADERS = ["Vermarkter", "Start", "Ende", "Bruttokosten Gesamt"]
+
+
+def _mediaplan_sheet(headers, *, sheet_name="DV360"):
+    """An agency-shaped sheet (metadata block, header on row 6) with given headers."""
+
+    def build(wb):
+        ws = wb.create_sheet(sheet_name)
+        _write(ws, [
+            ["Client:", "EXAMPLE"],
+            ["Campaign:", "Example Campaign"],
+            ["Planned Budget:", 1000],
+            ["Campaign-Period:", "01.03.2026-31.03.2026"],
+            [],
+            list(headers),  # header row 6
+            ["Google DV360", "01.03.2026", "01.03.2026", 1000],
+        ])
+
+    return _wb_bytes(build)
+
+
+def _locked_mediaplan_template():
+    return _persisted_template({
+        "kind": "catalog", "class": "planned", "grain": "daily",
+        "required_fields": ["mdm_cost", "mdm_channel"],
+        "placement": {"metric": "mdm_cost", "period": "mdm_date",
+                      "dimension": ["mdm_channel"]},
+        "reshape": {
+            "fields": {"mdm_channel": "Vermarkter", "start": "Start", "end": "Ende",
+                       "mdm_cost": "Bruttokosten Gesamt"},
+            "amount_field": "mdm_cost", "start_field": "start", "end_field": "end",
+            "date_field": "mdm_date", "label_field": "mdm_channel",
+            "sheet_name": "DV360", "header_row": 6, "metadata_rows": [1, 4],
+            "date_format": "%d.%m.%Y",
+        },
+    })
+
+
+def test_drift_on_a_reshape_template_sees_every_disappeared_source_column():
+    template = _locked_mediaplan_template()
+    # The agency re-exported in French: every declared source column is gone.
+    drifted = _mediaplan_sheet(["Vendeur", "Debut", "Fin", "Cout brut"])
+    cols = read_source_columns(drifted, template)
+    drift = detect_source_drift(template, None, cols)
+    assert drift["status"] == "needs_revalidation"
+    assert drift["missing_required_sources"] == [
+        "Bruttokosten Gesamt", "Ende", "Start", "Vermarkter",
+    ]
+    # And the drift is real: the same file cannot be produced at all.
+    with pytest.raises(ReshapeProducerError) as exc:
+        produce(drifted, template, None)
+    assert exc.value.code == "column_not_found"
+
+
+def test_drift_on_a_reshape_template_names_the_one_column_that_vanished():
+    template = _locked_mediaplan_template()
+    drifted = _mediaplan_sheet(["Vermarkter", "Start", "Ende", "Cout brut"])
+    drift = detect_source_drift(template, None, read_source_columns(drifted, template))
+    assert drift["status"] == "needs_revalidation"
+    assert drift["missing_required_sources"] == ["Bruttokosten Gesamt"]
+
+
+def test_drift_on_a_reshape_template_tolerates_added_and_reordered_columns():
+    template = _locked_mediaplan_template()
+    drifted = _mediaplan_sheet(
+        ["Bruttokosten Gesamt", "Note", "Ende", "Start", "Vermarkter"]
+    )
+    drift = detect_source_drift(template, None, read_source_columns(drifted, template))
+    assert drift["status"] == "ok"
+    assert drift["added_columns"] == ["Note"]
+
+
+def test_drift_on_a_reshape_template_matches_headers_case_insensitively():
+    # resolve_column_index matches header text case-insensitively; drift must not
+    # invent a disappearance the producer would happily bind.
+    template = _locked_mediaplan_template()
+    drifted = _mediaplan_sheet(["VERMARKTER", "start", "ENDE", "bruttokosten gesamt"])
+    drift = detect_source_drift(template, None, read_source_columns(drifted, template))
+    assert drift["status"] == "ok"
+    assert drift["missing_required_sources"] == []

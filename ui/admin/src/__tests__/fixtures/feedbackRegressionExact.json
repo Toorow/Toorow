@@ -1,0 +1,833 @@
+{
+  "schema_version": "feedback-regression-fixture.v1",
+  "scope": {
+    "org_id": "org_FIXTURE_1",
+    "project_id": "proj_FIXTURE_2",
+    "feedback_id": "rsfb_FIXTURE_3"
+  },
+  "draft": {
+    "schema_version": "feedback-regression-draft.v1",
+    "state": "available",
+    "reason": null,
+    "subject": {
+      "feedback_id": "rsfb_FIXTURE_3",
+      "source": "anonymous_share"
+    },
+    "review": {
+      "version_id": "fbrv_FIXTURE_4",
+      "state": "accepted",
+      "affected_dimension": "semantic_correctness",
+      "human_verdict": "fail",
+      "severity": "critical",
+      "reason": "This exact failed path is reproducible and should become a regression case."
+    },
+    "frozen": {
+      "result": {
+        "id": "qr_FIXTURE_5",
+        "content_hash": "787b8d03f2bcbd07fe7bcb536fb711c71b274e4aaef86deb5d5f3efb30549df4",
+        "outcome": "success"
+      },
+      "query_spec_version_id": "qsv_FIXTURE_6",
+      "classification_hash": "b269bee0961c0ab3f4793e9d63bfa590c5c7e886e5451fe2b29e8c96f335b0f2",
+      "semantic_view": {
+        "id": "sv_FIXTURE_7",
+        "state": "attributed",
+        "version_id": "svv_FIXTURE_8"
+      },
+      "capability": {
+        "key": "country",
+        "version_id": "pcv_FIXTURE_9"
+      },
+      "result_type": "table",
+      "eligible_target": {
+        "kind": "path_step",
+        "ordinal": 0
+      },
+      "render": {
+        "render_id": "rnd_FIXTURE_10",
+        "visualization_spec_version_id": "vsv_FIXTURE_11",
+        "renderer_build_id": "table/toorow-table@1.0.0",
+        "runtime_build_id": "@toorow/card-shell/viz@0.1.0+f87912546265",
+        "theme_version": "viz-theme@1",
+        "formatter_version": "viz-formatters@1"
+      },
+      "ai_path": "aip_FIXTURE_12"
+    },
+    "domain_options": [
+      {
+        "domain_id": "bd_FIXTURE_13",
+        "version_number": 1
+      }
+    ],
+    "requires_domain_selection": false,
+    "create_contract": {
+      "schema_version": "feedback-regression-create.v1",
+      "expected_review_version_id": "fbrv_FIXTURE_4"
+    }
+  },
+  "review_command": {
+    "schema_version": "feedback-review-command.v1",
+    "expected_head": null,
+    "retry_key": "fixture-regression-review-retry",
+    "state": "accepted",
+    "affected_dimension": "semantic_correctness",
+    "human_verdict": "fail",
+    "severity": "critical",
+    "reason": "This exact failed path is reproducible and should become a regression case."
+  },
+  "review_receipt": {
+    "schema_version": "feedback-review-receipt.v1",
+    "status": "recorded",
+    "feedback_id": "rsfb_FIXTURE_3",
+    "review_version_id": "fbrv_FIXTURE_4",
+    "version_number": 1,
+    "predecessor_version_id": null
+  },
+  "create_command": {
+    "schema_version": "feedback-regression-create.v1",
+    "expected_review_version_id": "fbrv_FIXTURE_4",
+    "retry_key": "fixture-regression-create-retry",
+    "title": "Reproduce the exact feedback path failure",
+    "owner": "owner@example.com",
+    "reproduction_reason": "The reviewed failure is deterministic on the frozen fixture.",
+    "selected_domain": {
+      "domain_id": "bd_FIXTURE_13",
+      "version_number": 1
+    },
+    "question": "Does the frozen fixture return exactly three result rows?",
+    "time_boundary": {},
+    "expected_result": [
+      {
+        "assertion_type": "cardinality",
+        "selectors": [],
+        "operator": "equals",
+        "expected": 3,
+        "tolerance": null
+      }
+    ],
+    "required_provenance": [
+      {
+        "link_kind": "semantic_view",
+        "required": true
+      }
+    ],
+    "expected_ai_path": {
+      "grammar_version": 1,
+      "required_nodes": []
+    }
+  },
+  "create_receipt": {
+    "schema_version": "feedback-regression-receipt.v1",
+    "status": "created",
+    "regression_case_id": "frc_FIXTURE_14",
+    "golden_question_id": "gq_FIXTURE_15",
+    "golden_question_version_id": "gqv_FIXTURE_16",
+    "review_version_id": "fbrv_FIXTURE_4",
+    "result_id": "qr_FIXTURE_5",
+    "result_content_hash": "787b8d03f2bcbd07fe7bcb536fb711c71b274e4aaef86deb5d5f3efb30549df4",
+    "classification_hash": "b269bee0961c0ab3f4793e9d63bfa590c5c7e886e5451fe2b29e8c96f335b0f2",
+    "owner_links": [
+      {
+        "workspace": "test",
+        "section": "golden-questions",
+        "object_type": "golden-question",
+        "object_id": "gq_FIXTURE_15",
+        "version_id": "gqv_FIXTURE_16",
+        "tab": "definition"
+      },
+      {
+        "workspace": "test",
+        "section": "widget-feedback",
+        "object_type": "feedback-review",
+        "object_id": "rsfb_FIXTURE_3",
+        "version_id": null,
+        "tab": null
+      }
+    ]
+  },
+  "create_replay_receipt": {
+    "schema_version": "feedback-regression-receipt.v1",
+    "status": "created",
+    "regression_case_id": "frc_FIXTURE_14",
+    "golden_question_id": "gq_FIXTURE_15",
+    "golden_question_version_id": "gqv_FIXTURE_16",
+    "review_version_id": "fbrv_FIXTURE_4",
+    "result_id": "qr_FIXTURE_5",
+    "result_content_hash": "787b8d03f2bcbd07fe7bcb536fb711c71b274e4aaef86deb5d5f3efb30549df4",
+    "classification_hash": "b269bee0961c0ab3f4793e9d63bfa590c5c7e886e5451fe2b29e8c96f335b0f2",
+    "owner_links": [
+      {
+        "workspace": "test",
+        "section": "golden-questions",
+        "object_type": "golden-question",
+        "object_id": "gq_FIXTURE_15",
+        "version_id": "gqv_FIXTURE_16",
+        "tab": "definition"
+      },
+      {
+        "workspace": "test",
+        "section": "widget-feedback",
+        "object_type": "feedback-review",
+        "object_id": "rsfb_FIXTURE_3",
+        "version_id": null,
+        "tab": null
+      }
+    ]
+  },
+  "golden_question": {
+    "id": "gq_FIXTURE_15",
+    "title": "Reproduce the exact feedback path failure",
+    "owner": "owner@example.com",
+    "lifecycle": "draft",
+    "current_version_id": "gqv_FIXTURE_16",
+    "created_by": "owner@example.com",
+    "created_at": "2026-08-11T12:00:00Z",
+    "updated_at": "2026-08-11T12:00:00Z",
+    "lifecycle_transitions": [
+      "active",
+      "archived"
+    ],
+    "current_version": {
+      "id": "gqv_FIXTURE_16",
+      "golden_question_id": "gq_FIXTURE_15",
+      "version_number": 1,
+      "business_domain_id": "bd_FIXTURE_13",
+      "business_domain_version_number": 1,
+      "business_classification_id": null,
+      "semantic_view_id": "sv_FIXTURE_7",
+      "semantic_view_version_id": "svv_FIXTURE_8",
+      "semantic_view_version_role": "candidate",
+      "question": "Does the frozen fixture return exactly three result rows?",
+      "time_boundary": {},
+      "expected_result": [
+        {
+          "expected": 3,
+          "operator": "equals",
+          "selectors": [],
+          "tolerance": null,
+          "assertion_type": "cardinality"
+        }
+      ],
+      "required_provenance": [
+        {
+          "required": true,
+          "link_kind": "semantic_view"
+        }
+      ],
+      "expected_ai_path": {},
+      "result_type": "table",
+      "capability_tags": [
+        "country"
+      ],
+      "severity": "critical",
+      "expected_render_ref": null,
+      "content_hash": "dea068326dcf92f17e0cc6fece311e1240351db29032b5b841799f09c2b42cb6",
+      "predecessor_version_id": null,
+      "created_by": "owner@example.com",
+      "created_at": "2026-08-11T12:00:00Z",
+      "contract_version": "golden-question.v2",
+      "reference_paths": [
+        {
+          "ordinal": 0,
+          "query_spec_version_id": "qsv_FIXTURE_6",
+          "role": "canonical"
+        }
+      ]
+    },
+    "versions": [
+      {
+        "id": "gqv_FIXTURE_16",
+        "golden_question_id": "gq_FIXTURE_15",
+        "version_number": 1,
+        "business_domain_id": "bd_FIXTURE_13",
+        "business_domain_version_number": 1,
+        "business_classification_id": null,
+        "semantic_view_id": "sv_FIXTURE_7",
+        "semantic_view_version_id": "svv_FIXTURE_8",
+        "semantic_view_version_role": "candidate",
+        "question": "Does the frozen fixture return exactly three result rows?",
+        "time_boundary": {},
+        "expected_result": [
+          {
+            "expected": 3,
+            "operator": "equals",
+            "selectors": [],
+            "tolerance": null,
+            "assertion_type": "cardinality"
+          }
+        ],
+        "required_provenance": [
+          {
+            "required": true,
+            "link_kind": "semantic_view"
+          }
+        ],
+        "expected_ai_path": {},
+        "result_type": "table",
+        "capability_tags": [
+          "country"
+        ],
+        "severity": "critical",
+        "expected_render_ref": null,
+        "content_hash": "dea068326dcf92f17e0cc6fece311e1240351db29032b5b841799f09c2b42cb6",
+        "predecessor_version_id": null,
+        "created_by": "owner@example.com",
+        "created_at": "2026-08-11T12:00:00Z",
+        "contract_version": "golden-question.v2",
+        "reference_paths": [
+          {
+            "ordinal": 0,
+            "query_spec_version_id": "qsv_FIXTURE_6",
+            "role": "canonical"
+          }
+        ]
+      }
+    ]
+  },
+  "evaluation_run": {
+    "id": "erun_FIXTURE_17",
+    "lifecycle": "finalized",
+    "ended_at": "2026-08-11T12:00:00Z",
+    "content_hash": "c194b2ab6ed8222b8c7856597e3b50f73c7c85e617beb58a14115772c80cf7a2",
+    "question_set_fingerprint": "86e4eb2ea769006439bf235afa68fff26aeb69c8ad7d7165de3121ef14a30511",
+    "pin_fingerprints": {
+      "question_set": "86e4eb2ea769006439bf235afa68fff26aeb69c8ad7d7165de3121ef14a30511",
+      "semantic_view": "4969b1d3f8e2b510df36649ff2fb217af06730bd5660bd430b2efe7f6f7c85ae",
+      "skill": "6562ee7616bf14af9c6e812f305f18ab906021a7bce17b972c38102f81787d92",
+      "context_version_set": "1c6020777dd598f18dfa66464a99d7a8c6efe5a16945ebab3ad42c811e2da5aa",
+      "model": "95fdb059f5fa9705af63cc86474c3beaacbe9c1e6ace258f20c6ace11313f5f9",
+      "host": "a31a3ce772fcbf3840fce438234d041695d8c39370314c6aa3da1dcbf72cdbe2",
+      "tool_catalog": "6d63b901e599d430beea18de1cd9c1c428bbe0d836a51ec3bc9626c0bee006e7",
+      "data_snapshot": "9fecbdabb13b6883fd88995c09542837193d10886a90cddc691554faf8d11652"
+    },
+    "unresolved_pins": [
+      {
+        "owner": "the caller: pass render_ref / render_runtime_version when the subject has one",
+        "detail": "no rendered artifact was pinned for this subject, so no render-dependent dimension can pass",
+        "pin_family": "render",
+        "reason_code": "render_not_pinned_for_this_subject"
+      }
+    ]
+  },
+  "evaluation_case": {
+    "id": "ecase_FIXTURE_18",
+    "golden_question_version_id": "gqv_FIXTURE_16",
+    "result_id": "qr_FIXTURE_5",
+    "ai_path": "aip_FIXTURE_12",
+    "business_domain_id": "bd_FIXTURE_13",
+    "business_domain_version_number": 1,
+    "capability_key": "country",
+    "result_type": "table",
+    "unresolved_pins": [],
+    "feedback_regression": {
+      "feedback_id": "rsfb_FIXTURE_3",
+      "regression_case_id": "frc_FIXTURE_14"
+    },
+    "verdicts": [
+      {
+        "dimension": "semantic_correctness",
+        "verdict_id": "edv_FIXTURE_19",
+        "verdict": "pass",
+        "reason_code": "assertions_passed",
+        "evidence_refs": {
+          "assertion_results": [
+            0
+          ]
+        }
+      },
+      {
+        "dimension": "provenance_correctness",
+        "verdict_id": "edv_FIXTURE_20",
+        "verdict": "pass",
+        "reason_code": "provenance_matched",
+        "evidence_refs": {
+          "missing": [],
+          "result_id": "qr_FIXTURE_5"
+        }
+      },
+      {
+        "dimension": "context_adherence",
+        "verdict_id": "edv_FIXTURE_21",
+        "verdict": "unverifiable",
+        "reason_code": "context_skill_evidence_unavailable",
+        "evidence_refs": {
+          "owner": "context-skill-evaluator"
+        }
+      },
+      {
+        "dimension": "path_quality",
+        "verdict_id": "edv_FIXTURE_22",
+        "verdict": "unverifiable",
+        "reason_code": "no_expected_ai_path_declared",
+        "evidence_refs": {
+          "comparison": {
+            "comparable": true,
+            "order_violations": [],
+            "version_mismatches": [],
+            "observed_step_count": 1,
+            "policy_snapshot_hash": "0554ea78e73223ee014b9ef31099efa7224bbfcacf19cd2d13285fb9a1cfcb65",
+            "extra_step_violations": [],
+            "missing_path_evidence": [],
+            "missing_required_nodes": [],
+            "observed_forbidden_nodes": [],
+            "unsatisfied_alternatives": []
+          },
+          "observed_ai_path_id": "aip_FIXTURE_12",
+          "golden_question_version_id": "gqv_FIXTURE_16"
+        }
+      },
+      {
+        "dimension": "dq_handling",
+        "verdict_id": "edv_FIXTURE_23",
+        "verdict": "not_applicable",
+        "reason_code": "no_applicable_assertions",
+        "evidence_refs": {
+          "assertion_results": []
+        }
+      },
+      {
+        "dimension": "mcp_app_behavior",
+        "verdict_id": "edv_FIXTURE_24",
+        "verdict": "unverifiable",
+        "reason_code": "mcp_app_evaluator_unavailable",
+        "evidence_refs": {
+          "owner": "mcp-app-evaluator"
+        }
+      }
+    ]
+  },
+  "evaluation_command": {
+    "schema_version": "evaluation-request.v1",
+    "retry_key": "fixture-regression-evaluate-retry"
+  },
+  "evaluation_receipt": {
+    "schema_version": "evaluation-result-receipt.v1",
+    "status": "evaluated",
+    "evaluation_case_id": "ecase_FIXTURE_18",
+    "run_id": "erun_FIXTURE_17",
+    "producer": "result-case-evaluator.v1",
+    "producer_contract_hash": "ef75562417d682c5f16f91ee6eed0cab0382a20d03b8f324893a427473654132",
+    "assertion_results": [
+      {
+        "assertion_result_id": "ear_FIXTURE_25",
+        "ordinal": 0,
+        "assertion_type": "cardinality",
+        "verdict": "pass",
+        "reason_code": "assertion_matched",
+        "expected_hash": "381019cf064ff12a3dc7da22ac0e9f9312863440f1ab90e74ed395f9d1723fcb",
+        "observed_hash": "074d8d2e1d04842e9968318ea47dc098b41c94bf92f87dfdea532a8286c99ff7",
+        "evidence_refs": {}
+      }
+    ],
+    "verdicts": {
+      "semantic_correctness": {
+        "verdict_id": "edv_FIXTURE_19",
+        "verdict": "pass",
+        "reason_code": "assertions_passed",
+        "evidence_refs": {
+          "assertion_results": [
+            0
+          ]
+        }
+      },
+      "provenance_correctness": {
+        "verdict_id": "edv_FIXTURE_20",
+        "verdict": "pass",
+        "reason_code": "provenance_matched",
+        "evidence_refs": {
+          "result_id": "qr_FIXTURE_5",
+          "missing": []
+        }
+      },
+      "context_adherence": {
+        "verdict_id": "edv_FIXTURE_21",
+        "verdict": "unverifiable",
+        "reason_code": "context_skill_evidence_unavailable",
+        "evidence_refs": {
+          "owner": "context-skill-evaluator"
+        }
+      },
+      "path_quality": {
+        "verdict_id": "edv_FIXTURE_22",
+        "verdict": "unverifiable",
+        "reason_code": "no_expected_ai_path_declared",
+        "evidence_refs": {
+          "comparison": {
+            "comparable": true,
+            "missing_path_evidence": [],
+            "missing_required_nodes": [],
+            "observed_forbidden_nodes": [],
+            "order_violations": [],
+            "version_mismatches": [],
+            "unsatisfied_alternatives": [],
+            "extra_step_violations": [],
+            "policy_snapshot_hash": "0554ea78e73223ee014b9ef31099efa7224bbfcacf19cd2d13285fb9a1cfcb65",
+            "observed_step_count": 1
+          },
+          "observed_ai_path_id": "aip_FIXTURE_12",
+          "golden_question_version_id": "gqv_FIXTURE_16"
+        }
+      },
+      "dq_handling": {
+        "verdict_id": "edv_FIXTURE_23",
+        "verdict": "not_applicable",
+        "reason_code": "no_applicable_assertions",
+        "evidence_refs": {
+          "assertion_results": []
+        }
+      },
+      "mcp_app_behavior": {
+        "verdict_id": "edv_FIXTURE_24",
+        "verdict": "unverifiable",
+        "reason_code": "mcp_app_evaluator_unavailable",
+        "evidence_refs": {
+          "owner": "mcp-app-evaluator"
+        }
+      }
+    },
+    "owner_links": [
+      {
+        "workspace": "test",
+        "section": "regression-runs",
+        "object_type": "evaluation-run",
+        "object_id": "erun_FIXTURE_17",
+        "version_id": null,
+        "tab": "cases"
+      },
+      {
+        "workspace": "test",
+        "section": "regression-runs",
+        "object_type": "evaluation-run",
+        "object_id": "erun_FIXTURE_17",
+        "version_id": "ecase_FIXTURE_18",
+        "tab": "cases"
+      },
+      {
+        "workspace": "test",
+        "section": "regression-runs",
+        "object_type": "evaluation-run",
+        "object_id": "erun_FIXTURE_17",
+        "version_id": "edv_FIXTURE_19",
+        "tab": "cases"
+      },
+      {
+        "workspace": "test",
+        "section": "regression-runs",
+        "object_type": "evaluation-run",
+        "object_id": "erun_FIXTURE_17",
+        "version_id": "edv_FIXTURE_20",
+        "tab": "cases"
+      }
+    ]
+  },
+  "mismatched_regression_case_id": "frc_FIXTURE_26",
+  "mismatched_golden_question": {
+    "golden_question_id": "gq_FIXTURE_27",
+    "version_id": "gqv_FIXTURE_28",
+    "version_number": 1,
+    "content_hash": "5985b55b1f9aa423cb2d2ba4c08f196bcc5168c2e6a5f1312038d32dd199b464",
+    "created_at": "2026-08-11T12:00:00Z"
+  },
+  "mismatched_evaluation_case": {
+    "id": "ecase_FIXTURE_29",
+    "golden_question_version_id": "gqv_FIXTURE_28",
+    "result_id": "qr_FIXTURE_30",
+    "ai_path": "aip_FIXTURE_12",
+    "business_domain_id": "bd_FIXTURE_13",
+    "business_domain_version_number": 1,
+    "capability_key": "country",
+    "result_type": "comparison",
+    "unresolved_pins": [
+      {
+        "owner": "the caller: pass render_ref / render_runtime_version when the subject has one",
+        "detail": "no rendered artifact was pinned for this subject, so no render-dependent dimension can pass",
+        "pin_family": "render",
+        "reason_code": "render_not_pinned_for_this_subject"
+      }
+    ],
+    "feedback_regression": {
+      "feedback_id": "rsfb_FIXTURE_3",
+      "regression_case_id": "frc_FIXTURE_26"
+    },
+    "verdicts": [
+      {
+        "dimension": "semantic_correctness",
+        "verdict_id": "edv_FIXTURE_31",
+        "verdict": "pass",
+        "reason_code": "assertions_passed",
+        "evidence_refs": {
+          "assertion_results": [
+            0
+          ]
+        }
+      },
+      {
+        "dimension": "provenance_correctness",
+        "verdict_id": "edv_FIXTURE_32",
+        "verdict": "pass",
+        "reason_code": "provenance_matched",
+        "evidence_refs": {
+          "missing": [],
+          "result_id": "qr_FIXTURE_30"
+        }
+      },
+      {
+        "dimension": "context_adherence",
+        "verdict_id": "edv_FIXTURE_33",
+        "verdict": "unverifiable",
+        "reason_code": "context_skill_evidence_unavailable",
+        "evidence_refs": {
+          "owner": "context-skill-evaluator"
+        }
+      },
+      {
+        "dimension": "path_quality",
+        "verdict_id": "edv_FIXTURE_34",
+        "verdict": "unverifiable",
+        "reason_code": "no_expected_ai_path_declared",
+        "evidence_refs": {
+          "comparison": {
+            "comparable": true,
+            "order_violations": [],
+            "version_mismatches": [],
+            "observed_step_count": 1,
+            "policy_snapshot_hash": "0554ea78e73223ee014b9ef31099efa7224bbfcacf19cd2d13285fb9a1cfcb65",
+            "extra_step_violations": [],
+            "missing_path_evidence": [],
+            "missing_required_nodes": [],
+            "observed_forbidden_nodes": [],
+            "unsatisfied_alternatives": []
+          },
+          "observed_ai_path_id": "aip_FIXTURE_12",
+          "golden_question_version_id": "gqv_FIXTURE_28"
+        }
+      },
+      {
+        "dimension": "dq_handling",
+        "verdict_id": "edv_FIXTURE_35",
+        "verdict": "not_applicable",
+        "reason_code": "no_applicable_assertions",
+        "evidence_refs": {
+          "assertion_results": []
+        }
+      },
+      {
+        "dimension": "mcp_app_behavior",
+        "verdict_id": "edv_FIXTURE_36",
+        "verdict": "unverifiable",
+        "reason_code": "mcp_app_evaluator_unavailable",
+        "evidence_refs": {
+          "owner": "mcp-app-evaluator"
+        }
+      }
+    ]
+  },
+  "mismatched_evaluation_command": {
+    "schema_version": "evaluation-request.v1",
+    "retry_key": "fixture-regression-mismatch-evaluate-retry"
+  },
+  "mismatched_evaluation_receipt": {
+    "schema_version": "evaluation-result-receipt.v1",
+    "status": "evaluated",
+    "evaluation_case_id": "ecase_FIXTURE_29",
+    "run_id": "erun_FIXTURE_37",
+    "producer": "result-case-evaluator.v1",
+    "producer_contract_hash": "ef75562417d682c5f16f91ee6eed0cab0382a20d03b8f324893a427473654132",
+    "assertion_results": [
+      {
+        "assertion_result_id": "ear_FIXTURE_38",
+        "ordinal": 0,
+        "assertion_type": "cardinality",
+        "verdict": "pass",
+        "reason_code": "assertion_matched",
+        "expected_hash": "381019cf064ff12a3dc7da22ac0e9f9312863440f1ab90e74ed395f9d1723fcb",
+        "observed_hash": "074d8d2e1d04842e9968318ea47dc098b41c94bf92f87dfdea532a8286c99ff7",
+        "evidence_refs": {}
+      }
+    ],
+    "verdicts": {
+      "semantic_correctness": {
+        "verdict_id": "edv_FIXTURE_31",
+        "verdict": "pass",
+        "reason_code": "assertions_passed",
+        "evidence_refs": {
+          "assertion_results": [
+            0
+          ]
+        }
+      },
+      "provenance_correctness": {
+        "verdict_id": "edv_FIXTURE_32",
+        "verdict": "pass",
+        "reason_code": "provenance_matched",
+        "evidence_refs": {
+          "result_id": "qr_FIXTURE_30",
+          "missing": []
+        }
+      },
+      "context_adherence": {
+        "verdict_id": "edv_FIXTURE_33",
+        "verdict": "unverifiable",
+        "reason_code": "context_skill_evidence_unavailable",
+        "evidence_refs": {
+          "owner": "context-skill-evaluator"
+        }
+      },
+      "path_quality": {
+        "verdict_id": "edv_FIXTURE_34",
+        "verdict": "unverifiable",
+        "reason_code": "no_expected_ai_path_declared",
+        "evidence_refs": {
+          "comparison": {
+            "comparable": true,
+            "missing_path_evidence": [],
+            "missing_required_nodes": [],
+            "observed_forbidden_nodes": [],
+            "order_violations": [],
+            "version_mismatches": [],
+            "unsatisfied_alternatives": [],
+            "extra_step_violations": [],
+            "policy_snapshot_hash": "0554ea78e73223ee014b9ef31099efa7224bbfcacf19cd2d13285fb9a1cfcb65",
+            "observed_step_count": 1
+          },
+          "observed_ai_path_id": "aip_FIXTURE_12",
+          "golden_question_version_id": "gqv_FIXTURE_28"
+        }
+      },
+      "dq_handling": {
+        "verdict_id": "edv_FIXTURE_35",
+        "verdict": "not_applicable",
+        "reason_code": "no_applicable_assertions",
+        "evidence_refs": {
+          "assertion_results": []
+        }
+      },
+      "mcp_app_behavior": {
+        "verdict_id": "edv_FIXTURE_36",
+        "verdict": "unverifiable",
+        "reason_code": "mcp_app_evaluator_unavailable",
+        "evidence_refs": {
+          "owner": "mcp-app-evaluator"
+        }
+      }
+    },
+    "owner_links": [
+      {
+        "workspace": "test",
+        "section": "regression-runs",
+        "object_type": "evaluation-run",
+        "object_id": "erun_FIXTURE_37",
+        "version_id": null,
+        "tab": "cases"
+      },
+      {
+        "workspace": "test",
+        "section": "regression-runs",
+        "object_type": "evaluation-run",
+        "object_id": "erun_FIXTURE_37",
+        "version_id": "ecase_FIXTURE_29",
+        "tab": "cases"
+      },
+      {
+        "workspace": "test",
+        "section": "regression-runs",
+        "object_type": "evaluation-run",
+        "object_id": "erun_FIXTURE_37",
+        "version_id": "edv_FIXTURE_31",
+        "tab": "cases"
+      },
+      {
+        "workspace": "test",
+        "section": "regression-runs",
+        "object_type": "evaluation-run",
+        "object_id": "erun_FIXTURE_37",
+        "version_id": "edv_FIXTURE_32",
+        "tab": "cases"
+      }
+    ]
+  },
+  "incompatible_resolution_command": {
+    "schema_version": "feedback-regression-resolve.v1",
+    "regression_case_id": "frc_FIXTURE_14",
+    "evaluation_case_id": "ecase_FIXTURE_29"
+  },
+  "incompatible_resolution_receipt": {
+    "schema_version": "feedback-regression-resolution.v1",
+    "status": "unresolved",
+    "resolution_id": null,
+    "regression_case_id": "frc_FIXTURE_14",
+    "evaluation_case_id": "ecase_FIXTURE_29",
+    "evaluation_run_id": "erun_FIXTURE_37",
+    "verdict_id": "edv_FIXTURE_31",
+    "reason": "trusted_pass_incompatible",
+    "owner_links": [
+      {
+        "workspace": "test",
+        "section": "regression-runs",
+        "object_type": "evaluation-run",
+        "object_id": "erun_FIXTURE_37",
+        "version_id": null,
+        "tab": "cases"
+      },
+      {
+        "workspace": "test",
+        "section": "regression-runs",
+        "object_type": "evaluation-run",
+        "object_id": "erun_FIXTURE_37",
+        "version_id": "ecase_FIXTURE_29",
+        "tab": "cases"
+      },
+      {
+        "workspace": "test",
+        "section": "regression-runs",
+        "object_type": "evaluation-run",
+        "object_id": "erun_FIXTURE_37",
+        "version_id": "edv_FIXTURE_31",
+        "tab": "cases"
+      }
+    ]
+  },
+  "incompatible_resolution_count_before": 0,
+  "incompatible_resolution_count_after": 0,
+  "resolution_command": {
+    "schema_version": "feedback-regression-resolve.v1",
+    "regression_case_id": "frc_FIXTURE_14",
+    "evaluation_case_id": "ecase_FIXTURE_18"
+  },
+  "resolution_receipt": {
+    "schema_version": "feedback-regression-resolution.v1",
+    "status": "resolved",
+    "resolution_id": "frr_FIXTURE_39",
+    "regression_case_id": "frc_FIXTURE_14",
+    "evaluation_case_id": "ecase_FIXTURE_18",
+    "evaluation_run_id": "erun_FIXTURE_17",
+    "verdict_id": "edv_FIXTURE_19",
+    "reason": null,
+    "owner_links": [
+      {
+        "workspace": "test",
+        "section": "regression-runs",
+        "object_type": "evaluation-run",
+        "object_id": "erun_FIXTURE_17",
+        "version_id": null,
+        "tab": "cases"
+      },
+      {
+        "workspace": "test",
+        "section": "regression-runs",
+        "object_type": "evaluation-run",
+        "object_id": "erun_FIXTURE_17",
+        "version_id": "ecase_FIXTURE_18",
+        "tab": "cases"
+      },
+      {
+        "workspace": "test",
+        "section": "regression-runs",
+        "object_type": "evaluation-run",
+        "object_id": "erun_FIXTURE_17",
+        "version_id": "edv_FIXTURE_19",
+        "tab": "cases"
+      }
+    ]
+  }
+}

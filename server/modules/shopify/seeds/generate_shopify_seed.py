@@ -58,6 +58,15 @@ COLUMNS = [
     "revenue_source_currency",
 ]
 
+# AI-213 (2026-08-17, AI-66 motif): seed corpus anchor. A date.today() default
+# made the corpus machine-day-local, so the mart and the evals fixtures were
+# underivable. Same env seam as google-analytics; the default is the shared
+# corpus anchor (2026-07-19). The Stripe generator imports this module with the
+# SAME end_date, so both windows stay aligned on the anchor.
+DEFAULT_SEED_END_DATE: date = date.fromisoformat(
+    os.environ.get("TOOROW_SEED_END_DATE", "2026-07-19")
+)
+
 
 def generate_rows(
     days: int = 90,
@@ -73,7 +82,7 @@ def generate_rows(
     produced by connector.transform() over the same rows.
     """
     if end_date is None:
-        end_date = date.today()
+        end_date = DEFAULT_SEED_END_DATE
     if rng is None:
         # Fixed seed -> deterministic seed data (reproducible fixtures/tests).
         rng = random.Random(15_4_2026)

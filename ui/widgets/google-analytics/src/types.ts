@@ -126,6 +126,7 @@ export const METRIC_LABELS: Record<string, string> = {
   sessions: "Sessions",
   active_users: "Utilisateurs actifs",
   conversions: "Conversions",
+  screen_page_views: "Pages vues",
 };
 
 /** Normalize meta.provenance to a list regardless of the shape received. */

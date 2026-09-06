@@ -1,0 +1,12 @@
+{
+  "content_hash": "801e08044fcbdf3290c888f0cff46fff11bee0ace47732c51c969a4ff724c246",
+  "effective_date": "2026-07-30",
+  "entry_count": 598,
+  "generated_from": "app.master_data_vocabulary_versions",
+  "note": "Generated projection. Governance owns the runtime vocabulary; editing this file by hand makes the warehouse disagree with the pinned version.",
+  "source_authority": "IANA Time Zone Database",
+  "source_reference": "https://www.iana.org/time-zones",
+  "source_version": "2026c",
+  "vocabulary_key": "timezone",
+  "vocabulary_version_id": "mdvoc_01KYSRQM5V5EPCS6R4EDVPQRC8"
+}

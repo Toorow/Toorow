@@ -1,0 +1,308 @@
+[
+  {
+    "pull_id": "pull_youtube_breakdown_001",
+    "connector": "youtube-analytics",
+    "report_profile": "audience_geography",
+    "day": "2026-07-01",
+    "channel_id": "UC_toorow_demo_channel",
+    "country": "FR",
+    "views": 700,
+    "estimatedMinutesWatched": 2000
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_001",
+    "connector": "youtube-analytics",
+    "report_profile": "audience_geography",
+    "day": "2026-07-01",
+    "channel_id": "UC_toorow_demo_channel",
+    "country": "US",
+    "views": 350,
+    "estimatedMinutesWatched": 1000
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_001",
+    "connector": "youtube-analytics",
+    "report_profile": "audience_geography",
+    "day": "2026-07-01",
+    "channel_id": "UC_toorow_demo_channel",
+    "country": "DE",
+    "views": 150,
+    "estimatedMinutesWatched": 400
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_001",
+    "connector": "youtube-analytics",
+    "report_profile": "audience_geography",
+    "day": "2026-07-02",
+    "channel_id": "UC_toorow_demo_channel",
+    "country": "FR",
+    "views": 800,
+    "estimatedMinutesWatched": 2200
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_001",
+    "connector": "youtube-analytics",
+    "report_profile": "audience_geography",
+    "day": "2026-07-02",
+    "channel_id": "UC_toorow_demo_channel",
+    "country": "US",
+    "views": 455,
+    "estimatedMinutesWatched": 1300
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_001",
+    "connector": "youtube-analytics",
+    "report_profile": "audience_geography",
+    "day": "2026-07-02",
+    "channel_id": "UC_toorow_demo_channel",
+    "country": "DE",
+    "views": 200,
+    "estimatedMinutesWatched": 602
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_002",
+    "connector": "youtube-analytics",
+    "report_profile": "audience_device",
+    "day": "2026-07-01",
+    "channel_id": "UC_toorow_demo_channel",
+    "deviceType": "MOBILE",
+    "operatingSystem": "ANDROID",
+    "views": 500,
+    "estimatedMinutesWatched": 1400
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_002",
+    "connector": "youtube-analytics",
+    "report_profile": "audience_device",
+    "day": "2026-07-01",
+    "channel_id": "UC_toorow_demo_channel",
+    "deviceType": "MOBILE",
+    "operatingSystem": "IOS",
+    "views": 300,
+    "estimatedMinutesWatched": 900
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_002",
+    "connector": "youtube-analytics",
+    "report_profile": "audience_device",
+    "day": "2026-07-01",
+    "channel_id": "UC_toorow_demo_channel",
+    "deviceType": "DESKTOP",
+    "operatingSystem": "WINDOWS",
+    "views": 400,
+    "estimatedMinutesWatched": 1100
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_002",
+    "connector": "youtube-analytics",
+    "report_profile": "audience_device",
+    "day": "2026-07-02",
+    "channel_id": "UC_toorow_demo_channel",
+    "deviceType": "MOBILE",
+    "operatingSystem": "ANDROID",
+    "views": 600,
+    "estimatedMinutesWatched": 1700
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_002",
+    "connector": "youtube-analytics",
+    "report_profile": "audience_device",
+    "day": "2026-07-02",
+    "channel_id": "UC_toorow_demo_channel",
+    "deviceType": "MOBILE",
+    "operatingSystem": "IOS",
+    "views": 355,
+    "estimatedMinutesWatched": 1002
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_002",
+    "connector": "youtube-analytics",
+    "report_profile": "audience_device",
+    "day": "2026-07-02",
+    "channel_id": "UC_toorow_demo_channel",
+    "deviceType": "DESKTOP",
+    "operatingSystem": "WINDOWS",
+    "views": 500,
+    "estimatedMinutesWatched": 1400
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_003",
+    "connector": "youtube-analytics",
+    "report_profile": "traffic_sources",
+    "day": "2026-07-01",
+    "channel_id": "UC_toorow_demo_channel",
+    "insightTrafficSourceType": "YT_SEARCH",
+    "views": 600,
+    "estimatedMinutesWatched": 1700
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_003",
+    "connector": "youtube-analytics",
+    "report_profile": "traffic_sources",
+    "day": "2026-07-01",
+    "channel_id": "UC_toorow_demo_channel",
+    "insightTrafficSourceType": "SUBSCRIBER",
+    "views": 400,
+    "estimatedMinutesWatched": 1100
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_003",
+    "connector": "youtube-analytics",
+    "report_profile": "traffic_sources",
+    "day": "2026-07-01",
+    "channel_id": "UC_toorow_demo_channel",
+    "insightTrafficSourceType": "EXT_URL",
+    "views": 200,
+    "estimatedMinutesWatched": 600
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_003",
+    "connector": "youtube-analytics",
+    "report_profile": "traffic_sources",
+    "day": "2026-07-02",
+    "channel_id": "UC_toorow_demo_channel",
+    "insightTrafficSourceType": "YT_SEARCH",
+    "views": 700,
+    "estimatedMinutesWatched": 2000
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_003",
+    "connector": "youtube-analytics",
+    "report_profile": "traffic_sources",
+    "day": "2026-07-02",
+    "channel_id": "UC_toorow_demo_channel",
+    "insightTrafficSourceType": "SUBSCRIBER",
+    "views": 555,
+    "estimatedMinutesWatched": 1502
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_003",
+    "connector": "youtube-analytics",
+    "report_profile": "traffic_sources",
+    "day": "2026-07-02",
+    "channel_id": "UC_toorow_demo_channel",
+    "insightTrafficSourceType": "EXT_URL",
+    "views": 200,
+    "estimatedMinutesWatched": 600
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_004",
+    "connector": "youtube-analytics",
+    "report_profile": "playback_locations",
+    "day": "2026-07-01",
+    "channel_id": "UC_toorow_demo_channel",
+    "insightPlaybackLocationType": "WATCH",
+    "views": 1000,
+    "estimatedMinutesWatched": 2900
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_004",
+    "connector": "youtube-analytics",
+    "report_profile": "playback_locations",
+    "day": "2026-07-01",
+    "channel_id": "UC_toorow_demo_channel",
+    "insightPlaybackLocationType": "EMBEDDED",
+    "views": 200,
+    "estimatedMinutesWatched": 500
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_004",
+    "connector": "youtube-analytics",
+    "report_profile": "playback_locations",
+    "day": "2026-07-02",
+    "channel_id": "UC_toorow_demo_channel",
+    "insightPlaybackLocationType": "WATCH",
+    "views": 1255,
+    "estimatedMinutesWatched": 3502
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_004",
+    "connector": "youtube-analytics",
+    "report_profile": "playback_locations",
+    "day": "2026-07-02",
+    "channel_id": "UC_toorow_demo_channel",
+    "insightPlaybackLocationType": "EMBEDDED",
+    "views": 200,
+    "estimatedMinutesWatched": 600
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_005",
+    "connector": "youtube-analytics",
+    "report_profile": "audience_subscription",
+    "day": "2026-07-01",
+    "channel_id": "UC_toorow_demo_channel",
+    "subscribedStatus": "SUBSCRIBED",
+    "views": 700,
+    "estimatedMinutesWatched": 2000
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_005",
+    "connector": "youtube-analytics",
+    "report_profile": "audience_subscription",
+    "day": "2026-07-01",
+    "channel_id": "UC_toorow_demo_channel",
+    "subscribedStatus": "UNSUBSCRIBED",
+    "views": 500,
+    "estimatedMinutesWatched": 1400
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_005",
+    "connector": "youtube-analytics",
+    "report_profile": "audience_subscription",
+    "day": "2026-07-02",
+    "channel_id": "UC_toorow_demo_channel",
+    "subscribedStatus": "SUBSCRIBED",
+    "views": 855,
+    "estimatedMinutesWatched": 2402
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_005",
+    "connector": "youtube-analytics",
+    "report_profile": "audience_subscription",
+    "day": "2026-07-02",
+    "channel_id": "UC_toorow_demo_channel",
+    "subscribedStatus": "UNSUBSCRIBED",
+    "views": 600,
+    "estimatedMinutesWatched": 1700
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_006",
+    "connector": "youtube-analytics",
+    "report_profile": "audience_demographics",
+    "day": "2026-07-01",
+    "channel_id": "UC_toorow_demo_channel",
+    "ageGroup": "age18-24",
+    "gender": "female",
+    "viewerPercentage": 22.5
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_006",
+    "connector": "youtube-analytics",
+    "report_profile": "audience_demographics",
+    "day": "2026-07-01",
+    "channel_id": "UC_toorow_demo_channel",
+    "ageGroup": "age25-34",
+    "gender": "male",
+    "viewerPercentage": 41.0
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_006",
+    "connector": "youtube-analytics",
+    "report_profile": "audience_demographics",
+    "day": "2026-07-02",
+    "channel_id": "UC_toorow_demo_channel",
+    "ageGroup": "age18-24",
+    "gender": "female",
+    "viewerPercentage": 20.0
+  },
+  {
+    "pull_id": "pull_youtube_breakdown_006",
+    "connector": "youtube-analytics",
+    "report_profile": "audience_demographics",
+    "day": "2026-07-02",
+    "channel_id": "UC_toorow_demo_channel",
+    "ageGroup": "age25-34",
+    "gender": "male",
+    "viewerPercentage": 43.5
+  }
+]

@@ -21,7 +21,7 @@ DEFAULT_DUCKDB = (
 )
 
 
-def _get_duckdb_path() -> Path | None:
+def _seed_source() -> Path | None:
     env_path = os.environ.get("TOOROW_DUCKDB_PATH")
     if env_path:
         p = Path(env_path)
@@ -29,10 +29,19 @@ def _get_duckdb_path() -> Path | None:
     return DEFAULT_DUCKDB if DEFAULT_DUCKDB.is_file() else None
 
 
-def test_two_run_determinism():
-    db_path = _get_duckdb_path()
-    if not db_path:
+def test_two_run_determinism(duckdb_seed_copy):
+    # AI-106 : ce test ouvrait le seed PARTAGE en lecture-ecriture (il y CREE des
+    # vues `marts.*`). DuckDB verrouille le fichier en exclusif, donc sous `-n 8`
+    # ce test, son jumeau `test_reference_sql_green` et la carte live de
+    # test_cards.py se disputaient le meme fichier -- l'un des trois echouait en
+    # « fichier utilise par un autre processus ». Meme classe que AI-130, meme
+    # reparation : `duckdb_seed_copy` (server/tests/conftest.py) rend une copie
+    # privee au worker. Effet de bord repare au passage : les vues n'atterrissent
+    # plus dans le seed de developpement versionne.
+    source = _seed_source()
+    if not source:
         pytest.skip("TOOROW_DUCKDB_PATH not set or file not found — determinism gate skipped")
+    db_path = duckdb_seed_copy(source)
 
     evals_dir = Path(__file__).parent
     corpus_path = evals_dir / "corpus.yaml"

@@ -100,4 +100,11 @@ def test_envelope_omits_branding_key_entirely_when_none():
     )
     assert "branding" not in env["meta"]  # ABSENT, never null (AC1)
     # AI-31: existing keys unchanged.
-    assert set(env["meta"].keys()) == {"freshness", "provenance", "alerts"}
+    # The AD-1 meta contract. `analytical_path` joined it in story 53.9 (CAV-17)
+    # and is UNCONDITIONAL, unlike the additive `confidence` / `branding` keys:
+    # an envelope that does not say which analytical path produced it is exactly
+    # the situation where two numbers for one question look like one number seen
+    # twice. Optional keys stay absent-not-null.
+    assert set(env["meta"].keys()) == {
+        "freshness", "provenance", "alerts", "analytical_path",
+    }

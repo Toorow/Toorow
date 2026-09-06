@@ -1,7 +1,25 @@
 /** Browser authentication gate: OIDC BFF, hosted Google GIS, or local static token. */
 import { useEffect, useRef, useState } from "react";
+import EntryBoot from "./EntryBoot";
 
-const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+/** Repli seulement. La valeur qui fait foi vient de `/api/auth/browser-config`.
+ *
+ *  Ce fichier lisait UNIQUEMENT cette variable de build, et un bundle construit
+ *  sans elle a deployé en production un écran de connexion qui ne pouvait pas
+ *  aboutir : « VITE_GOOGLE_CLIENT_ID is not set at build time », constaté le
+ *  2026-08-04. Le serveur, lui, connaissait la valeur depuis toujours — c'est
+ *  celle contre laquelle il vérifie le `aud` de chaque jeton. La lire à
+ *  l'exécution supprime la classe entière : on ne peut plus construire un
+ *  bundle qui se déploie muet.
+ *
+ *  Lu PARESSEUSEMENT, et pas au chargement du module : `ui/admin/.env` porte la
+ *  variable en local, donc tout build de développeur réussit et seul le déployé
+ *  était mort. Un test ne peut démontrer ce cas qu'en neutralisant la variable,
+ *  ce qu'une constante figée à l'import rend impossible. */
+function buildTimeClientId(): string | undefined {
+  const value = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+  return value ? value : undefined;
+}
 const SESSION_IDENTITY_KEY = "toorow_browser_identity";
 
 type BrowserMode =
@@ -18,6 +36,8 @@ interface BrowserConfig {
   mode?: BrowserMode;
   provider_name?: string;
   reason?: string;
+  /** Servi pour `google_gis`. Pas un secret : la page le transmet à Google. */
+  client_id?: string;
 }
 
 interface BrowserSession {
@@ -60,6 +80,10 @@ export default function BrowserAuthGate({
   const [state, setState] = useState<GateState>("loading");
   const [providerName, setProviderName] = useState("Identity provider");
   const [failure, setFailure] = useState<string | null>(null);
+  // Le build sert de repli, jamais d'autorité : un serveur qui répond gagne.
+  const [clientId, setClientId] = useState<string | undefined>(
+    buildTimeClientId,
+  );
   const googleButtonRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -101,6 +125,7 @@ export default function BrowserAuthGate({
           return;
         }
         if (config.mode === "google_gis") {
+          if (config.client_id) setClientId(config.client_id);
           setState(tokenValid() ? "authenticated" : "google_gis");
           return;
         }
@@ -128,14 +153,14 @@ export default function BrowserAuthGate({
   }, [state]);
 
   useEffect(() => {
-    if (state !== "google_gis" || !CLIENT_ID) return;
+    if (state !== "google_gis" || !clientId) return;
     let cancelled = false;
 
     function initializeGoogle() {
       const google = (window as unknown as { google?: any }).google;
       if (!google?.accounts?.id || cancelled) return;
       google.accounts.id.initialize({
-        client_id: CLIENT_ID,
+        client_id: clientId,
         callback: (response: { credential?: string }) => {
           if (response.credential) {
             localStorage.setItem("api_token", response.credential);
@@ -169,8 +194,9 @@ export default function BrowserAuthGate({
     return () => {
       cancelled = true;
     };
-  }, [state]);
+  }, [state, clientId]);
 
+  if (state === "loading") return <EntryBoot />;
   if (state === "authenticated") return <>{children}</>;
 
   const returnTo = `${window.location.pathname}${window.location.search}`;
@@ -196,18 +222,19 @@ export default function BrowserAuthGate({
         alt="toorow"
         style={{ width: "min(880px, 90vw)", height: "auto", marginBottom: 8 }}
       />
-      <div style={{ opacity: 0.7, fontSize: 15 }}>
-        {state === "loading" ? "Checking your session…" : "Sign in to continue"}
-      </div>
+      <div style={{ opacity: 0.7, fontSize: 15 }}>Sign in to continue</div>
       {state === "oidc" ? (
         <a href={oidcLogin} style={{ color: "#fff" }}>
           Sign in with {providerName}
         </a>
       ) : null}
       {state === "google_gis" ? <div ref={googleButtonRef} /> : null}
-      {state === "google_gis" && !CLIENT_ID ? (
-        <div style={{ color: "#ff6b6b", fontSize: 12 }}>
-          VITE_GOOGLE_CLIENT_ID is not set at build time.
+      {state === "google_gis" && !clientId ? (
+        <div role="alert" style={{ color: "#ff6b6b", fontSize: 12 }}>
+          Sign-in is unavailable: this deployment did not provide an OAuth client
+          id. The server sets it with <code>TOOROW_OIDC_CLIENT_ID</code> — the
+          same value it verifies tokens against. Nobody can sign in until it is
+          set; this is not something you can fix from this screen.
         </div>
       ) : null}
       {state === "static" ? (

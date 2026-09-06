@@ -49,6 +49,7 @@ class CardKeysResult:
 def agent_card_catalog(
     available_metrics: set[str],
     available_dimensions: set[str],
+    catalog: list[dict] | None = None,
 ) -> list[dict]:
     """Agent-readable catalogue for a project.
 
@@ -56,13 +57,32 @@ def agent_card_catalog(
     ``cards.suggest_template``). Each entry is the registry's own ``to_catalog_entry()``
     plus ``satisfiable`` and, when not, the ``missing`` metrics/dimensions — so the agent
     never requests a card the project cannot render.
+
+    Story 52.1: ``catalog`` is the Project's own resolved catalog
+    (``answerable_topics.resolve_catalog_with_reason``). Omitted, the platform default
+    set applies — this module stays PURE (no DB), so the caller that HAS a connection
+    resolves and passes it. A caller that forgets shows the defaults, never a wrong
+    project's catalog.
+
+    A CALLER DID FORGET, for the whole epic. The parameter shipped and nothing in
+    production or in a test ever passed it, so ``get_card_capabilities`` — the tool an
+    agent asks "what can this project render right now" — went on answering the nine
+    platform questions while ``preview_daily_insight`` refused the very template it had
+    just advertised. Wiring lives at the caller (``main.get_card_capabilities`` →
+    ``daily_insights_tools.capabilities(catalog=…)``) and is pinned by
+    ``test_answerable_topics_seams.py``, which measures the catalog that arrives here
+    rather than the signature that accepts one.
     """
 
+    from core import answerable_topics as _topics  # noqa: PLC0415
+
+    entries = catalog if catalog is not None else _topics.default_catalog()
     catalogue: list[dict] = []
-    for tpl in cards.CARD_TEMPLATES:
+    for entry in entries:
+        tpl = cards.template_from_entry(entry)
         if tpl.is_context:
             continue
-        entry = tpl.to_catalog_entry()
+        entry = dict(entry)
         satisfiable = tpl.is_satisfied_by(available_metrics, available_dimensions)
         entry["satisfiable"] = satisfiable
         if not satisfiable:
@@ -76,14 +96,22 @@ def agent_card_catalog(
 def recommend_card(
     available_metrics: set[str],
     available_dimensions: set[str],
+    catalog: list[dict] | None = None,
 ) -> dict:
     """ "Which single card best fits this project right now?" — best + alternatives.
 
     Deterministic wrapper over ``cards.suggest_template``. Returns ids + the question each
     card answers so the agent can explain its choice. ``best`` is None when nothing fits.
+
+    Story 52.1: ``catalog`` is the Project's own resolved catalog and is passed
+    straight through — ``suggest_template`` already accepts it. Recommending from the
+    platform set while the catalogue beside it is the project's would offer a
+    question the project retired.
     """
 
-    best, alternatives = cards.suggest_template(available_metrics, available_dimensions)
+    best, alternatives = cards.suggest_template(
+        available_metrics, available_dimensions, catalog=catalog
+    )
     return {
         "best": _brief(best) if best else None,
         "alternatives": [_brief(t) for t in alternatives],

@@ -39,7 +39,12 @@ def _make_in_memory_db():
             breakdown_value     TEXT,
             value               DOUBLE,
             pull_id             TEXT,
-            loaded_at           TIMESTAMP
+            -- TEXT, not TIMESTAMP. The real mart stores an ISO-8601 UTC
+            -- STRING in both engines (VARCHAR in DuckDB, STRING in the
+            -- production raw tables it derives from). A fixture that typed
+            -- it as a TIMESTAMP is what let a predicate casting the bound
+            -- value survive here while failing everywhere real (AI-312).
+            loaded_at           TEXT
         )
     """)
 
@@ -69,39 +74,27 @@ def _make_in_memory_db():
 
 
 def _run_asof_query(con, as_of_ts: str, connectors=None):
-    """Run the as-of SQL against the in-memory DB (same logic as warehouse.py)."""
-    params = [as_of_ts, "test", "2026-07-01", "2026-07-01"]
+    """Run the PRODUCT's as-of SQL against the in-memory DB.
 
-    connector_clause = ""
-    if connectors:
-        placeholders = ", ".join(["?" for _ in connectors])
-        connector_clause = f"  AND connector IN ({placeholders})\n"
-        params.extend(connectors)
-
-    sql = f"""
-    WITH kpi_snapshot AS (
-        SELECT *,
-               ROW_NUMBER() OVER (
-                   PARTITION BY project_id, date, connector, metric,
-                                breakdown_dimension, breakdown_value
-                   ORDER BY loaded_at DESC
-               ) AS _rn
-        FROM main_marts.fact_daily_kpi_all_pulls
-        WHERE loaded_at <= CAST(? AS TIMESTAMP)
-          AND project_id = ?
-          AND date BETWEEN ? AND ?
-{connector_clause}    )
-    SELECT
-        date, connector, metric, breakdown_dimension, breakdown_value,
-        value, pull_id, loaded_at
-    FROM kpi_snapshot
-    WHERE _rn = 1
-    ORDER BY breakdown_value
+    It used to re-type the statement here -- "same logic as warehouse.py" -- and
+    that copy is why this file stayed green for months while the real builder
+    could not execute at all: the copy was never the thing under test. It now
+    calls `warehouse._build_asof_query`, so a change to the product's predicate
+    lands in these assertions.
     """
+    from core import warehouse
 
+    sql, params = warehouse._build_asof_query(
+        "main_marts.",
+        "test",
+        "2026-07-01",
+        "2026-07-01",
+        connectors,
+        as_of_ts,
+    )
     rel = con.execute(sql, params)
     cols = [d[0] for d in rel.description]
-    return [dict(zip(cols, row)) for row in rel.fetchall()]
+    return [dict(zip(cols, row, strict=False)) for row in rel.fetchall()]
 
 
 # ---------------------------------------------------------------------------
@@ -234,10 +227,15 @@ class TestAsOfRevisionScenario:
 class TestAsOfSQLInjectionSafety:
     """HG-3: as_of_ts MUST be a SQL parameter, never string-interpolated.
 
-    Parameterized binding means an injection payload like
-    "2026-07-01'; DROP TABLE ...; --" is treated as a literal string value
-    for CAST(? AS TIMESTAMP), which fails type conversion — it does NOT execute
-    the injected SQL.
+    THE PROOF CHANGED SHAPE ON 2026-08-23, and it got stronger. It used to rest
+    on the predicate casting the bound value: an injection payload failed the
+    TIMESTAMP conversion, and the raised error was read as evidence of binding.
+    That cast is gone (AI-312 -- `loaded_at` is a STRING in both engines, so the
+    cast made the whole as-of surface unexecutable), and with it that proof.
+
+    What replaces it says the same thing without depending on a type error: the
+    payload is compared AS A STRING, matches no row, and the table is still
+    there afterwards. An interpolated statement would have dropped it.
     """
 
     def setup_method(self):
@@ -246,29 +244,16 @@ class TestAsOfSQLInjectionSafety:
     def teardown_method(self):
         self.con.close()
 
-    def test_sql_injection_in_as_of_ts_raises_not_executes(self):
-        """SQL injection string in as_of_ts fails as TIMESTAMP cast, not as SQL exec.
-
-        The test verifies the injection does NOT silently succeed (which would
-        indicate string interpolation). It must fail with a cast/conversion error.
-        """
+    def test_sql_injection_in_as_of_ts_binds_and_matches_nothing(self):
+        """The payload is DATA, so it selects nothing and destroys nothing."""
         injection_payload = "2026-07-01'; DROP TABLE main_marts.fact_daily_kpi_all_pulls; --"
 
-        # With parameterized binding, the payload goes into CAST(? AS TIMESTAMP).
-        # DuckDB raises a ConversionException — NOT a CatalogException (table dropped).
-        with pytest.raises(Exception) as exc_info:
-            _run_asof_query(self.con, injection_payload)
+        rows = _run_asof_query(self.con, injection_payload)
 
-        # The error must be a type/conversion error — NOT a SQL syntax / execution error
-        # that would imply the injected SQL was parsed and run.
-        error_msg = str(exc_info.value).lower()
-        # DuckDB error: "could not convert" or "invalid input" for bad TIMESTAMP cast
-        assert any(
-            kw in error_msg
-            for kw in ("could not convert", "invalid", "conversion", "cast", "timestamp")
-        ), (
-            f"Expected a TIMESTAMP cast error for injection payload, got: {exc_info.value}"
-        )
+        # Bound as a string, the payload sorts after every stored `loaded_at`
+        # prefix it does not match, so the as-of window is empty. What matters is
+        # that the call RETURNED -- no injected statement ran.
+        assert rows == [], f"an injection payload must select nothing, got {rows}"
 
         # Verify the table still exists (was NOT dropped by the injection)
         result = self.con.execute(

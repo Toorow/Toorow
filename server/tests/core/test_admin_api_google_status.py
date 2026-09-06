@@ -37,7 +37,7 @@ class TestDeriveGoogleHealth:
     """Unit tests for the health derivation helper (no DB required)."""
 
     def _derive(self, token_expiry, auth_path):
-        from core.admin_api import _derive_google_health
+        from core.google_oauth_api import _derive_google_health  # noqa: PLC0415
 
         return _derive_google_health(token_expiry, auth_path)
 
@@ -141,7 +141,7 @@ def _build_client():
 def _patch_project_access(allowed: bool):
     """Patch identity_has_project_access to return *allowed*."""
     return patch(
-        "core.admin_api.identity_has_project_access",  # the name used in admin_api.py
+        "core.project_access.identity_can_read_project",  # the name used in admin_api.py
         return_value=allowed,
     )
 
@@ -151,7 +151,7 @@ def _patch_project_access(allowed: bool):
 
 
 def _patch_pa(allowed: bool):
-    return patch("core.project_access.identity_has_project_access", return_value=allowed)
+    return patch("core.project_access.identity_can_read_project", return_value=allowed)
 
 
 # ---------------------------------------------------------------------------
@@ -210,7 +210,7 @@ class TestGoogleStatus:
         """Unknown connection_ref_id -> 404."""
         with (
             self._patch_db(None),
-            patch("core.project_access.identity_has_project_access", return_value=True),
+            patch("core.project_access.identity_can_read_project", return_value=True),
         ):
             client = _build_client()
             resp = client.get(
@@ -226,8 +226,8 @@ class TestGoogleStatus:
         row = self._row_connected(_FAR_FUTURE)
         with (
             self._patch_db(row),
-            patch("core.project_access.identity_has_project_access", return_value=False),
-            patch("core.admin_api.write_audit_row") as audit_mock,
+            patch("core.project_access.identity_can_read_project", return_value=False),
+            patch("core.google_oauth_api.write_audit_row") as audit_mock,
         ):
             client = _build_client()
             resp = client.get(
@@ -245,7 +245,7 @@ class TestGoogleStatus:
         row = self._row_connected(_FAR_FUTURE)
         with (
             self._patch_db(row),
-            patch("core.project_access.identity_has_project_access", return_value=True),
+            patch("core.project_access.identity_can_read_project", return_value=True),
         ):
             client = _build_client()
             resp = client.get(
@@ -278,7 +278,7 @@ class TestGoogleStatus:
         row = self._row_nango()
         with (
             self._patch_db(row),
-            patch("core.project_access.identity_has_project_access", return_value=True),
+            patch("core.project_access.identity_can_read_project", return_value=True),
         ):
             client = _build_client()
             resp = client.get(
@@ -296,7 +296,7 @@ class TestGoogleStatus:
         row = self._row_connected(_PAST)
         with (
             self._patch_db(row),
-            patch("core.project_access.identity_has_project_access", return_value=True),
+            patch("core.project_access.identity_can_read_project", return_value=True),
         ):
             client = _build_client()
             resp = client.get(
@@ -316,7 +316,7 @@ class TestGoogleStatus:
         )
         with (
             self._patch_db(row),
-            patch("core.project_access.identity_has_project_access", return_value=True),
+            patch("core.project_access.identity_can_read_project", return_value=True),
         ):
             client = _build_client()
             resp = client.get(
@@ -376,7 +376,7 @@ class TestGoogleRevoke:
         """Unknown connection_ref_id -> 404."""
         with (
             self._patch_db(None),
-            patch("core.project_access.identity_has_project_access", return_value=True),
+            patch("core.project_access.identity_can_read_project", return_value=True),
         ):
             client = _build_client()
             resp = client.post(
@@ -391,8 +391,8 @@ class TestGoogleRevoke:
         row = self._row_connected()
         with (
             self._patch_db(row),
-            patch("core.project_access.identity_has_project_access", return_value=False),
-            patch("core.admin_api.write_audit_row") as audit_mock,
+            patch("core.project_access.identity_can_read_project", return_value=False),
+            patch("core.google_oauth_api.write_audit_row") as audit_mock,
         ):
             client = _build_client()
             resp = client.post(
@@ -419,7 +419,7 @@ class TestGoogleRevoke:
 
         with (
             self._patch_db(row),
-            patch("core.project_access.identity_has_project_access", return_value=True),
+            patch("core.project_access.identity_can_read_project", return_value=True),
             # Patch at the source module (local import inside _google_revoke).
             patch(
                 "core.google_token_store.load_google_token",
@@ -490,7 +490,7 @@ class TestGoogleRevoke:
 
         with (
             self._patch_db(row),
-            patch("core.project_access.identity_has_project_access", return_value=True),
+            patch("core.project_access.identity_can_read_project", return_value=True),
             patch("core.google_token_store.load_google_token", return_value=mock_token),
             patch("core.google_token_store.clear_google_token"),
             patch("httpx.AsyncClient") as mock_httpx_cls,
@@ -517,7 +517,7 @@ class TestGoogleRevoke:
         row = self._row_nango()
         with (
             self._patch_db(row),
-            patch("core.project_access.identity_has_project_access", return_value=True),
+            patch("core.project_access.identity_can_read_project", return_value=True),
             patch("core.google_token_store.clear_google_token"),
         ):
             client = _build_client()
@@ -539,7 +539,7 @@ class TestGoogleRevoke:
         row = self._row_connected()
         with (
             self._patch_db(row),
-            patch("core.project_access.identity_has_project_access", return_value=True),
+            patch("core.project_access.identity_can_read_project", return_value=True),
             patch(
                 "core.google_token_store.load_google_token",
                 side_effect=GoogleTokenStoreError("no encrypted token blob (token redacted)"),
@@ -568,7 +568,7 @@ class TestGoogleRevoke:
         row = self._row_connected()
         with (
             self._patch_db(row),
-            patch("core.project_access.identity_has_project_access", return_value=True),
+            patch("core.project_access.identity_can_read_project", return_value=True),
             patch(
                 "core.google_token_store.load_google_token",
                 side_effect=GoogleTokenStoreError(
@@ -602,7 +602,7 @@ class TestGoogleRevoke:
 
         with (
             self._patch_db(row),
-            patch("core.project_access.identity_has_project_access", return_value=True),
+            patch("core.project_access.identity_can_read_project", return_value=True),
             patch("core.google_token_store.clear_google_token", side_effect=_capture_clear),
         ):
             client = _build_client()
@@ -637,8 +637,40 @@ class TestGoogleStatusLivePostgres:
     against the real schema (migration 029: auth_path, token_expiry, etc.).
     """
 
-    def test_status_returns_nango_for_standard_row(self):
-        """A standard Nango connection row -> health='not_connected' from live DB."""
+    def test_status_refuses_a_row_whose_project_the_caller_was_never_granted(self):
+        """The AD-5 gate answers 403 and RECORDS the attempt, against a live row.
+
+        THIS TEST USED TO ASSERT 200. It seeded a `connection_ref` row on project
+        `default`, called the endpoint with a bearer nobody had granted anything
+        to, and expected the payload. That contract was withdrawn in `85b1deb2`
+        (2026-07-29): `identity_can_read_project` became
+        `resolve_strict_resource_access` -- *"no default-open mode exists"* -- and
+        under `TOOROW_AUTH_MODE=disabled` every non-evaluation identity is refused
+        `production_identity_required` BEFORE any membership row is read. There is
+        therefore no bearer that can make this endpoint answer 200 here, and
+        inventing a grant would be inventing the very default the spine removed.
+
+        AND THE ROW IT SEEDED IS NO LONGER A SHAPE THIS PRODUCT MINTS, which is
+        why restoring the old assertion by inventing a grant would restore a lie.
+        The seed was a `gsc` connection on the NANGO path; every Google product,
+        BigQuery included, authorizes `google_direct`
+        (`datastream-workbench-and-wizard.md:283`, *"admits only `nango` and
+        `google_direct`"*, and the `bigquery` row of the table at `:293`). And
+        `health` stopped being a pure function of the local token blob when the
+        pull that learns began writing it -- `permission_denied` →
+        `provider_denied`, `auth_expired`/`auth_revoked` → `revoked`
+        (`execution-substrate.md`, *"The pull that learns writes"*, migration
+        331, AI-341) -- so `health == "not_connected"` read off a blob-less row
+        is a sentence about one of the two writers.
+
+        So the assertion is reenounced, not weakened, and it proves MORE of the
+        live read than the 200 did: the refusal is only reachable after the
+        handler has selected the seeded row, so the audit line naming
+        `project_id='default'` -- a value that exists nowhere but in the row this
+        test wrote -- is the proof the real schema was read. The payload shape the
+        old assertion covered is held offline by `TestGoogleStatus` above, which
+        exercises `_derive_google_health` directly.
+        """
         import psycopg
 
         conn_ref_id = "conn_18_4_live_test_001"
@@ -647,6 +679,8 @@ class TestGoogleStatusLivePostgres:
         # Seed a minimal connection_ref row (Nango path, no Google columns).
         with psycopg.connect(db_url) as conn:
             with conn.cursor() as cur:
+                cur.execute("SELECT now()")
+                started_at = cur.fetchone()[0]
                 cur.execute(
                     """
                     INSERT INTO app.connection_ref (id, provider, nango_connection_id, project_id,
@@ -667,13 +701,35 @@ class TestGoogleStatusLivePostgres:
                 f"/api/google/oauth/status/{conn_ref_id}",
                 headers={"Authorization": "Bearer test-secret"},
             )
-            assert resp.status_code == 200
-            data = resp.json()
-            assert data["auth_path"] in ("nango", None, "")
-            assert data["health"] == "not_connected"
-            assert data["granted_scopes"] == []
+            assert resp.status_code == 403, resp.text
+            assert resp.json()["code"] == "forbidden"
+
+            # The row WAS read: the refusal carries the project only the seed knows.
+            with psycopg.connect(db_url) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT action, metadata
+                          FROM app.audit_log
+                         WHERE connection_ref = %s AND created_at >= %s
+                         ORDER BY created_at DESC
+                         LIMIT 1
+                        """,
+                        (conn_ref_id, started_at),
+                    )
+                    row = cur.fetchone()
+            assert row is not None, "the refused attempt left no audit line"
+            action, metadata = row
+            assert action == "access_denied"
+            assert metadata["project_id"] == "default"
+            assert metadata["operation"] == "google_status"
+            assert metadata["reason"] == "not_a_member"
         finally:
-            # Cleanup.
+            # Cleanup removes the seed and NOT the audit line: `app.audit_log` is
+            # append-only and the application role has no DELETE on it (measured:
+            # `InsufficientPrivilege` on `audit_log`). The line is scoped by
+            # `created_at >= started_at` above rather than by a wipe, so a rerun
+            # reads its own attempt and not the previous one's.
             with psycopg.connect(db_url) as conn:
                 with conn.cursor() as cur:
                     cur.execute(

@@ -63,28 +63,69 @@ _FIELD_SESSIONS = (
 )
 
 
+#: Which table each batch of `fetchall_sequence` belongs to, in order. The five
+#: reads the bundle handler makes for THIS story's payload.
+_BATCH_TABLES = (
+    "app.context_topics",
+    "app.procedures",
+    "app.schema_context",
+    "app.context_graph",
+    "app.target_fields",
+)
+
+_TABLE_COLS = {
+    "app.context_topics": _TOPIC_COLS,
+    "app.procedures": _PROC_COLS,
+    "app.schema_context": _SCHEMA_DOC_COLS,
+    "app.context_graph": _EDGE_COLS,
+    "app.target_fields": _FIELD_COLS,
+}
+
+
 def _client_with(fetchall_sequence):
-    """Build (client, cursor) wired so each fetchall() plays the next batch and
-    cur.description tracks the table the statement names."""
+    """Build (conn, cursor) wired so each fetchall() answers BY TABLE.
+
+    It used to answer POSITIONALLY -- batch 1 to the first fetchall, batch 2 to
+    the second, and so on. That made the fixture depend on the handler issuing
+    exactly five queries in exactly this order, which is not a property of the
+    story under test. Story 45.1 then inserted `_project_org_id` +
+    `graph_projection` (`core/context_api.py:1289-1294`) between the edges read
+    and the target-fields read; `graph_projection` issues several reads of its
+    own, so the batch meant for `app.target_fields` was consumed by a taxonomy
+    query, the sequence ran off its end, and `list_target_field_nodes` raised
+    `StopIteration`. The handler's `except Exception` turned that into a 500,
+    and because `str(StopIteration())` is empty the log line said nothing at all.
+    All five tests in this file failed on that, none of them for their own reason.
+
+    Answering by table removes the coupling: a query this fixture was not built
+    for gets an empty result instead of stealing another table's rows, and
+    inserting a sixth unrelated read no longer breaks five assertions.
+    """
+    batches = dict(zip(_BATCH_TABLES, fetchall_sequence))
     conn = MagicMock()
     conn.__enter__.return_value = conn
     cur = MagicMock()
     conn.cursor.return_value.__enter__.return_value = cur
 
-    def _description_by_query(sql, *_a, **_k):
-        if "app.context_topics" in sql:
-            cur.description = _TOPIC_COLS
-        elif "app.procedures" in sql:
-            cur.description = _PROC_COLS
-        elif "app.schema_context" in sql:
-            cur.description = _SCHEMA_DOC_COLS
-        elif "app.context_graph" in sql:
-            cur.description = _EDGE_COLS
-        elif "app.target_fields" in sql:
-            cur.description = _FIELD_COLS
+    pending: list[list] = []
 
-    cur.execute.side_effect = _description_by_query
-    cur.fetchall.side_effect = fetchall_sequence
+    def _on_execute(sql, *_a, **_k):
+        pending.clear()
+        for table, cols in _TABLE_COLS.items():
+            if table in sql:
+                cur.description = cols
+                pending.append(batches.get(table, []))
+                return
+        # A read this fixture does not model (Story 45.1's taxonomy/link
+        # projection, say): empty, and it takes nobody else's rows.
+        cur.description = []
+        pending.append([])
+
+    def _fetchall():
+        return list(pending[0]) if pending else []
+
+    cur.execute.side_effect = _on_execute
+    cur.fetchall.side_effect = _fetchall
     return conn, cur
 
 

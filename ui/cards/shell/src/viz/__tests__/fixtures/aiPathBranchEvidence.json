@@ -1,0 +1,601 @@
+{
+  "schema_version": "ai-path-branch-parity.v1",
+  "api_detail": {
+    "actor": "fixture-owner@example.com",
+    "assessment": {
+      "findings": [
+        {
+          "detail": "the pinned policy declares no required or forbidden node, so there is nothing to judge this execution against",
+          "finding": "evidence_unverifiable"
+        }
+      ],
+      "verdict": "unverifiable"
+    },
+    "content_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+    "ended_at": "2026-01-01T00:00:01+00:00",
+    "id": "aip_FIXTURE",
+    "lifecycle": "finalized",
+    "model_ref": null,
+    "outcome": "succeeded",
+    "policy_snapshot": {
+      "content_hash_contract": "ai-path-content.v2",
+      "recorded_by": "mcp_tool_middleware"
+    },
+    "policy_snapshot_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "referenceable_as_evidence": true,
+    "schema_version": "ai-path.v2",
+    "started_at": "2026-01-01T00:00:00+00:00",
+    "steps": [
+      {
+        "branch_evidence": {
+          "branches": [
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_01",
+              "kind": "topic",
+              "matched": true,
+              "rank": 1,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 1"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_02",
+              "kind": "topic",
+              "matched": true,
+              "rank": 2,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 2"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_03",
+              "kind": "topic",
+              "matched": true,
+              "rank": 3,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 3"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_04",
+              "kind": "topic",
+              "matched": true,
+              "rank": 4,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 4"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_05",
+              "kind": "topic",
+              "matched": true,
+              "rank": 5,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 5"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_06",
+              "kind": "topic",
+              "matched": true,
+              "rank": 6,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 6"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_07",
+              "kind": "topic",
+              "matched": true,
+              "rank": 7,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 7"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_08",
+              "kind": "topic",
+              "matched": true,
+              "rank": 8,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 8"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_09",
+              "kind": "topic",
+              "matched": true,
+              "rank": 9,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 9"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_10",
+              "kind": "topic",
+              "matched": true,
+              "rank": 10,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 10"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_11",
+              "kind": "topic",
+              "matched": true,
+              "rank": 11,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 11"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_12",
+              "kind": "topic",
+              "matched": true,
+              "rank": 12,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 12"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_13",
+              "kind": "topic",
+              "matched": true,
+              "rank": 13,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 13"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_14",
+              "kind": "topic",
+              "matched": true,
+              "rank": 14,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 14"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_15",
+              "kind": "topic",
+              "matched": true,
+              "rank": 15,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 15"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_16",
+              "kind": "topic",
+              "matched": true,
+              "rank": 16,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 16"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_17",
+              "kind": "topic",
+              "matched": true,
+              "rank": 17,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 17"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_18",
+              "kind": "topic",
+              "matched": true,
+              "rank": 18,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 18"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_19",
+              "kind": "topic",
+              "matched": true,
+              "rank": 19,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 19"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_20",
+              "kind": "topic",
+              "matched": true,
+              "rank": 20,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 20"
+            },
+            {
+              "fate": "rejected",
+              "id": "top_FIXTURE_21",
+              "kind": "topic",
+              "matched": true,
+              "rank": 21,
+              "reason": "below_cutoff",
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 21"
+            }
+          ],
+          "schema_version": "retrieval-branch-evidence.v1",
+          "state": "branches_listed",
+          "walk": {
+            "graph_hop_depth": 1,
+            "judged_count": 21,
+            "listed_count": 21,
+            "listing_truncated": false,
+            "mode": "lexical",
+            "not_reached_enumerated": false,
+            "producer": "context_search",
+            "rejected_count": 1,
+            "selected_count": 20,
+            "selection_limit": 20,
+            "semantic_recall": false,
+            "tier_scale": {
+              "description": 2.0,
+              "neighbor": 1.0,
+              "title": 3.0
+            }
+          }
+        },
+        "evidence_record_id": null,
+        "outcome": "succeeded",
+        "owner_object_id": "top_FIXTURE_01",
+        "owner_object_type": "topic",
+        "owner_version_id": null,
+        "owner_workspace": "context-hub",
+        "skill": null,
+        "skill_step_id": null,
+        "skill_version_id": null,
+        "step_kind": "knowledge_read",
+        "step_order": 0,
+        "tool_name": "search_context"
+      },
+      {
+        "evidence_record_id": null,
+        "outcome": "succeeded",
+        "owner_object_id": null,
+        "owner_object_type": null,
+        "owner_version_id": null,
+        "owner_workspace": null,
+        "skill": null,
+        "skill_step_id": null,
+        "skill_version_id": null,
+        "step_kind": "tool_call",
+        "step_order": 1,
+        "tool_name": "search_context"
+      }
+    ],
+    "tool_catalog_version": null,
+    "w3c_trace_id": null
+  },
+  "observed_projection": {
+    "lifecycle": "finalized",
+    "outcome": "succeeded",
+    "path_id": "aip_FIXTURE",
+    "schema_version": "observed-ai-path.v1",
+    "state": "completed",
+    "steps": [
+      {
+        "branch_evidence": {
+          "branches": [
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_01",
+              "kind": "topic",
+              "matched": true,
+              "rank": 1,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 1"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_02",
+              "kind": "topic",
+              "matched": true,
+              "rank": 2,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 2"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_03",
+              "kind": "topic",
+              "matched": true,
+              "rank": 3,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 3"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_04",
+              "kind": "topic",
+              "matched": true,
+              "rank": 4,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 4"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_05",
+              "kind": "topic",
+              "matched": true,
+              "rank": 5,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 5"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_06",
+              "kind": "topic",
+              "matched": true,
+              "rank": 6,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 6"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_07",
+              "kind": "topic",
+              "matched": true,
+              "rank": 7,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 7"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_08",
+              "kind": "topic",
+              "matched": true,
+              "rank": 8,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 8"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_09",
+              "kind": "topic",
+              "matched": true,
+              "rank": 9,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 9"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_10",
+              "kind": "topic",
+              "matched": true,
+              "rank": 10,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 10"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_11",
+              "kind": "topic",
+              "matched": true,
+              "rank": 11,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 11"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_12",
+              "kind": "topic",
+              "matched": true,
+              "rank": 12,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 12"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_13",
+              "kind": "topic",
+              "matched": true,
+              "rank": 13,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 13"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_14",
+              "kind": "topic",
+              "matched": true,
+              "rank": 14,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 14"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_15",
+              "kind": "topic",
+              "matched": true,
+              "rank": 15,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 15"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_16",
+              "kind": "topic",
+              "matched": true,
+              "rank": 16,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 16"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_17",
+              "kind": "topic",
+              "matched": true,
+              "rank": 17,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 17"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_18",
+              "kind": "topic",
+              "matched": true,
+              "rank": 18,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 18"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_19",
+              "kind": "topic",
+              "matched": true,
+              "rank": 19,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 19"
+            },
+            {
+              "fate": "selected",
+              "id": "top_FIXTURE_20",
+              "kind": "topic",
+              "matched": true,
+              "rank": 20,
+              "reason": null,
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 20"
+            },
+            {
+              "fate": "rejected",
+              "id": "top_FIXTURE_21",
+              "kind": "topic",
+              "matched": true,
+              "rank": 21,
+              "reason": "below_cutoff",
+              "score": 3.0,
+              "tier": "title",
+              "title": "Fixture Branch Alpha 21"
+            }
+          ],
+          "schema_version": "retrieval-branch-evidence.v1",
+          "state": "branches_listed",
+          "walk": {
+            "graph_hop_depth": 1,
+            "judged_count": 21,
+            "listed_count": 21,
+            "listing_truncated": false,
+            "mode": "lexical",
+            "not_reached_enumerated": false,
+            "producer": "context_search",
+            "rejected_count": 1,
+            "selected_count": 20,
+            "selection_limit": 20,
+            "semantic_recall": false,
+            "tier_scale": {
+              "description": 2.0,
+              "neighbor": 1.0,
+              "title": 3.0
+            }
+          }
+        },
+        "missing_context": [],
+        "observed_at": "2026-01-01T00:00:00+00:00",
+        "ordinal": 0,
+        "outcome": "succeeded",
+        "owner": {
+          "object_id": "top_FIXTURE_01",
+          "object_type": "topic",
+          "workspace": "context-hub"
+        },
+        "step_kind": "knowledge_read",
+        "tool_name": "search_context"
+      },
+      {
+        "missing_context": [],
+        "observed_at": "2026-01-01T00:00:00+00:00",
+        "ordinal": 1,
+        "outcome": "succeeded",
+        "step_kind": "tool_call",
+        "tool_name": "search_context"
+      }
+    ]
+  }
+}

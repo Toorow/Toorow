@@ -29,7 +29,7 @@ inbound_max_header_bytes = 16384    # 16 KiB
 inbound_max_attachments  = 20
 inbound_max_instances    = 10
 
-# Quarantine bucket location + retention stub (real retention wired in 38.9).
+# Quarantine bucket location + effective live-object retention window.
 inbound_bucket_location           = "EU"
 inbound_quarantine_retention_days = 30
 

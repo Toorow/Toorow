@@ -9,10 +9,8 @@
  * message français plutôt qu'un canevas blanc.
  */
 
-import { useTheme, alpha } from "@mui/material/styles";
-import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
 import { getVizPalette } from "./vizTheme";
+import { Box, Typography, alpha, useTheme } from "@toorow/shell";
 
 export interface LineChartSeries {
   /** Identifiant/nom de la série (affiché en légende). */
@@ -20,6 +18,22 @@ export interface LineChartSeries {
   points: { index: number | string; value: number }[];
   /** Optionnel : couleur CSS forcée (sinon palette primaire / séquence). */
   color?: string;
+}
+
+/**
+ * Un fait DATÉ posé sur l'axe, jamais une série.
+ *
+ * Une sortie de vidéo, une mise en ligne, un changement de prix : ce n'est pas
+ * une mesure, c'est la cause possible du mouvement qu'on lit à côté. Le tracer
+ * comme une seconde courbe mentirait sur sa nature (il n'a pas de valeur) et
+ * l'écrire dans une phrase sous le graphique obligerait l'oeil à faire lui-même
+ * l'alignement qui est tout l'intérêt.
+ */
+export interface LineChartMarker {
+  /** L'index de l'axe où il tombe — même vocabulaire que `points[].index`. */
+  index: number | string;
+  /** Ce que la personne lit : un titre, jamais un identifiant. */
+  label: string;
 }
 
 export interface LineChartProps {
@@ -30,6 +44,15 @@ export interface LineChartProps {
   ariaLabel?: string;
   /** Unité affichée en tooltip ou légende (ex: "séances"). */
   unit?: string;
+  /**
+   * Faits datés à poser sur l'axe (sorties, mises en ligne).
+   *
+   * UN REPÈRE HORS FENÊTRE N'EST PAS DESSINÉ : sa date n'est sur aucun point de
+   * l'axe, donc le poser demanderait d'inventer une position. Il n'est pas non
+   * plus silencieux — le bloc qui fournit les repères dit combien il en a et le
+   * comptage se fait chez lui, pas ici.
+   */
+  markers?: LineChartMarker[];
 }
 
 // Story 23.1 (AC5): series colors come from the theme-driven viz contract
@@ -47,6 +70,7 @@ export default function LineChart({
   height = 96,
   ariaLabel = "Graphique courbe",
   unit,
+  markers,
 }: LineChartProps) {
   const theme = useTheme();
   const viz = getVizPalette(theme);
@@ -159,6 +183,31 @@ export default function LineChart({
                 strokeLinejoin="round"
                 strokeLinecap="round"
               />
+            </g>
+          );
+        })}
+
+        {/* LES REPÈRES SE LISENT AVEC LA COURBE, PAS SOUS ELLE. Un trait vertical
+            discret + son titre à la verticale : la personne voit l'écart entre la
+            sortie et le mouvement sans avoir à aligner deux listes elle-même.
+            Dessinés APRÈS les séries pour rester au-dessus du remplissage. */}
+        {(markers ?? []).map((marker) => {
+          const position = allIndices.indexOf(String(marker.index));
+          if (position < 0) return null;
+          const x = toX(position);
+          return (
+            <g key={`${marker.index}-${marker.label}`} data-marker={String(marker.index)}>
+              <line
+                x1={x}
+                x2={x}
+                y1={PAD_Y}
+                y2={baseline}
+                stroke={alpha(theme.palette.text.primary, 0.35)}
+                strokeWidth={1}
+                strokeDasharray="3 3"
+              />
+              <circle cx={x} cy={PAD_Y} r={2.5} fill={alpha(theme.palette.text.primary, 0.55)} />
+              <title>{marker.label}</title>
             </g>
           );
         })}

@@ -150,9 +150,14 @@ def test_get_report_honors_flow_card_template():
               return_value=("card resume", card_env, "ui://core/card-kpi")) as m_card:
         result = get_report(project_id="default", report_id="google-analytics/overview_daily")
 
-    # The card path was invoked and its widget uri is bound.
+    # The card path was invoked. Story 50.6 -- INVERTED: the chosen widget uri is
+    # NO LONGER bound into the result. It still rides the persisted Render
+    # snapshot (that is the Render's own pin); what was removed is the
+    # `_meta.ui` that ADVERTISED it to the host from a data tool.
     assert m_card.called
-    assert result.meta["ui"]["resourceUri"] == "ui://core/card-kpi"
+    assert (result.meta or {}).get("ui") is None, (
+        f"a data tool must not advertise a widget resource; got {result.meta!r}"
+    )
 
 
 def test_get_report_unknown_module():

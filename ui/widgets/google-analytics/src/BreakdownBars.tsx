@@ -12,11 +12,10 @@
  * hero, accent bars, hairline dividers, no gridlines.
  */
 
-import { useTheme, alpha } from "@mui/material/styles";
-import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
 import { aggregateByBreakdown, breakdownLabel } from "./dataUtils";
 import type { Row } from "./types";
+import { formatValue } from "./format";
+import { Box, Typography, alpha, useTheme } from "@toorow/shell";
 
 interface BreakdownBarsProps {
   rows: Row[];
@@ -99,7 +98,7 @@ export default function BreakdownBars({
             variant="body2"
             sx={{ fontVariantNumeric: "lining-nums tabular-nums", fontWeight: 600 }}
           >
-            {Number(total).toLocaleString("fr-FR")}
+            {formatValue(Number(total))}
           </Typography>
         </Box>
       ))}

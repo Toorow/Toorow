@@ -13,6 +13,8 @@ ASCII-only stdout (L-3).
 
 from __future__ import annotations
 
+from core import daily_insights_schema as schema
+
 TASK_RECIPE_VERSION = "1"
 DEFAULT_CALL_BUDGET = 20
 
@@ -37,6 +39,41 @@ _DEFAULT_PRIORITY_DOMAINS = (
     "data-quality issues that invalidate a conclusion",
     "business-event neighbours",
 )
+
+
+def _announced_rules() -> list[str]:
+    """The rules the recipe tells the agent -- DERIVED from the door (AI-274).
+
+    WHY THIS IS A FUNCTION AND NOT A LIST OF SENTENCES. The recipe stated the
+    agent's rules and the publish gate enforced them, in two places, and they had
+    already drifted apart: story 53.4 hardened the evidence obligation -- every
+    insight must cite at least one server-measured fact, and each ref must be
+    `<kind>:<id>` with `kind` from a closed set -- and the recipe never mentioned
+    it. An agent following the recipe to the letter was refused by the door.
+
+    That is the same defect as a hand-kept palette beside a server allowlist
+    (story 60.2), one workspace over. The repair is the same: read the applied
+    contract. `MAX_INSIGHTS_PER_DAY`, `EVIDENCE_KINDS` and `ALLOWED_CARD_MODES`
+    come from `daily_insights_schema`, which is what `_validate_payload`
+    enforces, so a bound that moves moves in the sentence too.
+    """
+    kinds = " or ".join(f"'{kind}:<id>'" for kind in schema.EVIDENCE_KINDS)
+    return [
+        f"No insight is better than a weak insight: publish 0..{schema.MAX_INSIGHTS_PER_DAY}, "
+        "prefer 0 over a weak one.",
+        "Never emit SQL, HTML, CSS, external URLs or free-form ratios; "
+        "the server resolves every number.",
+        "Stop (do not publish) when readiness is 'blocked': data not ready != no insight.",
+        f"Select an existing card (mode '{schema.CARD_MODE_TEMPLATE}'); "
+        f"'{schema.CARD_MODE_COMPOSE}' mode is disabled.",
+        # AI-274 -- the obligation the door has enforced since 53.4 and the recipe
+        # never announced. Both halves are stated, because citing the wrong SHAPE
+        # is refused as firmly as citing nothing.
+        "Every insight must cite at least one server-measured fact in "
+        "`evidenceRefs`: an insight that points at no datum is refused.",
+        f"An evidence ref is {kinds} -- the card template you render is NOT "
+        "evidence, and citing it is refused.",
+    ]
 
 
 def build_task_recipe(
@@ -80,13 +117,7 @@ def build_task_recipe(
             {"step": "preview", "tool": _PREVIEW_TOOL},
             {"step": "publish", "tool": _PUBLISH_TOOL},
         ],
-        "rules": [
-            "No insight is better than a weak insight: publish 0..3, prefer 0 over a weak one.",
-            "Never emit SQL, HTML, CSS, external URLs or free-form ratios; "
-            "the server resolves every number.",
-            "Stop (do not publish) when readiness is 'blocked': data not ready != no insight.",
-            "Select an existing card (mode 'template'); compose mode is disabled.",
-        ],
+        "rules": _announced_rules(),
         "hostOwnsSchedule": True,
         "backendHostsModel": False,
     }
@@ -145,6 +176,16 @@ def run_journal(run: dict | None) -> dict:
 
     coverage = run.get("coverage") or {}
     insights = run.get("insights") or []
+    # `list_runs` carries the COUNTS and no items; `get_run` carries the items. A
+    # journal built from the list used to read `len(insights)` on a list that is
+    # deliberately empty there, so every published day reported zero insights.
+    # The count is preferred whenever the reader supplied one; `len(insights)`
+    # stays the answer for `get_run`, which has the real rows.
+    item_count = run.get("item_count")
+    item_count = len(insights) if item_count is None else int(item_count)
+    retracted_count = run.get("retracted_count")
+    if retracted_count is None:
+        retracted_count = sum(1 for i in insights if i.get("retracted_at"))
     rejection = None
     if isinstance(coverage, dict) and (coverage.get("reason") or coverage.get("reason_code")):
         rejection = {
@@ -156,8 +197,23 @@ def run_journal(run: dict | None) -> dict:
         "state": run.get("status"),
         "insightDate": run.get("insight_date"),
         "period": {"from": run.get("period_from"), "to": run.get("period_to")},
-        "itemCount": len(insights),
-        "slots": sorted(int(i["slot"]) for i in insights if "slot" in i),
+        "itemCount": item_count,
+        # A WITHDRAWAL IS PART OF WHAT THE DAY DID (migration 321). A retracted
+        # insight is not removed from the day -- it is shown as withdrawn, with its
+        # reason, wherever the day is read. Reporting only `itemCount` would make a
+        # day whose single claim was retracted read exactly like a day whose claim
+        # still stands.
+        "retractedCount": int(retracted_count),
+        # Same defect class as `itemCount` (review of 9402f8b9, residue 2): on the
+        # /runs list the item list is deliberately absent, so deriving `slots`
+        # from it reported [] on every published day. `list_runs` now carries the
+        # aggregate; the derivation stays as the fallback for the single-run read,
+        # which does carry its items.
+        "slots": (
+            sorted(int(s) for s in run["slots"])
+            if run.get("slots") is not None
+            else sorted(int(i["slot"]) for i in insights if "slot" in i)
+        ),
         "provenance": {
             "host": run.get("host"),
             "promptVersion": run.get("prompt_version"),

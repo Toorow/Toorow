@@ -192,8 +192,8 @@ def test_staging_fx_normalizes_non_eur_revenue(tmp_path):
         .replace("{{ ref('fx_rates') }}", "fx_rates")
         # Story 13.2: FX conflict resolution source (AD-6). Empty table -> no override.
         .replace(
-            "{{ source('mirror', 'fx_conflict_resolutions') }}",
-            "fx_conflict_resolutions",
+            "{{ source('mirror', 'fx_source_currency_bindings') }}",
+            "fx_source_currency_bindings",
         )
     )
     # Strip the leading '-- ...' comment lines so only the SQL body remains executable.
@@ -229,35 +229,71 @@ def test_staging_fx_normalizes_non_eur_revenue(tmp_path):
         """
         CREATE TABLE fx_rates (
             from_currency VARCHAR, to_currency VARCHAR, rate DOUBLE,
-            valid_from DATE, valid_to DATE
+            valid_from DATE, valid_to DATE,
+            -- The shape of dbt/seeds/fx_rates.csv as the staging model reads it.
+            -- `rate_date` has been selected since story 58.7 (it is the date
+            -- PRINTED under an amount) and `fx_method` since 2026-08-17; this
+            -- fixture carried neither, so the real SQL could not compile against
+            -- it and the test failed for a reason that was not about Shopify.
+            rate_date DATE, fx_method VARCHAR
         )
         """
     )
     con.execute(
-        "INSERT INTO fx_rates VALUES ('USD', 'EUR', 0.9, DATE '2026-01-01', DATE '2026-12-31')"
+        "INSERT INTO fx_rates VALUES ('USD', 'EUR', 0.9, DATE '2026-01-01', "
+        "DATE '2026-12-31', DATE '2026-07-01', 'fixed')"
     )
     # Story 13.2: empty FX resolution table -> LEFT JOIN matches nothing -> fallback.
     con.execute(
         """
-        CREATE TABLE fx_conflict_resolutions (
-            id VARCHAR, project_id VARCHAR, target_field VARCHAR, source_module VARCHAR,
-            resolved_source_currency VARCHAR, decided_by VARCHAR, decided_at TIMESTAMP, note VARCHAR
+        CREATE TABLE fx_source_currency_bindings (
+            project_id VARCHAR, target_field VARCHAR, source_module VARCHAR,
+            resolved_source_currency VARCHAR, decided_by VARCHAR, decided_at TIMESTAMP,
+            note VARCHAR, rule_set_id VARCHAR, rule_set_version_id VARCHAR
         )
         """
     )
 
     rows = con.execute(
         f"SELECT order_id, revenue_source_value, revenue, refund_source_value, "
-        f"refund_amount FROM ({body}) ORDER BY order_id"
+        f"refund_amount, revenue_source_currency, fx_rate, fx_as_of_date, fx_method "
+        f"FROM ({body}) ORDER BY order_id"
     ).fetchall()
     con.close()
 
+    # CE QUE CE TEST ASSERTAIT, ET POURQUOI IL NE LE PEUT PLUS. Il exigeait que le
+    # staging RENDE 90.0 pour 100 USD : la conversion au staging. La story 48.3 a
+    # deplace le locus ([[fx-locus-read-not-staging]]) -- le staging preserve le
+    # montant SOURCE et n'attache que le taux, la multiplication vit dans le mart
+    # (`fx_convert_at_read`). L'assertion mesurait donc un contrat retire, et elle
+    # ne le mesurait meme plus : la fixture n'avait pas `rate_date`, donc le vrai
+    # SQL ne compilait plus contre elle et l'echec parlait d'une colonne.
+    # Ce que le test prouve maintenant est le contrat EN VIGUEUR, sur le meme SQL.
     by_order = {r[0]: r for r in rows}
-    # EUR -> EUR : pas de ligne fx EUR->EUR => fallback identité (COALESCE).
-    assert by_order["o-eur"][2] == pytest.approx(100.0)
-    assert by_order["o-eur"][4] == pytest.approx(10.0)
-    # USD -> EUR : conversion RÉELLE appliquée (0.9), source préservée.
+
+    # 1. Rien n'est converti ici, et la valeur source est intacte des deux cotes.
+    assert by_order["o-eur"][1] == pytest.approx(100.0)
     assert by_order["o-usd"][1] == pytest.approx(100.0), "source value must be preserved"
-    assert by_order["o-usd"][2] == pytest.approx(90.0), "USD revenue must be converted"
+    assert by_order["o-usd"][2] == pytest.approx(100.0), (
+        "staging must NOT convert: the source amount travels untouched and the mart "
+        "multiplies once at read"
+    )
     assert by_order["o-usd"][3] == pytest.approx(10.0)
-    assert by_order["o-usd"][4] == pytest.approx(9.0), "USD refund must be converted"
+    assert by_order["o-usd"][4] == pytest.approx(10.0)
+
+    # 2. La devise source survit -- c'est elle qui rend la conversion re-derivable.
+    assert by_order["o-usd"][5] == "USD"
+    assert by_order["o-eur"][5] == "EUR"
+
+    # 3. Le taux est ATTACHE, date, et il porte sa methode. `direct` ici serait le
+    #    defaut repare le 2026-08-17 : un taux pose lisant comme une observation.
+    assert by_order["o-usd"][6] == pytest.approx(0.9), "the rate must be attached"
+    assert by_order["o-usd"][7].isoformat() == "2026-07-01", (
+        "fx_as_of_date is the date the rate was QUOTED (rate_date), never valid_from"
+    )
+    assert by_order["o-usd"][8] == "fixed"
+
+    # 4. Aucune paire EUR->EUR dans cette fixture : pas de taux, donc pas de
+    #    methode. Un `direct` invente ici serait pire qu'un vide honnete.
+    assert by_order["o-eur"][6] is None
+    assert by_order["o-eur"][8] is None

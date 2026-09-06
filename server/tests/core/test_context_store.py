@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from core.context_store import (
+    MAX_BODY_MD_BYTES,
+    MAX_FRONTMATTER_BYTES,
     DuplicateProcedureNameError,
+    NotArchivedContextError,
+    PayloadTooLargeError,
+    archive_procedure,
     archive_topic,
     create_procedure,
     create_topic,
@@ -14,6 +19,8 @@ from core.context_store import (
     get_topic,
     list_schema_docs,
     list_topics,
+    restore_procedure,
+    restore_topic,
     update_procedure,
     update_topic,
     validate_procedure_frontmatter,
@@ -24,12 +31,28 @@ def test_validate_procedure_frontmatter_success():
     yaml_text = """
 name: my_procedure
 description: A helpful procedure for analytics.
-extra_setting: true
+keywords:
+  - analytics
+evidence:
+  - "Must have 10 rows"
 """
     parsed = validate_procedure_frontmatter(yaml_text)
     assert parsed["name"] == "my_procedure"
     assert parsed["description"] == "A helpful procedure for analytics."
-    assert parsed["extra_setting"] is True
+    assert parsed["keywords"] == ["analytics"]
+    assert parsed["evidence"] == ["Must have 10 rows"]
+
+
+def test_validate_procedure_frontmatter_rejects_unsupported_keys():
+    yaml_text = """
+name: my_procedure
+description: A helpful procedure.
+unsupported_key: true
+"""
+    with pytest.raises(
+        ValueError, match="YAML frontmatter contains unsupported keys: unsupported_key"
+    ):
+        validate_procedure_frontmatter(yaml_text)
 
 
 def test_validate_procedure_frontmatter_failures():
@@ -42,8 +65,59 @@ def test_validate_procedure_frontmatter_failures():
     with pytest.raises(ValueError, match="description"):
         validate_procedure_frontmatter("name: my_proc")
 
-    with pytest.raises(ValueError, match="vide"):
+    with pytest.raises(ValueError, match="empty"):
         validate_procedure_frontmatter("")
+
+
+def test_validate_procedure_frontmatter_normalized_skill_metadata():
+    parsed = validate_procedure_frontmatter(
+        """
+name: campaign_review
+description: Review paid-media pacing.
+keywords:
+  - growth-ops
+tool_bindings:
+  - step: 1
+    tool: get_daily_report
+    viz_tag: card_kpi_hero
+  - step: 3
+    tool: get_kpi_movers
+mdm_tags:
+  - spend
+  - conversions
+"""
+    )
+
+    assert parsed["keywords"] == ["growth-ops"]
+    assert parsed["tool_bindings"] == [
+        {"step": 1, "tool": "get_daily_report", "viz_tag": "card_kpi_hero"},
+        {"step": 3, "tool": "get_kpi_movers"},
+    ]
+    assert parsed["mdm_tags"] == ["spend", "conversions"]
+
+
+@pytest.mark.parametrize(
+    ("yaml_suffix", "message"),
+    [
+        ("tool_bindings: invalid", "must be a list"),
+        ("tool_bindings:\n  - step: 0\n    tool: report", "positive integer"),
+        ("tool_bindings:\n  - step: 1\n    tool: ''", "non-empty string"),
+        (
+            "tool_bindings:\n  - step: 2\n    tool: second\n  - step: 1\n    tool: first",
+            "ordered by step",
+        ),
+        ("mdm_tags:\n  - spend\n  - spend", "duplicate value"),
+        ("evidence:\n  - dup\n  - dup", "duplicate value"),
+        ("evidence_requirements: invalid", "must be a list"),
+    ],
+)
+def test_validate_procedure_frontmatter_rejects_invalid_skill_metadata(
+    yaml_suffix: str, message: str
+):
+    with pytest.raises(ValueError, match=message):
+        validate_procedure_frontmatter(
+            f"name: skill\ndescription: governed skill\n{yaml_suffix}\n"
+        )
 
 
 def test_create_topic_mocked():
@@ -359,7 +433,7 @@ def test_update_topic_owner_invalid_type_rejected():
         ("updated_at",),
     ]
 
-    with pytest.raises(ValueError, match="propriétaire"):
+    with pytest.raises(ValueError, match="owner"):
         update_topic(conn, topic_id="top_own3", patch={"owner": 123}, changed_by="user_1")
 
 
@@ -408,6 +482,211 @@ def test_archive_topic_mocked():
     archived = archive_topic(conn, topic_id="top_123", changed_by="user_1")
     assert archived["status"] == "archived"
     assert archived["version_number"] == 2
+
+
+# ---------------------------------------------------------------------------
+# The way back (2026-08-18). An archive was a version, never a deletion, so
+# restoring it is a version too -- and it must leave the same trail archiving
+# leaves, or "restored" becomes a fact nothing can reconstruct.
+# ---------------------------------------------------------------------------
+
+_TOPIC_COLS = [
+    ("id",),
+    ("project_id",),
+    ("title",),
+    ("body_md",),
+    ("status",),
+    ("owner",),
+    ("created_by",),
+    ("created_at",),
+    ("updated_at",),
+]
+
+_PROCEDURE_COLS = [
+    ("id",),
+    ("project_id",),
+    ("name",),
+    ("description",),
+    ("frontmatter_yaml",),
+    ("body_md",),
+    ("status",),
+    ("owner",),
+    ("created_by",),
+    ("created_at",),
+    ("updated_at",),
+]
+
+
+def _topic_row(status: str) -> tuple:
+    return (
+        "top_123",
+        "proj_A",
+        "Title",
+        "body",
+        status,
+        None,
+        "user_1",
+        "2026-07-20T10:00:00Z",
+        "2026-07-20T10:15:00Z",
+    )
+
+
+def _procedure_row(status: str) -> tuple:
+    return (
+        "proc_x",
+        "proj_A",
+        "proc_x",
+        "desc",
+        "name: proc_x\ndescription: desc",
+        "",
+        status,
+        None,
+        "user_1",
+        "2026-07-20T12:00:00Z",
+        "2026-07-20T12:05:00Z",
+    )
+
+
+def test_restore_topic_brings_it_back_and_appends_a_version():
+    conn = MagicMock()
+    cur = MagicMock()
+    conn.cursor.return_value.__enter__.return_value = cur
+
+    cur.fetchone.side_effect = [
+        _topic_row("archived"),  # SELECT FOR UPDATE
+        (2,),  # MAX version_number
+        _topic_row("active"),  # UPDATE RETURNING
+    ]
+    cur.description = _TOPIC_COLS
+
+    restored = restore_topic(conn, topic_id="top_123", changed_by="user_1")
+
+    assert restored["status"] == "active"
+    # Same version semantics as archive: the next number, never a rewrite.
+    assert restored["version_number"] == 3
+    version_sql = [
+        call[0][0] for call in cur.execute.call_args_list
+        if "app.context_topics_versions" in call[0][0] and "INSERT" in call[0][0]
+    ]
+    assert len(version_sql) == 1, "a restore appends exactly one version row"
+
+
+def test_restore_topic_writes_its_own_audit_action():
+    """`context_topic.restored` -- not `updated`, or the trail cannot say what happened."""
+    conn = MagicMock()
+    cur = MagicMock()
+    conn.cursor.return_value.__enter__.return_value = cur
+    cur.fetchone.side_effect = [_topic_row("archived"), (2,), _topic_row("active")]
+    cur.description = _TOPIC_COLS
+
+    with patch("core.context_store.insert_audit_row") as audit:
+        restore_topic(conn, topic_id="top_123", changed_by="user_1")
+
+    assert audit.call_count == 1
+    assert audit.call_args.kwargs["action"] == "context_topic.restored"
+    assert audit.call_args.kwargs["metadata"]["version_number"] == 3
+
+
+def test_restore_topic_refuses_a_topic_that_is_not_archived():
+    conn = MagicMock()
+    cur = MagicMock()
+    conn.cursor.return_value.__enter__.return_value = cur
+    cur.fetchone.side_effect = [_topic_row("active"), (2,)]
+    cur.description = _TOPIC_COLS
+
+    with pytest.raises(NotArchivedContextError, match="nothing to restore"):
+        restore_topic(conn, topic_id="top_123", changed_by="user_1")
+
+
+def test_restore_topic_honours_the_expected_version_precondition():
+    from core.context_store import StaleContextVersionError
+
+    conn = MagicMock()
+    cur = MagicMock()
+    conn.cursor.return_value.__enter__.return_value = cur
+    cur.fetchone.side_effect = [_topic_row("archived"), (5,)]
+    cur.description = _TOPIC_COLS
+
+    with pytest.raises(StaleContextVersionError):
+        restore_topic(conn, topic_id="top_123", changed_by="user_1", expected_version=2)
+
+
+def test_archived_topic_still_refuses_an_ordinary_patch():
+    """The way back is a door, not a hole: PATCH is unchanged."""
+    from core.context_store import ArchivedContextError
+
+    conn = MagicMock()
+    cur = MagicMock()
+    conn.cursor.return_value.__enter__.return_value = cur
+    cur.fetchone.side_effect = [_topic_row("archived"), (2,)]
+    cur.description = _TOPIC_COLS
+
+    with pytest.raises(ArchivedContextError):
+        update_topic(conn, topic_id="top_123", patch={"title": "New"}, changed_by="user_1")
+
+
+def test_restore_procedure_brings_it_back_with_its_own_audit_action():
+    conn = MagicMock()
+    cur = MagicMock()
+    conn.cursor.return_value.__enter__.return_value = cur
+    cur.fetchone.side_effect = [
+        _procedure_row("archived"),  # SELECT FOR UPDATE
+        None,  # no ACTIVE row holds this name
+        (2,),  # MAX version_number
+        _procedure_row("active"),  # UPDATE RETURNING
+    ]
+    cur.description = _PROCEDURE_COLS
+
+    with patch("core.context_store.insert_audit_row") as audit:
+        restored = restore_procedure(conn, procedure_id="proc_x", changed_by="user_1")
+
+    assert restored["status"] == "active"
+    assert restored["version_number"] == 3
+    assert audit.call_args.kwargs["action"] == "procedure.restored"
+
+
+def test_restore_procedure_refuses_when_the_name_was_taken_meanwhile():
+    """The partial unique index covers non-archived rows only."""
+    conn = MagicMock()
+    cur = MagicMock()
+    conn.cursor.return_value.__enter__.return_value = cur
+    cur.fetchone.side_effect = [
+        _procedure_row("archived"),
+        (1,),  # an ACTIVE row already carries this name
+    ]
+    cur.description = _PROCEDURE_COLS
+
+    with pytest.raises(DuplicateProcedureNameError):
+        restore_procedure(conn, procedure_id="proc_x", changed_by="user_1")
+
+
+def test_restore_procedure_refuses_a_procedure_that_is_not_archived():
+    conn = MagicMock()
+    cur = MagicMock()
+    conn.cursor.return_value.__enter__.return_value = cur
+    cur.fetchone.side_effect = [_procedure_row("active"), None, (2,)]
+    cur.description = _PROCEDURE_COLS
+
+    with pytest.raises(NotArchivedContextError, match="nothing to restore"):
+        restore_procedure(conn, procedure_id="proc_x", changed_by="user_1")
+
+
+def test_archive_procedure_is_still_reachable_and_unchanged():
+    conn = MagicMock()
+    cur = MagicMock()
+    conn.cursor.return_value.__enter__.return_value = cur
+    cur.fetchone.side_effect = [
+        _procedure_row("active"),
+        (1,),
+        _procedure_row("archived"),
+    ]
+    cur.description = _PROCEDURE_COLS
+
+    with patch("core.context_store.insert_audit_row") as audit:
+        archived = archive_procedure(conn, procedure_id="proc_x", changed_by="user_1")
+
+    assert archived["status"] == "archived"
+    assert audit.call_args.kwargs["action"] == "procedure.archived"
 
 
 def test_list_topics_scope_filtering():
@@ -804,3 +1083,139 @@ def test_list_schema_docs_empty_project_returns_empty_list():
 
     docs = list_schema_docs(conn, project_id="proj_empty")
     assert docs == []
+
+
+
+# --- Payload size limits (payload-limits debt) ------------------------------
+#
+# No HTTP middleware bounds request bodies, so the store is the gate: it must
+# refuse oversized body_md / frontmatter_yaml BEFORE yaml parsing and the
+# Postgres INSERT, for the REST and MCP entry points alike.
+
+
+def test_validate_procedure_frontmatter_rejects_oversized_yaml():
+    yaml_text = "name: p\ndescription: " + "d" * MAX_FRONTMATTER_BYTES + "\n"
+    with pytest.raises(PayloadTooLargeError, match="frontmatter_yaml"):
+        validate_procedure_frontmatter(yaml_text)
+
+
+def test_validate_procedure_frontmatter_accepts_yaml_just_under_limit():
+    prefix = "name: p\ndescription: "
+    description = "d" * (MAX_FRONTMATTER_BYTES - len(prefix) - 1)
+    parsed = validate_procedure_frontmatter(prefix + description)
+    assert parsed["description"] == description
+
+
+def test_create_topic_rejects_oversized_body():
+    conn = MagicMock()
+    with pytest.raises(PayloadTooLargeError, match="body_md"):
+        create_topic(
+            conn,
+            project_id="proj_A",
+            title="My Topic",
+            body_md="b" * (MAX_BODY_MD_BYTES + 1),
+            created_by="user_1",
+        )
+    # The refusal lands before any SQL is emitted.
+    conn.cursor.assert_not_called()
+
+
+def test_create_topic_accepts_body_just_under_limit():
+    conn = MagicMock()
+    cur = MagicMock()
+    conn.cursor.return_value.__enter__.return_value = cur
+
+    cur.fetchone.return_value = (
+        "top_03HX",
+        "proj_A",
+        "My Topic",
+        "body text",
+        "active",
+        None,
+        "user_1",
+        "2026-07-20T10:00:00Z",
+        "2026-07-20T10:00:00Z",
+    )
+    cur.description = [
+        ("id",),
+        ("project_id",),
+        ("title",),
+        ("body_md",),
+        ("status",),
+        ("owner",),
+        ("created_by",),
+        ("created_at",),
+        ("updated_at",),
+    ]
+
+    topic = create_topic(
+        conn,
+        project_id="proj_A",
+        title="My Topic",
+        body_md="b" * MAX_BODY_MD_BYTES,
+        created_by="user_1",
+    )
+    assert topic["id"].startswith("top_")
+
+
+def test_update_topic_rejects_oversized_body_patch():
+    conn = MagicMock()
+    with pytest.raises(PayloadTooLargeError, match="body_md"):
+        update_topic(
+            conn,
+            topic_id="top_123",
+            patch={"body_md": "b" * (MAX_BODY_MD_BYTES + 1)},
+            changed_by="user_1",
+        )
+    conn.cursor.assert_not_called()
+
+
+def test_create_procedure_rejects_oversized_body():
+    conn = MagicMock()
+    with pytest.raises(PayloadTooLargeError, match="body_md"):
+        create_procedure(
+            conn,
+            project_id="proj_A",
+            frontmatter_yaml="name: p\ndescription: governed skill\n",
+            body_md="b" * (MAX_BODY_MD_BYTES + 1),
+            created_by="user_1",
+        )
+    conn.cursor.assert_not_called()
+
+
+def test_update_procedure_rejects_oversized_body_patch():
+    conn = MagicMock()
+    with pytest.raises(PayloadTooLargeError, match="body_md"):
+        update_procedure(
+            conn,
+            procedure_id="proc_123",
+            patch={"body_md": "b" * (MAX_BODY_MD_BYTES + 1)},
+            changed_by="user_1",
+        )
+    conn.cursor.assert_not_called()
+
+
+def test_a_required_step_names_its_tool_or_is_refused() -> None:
+    """2026-09-05: a required step is one the recorder can observe."""
+    import pytest
+
+    from core.context_store import validate_procedure_frontmatter
+
+    def frontmatter(*step_lines: str) -> str:
+        return chr(10).join(["name: s", "description: d", "steps:", *step_lines]) + chr(10)
+
+    ok = validate_procedure_frontmatter(
+        frontmatter(
+            "  - step: 1", "    action: analyze", "    label: Run it", "    tool: execute_analyze_query_spec", "    required: true",
+            "  - step: 2", "    action: read", "    label: Read a target", "    target: the catalogue",
+        )
+    )
+    assert ok["steps"][0]["required"] is True and "required" not in ok["steps"][1]
+    with pytest.raises(ValueError, match="required step is one the recorder can observe"):
+        validate_procedure_frontmatter(
+            frontmatter("  - step: 1", "    action: read", "    label: Read a target", "    target: the catalogue", "    required: true")
+        )
+    with pytest.raises(ValueError, match="required must be true or false"):
+        validate_procedure_frontmatter(
+            frontmatter("  - step: 1", "    action: analyze", "    label: Run it", "    tool: t", "    required: yes please")
+        )

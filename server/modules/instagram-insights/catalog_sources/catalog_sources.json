@@ -1,0 +1,27 @@
+{
+  "connector": "instagram-insights",
+  "api_version": "instagram-graph-v24.0",
+  "generated_at": "2026-08-01T00:00:00Z",
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://www.postman.com/meta/instagram/folder/23987686-f659d7d1-d74c-44e4-9192-9b1e8694c511",
+      "fetched_at": "2026-08-01"
+    }
+  ],
+  "section_tier_map": {
+    "DIMENSION": "core",
+    "METRIC": "core",
+    "NON_ADDITIVE": "standard"
+  },
+  "default_tier": "standard",
+  "exposure_policy": "catalog_driven",
+  "excluded_sections": {},
+  "probe": {
+    "request_style": "metrics_dimensions",
+    "batch_size": 20,
+    "structural_note": "Instagram Graph API insights endpoint takes a comma-separated metric list over a date range. Invalid metrics return Graph OAuthException/invalid_request, bisected to isolate rejected metrics."
+  }
+}

@@ -34,10 +34,18 @@ def test_epic36_rls_owner_floor_and_cross_org_zero_grant_denial():
                 "VALUES (%s, %s, %s, %s)",
                 (org_id, "Epic 36 RLS", f"epic-36-rls-{suffix}", owner),
             )
+            # `currency` et `timezone` NE SONT PLUS des colonnes de
+            # `app.projects` : elles vivent dans `app.project_preferences`
+            # (`canonical_currency` / `reporting_timezone`), avec leur provenance.
+            # L'INSERT levait `UndefinedColumn: la colonne « currency » de la
+            # relation « projects » n'existe pas` -- donc LA PORTE RLS ELLE-MEME
+            # ne prouvait plus rien, et c'est le seul test qui mesure ce que la
+            # bascule de production achete. Ni l'une ni l'autre n'a de role dans
+            # cette preuve : ce test compare ce qu'une org voit de l'autre.
             cur.execute(
                 "INSERT INTO app.projects "
-                "(id, name, slug, status, currency, timezone, created_by, org_id) "
-                "VALUES (%s, %s, %s, 'active', 'EUR', 'UTC', %s, %s)",
+                "(id, name, slug, status, created_by, org_id) "
+                "VALUES (%s, %s, %s, 'active', %s, %s)",
                 (project_id, "Epic 36 RLS", f"epic-36-{suffix}", owner, org_id),
             )
             cur.execute(
@@ -71,8 +79,15 @@ def test_epic36_rls_owner_floor_and_cross_org_zero_grant_denial():
                     cur.execute("SELECT id FROM app.projects WHERE id = %s", (project_id,))
                     assert cur.fetchone() is None
         finally:
+            # Le nettoyage passe par le MARCHEUR de production, pas par deux
+            # DELETE nus : creer un projet en provisionne l'arbre
+            # (project_capabilities, project_preferences, ...) et ces cles
+            # etrangeres ne cascadent pas. Le DELETE echouait APRES des
+            # assertions passees, donc ce test rapportait un echec qu'il n'avait
+            # pas subi -- et il laissait ses lignes derriere lui.
             with conn.cursor() as cur:
                 cur.execute("SELECT set_config('toorow.enforce_epic36', 'off', true)")
-                cur.execute("DELETE FROM app.projects WHERE id = %s", (project_id,))
-                cur.execute("DELETE FROM app.organizations WHERE id = %s", (org_id,))
+            from tests.conftest import purge_fixture_org
+
+            purge_fixture_org(conn, org_id)
             conn.commit()

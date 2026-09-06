@@ -14,8 +14,13 @@ The five public entry points:
   * ``create_execution``   -- mint a ``dse_<ULID>`` in ``created`` state, with the
     12.4 provenance (``plan_version_id`` / ``mapping_version_id`` / plan snapshot).
     Idempotent on ``idempotency_key``; rejects a concurrent active execution.
-  * ``advance_state``      -- the typed state machine. Every invalid transition is
-    rejected with ``invalid_state_transition``. Writes an audit row per change.
+  * ``advance_state``      -- the typed state machine, and since AI-223 the ONLY
+    writer of ``app.datastream_executions.state`` anywhere in the server. Every
+    invalid transition is rejected with ``invalid_state_transition``; every
+    change stamps ``state_changed_at``, closes the run's open step spans when it
+    is terminal, and writes an audit row.
+    ``tests/conformance/test_one_state_machine_for_a_run.py`` refuses a private
+    ``UPDATE ... SET state`` written anywhere else.
   * ``run_dq_gates``       -- the fail-closed pre-publication gates (empty,
     row-count delta, content-hash match, schema-hash drift). Project-preference
     governed, never a platform-wide hardcode.
@@ -54,9 +59,24 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import date, datetime, time
 from typing import Any
 
 from ulid import ULID
+
+from core import execution_states as _registry
+from core.audit import declare_action
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12) : declarees ICI, a cote du code qui les ecrit, et non
+# dans `core/audit.py`. Ce fichier etait un carrefour -- 43 editions de 29
+# sujets depuis juin, dont 34 n'ajoutaient qu'une constante -- et 45 % des
+# actions reellement ecrites en production n'y etaient meme pas declarees,
+# parce que la liste etait trop loin pour valoir le detour. `write_audit_row`
+# refuse desormais une action que personne n'a declaree.
+ACTION_DATASTREAM_EXECUTION_STATE_CHANGED = declare_action("datastream.execution.state_changed")
+
 
 # psycopg is imported at module level so the create_execution insert can map the
 # real Postgres constraint failures (unique-violation on the active-execution
@@ -95,18 +115,36 @@ STATE_PUBLISHED = "published"
 STATE_FAILED = "failed"
 STATE_CANCELLED = "cancelled"
 
-TERMINAL_STATES = frozenset({STATE_PUBLISHED, STATE_FAILED, STATE_CANCELLED})
+# Story 63.1 (migration 218): the terminal state of a run that COLLECTED its
+# windows and published nothing -- what a recurring retrieval is today, since
+# nothing downstream is armed to map, check or publish a nightly pull
+# automatically. Of the three prior terminal states, `published` would be read
+# by the output pointers as a publication that never happened, and `failed` /
+# `cancelled` would each be a plain lie. Leaving such a run non-terminal is
+# worse than all three: `uq_datastream_executions_active` allows ONE
+# non-terminal execution per datastream, so every later publish AND the next
+# night's dispatch would be answered 409 forever.
+STATE_COLLECTED = "collected"
+
+# The sets are DERIVED from `core.execution_states`, never re-declared. They used
+# to be literals here, and six other readers had their own copies -- which is how
+# one new state broke the operations axis, the Runs tab, the 30-day success rate
+# and the primary action at once. The names above stay as this module's public
+# vocabulary; the classification has exactly one owner.
+TERMINAL_STATES = frozenset(_registry.TERMINAL_STATES)
 
 # The forward happy path. failed is reachable from any non-terminal state;
 # cancelled from any non-terminal state EXCEPT publishing (once the atomic commit
 # is underway there is no safe cancel -- it resolves to published or failed).
+# `collected` is reachable from `loading` only: a run that moved data and stopped.
 _FORWARD: dict[str, frozenset[str]] = {
     STATE_CREATED: frozenset({STATE_LOADING}),
-    STATE_LOADING: frozenset({STATE_VALIDATING}),
+    STATE_LOADING: frozenset({STATE_VALIDATING, STATE_COLLECTED}),
     STATE_VALIDATING: frozenset({STATE_READY}),
     STATE_READY: frozenset({STATE_PUBLISHING}),
     STATE_PUBLISHING: frozenset({STATE_PUBLISHED}),
     STATE_PUBLISHED: frozenset(),
+    STATE_COLLECTED: frozenset(),
     STATE_FAILED: frozenset(),
     STATE_CANCELLED: frozenset(),
 }
@@ -115,10 +153,9 @@ _CANCELLABLE = frozenset(
     {STATE_CREATED, STATE_LOADING, STATE_VALIDATING, STATE_READY}
 )
 
-# Non-terminal states that block a concurrent publication attempt.
-ACTIVE_STATES = frozenset(
-    {STATE_CREATED, STATE_LOADING, STATE_VALIDATING, STATE_READY, STATE_PUBLISHING}
-)
+# Non-terminal states that block a concurrent publication attempt. Derived, for
+# the reason given at TERMINAL_STATES.
+ACTIVE_STATES = frozenset(_registry.ACTIVE_STATES)
 
 # ---------------------------------------------------------------------------
 # DQ gate codes (closed set) + governed preference defaults.
@@ -475,10 +512,24 @@ def split_gate_issues(
 
 
 def _row_to_execution(cur, row) -> dict[str, Any]:
+    """Turn one execution row into a JSON-serialisable dict.
+
+    THE TYPE DECIDES, NEVER A LIST OF NAMES. This function used to isoformat()
+    exactly three hardcoded column names (`state_changed_at`, `created_at`,
+    `updated_at`), so any date-like column added to the table afterwards left the
+    payload as a raw `datetime`. `admin_api` renders with the standard
+    `JSONResponse`, whose `TypeError` is raised inside `render()` -- OUTSIDE the
+    handler's try/except -- producing a bare 500 that logs nothing and that the
+    503 branch never sees. Migration 218 adds two such columns (`started_at`,
+    `progress_updated_at`) and `day_in_progress`; the next one would reopen it
+    again. A list of names that must be kept in step with the schema IS the
+    defect, so it is gone: every `date` / `datetime` / `time` value is
+    serialised, whatever it is called.
+    """
     cols = [desc[0] for desc in cur.description]
     record: dict[str, Any] = {}
     for col, val in zip(cols, row):
-        if col in ("state_changed_at", "created_at", "updated_at") and val is not None:
+        if isinstance(val, (datetime, date, time)):
             record[col] = val.isoformat()
         elif col == "projection_plan_ref" and val is not None:
             record[col] = val if isinstance(val, dict) else json.loads(val)
@@ -691,19 +742,29 @@ def advance_state(
     row_count: int | None = None,
     error_code: str | None = None,
     error_detail: str | None = None,
+    audit_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Advance one execution through the typed state machine.
 
-    Enforces the machine: an invalid transition raises ``InvalidStateTransition``.
-    Writes ``state_changed_at`` and an actor-stamped audit row (via
-    ``insert_audit_row``) on every change. The caller owns the transaction.
+    THE ONLY WRITER OF ``app.datastream_executions.state`` -- AI-223. Enforces the
+    machine: an invalid transition raises ``InvalidStateTransition``. Writes
+    ``state_changed_at`` and an actor-stamped audit row (via ``insert_audit_row``)
+    on every change, and closes the run's open step spans on a terminal state. The
+    caller owns the transaction.
 
     ``expected_current_state`` (optimistic guard) is checked against the live row
     when provided; a mismatch is treated as an invalid transition (someone else
     moved it). Does NOT commit.
+
+    ``audit_metadata`` is MERGED into the audit row this function writes. It exists
+    so a caller that used to write its OWN richer audit row next to its own private
+    ``UPDATE`` (``commit_publication`` carried the publication log id, the prior
+    pointer, the content hash and the row count) keeps every field it had while
+    giving up the private write -- one state change, one audit row, still one
+    machine. The machine's own keys win: a caller cannot restate ``from_state`` /
+    ``to_state`` as something the row did not do.
     """
     from core.audit import (  # noqa: PLC0415
-        ACTION_DATASTREAM_EXECUTION_STATE_CHANGED,
         ACTION_DATASTREAM_PUBLICATION_FAILED,
         ACTION_DATASTREAM_PUBLISHED,
         insert_audit_row,
@@ -711,14 +772,32 @@ def advance_state(
 
     with conn.cursor() as cur:
         # Lock the row so concurrent state advances serialize.
+        #
+        # `%s::text IS NULL`, never a bare `%s IS NULL`. psycopg 3 sends a str
+        # -- AND a None -- with the UNKNOWN oid and lets Postgres infer the type
+        # from context; `$2 IS NULL` gives it no context, so the server answers
+        # `IndeterminateDatatype: could not determine data type of parameter $2`
+        # and EVERY scoped state advance fails. Measured 2026-08-04 on a
+        # disposable cluster: `complete_candidate_from_adapter` could not move a
+        # candidate out of `created` at all. Test doubles never saw it -- a
+        # MagicMock cursor accepts any SQL.
+        #
+        # The same probe pins which parameters are affected, because "psycopg
+        # sends everything untyped" would be wrong: `int` and `float` carry a
+        # resolvable oid and work; only `str` and `None` do not.
+        #
+        # Seven siblings existed and are repaired in the same commit
+        # (`inbound_ingest.py`, `managed_file_dispatch.py` x5,
+        # `inbound_credentials.py`). The class is held closed by
+        # `tests/conformance/test_sql_parameter_typing.py`.
         cur.execute(
             """
             SELECT state, datastream_id, project_id
             FROM app.datastream_executions
-            WHERE id = %s
+            WHERE id = %s AND (%s::text IS NULL OR project_id = %s)
             FOR UPDATE
             """,
-            (execution_id,),
+            (execution_id, project_id, project_id),
         )
         row = cur.fetchone()
         if row is None:
@@ -744,7 +823,7 @@ def advance_state(
                 row_count = COALESCE(%s, row_count),
                 error_code = %s,
                 error_detail = %s
-            WHERE id = %s
+            WHERE id = %s AND datastream_id = %s AND project_id = %s
             """,
             (
                 new_state,
@@ -753,8 +832,41 @@ def advance_state(
                 error_code,
                 error_detail,
                 execution_id,
+                datastream_id,
+                row_project_id,
             ),
         )
+
+    # A RUN THAT ENDED HAS NO STEP STILL RUNNING -- story 58.10, closed by
+    # AI-223. Closing here gives the span a real end for EVERY run, because
+    # every run now comes through this function.
+    #
+    # THIS FUNCTION IS THE SEAM, AND IT WAS NOT WHEN STORY 58.10 SHIPPED. The
+    # comment that stood here claimed the seam and was refuted twice by a probe:
+    # `commit_publication` ran `ready -> publishing -> published` with its own
+    # UPDATE and raised `InvalidStateTransition` itself, and so did
+    # `begin_managed_file_promotion`, `reconcile_execution`,
+    # `_reconcile_fail_closed` and `datastream_activation.publish_activate_
+    # mutation` -- six private UPDATEs, one of which wrote `state` without
+    # `state_changed_at` at all (the table has no trigger: migration 042 says so
+    # in its own header), so a run published through the wizard measured its
+    # duration up to `ready` and not up to `published`.
+    #
+    # AI-223 converted all of them. `tests/conformance/test_one_state_machine_
+    # for_a_run.py` refuses the seventh: no `SET state` on
+    # `app.datastream_executions` may appear in any function but this one.
+    #
+    # The READ-side derivation stays, and is not redundant. It answers a
+    # different question -- `datastream_workbench._mark_step_spans` derives
+    # "still running" from the RUN'S OWN STATE (`execution_states.is_terminal`),
+    # never from the presence of an end -- so a span left open by a crash
+    # between the state write and the span close still reads `Entered, not
+    # timed` rather than "still running". A seam and a derivation, not one
+    # instead of the other.
+    if new_state in TERMINAL_STATES:
+        from core.execution_progress import close_open_step_spans  # noqa: PLC0415
+
+        close_open_step_spans(conn, execution_id=execution_id)
 
     action = (
         ACTION_DATASTREAM_PUBLISHED
@@ -770,6 +882,7 @@ def advance_state(
         provider_account="",
         connection_ref="",
         metadata={
+            **(audit_metadata or {}),
             "execution_id": execution_id,
             "datastream_id": datastream_id,
             "project_id": row_project_id,
@@ -830,6 +943,165 @@ def _fail_execution_out_of_band(
         pass
 
 
+def begin_managed_file_promotion(
+    execution_id: str,
+    project_id: str,
+    actor: str,
+    conn,
+    *,
+    dispatch_id: str,
+    candidate_evidence: dict[str, Any],
+) -> dict[str, Any]:
+    """Durably claim cross-store promotion without making data current."""
+    required = {
+        "candidate_content_fingerprint",
+        "candidate_schema_fingerprint",
+        "dispatch_bundle_fingerprint",
+        "landing_relation",
+    }
+    missing = sorted(key for key in required if not candidate_evidence.get(key))
+    if missing:
+        raise PublicationError(
+            "candidate_evidence_missing",
+            f"missing independent promotion evidence: {', '.join(missing)}",
+        )
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT datastream_id, state, content_hash, row_count
+                FROM app.datastream_executions
+                WHERE id = %s AND project_id = %s
+                FOR UPDATE
+                """,
+                (execution_id, project_id),
+            )
+            exec_row = cur.fetchone()
+            if exec_row is None:
+                raise ExecutionNotFound()
+            datastream_id, execution_state, content_hash, row_count = exec_row
+            if not content_hash or row_count is None:
+                raise PublicationError(
+                    "candidate_not_validated",
+                    "content_hash and row_count must be set before promotion",
+                )
+
+            cur.execute(
+                """
+                SELECT state, candidate_content_fingerprint,
+                       candidate_schema_fingerprint, landing_relation, row_count,
+                       bundle_fingerprint, dq_evidence
+                FROM app.managed_file_dispatches
+                WHERE id = %s AND execution_id = %s
+                  AND datastream_id = %s AND project_id = %s
+                FOR UPDATE
+                """,
+                (dispatch_id, execution_id, datastream_id, project_id),
+            )
+            dispatch_row = cur.fetchone()
+            if dispatch_row is None:
+                raise PublicationError(
+                    "managed_file_dispatch_not_publishable",
+                    "scoped dispatch is absent",
+                )
+            (
+                dispatch_state,
+                candidate_content,
+                candidate_schema,
+                landing_relation,
+                dispatch_rows,
+                bundle_fingerprint,
+                dq_evidence,
+            ) = dispatch_row
+            expected = (
+                candidate_evidence["candidate_content_fingerprint"],
+                candidate_evidence["candidate_schema_fingerprint"],
+                candidate_evidence["landing_relation"],
+                row_count,
+                candidate_evidence["dispatch_bundle_fingerprint"],
+            )
+            observed = (
+                candidate_content,
+                candidate_schema,
+                landing_relation,
+                dispatch_rows,
+                bundle_fingerprint,
+            )
+            if (
+                observed != expected
+                or not isinstance(dq_evidence, dict)
+                or dq_evidence.get("status") != "passed"
+            ):
+                raise PublicationError(
+                    "managed_file_dispatch_evidence_diverged",
+                    "candidate, bundle, or positive DQ evidence is incomplete",
+                )
+
+            if (
+                execution_state == STATE_READY
+                and dispatch_state in {"ready", "reconcile_required"}
+            ):
+                # AI-223: the machine, not a private UPDATE. `expected_current_
+                # state` carries the `AND state = 'ready'` this statement used to
+                # spell itself, and a mismatch raises the same
+                # `InvalidStateTransition(ready, publishing)` the `rowcount != 1`
+                # branch raised. Scoping is by id alone because the row is ALREADY
+                # locked `FOR UPDATE` under the full (id, project_id) scope eleven
+                # lines above, in this same transaction: re-passing the scope here
+                # would be a second, weaker copy of a check already made.
+                advance_state(
+                    execution_id,
+                    STATE_READY,
+                    STATE_PUBLISHING,
+                    actor,
+                    conn,
+                )
+                if dispatch_state == "ready":
+                    cur.execute(
+                        """
+                        UPDATE app.managed_file_dispatches
+                        SET state = 'promoting', reconciliation_evidence = %s::jsonb,
+                            error_code = NULL, updated_at = NOW()
+                        WHERE id = %s AND execution_id = %s
+                          AND datastream_id = %s AND project_id = %s AND state = 'ready'
+                        """,
+                        (
+                            json.dumps(
+                                {"phase": "warehouse_promotion", **candidate_evidence},
+                                sort_keys=True,
+                            ),
+                            dispatch_id,
+                            execution_id,
+                            datastream_id,
+                            project_id,
+                        ),
+                    )
+                    if cur.rowcount != 1:
+                        raise PublicationError(
+                            "managed_file_dispatch_not_publishable",
+                            "dispatch could not enter promotion",
+                        )
+            elif not (
+                execution_state == STATE_PUBLISHING
+                and dispatch_state in {"promoting", "reconcile_required"}
+            ):
+                raise PublicationError(
+                    "managed_file_promotion_state_invalid",
+                    f"execution={execution_state}, dispatch={dispatch_state}",
+                )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return {
+        "execution_id": execution_id,
+        "dispatch_id": dispatch_id,
+        "state": "promoting",
+        "replayed": execution_state == STATE_PUBLISHING,
+    }
+
+
 def commit_publication(
     execution_id: str,
     project_id: str,
@@ -837,6 +1109,9 @@ def commit_publication(
     conn,
     *,
     connection_factory=None,
+    ledger_id: str | None = None,
+    dispatch_id: str | None = None,
+    candidate_evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """THE atomic publication step: 4 writes in ONE Postgres transaction.
 
@@ -862,7 +1137,116 @@ def commit_publication(
 
         connection_factory = get_connection
 
-    from core.audit import ACTION_DATASTREAM_PUBLISHED, insert_audit_row  # noqa: PLC0415
+    evidence = candidate_evidence or {}
+    if ledger_id is not None:
+        required = {
+            "candidate_content_fingerprint",
+            "candidate_schema_fingerprint",
+            "dispatch_bundle_fingerprint",
+            "landing_relation",
+        }
+        missing = sorted(key for key in required if not evidence.get(key))
+        if missing:
+            raise PublicationError(
+                "candidate_evidence_missing",
+                f"missing independent publication evidence: {', '.join(missing)}",
+            )
+
+    # Idempotent replay after the atomic transaction committed but before the
+    # caller received its response. Every durable signal must agree; otherwise
+    # the reconciliation path, not another publish, owns the uncertainty.
+    existing = (
+        _fetch_execution(conn, execution_id, project_id)
+        if ledger_id is not None or dispatch_id is not None
+        else None
+    )
+    if (ledger_id is not None or dispatch_id is not None) and existing is None:
+        raise ExecutionNotFound()
+    if existing is not None and existing["state"] == STATE_PUBLISHED:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT d.current_published_execution_id, pl.id, pl.prior_execution_id,
+                       EXISTS (
+                         SELECT 1 FROM app.datastream_outbox o
+                         WHERE o.execution_id = pl.execution_id
+                           AND o.datastream_id = pl.datastream_id
+                           AND o.project_id = pl.project_id
+                           AND o.event_type = 'published'
+                       ) AS has_outbox
+                FROM app.datastreams d
+                JOIN app.datastream_publication_log pl
+                  ON pl.execution_id = %s
+                 AND pl.datastream_id = d.id
+                 AND pl.project_id = d.project_id
+                WHERE d.id = %s AND d.project_id = %s
+                ORDER BY pl.published_at DESC
+                LIMIT 1
+                """,
+                (execution_id, existing["datastream_id"], project_id),
+            )
+            replay_row = cur.fetchone()
+            if ledger_id is not None:
+                cur.execute(
+                    """
+                    SELECT outcome
+                    FROM app.managed_feed_import_ledger
+                    WHERE id = %s AND execution_id = %s
+                      AND datastream_id = %s AND project_id = %s
+                    """,
+                    (
+                        ledger_id,
+                        execution_id,
+                        existing["datastream_id"],
+                        project_id,
+                    ),
+                )
+                ledger_row = cur.fetchone()
+            else:
+                ledger_row = None
+            if dispatch_id is not None:
+                cur.execute(
+                    """
+                    SELECT state
+                    FROM app.managed_file_dispatches
+                    WHERE id = %s AND execution_id = %s
+                      AND datastream_id = %s AND project_id = %s
+                    """,
+                    (
+                        dispatch_id,
+                        execution_id,
+                        existing["datastream_id"],
+                        project_id,
+                    ),
+                )
+                dispatch_row = cur.fetchone()
+            else:
+                dispatch_row = None
+        if (
+            replay_row is not None
+            and replay_row[0] == execution_id
+            and replay_row[3] is True
+            and (ledger_id is None or (ledger_row and ledger_row[0] == "published"))
+            and (
+                dispatch_id is None
+                or (dispatch_row and dispatch_row[0] == "published")
+            )
+        ):
+            return {
+                "execution": existing,
+                "publication_log_id": replay_row[1],
+                "prior_execution_id": replay_row[2],
+                "ledger": (
+                    {"id": ledger_id, "outcome": "published"}
+                    if ledger_id is not None
+                    else None
+                ),
+                "replayed": True,
+            }
+        raise PublicationError(
+            "publication_reconciliation_required",
+            "published execution evidence is incomplete or inconsistent",
+        )
 
     try:
         with conn.cursor() as cur:
@@ -909,8 +1293,10 @@ def commit_publication(
                 row_count,
             ) = exec_row
 
-            if state != STATE_READY:
-                raise InvalidStateTransition(state, STATE_PUBLISHING)
+            managed_file = dispatch_id is not None
+            required_state = STATE_PUBLISHING if managed_file else STATE_READY
+            if state != required_state:
+                raise InvalidStateTransition(state, STATE_PUBLISHED)
             # AD-9: publish demands real provenance -- never a fabricated NULL->0.
             if not content_hash or row_count is None:
                 raise PublicationError(
@@ -918,30 +1304,42 @@ def commit_publication(
                     "content_hash and row_count must be set before publication",
                 )
 
-            # 1) ready -> publishing -> published (two guarded UPDATEs, same txn).
-            cur.execute(
-                """
-                UPDATE app.datastream_executions
-                SET state = 'publishing', state_changed_at = NOW(), updated_at = NOW()
-                WHERE id = %s AND state = 'ready'
-                """,
-                (execution_id,),
+            # The log id is minted BEFORE the state advance so the audit row the
+            # machine writes can name it. Minting is a pure ULID; the INSERT that
+            # uses it is still below, in the same transaction.
+            log_id = _mint_log_id()
+
+            # 1) THE STATE ADVANCE, THROUGH THE MACHINE -- AI-223. These two steps
+            # used to be private UPDATEs with their own `AND state = ...` guard and
+            # their own `InvalidStateTransition`, which is how this module came to
+            # hold four copies of a machine it also owns. `expected_current_state`
+            # carries what the guard carried, and the raise is identical.
+            #
+            # Scoped by id alone: the row was locked `FOR UPDATE` under the full
+            # (id, project_id) scope twenty lines above, in this transaction.
+            #
+            # Standard sources enter publishing here. Managed-file sources already
+            # committed that phase before the warehouse promotion.
+            if not managed_file:
+                advance_state(execution_id, STATE_READY, STATE_PUBLISHING, actor, conn)
+            # The audit row of THIS transition is the publication's audit row: the
+            # machine writes it, with the evidence this function used to write in a
+            # second row of its own. One state change, one row.
+            advance_state(
+                execution_id,
+                STATE_PUBLISHING,
+                STATE_PUBLISHED,
+                actor,
+                conn,
+                audit_metadata={
+                    "prior_execution_id": prior_execution_id,
+                    "content_hash": content_hash,
+                    "row_count": row_count,
+                    "publication_log_id": log_id,
+                },
             )
-            if cur.rowcount != 1:
-                raise InvalidStateTransition(state, STATE_PUBLISHING)
-            cur.execute(
-                """
-                UPDATE app.datastream_executions
-                SET state = 'published', state_changed_at = NOW(), updated_at = NOW()
-                WHERE id = %s AND state = 'publishing'
-                """,
-                (execution_id,),
-            )
-            if cur.rowcount != 1:  # pragma: no cover - defensive within one txn.
-                raise InvalidStateTransition(STATE_PUBLISHING, STATE_PUBLISHED)
 
             # 2) append-only publication log row (rollback evidence).
-            log_id = _mint_log_id()
             cur.execute(
                 """
                 INSERT INTO app.datastream_publication_log
@@ -994,29 +1392,92 @@ def commit_publication(
                             "content_hash": content_hash,
                             "row_count": row_count,
                             "prior_execution_id": prior_execution_id,
+                            "managed_feed_ledger_id": ledger_id,
+                            "candidate_evidence": evidence,
                         }
                     ),
                 ),
             )
 
-            # Audit inside the same transaction (state change + evidence commit
-            # together).
-            insert_audit_row(
-                conn,
-                identity=actor or "anonymous",
-                action=ACTION_DATASTREAM_PUBLISHED,
-                provider_account="",
-                connection_ref="",
-                metadata={
-                    "execution_id": execution_id,
-                    "datastream_id": datastream_id,
-                    "project_id": project_id,
-                    "prior_execution_id": prior_execution_id,
-                    "content_hash": content_hash,
-                    "row_count": row_count,
-                    "publication_log_id": log_id,
-                },
-            )
+            # Managed-file publication has one more member in the atomic group:
+            # the import ledger outcome. A pointer/outbox claiming published while
+            # the ledger remains written is an unrecoverable split-brain.
+            if ledger_id is not None:
+                cur.execute(
+                    """
+                    UPDATE app.managed_feed_import_ledger
+                    SET outcome = 'published', updated_at = NOW()
+                    WHERE id = %s
+                      AND execution_id = %s
+                      AND datastream_id = %s
+                      AND project_id = %s
+                      AND outcome = 'written'
+                    """,
+                    (
+                        ledger_id,
+                        execution_id,
+                        datastream_id,
+                        project_id,
+                    ),
+                )
+                if cur.rowcount != 1:
+                    raise PublicationError(
+                        "managed_feed_ledger_not_publishable",
+                        "scoped ledger is absent or not in written state",
+                    )
+
+            if dispatch_id is not None:
+                cur.execute(
+                    """
+                    UPDATE app.managed_file_dispatches
+                    SET state = 'published',
+                        reconciliation_evidence = %s::jsonb,
+                        error_code = NULL,
+                        updated_at = NOW()
+                    WHERE id = %s
+                      AND execution_id = %s
+                      AND datastream_id = %s
+                      AND project_id = %s
+                      AND state IN ('promoting', 'reconcile_required')
+                      AND candidate_content_fingerprint = %s
+                      AND candidate_schema_fingerprint = %s
+                      AND landing_relation = %s
+                      AND row_count = %s
+                      AND dq_evidence->>'status' = 'passed'
+                    """,
+                    (
+                        json.dumps(
+                            {"phase": "publication_committed", **evidence},
+                            sort_keys=True,
+                        ),
+                        dispatch_id,
+                        execution_id,
+                        datastream_id,
+                        project_id,
+                        evidence["candidate_content_fingerprint"],
+                        evidence["candidate_schema_fingerprint"],
+                        evidence["landing_relation"],
+                        row_count,
+                    ),
+                )
+                if cur.rowcount != 1:
+                    raise PublicationError(
+                        "managed_file_dispatch_not_publishable",
+                        "scoped dispatch is absent or promotion is unproven",
+                    )
+
+            # THE RUN ENDED HERE, AND THE CLOSE IS NOT WRITTEN TWICE -- AI-223.
+            # Story 58.10 had to close the spans here, because this path did not
+            # cross `advance_state`: it ran `ready -> publishing -> published`
+            # with its own two UPDATEs. It crosses the machine now, and the
+            # machine closes the spans on every terminal transition, inside this
+            # same atomic group. A second call here would be a duplicate of a
+            # guarantee that already holds for every writer.
+            #
+            # The audit row of the publication is likewise the machine's, carrying
+            # the evidence this function used to write in a row of its own
+            # (`prior_execution_id`, `content_hash`, `row_count`,
+            # `publication_log_id`) -- see the `audit_metadata` above.
 
         # Single commit: all four writes + audit land together, or none do.
         conn.commit()
@@ -1025,15 +1486,19 @@ def commit_publication(
             conn.rollback()
         except Exception:  # pragma: no cover - rollback of an already-dead txn.
             pass
-        # Fail the execution OUT OF BAND (separate connection), never on `conn`.
-        code = getattr(exc, "code", "publication_error")
-        _fail_execution_out_of_band(
-            execution_id,
-            actor,
-            code,
-            "publication transaction rolled back",
-            connection_factory,
-        )
+        # A managed-file execution stays in durable `publishing`: its
+        # promotion may already have succeeded and the reconciliation owner must
+        # retry the final Postgres group. Standard publications retain the
+        # historical out-of-band failure behaviour.
+        if dispatch_id is None:
+            code = getattr(exc, "code", "publication_error")
+            _fail_execution_out_of_band(
+                execution_id,
+                actor,
+                code,
+                "publication transaction rolled back",
+                connection_factory,
+            )
         raise
 
     record = _fetch_execution(conn, execution_id, project_id)
@@ -1043,6 +1508,12 @@ def commit_publication(
         "execution": record,
         "publication_log_id": log_id,
         "prior_execution_id": prior_execution_id,
+        "ledger": (
+            {"id": ledger_id, "outcome": "published"}
+            if ledger_id is not None
+            else None
+        ),
+        "replayed": False,
     }
 
 
@@ -1203,7 +1674,7 @@ def reconcile_execution(
     # Only a stuck `publishing` execution is a cross-store partial-failure
     # candidate. Any other non-terminal state is inconclusive -> fail closed.
     if state != STATE_PUBLISHING:
-        _reconcile_fail_closed(execution_id, project_id, conn, datastream_id)
+        _reconcile_fail_closed(execution_id, project_id, conn)
         return {
             "resolved": False,
             "final_state": STATE_FAILED,
@@ -1231,24 +1702,28 @@ def reconcile_execution(
         cur.execute(
             """
             SELECT 1 FROM app.datastream_publication_log
-            WHERE execution_id = %s AND project_id = %s
+            WHERE execution_id = %s AND datastream_id = %s AND project_id = %s
             LIMIT 1
             """,
-            (execution_id, project_id),
+            (execution_id, datastream_id, project_id),
         )
         has_log = cur.fetchone() is not None
 
     if pointer == execution_id and has_log:
         # The atomic writes committed; only the final state advance was lost.
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                UPDATE app.datastream_executions
-                SET state = 'published', state_changed_at = NOW(), updated_at = NOW()
-                WHERE id = %s AND state = 'publishing'
-                """,
-                (execution_id,),
-            )
+        # AI-223: replayed through the machine, which is what makes this
+        # reconciliation an auditable state change and closes the step spans the
+        # interrupted commit left open. `state` was read under this same
+        # connection above and proven to be `publishing`.
+        advance_state(
+            execution_id,
+            STATE_PUBLISHING,
+            STATE_PUBLISHED,
+            "reconciler",
+            conn,
+            project_id=project_id,
+            audit_metadata={"action_taken": "resolved_to_published"},
+        )
         conn.commit()
         return {
             "resolved": True,
@@ -1260,7 +1735,7 @@ def reconcile_execution(
         # The transaction did NOT commit: no log row, pointer untouched. Safe to
         # fail this execution; the prior published state remains current.
         _reconcile_fail_closed(
-            execution_id, project_id, conn, datastream_id, note="no_commit_evidence"
+            execution_id, project_id, conn, note="no_commit_evidence"
         )
         return {
             "resolved": True,
@@ -1270,7 +1745,7 @@ def reconcile_execution(
 
     # Ambiguous (partial evidence: log without pointer, or pointer without log).
     # Cannot prove a safe published state -> fail closed.
-    _reconcile_fail_closed(execution_id, project_id, conn, datastream_id)
+    _reconcile_fail_closed(execution_id, project_id, conn)
     return {
         "resolved": False,
         "final_state": STATE_FAILED,
@@ -1282,42 +1757,32 @@ def _reconcile_fail_closed(
     execution_id: str,
     project_id: str,
     conn,
-    datastream_id: str,
     note: str = "reconciliation_inconclusive",
 ) -> None:
-    """Mark a stuck execution ``failed`` without moving the published pointer."""
-    from core.audit import (  # noqa: PLC0415
-        ACTION_DATASTREAM_PUBLICATION_FAILED,
-        insert_audit_row,
-    )
+    """Mark a stuck execution ``failed`` without moving the published pointer.
 
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            UPDATE app.datastream_executions
-            SET state = 'failed',
-                state_changed_at = NOW(),
-                updated_at = NOW(),
-                error_code = 'reconciliation_inconclusive',
-                error_detail = %s
-            WHERE id = %s
-              AND state NOT IN ('published', 'failed', 'cancelled')
-            """,
-            (note, execution_id),
+    AI-223: through the machine. The private UPDATE this replaces carried its own
+    ``AND NOT (state = ANY(TERMINAL_STATES))`` -- a no-op when the run had already
+    finished -- and STILL wrote an audit row saying it had failed the run. That
+    row recorded a state change that did not happen. The guard is kept, read
+    first, and the audit now follows the write instead of preceding it: no
+    movement, no row. `reconcile_execution` returns before ever calling this on a
+    terminal run, so the branch is a belt, not a path.
+    """
+    record = _fetch_execution(conn, execution_id, project_id)
+    current_state = (record or {}).get("state")
+    if record is not None and current_state not in TERMINAL_STATES:
+        advance_state(
+            execution_id,
+            current_state,
+            STATE_FAILED,
+            "reconciler",
+            conn,
+            project_id=project_id,
+            error_code="reconciliation_inconclusive",
+            error_detail=note,
+            audit_metadata={"reason": note},
         )
-    insert_audit_row(
-        conn,
-        identity="reconciler",
-        action=ACTION_DATASTREAM_PUBLICATION_FAILED,
-        provider_account="",
-        connection_ref="",
-        metadata={
-            "execution_id": execution_id,
-            "datastream_id": datastream_id,
-            "project_id": project_id,
-            "reason": note,
-        },
-    )
     conn.commit()
 
 
@@ -1366,3 +1831,68 @@ def get_execution(
     if record is None:
         raise ExecutionNotFound()
     return record
+
+
+def record_failed_execution(
+    conn,
+    *,
+    project_id: str,
+    datastream_id: str,
+    actor: str,
+    error_code: str,
+    error_detail: str,
+    idempotency_key: str,
+) -> str | None:
+    """Record a failure that happened BEFORE any import opened, as a run.
+
+    `spec-43-17b:26` forbids using the managed-feed ledger as the run universe:
+    `app.datastream_executions` is that universe, and the Runs tab reads it. But
+    an inbound failure that aborts before `open_import` wrote only to
+    `app.inbound_raw_imports`, so Runs showed nothing at all -- a person who came
+    to check whether their delivery had failed was shown an empty list.
+
+    Returns the execution id, or **None when there is nothing truthful to bind
+    to**: an execution must carry the plan and mapping version that produced it,
+    and a Datastream that has never had an executable pair has no run to record.
+    Inventing one would report a run that never existed, which is the failure
+    this module exists to prevent. The raw-import row remains the trace in that
+    case, and it is the honest one.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT current_plan_version_id, current_mapping_version_id
+                 FROM app.datastreams
+                WHERE id = %s AND project_id = %s AND archived_at IS NULL""",
+            (datastream_id, project_id),
+        )
+        row = cur.fetchone()
+    if not row or not row[0] or not row[1]:
+        return None
+    plan_version_id, mapping_version_id = row[0], row[1]
+
+    execution = create_execution(
+        datastream_id,
+        project_id,
+        plan_version_id,
+        mapping_version_id,
+        # The projection plan is the admission ticket for a run that WILL do
+        # work. This one already failed, so it declares exactly that and nothing
+        # else -- a fabricated plan would make the row look like an attempt that
+        # got further than it did.
+        {"executable": True, "kind": "inbound_precondition_failure"},
+        actor,
+        idempotency_key,
+        conn,
+    )
+    execution_id = str(execution["id"])
+    advance_state(
+        execution_id,
+        STATE_CREATED,
+        STATE_FAILED,
+        actor,
+        conn,
+        project_id=project_id,
+        error_code=error_code,
+        error_detail=error_detail,
+    )
+    return execution_id

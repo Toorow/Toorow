@@ -16,7 +16,15 @@ from typing import Any
 
 import pytest
 
+# This file's fixtures do DDL (disabling immutability triggers, ALTER TABLE), so
+# it needs the schema owner. As a plain application role every test in it dies on
+# "must be owner of table ...", which measures the connection and not the code.
+# The marker turns that into an honest skip naming the role it wants.
+pytestmark = pytest.mark.pg_owner
+
 ROOT = Path(__file__).resolve().parents[3]
+from tests.migration_ledger import apply_migrations_absent_from_the_ledger  # noqa: E402
+
 MIGRATION = ROOT / "infra" / "nango" / "migrations" / "032_datastream_field_mappings.sql"
 INTENT_MIGRATION = ROOT / "infra" / "nango" / "migrations" / "030_versioned_datastream_intents.sql"
 requires_postgres = pytest.mark.skipif(
@@ -82,10 +90,13 @@ def _seed_datastream_and_plan(conn: Any, project_id: str, ds_id: str, plan_id: s
 
 
 def _apply_migrations(conn: Any) -> None:
-    with conn.cursor() as cur:
-        cur.execute(INTENT_MIGRATION.read_text(encoding="utf-8"))
-        cur.execute(MIGRATION.read_text(encoding="utf-8"))
-    conn.commit()
+    """Ne rejouer que ce que le ledger ne porte pas -- voir `tests.migration_ledger`.
+
+    `030` et `032` sont ANTERIEURES a la `099` : les rejouer contre une base
+    migree recree `trg_datastream_plan_versions_immutable` et
+    `trg_datastream_mapping_versions_immutable` SANS la clause `rgpd_erasure`.
+    """
+    apply_migrations_absent_from_the_ledger(conn, (INTENT_MIGRATION, MIGRATION))
 
 
 def test_migration_declares_mapping_and_registry_contract() -> None:
@@ -147,7 +158,14 @@ def test_live_postgres_mapping_constraints_and_immutability(live_postgres: Any) 
             cur.execute("SAVEPOINT immutable_check")
 
         # Immutability trigger: UPDATE rejected.
-        with pytest.raises(psycopg.errors.RaiseException):
+        #
+        # The expected class used to be `RaiseException`, which is SQLSTATE
+        # P0001 -- what `RAISE EXCEPTION` produces when it declares no ERRCODE.
+        # `app.reject_datastream_mapping_version_mutation` declares
+        # `ERRCODE = '23000'`, so it raises `IntegrityConstraintViolation` and
+        # this assertion could never have held. It went unnoticed because no
+        # disposable database existed to run the file against until 2026-07-30.
+        with pytest.raises(psycopg.errors.IntegrityConstraintViolation):
             with conn.cursor() as cur:
                 cur.execute(
                     "UPDATE app.datastream_mapping_versions SET executable = false WHERE id = %s",
@@ -158,7 +176,7 @@ def test_live_postgres_mapping_constraints_and_immutability(live_postgres: Any) 
             cur.execute("SAVEPOINT delete_check")
 
         # Immutability trigger: DELETE rejected.
-        with pytest.raises(psycopg.errors.RaiseException):
+        with pytest.raises(psycopg.errors.IntegrityConstraintViolation):
             with conn.cursor() as cur:
                 cur.execute(
                     "DELETE FROM app.datastream_mapping_versions WHERE id = %s",
@@ -221,9 +239,11 @@ def test_live_postgres_registry_constraints(live_postgres: Any) -> None:
             with conn.cursor() as cur:
                 cur.execute(
                     """
+                    -- `value_type` is NOT NULL since migration 241, no default.
                     INSERT INTO app.mdm_canonical_fields
-                        (id, project_id, concept_kind, canonical_name, created_by)
-                    VALUES (%s, NULL, 'metric', 'spend', 'test')
+                        (id, project_id, concept_kind, canonical_name,
+                         value_type, created_by)
+                    VALUES (%s, NULL, 'metric', 'spend', 'money', 'test')
                     """,
                     (_mint_mdm_id(1),),
                 )
@@ -235,9 +255,11 @@ def test_live_postgres_registry_constraints(live_postgres: Any) -> None:
         with conn.cursor() as cur:
             cur.execute(
                 """
+                -- `value_type` is NOT NULL since migration 241, no default.
                 INSERT INTO app.mdm_canonical_fields
-                    (id, project_id, concept_kind, canonical_name, aggregation, created_by)
-                VALUES (%s, NULL, 'metric', 'spend', 'sum', 'test')
+                    (id, project_id, concept_kind, canonical_name, aggregation,
+                     value_type, created_by)
+                VALUES (%s, NULL, 'metric', 'spend', 'sum', 'money', 'test')
                 """,
                 (platform_id,),
             )
@@ -248,9 +270,11 @@ def test_live_postgres_registry_constraints(live_postgres: Any) -> None:
             with conn.cursor() as cur:
                 cur.execute(
                     """
+                    -- `value_type` is NOT NULL since migration 241, no default.
                     INSERT INTO app.mdm_canonical_fields
-                        (id, project_id, concept_kind, canonical_name, non_additive, created_by)
-                    VALUES (%s, NULL, 'metric', 'spend', true, 'test')
+                        (id, project_id, concept_kind, canonical_name, non_additive,
+                         value_type, created_by)
+                    VALUES (%s, NULL, 'metric', 'spend', true, 'money', 'test')
                     """,
                     (_mint_mdm_id(3),),
                 )
@@ -261,9 +285,11 @@ def test_live_postgres_registry_constraints(live_postgres: Any) -> None:
         with conn.cursor() as cur:
             cur.execute(
                 """
+                -- `value_type` is NOT NULL since migration 241, no default.
                 INSERT INTO app.mdm_canonical_fields
-                    (id, project_id, concept_kind, canonical_name, aggregation, created_by)
-                VALUES (%s, %s, 'metric', 'spend', 'sum', 'test')
+                    (id, project_id, concept_kind, canonical_name, aggregation,
+                     value_type, created_by)
+                VALUES (%s, %s, 'metric', 'spend', 'sum', 'money', 'test')
                 """,
                 (_mint_mdm_id(4), proj_id),
             )
@@ -274,9 +300,11 @@ def test_live_postgres_registry_constraints(live_postgres: Any) -> None:
             with conn.cursor() as cur:
                 cur.execute(
                     """
+                    -- `value_type` is NOT NULL since migration 241, no default.
                     INSERT INTO app.mdm_canonical_fields
-                        (id, project_id, concept_kind, canonical_name, non_additive, created_by)
-                    VALUES (%s, %s, 'metric', 'spend', true, 'test')
+                        (id, project_id, concept_kind, canonical_name, non_additive,
+                         value_type, created_by)
+                    VALUES (%s, %s, 'metric', 'spend', true, 'money', 'test')
                     """,
                     (_mint_mdm_id(5), proj_id),
                 )
@@ -289,9 +317,11 @@ def test_live_postgres_registry_constraints(live_postgres: Any) -> None:
             with conn.cursor() as cur:
                 cur.execute(
                     """
+                    -- `value_type` is NOT NULL since migration 241, no default.
                     INSERT INTO app.mdm_canonical_fields
-                        (id, project_id, concept_kind, canonical_name, created_by)
-                    VALUES ('not_a_ulid', NULL, 'dimension', 'country', 'test')
+                        (id, project_id, concept_kind, canonical_name,
+                         value_type, created_by)
+                    VALUES ('not_a_ulid', NULL, 'dimension', 'country', 'string', 'test')
                     """
                 )
         with conn.cursor() as cur:
@@ -303,10 +333,12 @@ def test_live_postgres_registry_constraints(live_postgres: Any) -> None:
             with conn.cursor() as cur:
                 cur.execute(
                     """
+                    -- `value_type` is NOT NULL since migration 241, no default.
                     INSERT INTO app.mdm_canonical_fields
                         (id, project_id, concept_kind, canonical_name,
-                         dictionary_field_name, created_by)
-                    VALUES (%s, NULL, 'dimension', 'country', 'no_such_dict_field', 'test')
+                         dictionary_field_name, value_type, created_by)
+                    VALUES (%s, NULL, 'dimension', 'country', 'no_such_dict_field',
+                            'string', 'test')
                     """,
                     (_mint_mdm_id(6),),
                 )
@@ -326,9 +358,11 @@ def test_live_postgres_registry_constraints(live_postgres: Any) -> None:
         with conn.cursor() as cur:
             cur.execute(
                 """
+                -- `value_type` is NOT NULL since migration 241, no default.
                 INSERT INTO app.mdm_canonical_fields
-                    (id, project_id, concept_kind, canonical_name, aggregation, created_by)
-                VALUES (%s, NULL, 'metric', 'spend', 'sum', 'test')
+                    (id, project_id, concept_kind, canonical_name, aggregation,
+                     value_type, created_by)
+                VALUES (%s, NULL, 'metric', 'spend', 'sum', 'money', 'test')
                 """,
                 (_mint_mdm_id(7),),
             )
@@ -361,9 +395,11 @@ def test_live_postgres_mapping_binding_fk_rejects_unknown_registry_target() -> N
             )
             cur.execute(
                 """
+                -- `value_type` is NOT NULL since migration 241, no default.
                 INSERT INTO app.mdm_canonical_fields
-                    (id, project_id, concept_kind, canonical_name, aggregation, created_by)
-                VALUES (%s, NULL, 'metric', 'cost', 'sum', 'test')
+                    (id, project_id, concept_kind, canonical_name, aggregation,
+                     value_type, created_by)
+                VALUES (%s, NULL, 'metric', 'cost', 'sum', 'money', 'test')
                 """,
                 (good_target,),
             )

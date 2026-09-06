@@ -48,6 +48,8 @@ seam, French user-facing microcopy, ASCII-only source.
 from __future__ import annotations
 
 import hashlib
+import hmac
+import secrets
 import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -55,6 +57,7 @@ from typing import Any
 
 from ulid import ULID
 
+from core.mcp_attestation import mint_context_id
 from core.operations import MutationResult, OperationResult, OperationSpec, execute_operation
 
 # Preflight lifecycle. The install/authorization machinery (OAuth-style) reuses the
@@ -187,9 +190,7 @@ def _canonical_hash(value: Any) -> str:
 
 def _is_hex64(value: Any) -> bool:
     return (
-        isinstance(value, str)
-        and len(value) == 64
-        and all(c in "0123456789abcdef" for c in value)
+        isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
     )
 
 
@@ -225,7 +226,7 @@ def resolve_ui_support(entry: HostCapabilityEntry) -> dict[str, Any]:
         },
         "explanation": (
             "L'hote ne prend pas en charge l'interface applicative : bascule sur "
-            "les outils standard avec preuve bornee obligatoire (lien console en aide)."
+            "the standard tools with mandatory bounded evidence (console link in help)."
         ),
     }
 
@@ -282,7 +283,11 @@ def preflight_host(
         raise HostPreflightValidationError("task organization does not match the preflight")
     if row[4] != _HOST_TASK_STEP_KEY:
         raise HostPreflightValidationError("task is not the host connection step")
-    if row[3] not in {"waiting", "blocked", "ready"}:
+    # A COMPLETED step does not close the door (2026-09-04): the step is the
+    # organization's FIRST host connection, and a second host -- or the same host
+    # bound again with another profile -- is prepared on the same step long after
+    # onboarding. Only a step that is not there to be resumed refuses.
+    if row[3] not in {"waiting", "blocked", "ready", "completed"}:
         raise HostPreflightConflict("setup task cannot start a preflight")
 
     preflight_id = f"hostpf_{ULID()}"
@@ -290,6 +295,16 @@ def preflight_host(
     expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_in_hours)
     dated_at = entry.dated_at
 
+    # THE SERVER MINTS THE PROOF (migration 343, 2026-09-04). Both evidences are
+    # random per preflight, kept on its row, returned to the `manage` holder who
+    # prepared it, and the bind accepts a proof only when it EQUALS one of these.
+    # Minted once, before the operation, so an idempotent replay returns the same.
+    minted_workspace_evidence = hashlib.sha256(
+        f"workspace:{preflight_id}:{secrets.token_hex(32)}".encode()
+    ).hexdigest()
+    minted_presence_evidence = hashlib.sha256(
+        f"presence:{preflight_id}:{secrets.token_hex(32)}".encode()
+    ).hexdigest()
     spec = OperationSpec(
         command_type="host.preflight.prepare",
         actor=actor,
@@ -301,7 +316,7 @@ def preflight_host(
         request_payload={
             # Opaque host identifier + capability facts only; no brand behaviour.
             "preflight_id": preflight_id,
-            "host_key": entry.host_key,
+            "host_entry": entry.host_key,
             "capabilities": list(entry.capabilities),
             "plan_constraints": entry.plan_constraints,
             "required_role": entry.required_role,
@@ -322,9 +337,10 @@ def preflight_host(
                 "INSERT INTO app.host_preflights "
                 "(id,host_key,org_id,project_id,task_id,capabilities,plan_constraints,"
                 "required_role,ui_supported,ui_support_mode,catalog_refresh,"
-                "workspace_proof_required,dated_at,state,expires_at,operation_id) "
+                "workspace_proof_required,dated_at,state,expires_at,operation_id,"
+                "minted_workspace_evidence_hash,minted_presence_evidence_hash) "
                 "VALUES (%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s,%s,%s::jsonb,%s,%s,"
-                "'prepared',%s,%s)",
+                "'prepared',%s,%s,%s,%s)",
                 (
                     preflight_id,
                     entry.host_key,
@@ -341,12 +357,18 @@ def preflight_host(
                     dated_at,
                     expires_at,
                     operation_id,
+                    minted_workspace_evidence,
+                    minted_presence_evidence,
                 ),
             )
         result = {
             "preflight_id": preflight_id,
-            "host_key": entry.host_key,
+            "host_entry": entry.host_key,
             "state": "prepared",
+            # The proofs this preflight will accept at bind -- handed to the
+            # authenticated `manage` holder who prepared it, never derived by a host.
+            "workspace_evidence_hash": minted_workspace_evidence,
+            "interactive_presence_evidence_hash": minted_presence_evidence,
             "capabilities": list(entry.capabilities),
             "plan_constraints": entry.plan_constraints,
             "required_role": entry.required_role,
@@ -363,7 +385,7 @@ def preflight_host(
             result=result,
             outbox_payload={
                 "preflight_id": preflight_id,
-                "host_key": entry.host_key,
+                "host_entry": entry.host_key,
                 "transition": "prepared",
             },
         )
@@ -471,6 +493,7 @@ def bind_host_connection(
     workspace_type: str | None,
     client_id: str | None,
     policy_version: str,
+    interactive_presence_evidence_hash: str | None = None,
     actor: str,
     idempotency_key: str,
     host_context: dict[str, Any],
@@ -503,14 +526,16 @@ def bind_host_connection(
 
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id,host_key,org_id,project_id,task_id,workspace_proof_required,state "
+            "SELECT id,host_key,org_id,project_id,task_id,workspace_proof_required,state,"
+            "minted_workspace_evidence_hash,minted_presence_evidence_hash "
             "FROM app.host_preflights WHERE id=%s FOR UPDATE",
             (preflight_id,),
         )
         row = cur.fetchone()
     if row is None:
         raise HostPreflightUnavailable("host preflight unavailable")
-    (_pid, host_key, org_id, project_id, task_id, proof_required, state) = row
+    (_pid, host_key, org_id, project_id, task_id, proof_required, state) = row[:7]
+    minted_workspace, minted_presence = (tuple(row) + (None, None))[7:9]
     if state in TERMINAL_STATES:
         if state == "bound":
             raise HostPreflightConflict("host preflight already bound")
@@ -522,7 +547,17 @@ def bind_host_connection(
     # Determine which profiles may actually bind. High-risk profiles require BOTH
     # the host entry to require proof AND a valid 64-hex workspace evidence hash.
     requested = [p for p in (enabled_profiles or []) if isinstance(p, str)]
-    proof_ok = bool(proof_required) and _is_hex64(workspace_evidence_hash)
+    # A PROOF IS THE ONE THE SERVER MINTED, OR IT IS NOTHING (migration 343). The
+    # shape check alone let any sixty-four hexadecimal characters open a high-risk
+    # profile -- or rather, since nothing minted them, let nobody open one. Equality
+    # with the preflight's own minted value is what "verifiable" means here; a
+    # preflight prepared before 343 minted none and therefore binds no proof.
+    proof_ok = (
+        bool(proof_required)
+        and _is_hex64(workspace_evidence_hash)
+        and _is_hex64(minted_workspace)
+        and hmac.compare_digest(str(workspace_evidence_hash), str(minted_workspace))
+    )
     bound_profiles: list[str] = [_DEFAULT_PROFILE]
     for profile in requested:
         if profile == _DEFAULT_PROFILE:
@@ -538,7 +573,19 @@ def bind_host_connection(
     catalog_version = mcp_profiles.catalog_version(connection_class)
     # Only persist the evidence hash when it is actually honoured (proof_ok).
     evidence_to_bind = workspace_evidence_hash if (binds_high_risk and proof_ok) else None
-    context_id = f"mcpctx_{ULID()}"
+    # 67-16: the interactive-presence proof AD-27 requires for a `confirmed_write`
+    # is a column of this row too, so `interactive_presence_verified` reads it from
+    # the same attested source as the other three grants instead of from a claim.
+    presence_to_bind = (
+        interactive_presence_evidence_hash
+        if (
+            _is_hex64(interactive_presence_evidence_hash)
+            and _is_hex64(minted_presence)
+            and hmac.compare_digest(str(interactive_presence_evidence_hash), str(minted_presence))
+        )
+        else None
+    )
+    context_id = mint_context_id()
 
     spec = OperationSpec(
         command_type="host.preflight.bind",
@@ -559,7 +606,7 @@ def bind_host_connection(
         request_payload={
             "preflight_id": preflight_id,
             "context_id": context_id,
-            "host_key": host_key,
+            "host_entry": host_key,
             "endpoint_binding": endpoint_binding,
             "enabled_profiles": bound_profiles,
             "connection_class": connection_class,
@@ -579,8 +626,9 @@ def bind_host_connection(
             cur.execute(
                 "INSERT INTO app.mcp_capability_contexts "
                 "(id,org_id,host,workspace_id,workspace_type,client_id,endpoint_binding,"
-                "enabled_profiles,workspace_evidence_hash,policy_version,catalog_version) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s)",
+                "enabled_profiles,workspace_evidence_hash,"
+                "interactive_presence_evidence_hash,policy_version,catalog_version) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s)",
                 (
                     context_id,
                     org_id,
@@ -591,6 +639,7 @@ def bind_host_connection(
                     endpoint_binding,
                     json.dumps(bound_profiles),
                     evidence_to_bind,
+                    presence_to_bind,
                     policy_version,
                     catalog_version,
                 ),
@@ -627,7 +676,7 @@ def bind_host_connection(
                 "preflight_id": preflight_id,
                 "capability_context_id": context_id,
                 "transition": "bound",
-                "host_key": host_key,
+                "host_entry": host_key,
             },
         )
 
@@ -729,8 +778,7 @@ def _transition(
         raise HostPreflightValidationError("unsupported preflight state")
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT state,org_id,host_key FROM app.host_preflights "
-            "WHERE id=%s FOR UPDATE",
+            "SELECT state,org_id,host_key FROM app.host_preflights WHERE id=%s FOR UPDATE",
             (preflight_id,),
         )
         row = cur.fetchone()
@@ -762,8 +810,7 @@ def _transition(
     def mutation(operation_conn, _operation_id: str) -> MutationResult:
         with operation_conn.cursor() as cur:
             cur.execute(
-                "UPDATE app.host_preflights SET state=%s,updated_at=NOW() "
-                "WHERE id=%s AND state=%s",
+                "UPDATE app.host_preflights SET state=%s,updated_at=NOW() WHERE id=%s AND state=%s",
                 (target_state, preflight_id, current_state),
             )
             if cur.rowcount != 1 and current_state != target_state:
@@ -777,7 +824,7 @@ def _transition(
             outbox_payload={
                 "preflight_id": preflight_id,
                 "transition": target_state,
-                "host_key": host_key,
+                "host_entry": host_key,
             },
         )
 

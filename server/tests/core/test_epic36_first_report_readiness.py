@@ -232,7 +232,7 @@ def test_readiness_is_versioned_and_derives_all_required_fields(patched):
     # All-green truth -> ready + enabled CTA.
     assert r["overall"] == "ready"
     assert r["host_cta"] == "enabled"
-    assert "prêt" in r["headline"].lower()
+    assert "ready" in r["headline"].lower()
 
 
 def test_readiness_version_is_deterministic_and_change_sensitive(patched):
@@ -257,7 +257,7 @@ def test_partial_history_recent_ok_is_degraded_never_ready(patched):
     assert r["overall"] != "ready"
     assert r["host_cta"] != "enabled"  # not enabled while degraded
     assert r["host_cta"] == "degraded"
-    assert "prêt" not in r["headline"].lower()  # never "fully ready"
+    assert "ready" not in r["headline"].lower()  # never "fully ready"
     # The recent result stays available despite the failed history marker.
     assert r["recent_coverage"]["state"] == "covered"
     hist_phase = next(p for p in r["phases"] if p["phase"] == "history")
@@ -288,7 +288,7 @@ def test_no_recent_publication_is_blocked_and_cta_disabled(patched):
     assert r["overall"] == "blocked"
     assert r["host_cta"] == "disabled"
     assert r["current_publication"] is None
-    assert "indisponible" in r["headline"].lower()
+    assert "unavailable" in r["headline"].lower()
 
 
 def test_recent_failed_is_blocked(patched):

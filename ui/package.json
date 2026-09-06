@@ -9,7 +9,8 @@
     "build:sample": "pnpm --filter @toorow/widget-sample build",
     "bundle-check": "node scripts/bundle-check.mjs widgets/sample/dist/index.html",
     "bundle-check:widget": "node scripts/bundle-check.mjs widgets/sample/dist/index.html --max-bytes 1500000",
-    "bundle-check:admin": "node scripts/bundle-check.mjs admin/dist/index.html --max-bytes 3000000"
+    "bundle-check:admin": "node scripts/bundle-check.mjs admin/dist --max-bytes 6000000",
+    "test:bundle-check": "node --test scripts/bundle-check.test.mjs"
   },
   "devDependencies": {
     "style-dictionary": "^4.3.0"

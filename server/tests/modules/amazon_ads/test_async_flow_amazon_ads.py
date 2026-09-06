@@ -500,9 +500,15 @@ def test_catalog_daily_core_resolved_default_submits_valid_spcampaigns(
 
 
 @respx.mock
-def test_404_status_only_key_maps_to_invalid_request(connector, async_hooks):
-    """The manifest status-only error_map (module-side decision) covers 404,
-    which core's pure-HTTP fallback would leave unclassified."""
+def test_404_status_override_maps_to_invalid_request(connector, async_hooks):
+    """404 is a status-level judgment, and AI-114 moved it out of the manifest.
+
+    core's pure-HTTP table leaves 404 `unclassified` -- i.e. RETRYABLE, for a
+    report id that will never exist. connector._STATUS_OVERRIDES makes it
+    invalid_request. It used to be a bare "404" key in manifest.error_map read
+    by a module-side lookup: one declaration with two readers and two key
+    grammars, which is the duplication AI-114 names. Same verdict, one reader.
+    """
     respx.post(_REPORTS_URL).mock(
         return_value=httpx.Response(404, json={"code": "404", "details": "not found"})
     )

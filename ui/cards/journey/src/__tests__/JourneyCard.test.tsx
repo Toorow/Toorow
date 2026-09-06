@@ -15,7 +15,7 @@ import type { CardEnvelope } from "@toorow/card-shell";
 describe("Journey card — fixture renders without throwing", () => {
   it("renders the card title", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
-    expect(screen.getByTestId("card-title")).toHaveTextContent("Parcours utilisateur");
+    expect(screen.getByTestId("card-title")).toHaveTextContent("User Journey");
   });
 
   it("renders the funnel block with its stages from block.data.steps", () => {
@@ -80,9 +80,9 @@ describe("Journey card — stale and partial fixture scenarios (F-10)", () => {
   it("renders non-blank state with stale fixture (freshness badge visible)", () => {
     render(<App envelope={FIXTURE_ENVELOPE_STALE} />);
     expect(screen.getByTestId("card-shell")).toBeInTheDocument();
-    expect(screen.getByTestId("card-title")).toHaveTextContent("Parcours utilisateur");
-    // Freshness badge from MAJ 2026-07-11
-    expect(screen.getByTestId("card-freshness-badge")).toHaveTextContent("MAJ 2026-07-11");
+    expect(screen.getByTestId("card-title")).toHaveTextContent("User Journey");
+    // Freshness badge from Updated 2026-07-11
+    expect(screen.getByTestId("card-freshness-badge")).toHaveTextContent("Updated 2026-07-11");
   });
 
   it("renders partial fixture without crash (single funnel step, null overall_rate)", () => {

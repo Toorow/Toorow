@@ -10,7 +10,14 @@ audited REST route that promotes/demotes an org's plan by delegating to
       -> set_org_plan(org_id, plan, entitlements, granted_by=<caller>).
          200 {org_id, plan} on success.
 
-GATING (deny-by-default, AD-7 audited):
+  GET /api/organizations/{org_id}/plan            (AI-176, 2026-08-04)
+      The MEMBER's read of the same state -- plan, effective limits, and the
+      usage compared against them. Member-scoped (404 for a non-member), never
+      super-admin. Added because 34.1..34.3 shipped enforcement with no way for
+      the person to see the ceiling before hitting it: `grep -ril entitlement
+      ui/admin/src` returned zero files, and this module exposed writes only.
+
+GATING (deny-by-default, AD-7 audited) -- the POST only:
   * Bearer token required (core.api_auth) -> 401 when absent/invalid.
   * Caller identity MUST be in the TOOROW_SUPER_ADMINS allow-list
     (core.super_admin.is_super_admin). A non-super-admin gets 404 -- we do NOT
@@ -34,10 +41,22 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
+from core.audit import declare_action
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12). Celles-ci n'etaient declarees NULLE PART : la valeur
+# etait retapee en dur ici, parce que la liste centrale de `core/audit.py`
+# etait trop loin pour valoir le detour. Mesure ce jour-la sur le journal
+# vivant : 29 des 64 actions reellement ecrites -- 45 % -- etaient dans ce
+# cas, et rien ne pouvait distinguer une action d'une faute de frappe.
+ACTION_ORG_PLAN_CHANGED = declare_action("org_plan.changed")
+
+
 logger = logging.getLogger(__name__)
 
 # Audit action for the plan change (string literal -- no edit to core.audit constants).
-_ACTION_ORG_PLAN_CHANGED = "org_plan.changed"
+_ACTION_ORG_PLAN_CHANGED = ACTION_ORG_PLAN_CHANGED
 
 # Deny-by-default 404 body: identical shape whether the org exists or not so a
 # non-super-admin cannot probe org existence via this surface.
@@ -70,7 +89,7 @@ async def _set_org_plan(request: Request) -> Response:
     OR the toorow-admin service (X-Provision-Token shared secret). Anyone else: the
     surface stays hidden (404 for an authenticated non-super-admin, 401 if no auth).
     """
-    from core.super_admin import is_super_admin  # noqa: PLC0415
+    from core.super_admin import identity_is_super_admin  # noqa: PLC0415
 
     identity = _service_identity_or_none(request)
     if identity is None:
@@ -82,7 +101,14 @@ async def _set_org_plan(request: Request) -> Response:
                 {"code": "unauthorized", "message": "Token d'acces requis"}, status_code=401
             )
         # Deny-by-default: a caller not in the allow-list gets 404 (surface hidden).
-        if not is_super_admin(oauth_identity):
+        #
+        # Resolved, not compared raw. `authenticate_api_request` returns a
+        # `person_<ULID>` in canonical mode, and the allow-list is keyed by email:
+        # the direct comparison that stood here could never be true, so this human
+        # path was DEAD and only the X-Provision-Token service path worked
+        # (audit 12, P1-2). The resolver translates the person to its verified
+        # email; a legacy identity, already an email, is unaffected.
+        if not identity_is_super_admin(oauth_identity):
             logger.info("org_plan_api: denied non-super-admin identity=%r", oauth_identity)
             return JSONResponse(_NOT_FOUND, status_code=404)
         identity = oauth_identity
@@ -146,6 +172,81 @@ async def _set_org_plan(request: Request) -> Response:
     return JSONResponse({"org_id": org_id, "plan": plan}, status_code=200)
 
 
+async def _get_org_plan(request: Request) -> Response:
+    """GET /api/organizations/{org_id}/plan -- what THIS org's members may read.
+
+    The write above is the super-admin's; this is the member's. It existed
+    nowhere until 2026-08-04 (AI-176): the trial caps were enforced in the create
+    path and readable by no one, so the person hit a 409 for a ceiling they had
+    never been shown.
+
+    Read-only, and deliberately narrow -- it discloses the plan, the effective
+    limits and the usage that is compared against them. It never discloses
+    ``granted_by``: who inside toorow moved an org's plan is operator
+    information, not tenant information.
+
+    Scoping follows the 7.4 pattern used by ``_get_org``: a non-member gets 404,
+    not 403 -- org existence is not disclosed by this surface either.
+    """
+    from core.api_auth import authenticate_api_request  # noqa: PLC0415
+
+    authorized, identity = await authenticate_api_request(request)
+    if not authorized:
+        return JSONResponse(
+            {"code": "unauthorized", "message": "Token d'acces requis"}, status_code=401
+        )
+
+    org_id = (request.path_params.get("org_id") or "").strip()
+    if not org_id:
+        return JSONResponse(
+            {"code": "missing_field", "message": "org_id est requis"}, status_code=422
+        )
+
+    from core.db import get_connection  # noqa: PLC0415
+    from core.org_entitlements import get_org_plan, resolve_entitlements  # noqa: PLC0415
+    from core.project_access import identity_has_org_access  # noqa: PLC0415
+    from core.trial_enforcement import count_active_datastreams  # noqa: PLC0415
+
+    try:
+        with get_connection() as conn:
+            if not identity_has_org_access(org_id, identity or "anonymous", conn):
+                return JSONResponse(_NOT_FOUND, status_code=404)
+            # Counted on the SAME connection as the access check so the number
+            # cannot drift between the two reads.
+            active_datastreams = count_active_datastreams(org_id, conn)
+        record = get_org_plan(org_id)
+        limits = resolve_entitlements(org_id)
+    except Exception as exc:
+        logger.error("org_plan_api: get_org_plan_error org=%s: %s", org_id, exc)
+        # Fail CLOSED on read, unlike the enforcement guard: inventing "no plan"
+        # or "no usage" here would render a counter that lies. 503 makes the
+        # console say the surface is unavailable instead.
+        return JSONResponse(
+            {"code": "unavailable", "message": "Lecture du plan indisponible"},
+            status_code=503,
+        )
+
+    granted_at = record.get("granted_at")
+    return JSONResponse(
+        {
+            "org_id": org_id,
+            "plan": record["plan"],
+            # `None` = no cap (full/internal). The console must render that as
+            # "unlimited", never as the number 0.
+            "limits": {
+                "max_datastreams": limits.get("max_datastreams"),
+                "max_backfill_days": limits.get("max_backfill_days"),
+            },
+            "usage": {"active_datastreams": active_datastreams},
+            "granted_at": (
+                granted_at.isoformat() if hasattr(granted_at, "isoformat") else granted_at
+            ),
+        },
+        status_code=200,
+    )
+
+
 ORG_PLAN_ROUTES = [
     Route("/api/admin/org-plan", endpoint=_set_org_plan, methods=["POST"]),
+    Route("/api/organizations/{org_id}/plan", endpoint=_get_org_plan, methods=["GET"]),
 ]

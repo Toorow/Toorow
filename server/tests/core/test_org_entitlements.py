@@ -51,6 +51,48 @@ def _pg_reachable() -> bool:
         return False
 
 
+def _ddl_dsn() -> str:
+    """The DSN a DDL fixture must use, or an honest skip.
+
+    Every test in this file applies migration 056 and then inspects what it
+    created. That is DDL, and DDL needs the SCHEMA OWNER: connected as the
+    application role, `_apply_migration` dies with
+    `InsufficientPrivilege: must be owner of table org_plan` -- ten failures that
+    say nothing about migration 056 and everything about which role was dialled.
+
+    `conftest.py:535` already carries this rule for tests that take the
+    `live_postgres` fixture, and skips them with a message naming the role. This
+    file opens its own connections, so the marker never fired and the tests failed
+    instead of skipping. `scripts/disposable_postgres.py env` exposes
+    `TEST_POSTGRES_OWNER_DSN` for exactly this -- nothing consumed it until now.
+
+    Prefer the owner DSN; otherwise run only if the app role happens to own the
+    schema, and skip saying so if it does not. A skip is the honest outcome: the
+    test was not run, and that is not the same as passing.
+    """
+    import psycopg  # noqa: PLC0415
+
+    owner = os.environ.get("TEST_POSTGRES_OWNER_DSN")
+    if owner:
+        return owner
+    dsn = os.environ["TEST_POSTGRES_DSN"]
+    with psycopg.connect(dsn, connect_timeout=2) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT current_user, pg_has_role(current_user, "
+                "  (SELECT tableowner FROM pg_tables "
+                "    WHERE schemaname='app' AND tablename='organizations'), 'MEMBER')"
+            )
+            role, owns = cur.fetchone()
+    if not owns:
+        pytest.skip(
+            f"needs an owning role for its DDL fixture; connected as {role!r}. "
+            "Set TEST_POSTGRES_OWNER_DSN (disposable_postgres.py env exports it) "
+            "or point TEST_POSTGRES_DSN at the schema owner for this file."
+        )
+    return dsn
+
+
 pg_available = pytest.mark.skipif(not _pg_reachable(), reason="platform Postgres not reachable")
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -65,10 +107,38 @@ _MIGRATION_056 = (
 
 
 def _apply_migration(conn) -> None:
-    sql = _MIGRATION_056.read_text(encoding="utf-8")
+    """Ensure migration 056's objects exist -- WITHOUT replaying it over a
+    database that has moved past it.
+
+    This re-executed `056_org_plan_entitlements.sql` at the top of every test.
+    On an empty database that is harmless; on a migrated one it is a **silent
+    downgrade**. 056 contains `CREATE OR REPLACE FUNCTION
+    app.org_plan_history_block_mutation`, and migration 098 later rewrote that
+    same function to honour `app.rgpd_erasure` -- the hatch `core/org_purge.py`
+    relies on to erase a tenant. Replaying 056 put the pre-098 body back, so the
+    org teardown was refused by a trigger the repository had already fixed, and
+    four tests failed on a defect they had themselves re-introduced seconds
+    earlier.
+
+    A migration is not idempotent with respect to HISTORY: re-running an early
+    one on a database at head reverts every later edit to the objects it names.
+    The ledger is the authority on what is applied (`toorow_meta.schema_migrations`),
+    so this now checks rather than replays, and skips honestly if the objects are
+    genuinely absent -- a database that has not been migrated is not something a
+    test should repair on the fly.
+    """
     with conn.cursor() as cur:
-        cur.execute(sql)
-    conn.commit()
+        cur.execute(
+            "SELECT to_regclass('app.org_plan'), to_regclass('app.org_plan_history')"
+        )
+        plan, history = cur.fetchone()
+    if plan and history:
+        return
+    pytest.skip(
+        "app.org_plan / app.org_plan_history are absent: this database has not "
+        "been migrated. Run scripts/apply_migrations.py rather than replaying "
+        "056 here -- replaying it reverts every later fix to the objects it names."
+    )
 
 
 def _create_test_org(conn, org_id: str) -> None:
@@ -86,9 +156,29 @@ def _create_test_org(conn, org_id: str) -> None:
 
 
 def _cleanup_org(conn, org_id: str) -> None:
-    """Remove test org and its plan rows (CASCADE handles plan + history)."""
-    with conn.cursor() as cur:
-        cur.execute("DELETE FROM app.organizations WHERE id = %s", (org_id,))
+    """Remove the test org and its plan rows.
+
+    "CASCADE handles plan + history" was true of the foreign keys and false of the
+    triggers: `app.org_plan_history` is APPEND-ONLY (Story 34.1), and its trigger
+    refuses a DELETE whoever issues it -- including the one arriving through the
+    cascade from `app.organizations`. So this teardown raised
+    `RaiseException: append-only ... DELETE blocked`, in a `finally`, which then
+    poisoned the transaction for the rest of the file. Four tests failed on it
+    while the behaviour they assert was correct all along.
+
+    Migration 098 gives append-only ledgers one way out, and exactly one:
+    `app.rgpd_erasure`, the flag an erasure sets on itself. `purge_org_tree` uses
+    it for the same reason. `SET LOCAL` scopes it to this transaction, so it
+    disappears on commit AND on rollback and cannot leak into a pooled session.
+    """
+    from tests.conftest import purge_fixture_org  # noqa: PLC0415
+
+    # `purge_fixture_org` walks the whole FK tree AND sets `app.rgpd_erasure`
+    # itself. A hand-rolled DELETE names a handful of children out of 177 and is
+    # refused by the RESTRICT ones -- `mdm_business_domains_org_id_fkey` here,
+    # exactly the constraint `test_org_enforcement.py::_drop_org` documents.
+    # Third file to meet this; the answer has not changed.
+    purge_fixture_org(conn, org_id)
     conn.commit()
 
 
@@ -102,7 +192,7 @@ def test_migration_056_tables_exist():
     """AC1: migration 056 creates app.org_plan and app.org_plan_history."""
     import psycopg  # noqa: PLC0415
 
-    with psycopg.connect(os.environ["TEST_POSTGRES_DSN"]) as conn:
+    with psycopg.connect(_ddl_dsn()) as conn:
         _apply_migration(conn)
         with conn.cursor() as cur:
             cur.execute(
@@ -123,7 +213,7 @@ def test_migration_056_org_plan_columns():
     """AC1: app.org_plan has the required columns with correct types/defaults."""
     import psycopg  # noqa: PLC0415
 
-    with psycopg.connect(os.environ["TEST_POSTGRES_DSN"]) as conn:
+    with psycopg.connect(_ddl_dsn()) as conn:
         _apply_migration(conn)
         with conn.cursor() as cur:
             cur.execute(
@@ -155,7 +245,7 @@ def test_org_plan_history_append_only_update_blocked():
     """AC1: UPDATE on app.org_plan_history raises (append-only trigger fires)."""
     import psycopg  # noqa: PLC0415
 
-    with psycopg.connect(os.environ["TEST_POSTGRES_DSN"]) as conn:
+    with psycopg.connect(_ddl_dsn()) as conn:
         _apply_migration(conn)
         org_id = f"org_test_{uuid.uuid4().hex[:8]}"
         _create_test_org(conn, org_id)
@@ -190,7 +280,7 @@ def test_org_plan_history_append_only_delete_blocked():
     """AC1: DELETE on app.org_plan_history raises (append-only trigger fires)."""
     import psycopg  # noqa: PLC0415
 
-    with psycopg.connect(os.environ["TEST_POSTGRES_DSN"]) as conn:
+    with psycopg.connect(_ddl_dsn()) as conn:
         _apply_migration(conn)
         org_id = f"org_test_{uuid.uuid4().hex[:8]}"
         _create_test_org(conn, org_id)
@@ -222,7 +312,7 @@ def test_org_plan_history_append_only_truncate_blocked():
     """AC1: TRUNCATE on app.org_plan_history raises (statement-level trigger fires)."""
     import psycopg  # noqa: PLC0415
 
-    with psycopg.connect(os.environ["TEST_POSTGRES_DSN"]) as conn:
+    with psycopg.connect(_ddl_dsn()) as conn:
         _apply_migration(conn)
         with pytest.raises(psycopg.errors.RaiseException):
             with conn.cursor() as cur:
@@ -260,6 +350,47 @@ def test_resolve_entitlements_trial_default_bounded():
         limits = oe.resolve_entitlements("org_new")
 
     assert limits["max_backfill_days"] == 30
+    assert limits["max_datastreams"] == 3
+
+
+def test_trial_org_owned_by_a_platform_admin_has_no_cap():
+    """Directive Jean, 2026-08-05 : pas de quota pour l'admin plateforme.
+
+    Le plan `internal` existait deja, mais il fallait le poser a la main sur
+    chaque organisation -- donc la premiere org creee ensuite retombait sous le
+    plafond d'essai, et il fallait redemander. Le plafond suit desormais le
+    PROPRIETAIRE, pas une exception accordee a une organisation.
+    """
+    with (
+        patch.object(oe, "_fetch_org_plan_row", return_value=None),
+        patch.object(oe, "_owned_by_platform_admin", return_value=True),
+    ):
+        limits = oe.resolve_entitlements("org_owned_by_admin")
+
+    assert limits["max_datastreams"] is None
+    assert limits["max_backfill_days"] is None
+
+
+def test_trial_org_owned_by_anyone_else_keeps_its_cap():
+    """La portee reste etroite : sans proprietaire admin plateforme, rien ne change."""
+    with (
+        patch.object(oe, "_fetch_org_plan_row", return_value=None),
+        patch.object(oe, "_owned_by_platform_admin", return_value=False),
+    ):
+        limits = oe.resolve_entitlements("org_client")
+
+    assert limits["max_datastreams"] == 3
+    assert limits["max_backfill_days"] == 30
+
+
+def test_an_unreadable_owner_check_keeps_the_cap():
+    """FAIL-CLOSED : une lecture ratee refuse un flux, elle n'ouvre pas le plan complet."""
+    with patch.object(oe, "_fetch_org_plan_row", return_value=None):
+        # `get_connection` n'est pas joignable dans ce test : la sonde leve, et
+        # `_owned_by_platform_admin` doit rendre False plutot que de propager.
+        assert oe._owned_by_platform_admin("org_unreadable") is False
+        limits = oe.resolve_entitlements("org_unreadable")
+
     assert limits["max_datastreams"] == 3
 
 
@@ -363,7 +494,7 @@ def test_set_org_plan_upsert_and_history_written():
     """AC4 (pg-gated): set_org_plan writes org_plan + one history row in same transaction."""
     import psycopg  # noqa: PLC0415
 
-    with psycopg.connect(os.environ["TEST_POSTGRES_DSN"]) as conn:
+    with psycopg.connect(_ddl_dsn()) as conn:
         _apply_migration(conn)
         org_id = f"org_test_{uuid.uuid4().hex[:8]}"
         _create_test_org(conn, org_id)
@@ -412,7 +543,7 @@ def test_set_org_plan_upsert_writes_second_history_row():
     """AC4 (pg-gated): calling set_org_plan twice writes 2 history rows (audit trail)."""
     import psycopg  # noqa: PLC0415
 
-    with psycopg.connect(os.environ["TEST_POSTGRES_DSN"]) as conn:
+    with psycopg.connect(_ddl_dsn()) as conn:
         _apply_migration(conn)
         org_id = f"org_test_{uuid.uuid4().hex[:8]}"
         _create_test_org(conn, org_id)
@@ -452,7 +583,7 @@ def test_set_org_plan_unknown_org_id_raises():
     """AC4 (pg-gated): set_org_plan rejects unknown org_id without partial DB state."""
     import psycopg  # noqa: PLC0415
 
-    with psycopg.connect(os.environ["TEST_POSTGRES_DSN"]) as conn:
+    with psycopg.connect(_ddl_dsn()) as conn:
         _apply_migration(conn)
 
     nonexistent_org = f"org_ghost_{uuid.uuid4().hex}"
@@ -488,7 +619,7 @@ def test_migration_056_idempotent():
     """AC5: applying migration 056 twice does not raise (IF NOT EXISTS everywhere)."""
     import psycopg  # noqa: PLC0415
 
-    with psycopg.connect(os.environ["TEST_POSTGRES_DSN"]) as conn:
+    with psycopg.connect(_ddl_dsn()) as conn:
         _apply_migration(conn)
         # Second apply must be a no-op (idempotent).
         _apply_migration(conn)
@@ -499,7 +630,7 @@ def test_migration_056_plan_check_constraint():
     """AC5: plan column rejects values outside the enum (DB-level CHECK)."""
     import psycopg  # noqa: PLC0415
 
-    with psycopg.connect(os.environ["TEST_POSTGRES_DSN"]) as conn:
+    with psycopg.connect(_ddl_dsn()) as conn:
         _apply_migration(conn)
         org_id = f"org_test_{uuid.uuid4().hex[:8]}"
         _create_test_org(conn, org_id)

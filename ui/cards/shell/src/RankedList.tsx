@@ -18,10 +18,10 @@
  * Strings françaises (UX-DR10).
  */
 
-import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
-import { useTheme } from "@mui/material/styles";
 import { getVizPalette } from "./vizTheme";
+import { verdictColor, verdictTone } from "./verdictTone";
+import { formatMeasure } from "./viz/theme/formatters";
+import { Box, Typography, useTheme } from "@toorow/shell";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -49,11 +49,9 @@ export interface RankedListProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Formate un nombre en fr-FR ou retourne « — » si null. */
+/** The number and its unit go through the pinned formatter (story 76-8). */
 function fmtNum(v: number | null | undefined, unit?: string): string {
-  if (v === null || v === undefined) return "—";
-  const formatted = v.toLocaleString("fr-FR");
-  return unit ? `${formatted} ${unit}` : formatted;
+  return formatMeasure(v, unit);
 }
 
 interface DeltaResult {
@@ -89,15 +87,14 @@ function resolveDelta(
     };
   }
 
-  // up_good : positif = bon (success), négatif = mauvais (error)
-  // down_good : positif = mauvais (error), négatif = bon (success)
-  const isGood =
-    direction === "up_good" ? isPositive : !isPositive;
+  // ONE function decides every verdict on a card, so the colour here and the
+  // sentence the card footer prints cannot disagree (story 76-8, round 2).
+  const verdict = verdictTone(delta, direction);
 
   return {
     symbol: isPositive ? "▲" : "▼",
     label: isPositive ? "en hausse" : "en baisse",
-    colorKey: isGood ? "success" : "error",
+    colorKey: verdict === "favourable" ? "success" : verdict === "unfavourable" ? "error" : "secondary",
   };
 }
 
@@ -135,11 +132,14 @@ export default function RankedList({
 
   const sliced = maxRows !== undefined ? entries.slice(0, maxRows) : entries;
 
+  // The verdict is decided ONCE, by `verdictTone`, and turned into a colour
+  // ONCE, by `verdictColor`: a local mapping here is a second decision waiting
+  // to drift from the legend the card footer prints (story 76-8, round 2).
   function resolveColor(
     colorKey: "success" | "error" | "secondary" | null,
   ): string {
-    if (colorKey === "success") return theme.palette.success.main;
-    if (colorKey === "error") return theme.palette.error.main;
+    if (colorKey === "success") return verdictColor(theme, "favourable", theme.palette.text.secondary);
+    if (colorKey === "error") return verdictColor(theme, "unfavourable", theme.palette.text.secondary);
     if (colorKey === "secondary") return theme.palette.text.secondary;
     // null (delta indéfini) : non utilisé (on n'affiche pas de symbole)
     return theme.palette.text.secondary;

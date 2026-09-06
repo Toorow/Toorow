@@ -26,7 +26,12 @@
 
 -- No publication context (pure-dbt v1 / CI): honest NULL is legitimate. The
 -- completeness assertion does not apply; emit zero rows (pass).
-SELECT 1 AS execution_id WHERE 1 = 0
+{#- `SELECT 1 ... WHERE 1 = 0` sans FROM : DuckDB l accepte, BigQuery repond
+    *Query without FROM clause cannot have a WHERE clause* -- et c est la branche
+    que la PRODUCTION prend (aucun contexte de publication au tir nocturne), donc
+    ce test etait refuse chaque nuit. Mesure 2026-08-24 par un dry run a 0 octet.
+    La forme portable vit dans un macro (AI-314). -#}
+{{ toorow_empty_projection([['execution_id', 'int']]) }}
 
 {% else %}
 

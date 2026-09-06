@@ -1,0 +1,12 @@
+org_id,project_id,node_id,namespace,locale,raw_value,normalized_value,relation,confidence,effective_from,effective_to,provenance,conflict_state,scenario
+org_GOVALIAS,proj_GOVALIAS,mdnode_RESOLVED,__gov_ns__,,Chain One,chain one,exact,1.0000,0001-01-01,,import,none,resolved
+org_GOVALIAS,proj_GOVALIAS,mdnode_SPACING,__gov_ns__,,Chain   Two,chain two,exact,1.0000,0001-01-01,,import,none,whitespace_and_case
+org_GOVALIAS,proj_GOVALIAS,mdnode_INEXACT,__gov_ns__,,Chain Three-ish,chain three,close,0.9000,0001-01-01,,import,none,inexact_only
+org_GOVALIAS,proj_GOVALIAS,mdnode_CONFLICT_A,__gov_ns__,,Chain Four,chain four,exact,1.0000,0001-01-01,,import,contradiction,conflicted
+org_GOVALIAS,proj_GOVALIAS,mdnode_AMBIG_A,__gov_ns__,,Chain Five,chain five,exact,1.0000,2026-01-01,2026-12-31,import,none,ambiguous_overlap
+org_GOVALIAS,proj_GOVALIAS,mdnode_AMBIG_B,__gov_ns__,,Chain Five,chain five,exact,1.0000,2026-03-01,2026-09-30,import,none,ambiguous_overlap
+org_GOVALIAS,proj_GOVALIAS,mdnode_EXPIRED,__gov_ns__,,Chain Six,chain six,exact,1.0000,2025-01-01,2026-01-31,import,none,window_closed_before
+org_GOVALIAS,proj_GOVALIAS,mdnode_FUTURE,__gov_ns__,,Chain Seven,chain seven,exact,1.0000,2026-11-01,,import,none,window_opens_after
+org_GOVALIAS,,mdnode_ORGWIDE,__gov_ns__,,Chain Eight,chain eight,exact,1.0000,0001-01-01,,operator,none,org_wide_alias
+org_GOVALIAS,proj_OTHER,mdnode_OTHERPROJ,__gov_ns__,,Chain Nine,chain nine,exact,1.0000,0001-01-01,,import,none,other_project_alias
+org_GOVALIAS,proj_GOVALIAS,mdnode_OTHERNS,__gov_other_ns__,,Chain Ten,chain ten,exact,1.0000,0001-01-01,,import,none,other_namespace

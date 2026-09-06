@@ -26,19 +26,21 @@ describe("Funnel", () => {
 
   it("renders through-rates between steps", () => {
     render(<Funnel steps={STEPS} ariaLabel="Entonnoir" />);
-    // Entre étape 0 (10000) et étape 1 (4000) = 40%
-    expect(screen.getByTestId("funnel-through-rate-1")).toHaveTextContent("40 %");
-    // Entre étape 1 (4000) et étape 2 (1200) = 30%
-    expect(screen.getByTestId("funnel-through-rate-2")).toHaveTextContent("30 %");
+    // Step 0 (10000) to step 1 (4000) = 40% passed, i.e. a change of -60%.
+    const row1 = screen.getByTestId("funnel-through-rate-1");
+    expect(row1).toHaveTextContent("40% passed");
+    expect(screen.getByTestId("funnel-step-variation-1")).toHaveTextContent("-60.0%");
+    expect(screen.getByTestId("funnel-step-variation-1")).toHaveTextContent("▼");
+    expect(row1).toHaveTextContent("vs previous step");
+    // Step 1 (4000) to step 2 (1200) = 30% passed.
+    expect(screen.getByTestId("funnel-through-rate-2")).toHaveTextContent("30% passed");
   });
 
   it("renders step values (the number 10000 appears in some form)", () => {
     render(<Funnel steps={STEPS} ariaLabel="Entonnoir" />);
     const funnel = screen.getByTestId("funnel");
-    // fr-FR locale uses narrow no-break space (U+202F) as thousands separator.
-    // Normalize to compare as plain text.
-    const text = (funnel.textContent ?? "").replace(/[  ]/g, " ");
-    expect(text).toContain("10 000");
+    const text = funnel.textContent ?? "";
+    expect(text).toContain("10,000");
   });
 
   it("renders the designed empty state when steps is empty", () => {
@@ -67,10 +69,12 @@ describe("Funnel", () => {
     ];
     render(<Funnel steps={invertedSteps} ariaLabel="Entonnoir inversé" />);
     const rateEl = screen.getByTestId("funnel-through-rate-1");
-    expect(rateEl).toHaveTextContent("150 %");
+    expect(rateEl).toHaveTextContent("150% passed");
+    // The arrow announces the SIGNED change, not the passage rate.
+    expect(screen.getByTestId("funnel-step-variation-1")).toHaveTextContent("+50.0%");
     // Must contain anomaly marker
-    expect(rateEl).toHaveTextContent("anomalie");
-    // Must NOT have success colour — assert the raw MUI color prop is "warning.main"
+    expect(rateEl).toHaveTextContent("anomaly");
+    // Must NOT have success colour — assert the raw color prop is "warning.main"
     // (we test the rendered text, not the CSS colour which requires full theme rendering)
     expect(rateEl.textContent).toContain("⚠");
   });
@@ -84,8 +88,8 @@ describe("Funnel", () => {
     ];
     render(<Funnel steps={steps} successThreshold={10} ariaLabel="Entonnoir seuil" />);
     const rateEl = screen.getByTestId("funnel-through-rate-1");
-    expect(rateEl).toHaveTextContent("40 %");
+    expect(rateEl).toHaveTextContent("40% passed");
     // With threshold=10, 40% is success — no anomaly text.
-    expect(rateEl.textContent).not.toContain("anomalie");
+    expect(rateEl.textContent).not.toContain("anomaly");
   });
 });

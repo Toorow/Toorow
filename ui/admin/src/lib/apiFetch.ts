@@ -108,8 +108,8 @@ export function apiGet<T>(path: string, init: RequestInit = {}): Promise<T> {
   return apiJson<T>(path, { ...init, method: "GET", cache: init.cache ?? "no-store" });
 }
 
-export function apiPost<T>(path: string, body?: unknown): Promise<T> {
-  return apiJson<T>(path, jsonInit("POST", body));
+export function apiPost<T>(path: string, body?: unknown, init: RequestInit = {}): Promise<T> {
+  return apiJson<T>(path, { ...jsonInit("POST", body), ...init });
 }
 
 export function apiPatch<T>(path: string, body?: unknown): Promise<T> {

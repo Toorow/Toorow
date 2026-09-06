@@ -51,14 +51,58 @@ def _upsert_health(
                     -- poll only knows auth state, so it must not clear a data
                     -- red flag. Cleared by verification writing 'ok' after a
                     -- successful verified pull; 'revoked' (auth dead) trumps.
+                    --
+                    -- AI-341: provider_denied is sticky for the SAME reason --
+                    -- the poll reads local token state and cannot see what the
+                    -- provider refused at pull time. Lifted by the verified
+                    -- 'ok' pull (clear_connection_health_red), trumped only by
+                    -- 'revoked'.
                     SET status = CASE
-                            WHEN app.connection_health.status = 'populate_failed'
+                            WHEN app.connection_health.status
+                                     IN ('populate_failed', 'provider_denied')
                                  AND EXCLUDED.status <> 'revoked'
-                            THEN 'populate_failed'
+                            THEN app.connection_health.status
                             ELSE EXCLUDED.status
                         END,
                         last_checked_at = EXCLUDED.last_checked_at,
-                        last_fetched_at = EXCLUDED.last_fetched_at
+                        last_fetched_at = EXCLUDED.last_fetched_at,
+                        -- AI-302 / migration 276: the columns that NAME the pull
+                        -- behind a red belong to the red. `revoked` is the one
+                        -- status that overrides a sticky red here, and once it
+                        -- does, the label describes a state the row no longer
+                        -- holds -- so it is dropped in the SAME statement that
+                        -- drops the status. Everywhere else the sticky branch
+                        -- keeps both, unchanged.
+                        populate_failed_pull_id = CASE
+                                WHEN app.connection_health.status = 'populate_failed'
+                                     AND EXCLUDED.status <> 'revoked'
+                                THEN app.connection_health.populate_failed_pull_id
+                                ELSE NULL
+                            END,
+                        populate_failed_verdict = CASE
+                                WHEN app.connection_health.status = 'populate_failed'
+                                     AND EXCLUDED.status <> 'revoked'
+                                THEN app.connection_health.populate_failed_verdict
+                                ELSE NULL
+                            END,
+                        populate_failed_at = CASE
+                                WHEN app.connection_health.status = 'populate_failed'
+                                     AND EXCLUDED.status <> 'revoked'
+                                THEN app.connection_health.populate_failed_at
+                                ELSE NULL
+                            END,
+                        provider_denied_pull_id = CASE
+                                WHEN app.connection_health.status = 'provider_denied'
+                                     AND EXCLUDED.status <> 'revoked'
+                                THEN app.connection_health.provider_denied_pull_id
+                                ELSE NULL
+                            END,
+                        provider_denied_at = CASE
+                                WHEN app.connection_health.status = 'provider_denied'
+                                     AND EXCLUDED.status <> 'revoked'
+                                THEN app.connection_health.provider_denied_at
+                                ELSE NULL
+                            END
                 """,
                 {
                     "id": conn_ref_id,
@@ -112,7 +156,14 @@ def _run_one_poll_cycle() -> int:
 
     for ref in refs:
         conn_ref_id = ref["id"]
-        nango_connection_id = ref["nango_connection_id"]
+        # A google_direct row has NO nango_connection_id (migration 128), and
+        # passing None made `poll_connection_health` resolve nothing and fall
+        # through to Nango, which has never heard of the connection -- so every
+        # freshly consented Google authorization was written back as `revoked`
+        # within one poll cycle, then read as unusable everywhere. The resolver
+        # already accepts either identifier space; the poller has to hand it the
+        # one that exists.
+        nango_connection_id = ref["nango_connection_id"] or conn_ref_id
         provider = ref.get("provider")
 
         try:
@@ -195,6 +246,16 @@ def start_health_poller() -> None:
     enabled = os.environ.get("HEALTH_POLLER_ENABLED", "true").lower()
     if enabled != "true":
         logger.info("health_poller: disabled via HEALTH_POLLER_ENABLED=%s", enabled)
+        return
+
+    # Story 56.6 (AD-36): under the push backend health is refreshed at the EVENT
+    # that changes it (a consent granted, a connection revoked) and swept daily by
+    # Cloud Scheduler at /internal/scheduler/poll-health. The thread would add a
+    # third dispatcher that cannot run anyway: at --min-instances=0 Cloud Run
+    # allocates no CPU between requests, which is why last_checked_at stood still
+    # for eight and a half hours across a re-consent on 2026-07-31.
+    if os.environ.get("QUEUE_BACKEND", "local") == "cloud_tasks":
+        logger.info("health_poller: skipped for QUEUE_BACKEND=cloud_tasks (event + daily sweep)")
         return
 
     # review-2-5 F-03: double-start guard — build_asgi_app() may be called

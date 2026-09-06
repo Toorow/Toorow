@@ -48,6 +48,38 @@ def test_discovery_preserves_timezone_currency(connector):
     assert row["timezone"] == "Europe/Paris"
     assert row["currency"] == "EUR"
     assert proxy.call_args.kwargs["base_url_override"] == "https://ads-api.x.com"
+    # L'`id` est la SEULE chaine que le coeur persiste et rend au pull : ce doit
+    # etre l'identifiant de compte X Ads, pas un numero d'ordre de decouverte.
+    assert row["id"] == "a1"
+
+
+def test_the_manifest_declares_the_parameter_that_carries_the_account():
+    manifest = json.loads((MODULE_DIR / "manifest.json").read_text())
+    assert manifest["account_topology"]["pull_parameter"] == "account_id"
+
+
+def test_pull_reads_the_account_from_its_declared_parameter(connector, tmp_path, monkeypatch):
+    seen: list[str] = []
+
+    def fake_async(connection_id, account_id, request, *, _proxy=None, **kw):
+        seen.append(account_id)
+        return {"status": "completed", "rows": []}
+
+    monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "t.duckdb"))
+    monkeypatch.setattr(connector, "run_async_stats", fake_async)
+    connector.pull("conn", "2026-01-01", "2026-01-03", "proj_EXAMPLE", "pull-1", account_id="a1")
+    assert seen == ["a1"]
+
+
+def test_a_missing_account_is_typed_and_names_the_selection(connector):
+    with pytest.raises(connector.XAdsOnboardingError, match="account_id"):
+        connector.pull("conn", "2026-01-01", "2026-01-03", "proj_EXAMPLE", "pull-1")
+
+
+def test_no_environment_fallback_for_the_account(connector, monkeypatch):
+    monkeypatch.setenv("X_ADS_ACCOUNT_ID", "leak")
+    with pytest.raises(connector.XAdsOnboardingError):
+        connector.pull("conn", "2026-01-01", "2026-01-03", "proj_EXAMPLE", "pull-1")
 
 
 def test_empty_discovery_is_typed(connector):
@@ -185,7 +217,8 @@ def test_prefer_sync_routes_short_window_to_sync_path(connector, tmp_path, monke
         "proj-1",
         "pull-1",
         "campaign_daily",
-        {"account_id": "acc1", "prefer_sync": True},
+        {"prefer_sync": True},
+        "acc1",
     )
     # prefer_sync=True must have taken the sync branch, not async
     assert calls["sync"] == 1, "prefer_sync=True should route to sync_stats"
@@ -217,7 +250,8 @@ def test_prefer_sync_false_takes_async_path(connector, tmp_path, monkeypatch):
         "proj-1",
         "pull-2",
         "campaign_daily",
-        {"account_id": "acc1"},  # no prefer_sync → defaults to async
+        {},  # no prefer_sync → defaults to async
+        "acc1",
     )
     assert calls["async"] == 1, "Without prefer_sync, short window must still use async"
     assert calls["sync"] == 0

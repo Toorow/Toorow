@@ -41,16 +41,16 @@ describe("DataTable — rendu", () => {
 
   it("right-aligns numeric cell values (tabular-nums class pattern)", () => {
     render(<DataTable columns={COLUMNS} rows={ROWS} />);
-    // Clicks column: numeric -> first row value 420 formatted as fr-FR
+    // Clicks column: numeric -> first row value 420 on the pinned formatter
     const clicksCells = screen.getAllByTestId("cell-clicks");
     expect(clicksCells[0]).toHaveTextContent("420");
   });
 
-  it("formats numeric values with fr-FR locale", () => {
+  it("formats numeric values on the pinned formatter, one convention per card", () => {
     render(<DataTable columns={COLUMNS} rows={ROWS} />);
     const cells = screen.getAllByTestId("cell-impressions");
-    // 8500 in fr-FR: "8 500"
-    expect(cells[0]).toHaveTextContent("8 500");
+    // 8500 through FORMATTER_LOCALE: "8,500" (story 76-8).
+    expect(cells[0]).toHaveTextContent("8,500");
   });
 
   it("respects maxRows", () => {
@@ -102,7 +102,7 @@ describe("DataTable — état vide", () => {
   it("renders the designed empty state when rows is empty", () => {
     render(<DataTable columns={COLUMNS} rows={[]} />);
     expect(screen.getByTestId("data-table-empty")).toBeInTheDocument();
-    expect(screen.getByTestId("data-table-empty")).toHaveTextContent("Aucune donnée disponible");
+    expect(screen.getByTestId("data-table-empty")).toHaveTextContent("No data available");
   });
 
   it("renders the designed empty state when columns is empty", () => {

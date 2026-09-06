@@ -79,14 +79,15 @@ def test_record_run_inserts_run_and_items_atomically():
     )
 
     assert run_id.startswith("dir_")
-    # SELECT existing, INSERT run, INSERT item x2
-    assert len(calls) == 4
-    assert "SELECT id FROM app.daily_insight_runs" in calls[0][0]
-    assert "INSERT INTO app.daily_insight_runs" in calls[1][0]
-    assert calls[2][0].strip().startswith("INSERT INTO app.daily_insights")
-    assert "ON CONFLICT (project_id, insight_date, slot)" in calls[2][0]
+    # SELECT retracted slots (321), SELECT existing, INSERT run, INSERT item x2
+    assert len(calls) == 5
+    assert "retracted_at IS NOT NULL" in calls[0][0]
+    assert "SELECT id FROM app.daily_insight_runs" in calls[1][0]
+    assert "INSERT INTO app.daily_insight_runs" in calls[2][0]
+    assert calls[3][0].strip().startswith("INSERT INTO app.daily_insights")
+    assert "ON CONFLICT (project_id, insight_date, slot)" in calls[3][0]
     # payload_hash computed and passed (position 6 in the item insert params)
-    assert isinstance(calls[2][1][6], str) and len(calls[2][1][6]) == 64
+    assert isinstance(calls[3][1][6], str) and len(calls[3][1][6]) == 64
     conn.commit.assert_called_once()
     conn.rollback.assert_not_called()
 

@@ -13,21 +13,42 @@
     "canonical_dimension_mapping"
   ],
   "properties": {
-    "schema_version": { "type": "string", "pattern": "^1(\\.[0-9]+)?$" },
-    "name": { "type": "string", "pattern": "^[a-z0-9-]+$" },
-    "display_name": { "type": "string", "minLength": 1 },
+    "schema_version": {
+      "type": "string",
+      "pattern": "^1(\\.[0-9]+)?$"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1
+    },
     "auth_type": {
       "type": "string",
-      "enum": ["oauth1", "oauth2", "api_key", "none", "google_direct", "basic"],
+      "enum": [
+        "oauth1",
+        "oauth2",
+        "api_key",
+        "none",
+        "google_direct",
+        "basic"
+      ],
       "description": "review-15-9 F-7: 'google_direct' added as a first-class auth family (AD-21, Epic 18). The Google stack (GA4/GSC/Google Ads/Sheets) uses a single server-side OAuth consent whose encrypted token lives in app.connection_ref -- NOT Nango. This is distinct from generic 'oauth2' (Nango-brokered) so a manifest's auth_type no longer contradicts its auth.type='google_direct' block. 'basic' (woocommerce, epic-25) is a first-class family for self-hosted providers that authenticate with a STATIC key/secret pair over HTTP Basic auth and carry a per-connection base URL -- brokered by Nango (core.nango_client.get_basic_credentials), distinct from single-secret 'api_key'. Documented platform-contract evolution."
     },
     "public_catalog": {
       "type": "object",
-      "required": ["visibility"],
+      "required": [
+        "visibility"
+      ],
       "properties": {
         "visibility": {
           "type": "string",
-          "enum": ["public", "hidden"]
+          "enum": [
+            "public",
+            "hidden"
+          ]
         },
         "category": {
           "type": "string",
@@ -48,16 +69,32 @@
           "uniqueItems": true,
           "items": {
             "type": "string",
-            "enum": ["connector_pull", "managed_feed", "context_source"]
+            "enum": [
+              "connector_pull",
+              "managed_feed",
+              "context_source"
+            ]
           }
         },
         "verification": {
           "type": "object",
-          "required": ["status", "reason_code", "follow_up"],
+          "required": [
+            "status",
+            "reason_code",
+            "follow_up"
+          ],
           "properties": {
-            "status": { "const": "blocked" },
-            "reason_code": { "type": "string", "minLength": 1 },
-            "follow_up": { "type": "string", "minLength": 1 }
+            "status": {
+              "const": "blocked"
+            },
+            "reason_code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "follow_up": {
+              "type": "string",
+              "minLength": 1
+            }
           },
           "additionalProperties": false
         }
@@ -65,11 +102,21 @@
       "allOf": [
         {
           "if": {
-            "properties": { "visibility": { "const": "public" } },
-            "required": ["visibility"]
+            "properties": {
+              "visibility": {
+                "const": "public"
+              }
+            },
+            "required": [
+              "visibility"
+            ]
           },
           "then": {
-            "required": ["category", "onboarding_modes", "verification"]
+            "required": [
+              "category",
+              "onboarding_modes",
+              "verification"
+            ]
           }
         }
       ],
@@ -80,35 +127,78 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["id", "display_name", "metrics", "dimensions", "extraction_capabilities"],
+        "required": [
+          "id",
+          "display_name",
+          "metrics",
+          "dimensions",
+          "extraction_capabilities"
+        ],
         "properties": {
-          "id": { "type": "string" },
-          "display_name": { "type": "string", "minLength": 1 },
-          "metrics": { "type": "array", "items": { "type": "string" } },
-          "dimensions": { "type": "array", "items": { "type": "string" } },
+          "id": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "metrics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "dimensions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "events": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Epic 31: for a landing='context_events' profile -- the kind='event' field ids it emits (metrics/dimensions stay empty). Absent for kpi profiles."
           },
           "extraction_capabilities": {
             "type": "object",
-            "required": ["row_limit", "filters_supported", "realtime"],
+            "required": [
+              "row_limit",
+              "filters_supported",
+              "realtime"
+            ],
             "properties": {
-              "row_limit": { "type": ["integer", "null"] },
-              "filters_supported": { "type": "boolean" },
-              "realtime": { "type": "boolean" }
+              "row_limit": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "filters_supported": {
+                "type": "boolean"
+              },
+              "realtime": {
+                "type": "boolean"
+              }
             }
           },
           "extraction_path": {
             "type": "string",
-            "enum": ["airbyte_sync", "custom_pull"],
+            "enum": [
+              "airbyte_sync",
+              "custom_pull"
+            ],
             "description": "Story 3.1: Optional extraction route. Absent = 'custom_pull' at runtime. 'airbyte_sync' triggers AirbyteClient instead of module pull()."
           },
           "landing": {
             "type": "string",
-            "enum": ["fact_daily_kpi", "context_events"],
-            "description": "Epic 31: where this profile lands. Absent = derived at load (module_kind=='context' -> context_events, else fact_daily_kpi). Per-profile, so a connector may mix kpi and event profiles."
+            "enum": [
+              "fact_daily_kpi",
+              "context_events",
+              "derived_object"
+            ],
+            "description": "Epic 31: where this profile lands. Absent = derived at load (module_kind=='context' -> context_events, else fact_daily_kpi). Per-profile, so a connector may mix kpi and event profiles. Story 64.14: `derived_object` lands the rows of a DESCRIPTIVE stream -- a datastream whose data_role is Context or Reference & targets describes objects rather than measuring them, and lands neither in fact_daily_kpi (not measures) nor in context_events (not project-by-date events)."
           }
         }
       }
@@ -116,23 +206,39 @@
     "canonical_event_mapping": {
       "type": "object",
       "description": "Epic 31: source event id -> canonical event_type (governed by dbt/seeds/dim_event_type.csv). Strict parallel of canonical_metric_mapping. Only meaningful for connectors declaring an event profile (landing=context_events).",
-      "additionalProperties": { "type": "string" }
+      "additionalProperties": {
+        "type": "string"
+      }
     },
     "canonical_metric_mapping": {
       "type": "object",
       "additionalProperties": {
         "oneOf": [
-          { "type": "string" },
+          {
+            "type": "string"
+          },
           {
             "type": "object",
-            "required": ["canonical", "aggregation_rule"],
+            "required": [
+              "canonical",
+              "aggregation_rule"
+            ],
             "properties": {
-              "canonical": { "type": "string" },
+              "canonical": {
+                "type": "string"
+              },
               "aggregation_rule": {
                 "type": "string",
-                "enum": ["impression_weighted", "sum", "max", "latest"]
+                "enum": [
+                  "impression_weighted",
+                  "sum",
+                  "max",
+                  "latest"
+                ]
               },
-              "non_additive": { "type": "boolean" }
+              "non_additive": {
+                "type": "boolean"
+              }
             },
             "additionalProperties": false,
             "description": "Schema v1.1: non-additive metric descriptor with declared aggregation_rule (AD-4). Supported rules: impression_weighted (GSC average_position), sum (additive default)."
@@ -142,38 +248,154 @@
     },
     "canonical_dimension_mapping": {
       "type": "object",
-      "additionalProperties": { "type": "string" }
+      "additionalProperties": {
+        "type": "string"
+      }
     },
-    "widget_ref": { "type": "string", "pattern": "^ui://" },
+    "widget_ref": {
+      "type": "string",
+      "pattern": "^ui://"
+    },
     "module_kind": {
       "type": "string",
-      "enum": ["kpi", "context"],
+      "enum": [
+        "kpi",
+        "context"
+      ],
       "description": "Schema v1.1: 'kpi' (default) produces fact_daily_kpi rows; 'context' produces context_events rows only. DEPRECATED as a product concept (Epic 31): a connector is the sum of its profiles' 'landing' values, not a single kind. Retained only as the derivation source for a profile's default 'landing' (absent landing + module_kind=='context' -> context_events). New connectors should set 'landing' per profile; module_kind stays for backward compatibility."
+    },
+    "history_deduplication": {
+      "type": "object",
+      "description": "Declares that this connector can read a VERSIONED HISTORY table -- one row per entity per sync batch -- and under which pull() parameter the operator's declaration arrives. Optional: a connector that declares none reads every table flat. The declaration itself is NOT here: which column identifies an entity and which orders the batches is a property of the table the operator selected, not of the connector, so it travels with the external object plan. What the manifest fixes is the contract between the two -- the parameter name, and the keys the declaration carries.",
+      "required": [
+        "pull_parameter",
+        "declaration"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "pull_parameter": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "The keyword argument of the module's pull() that receives the declaration. Same rule as account_topology.pull_parameter: a name pull() does not declare means the operator's choice is dropped at the last metre, silently."
+        },
+        "declaration": {
+          "type": "object",
+          "description": "The keys the declaration carries, keyed by the selector role each one fills. `entity_key` and `version` are roles a column's TYPE must be able to fill, offered by the connector's own column-role map; `labels` are the columns a sync batch may have written NULL and whose last non-NULL value must survive.",
+          "required": [
+            "entity_key",
+            "version",
+            "labels"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "entity_key": {
+              "type": "string",
+              "description": "Key carrying the column, or columns, a row repeats on across batches. Required in a declaration."
+            },
+            "version": {
+              "type": "string",
+              "description": "Key carrying the single column that orders the sync batches. Required in a declaration, and refused when the column's type cannot be ordered."
+            },
+            "labels": {
+              "type": "string",
+              "description": "Key carrying the columns whose last non-NULL value must be retained. Optional in a declaration; absent, only the body of the most recent version is kept."
+            }
+          }
+        },
+        "_note": {
+          "type": "string"
+        }
+      }
+    },
+    "raw_landing": {
+      "type": "object",
+      "description": "How this connector's rows reach the raw zone on a BigQuery deployment, and WHY that method was chosen. Optional: a connector that declares none takes the deployment default (TOOROW_BQ_WRITE_MODE). Declared per connector because the three methods differ in price, in latency and in delivery guarantee -- that is a property of the connector's data, not an ambient setting someone should have to infer from a log line.",
+      "required": [
+        "method",
+        "rationale"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "enum": [
+            "load",
+            "stream",
+            "storage_write"
+          ],
+          "description": "load: batch job, ingestion not billed, minutes of latency. stream: tabledata.insertAll, JSON over HTTPS, at-least-once, billed at the higher rate, needs no extra dependency. storage_write: BigQuery Storage Write API, protobuf over gRPC, exactly-once commits and the cheaper per-GB rate, needs google-cloud-bigquery-storage."
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Why this method and not the other two, in terms of THIS connector's data: its volume, how fresh it must be, and whether duplicates matter before staging supersedes them."
+        }
+      }
     },
     "quota": {
       "type": "object",
       "description": "Optional per-platform quota budget. When absent, the platform has unlimited budget (no pre-check, no circuit breaker). All numeric fields must be positive integers.",
-      "required": ["window_seconds", "budget_points", "read_cost", "write_cost"],
+      "required": [
+        "window_seconds",
+        "budget_points",
+        "read_cost",
+        "write_cost"
+      ],
       "properties": {
-        "window_seconds": { "type": "integer", "exclusiveMinimum": 0 },
-        "budget_points":  { "type": "integer", "exclusiveMinimum": 0 },
-        "read_cost":      { "type": "integer", "exclusiveMinimum": 0 },
-        "write_cost":     { "type": "integer", "exclusiveMinimum": 0 }
+        "window_seconds": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "budget_points": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "read_cost": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "write_cost": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        }
       },
       "additionalProperties": true
     },
     "source_capabilities": {
       "$ref": "source-capabilities.schema.json#/$defs/descriptor"
+    },
+    "business_domain": {
+      "type": "string",
+      "enum": [
+        "sales",
+        "marketing",
+        "product",
+        "engineering",
+        "finance",
+        "legal"
+      ],
+      "description": "The connector's business domain BY NATURE, as one of the seeded organization roots. The context seed links the connector's platform knowledge card to this domain so the taxonomy walk finds it. Absent means honestly unmapped (generic utilities)."
     }
   },
   "allOf": [
     {
       "if": {
         "properties": {
-          "schema_version": {"not": {"enum": ["1", "1.0", "1.1"]}}
+          "schema_version": {
+            "not": {
+              "enum": [
+                "1",
+                "1.0",
+                "1.1"
+              ]
+            }
+          }
         }
       },
-      "then": {"required": ["source_capabilities"]}
+      "then": {
+        "required": [
+          "source_capabilities"
+        ]
+      }
     }
   ]
 }

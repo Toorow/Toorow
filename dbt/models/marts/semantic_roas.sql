@@ -15,8 +15,11 @@
 --   units BEFORE the ratio divide: a monetary component whose canonical metric is declared
 --   native_unit='micros' in dbt/seeds/money_metric_units.csv lands canonical micros in the
 --   mart, so its SUM is divided by 1e6 ONCE (view-level, outside the SUM — never per row).
---   revenue and cost are declared 'decimal' (they land decimal into fact_daily_kpi via the
---   incumbent AD-6 FX-at-staging), so the /1e6 branch is NEVER taken here and the output is
+--   revenue and cost are declared 'decimal' (FX-at-read, Story 39.10 repaired by 48.3:
+--   staging keeps the immutable source-currency DECIMAL amount and fact_daily_kpi converts
+--   it ONCE through the fx_convert_at_read macro, so what reaches this view is a
+--   reporting-currency decimal — never micros; an unconvertible row is NULL, not a parity
+--   sum), so the /1e6 branch is NEVER taken here and the output is
 --   BYTE-IDENTICAL for the currently-wired connectors (E39-NFR06). The branch activates only
 --   the day a canonical-micros money metric reaches the mart (e.g. GAM wired later), keeping
 --   the ratio unit-correct then. The 1e6 divide and the ratio divide both stay OUTSIDE the

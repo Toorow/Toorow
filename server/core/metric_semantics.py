@@ -246,14 +246,6 @@ def _default_target_mart(canonical_name: str) -> str | None:
 # NOT a runtime scan nor an invented name -- same status as the connectors in the seed
 # metric_source_priority.csv (configuration data, not business-code vocabulary). The AD-2
 # grep in test_metric_semantics.py tolerates this explicitly-commented config constant.
-PLATFORM_COST_VERIFICATION_GROUP = {
-    "canonical_name": "cost",
-    "name": "cost-verification",
-    "members": ["doubleverify", "ias"],  # verifiers (config, per synthese 6.2)
-    "method": METHOD_KEEP_SEPARATE,
-    "truth_connector": None,  # the ad server (cm360) when its module exists -- reserved
-    "target_mart": None,  # KEEP_SEPARATE routes to no mart
-}
 
 # Audit action verbs.
 ACTION_CREATED = "created"
@@ -532,33 +524,31 @@ def reduce_definitions_by_specificity(rows) -> dict[str, dict]:
     return winner
 
 
-def reduce_reconciliation_by_specificity(rows, metric: str) -> dict | None:
-    """Return the most specific overlap-group(+rule) row covering *metric*, or None.
 
-    Filters to rows whose canonical_name == metric, then keeps the highest scope rank.
-    Each row is expected to carry the group fields and its rule (method, priority_order,
-    ...) already joined. None when no group covers the metric at any level.
 
-    CALLER CONTRACT: the caller guarantees AT MOST ONE group per (scope_level, metric)
-    -- the unique index uq_overlap_groups_scope_name plus the one-rule-per-group
-    constraint hold it at the DB level, so this reducer does NOT re-verify uniqueness.
+def _connection(conn=None):
+    """The caller's connection when it hands one over, a fresh one otherwise.
+
+    THE LENS OUTLIVED ITS TRANSACTION (found 2026-08-30): the Governance
+    `metric-definitions` lens read this store through a connection of its own, so
+    a row the caller had just written inside its transaction -- the seeded
+    metric definition of `test_governance_object_traversal_pg` -- was invisible,
+    and the lens answered an empty list on a store that held the row. A reader
+    that opens its own connection cannot see what its caller has not committed;
+    threading the caller's connection through is the only honest read.
     """
-    best: dict | None = None
-    for row in rows:
-        if row.get("canonical_name") != metric:
-            continue
-        if best is None or _scope_rank(row) > _scope_rank(best):
-            best = row
-    return best
+    from contextlib import nullcontext  # noqa: PLC0415
 
-
-def _project_org_id(project_id: str) -> str | None:
-    """Read app.projects.org_id for *project_id* (None if the project is unknown)."""
     from core.db import get_connection  # noqa: PLC0415
 
+    return nullcontext(conn) if conn is not None else get_connection()
+
+
+def _project_org_id(project_id: str, conn=None) -> str | None:
+    """Read app.projects.org_id for *project_id* (None if the project is unknown)."""
     try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
+        with _connection(conn) as connection:
+            with connection.cursor() as cur:
                 cur.execute(
                     "SELECT org_id FROM app.projects WHERE id = %s",
                     (project_id,),
@@ -574,7 +564,7 @@ def _project_org_id(project_id: str) -> str | None:
         return None
 
 
-def resolve_metric_definitions(project_id: str) -> dict[str, dict]:
+def resolve_metric_definitions(project_id: str, conn=None) -> dict[str, dict]:
     """Return {canonical_name -> resolved definition} for *project_id* (cascade).
 
     Funnel merge PLATFORM (base) -> ORG (of the project's org) -> PROJECT: the most
@@ -584,23 +574,120 @@ def resolve_metric_definitions(project_id: str) -> dict[str, dict]:
 
     S-4: ``project_id`` is assumed ALREADY AUTHORIZED -- this read has no guard; the calling
     surface must have checked org access first (see the module TRUST CONTRACT)."""
-    org_id = _project_org_id(project_id)
-    rows = _load_definition_rows(org_id=org_id, project_id=project_id)
+    org_id = _project_org_id(project_id, conn=conn)
+    rows = _load_definition_rows(org_id=org_id, project_id=project_id, conn=conn)
     return reduce_definitions_by_specificity(rows)
+
+
+def _semantic_model_declares_money(
+    canonical_name: str, project_id: str | None, conn=None
+) -> bool | None:
+    """``True``/``False`` when a PUBLISHED Concept answers for this metric, else None.
+
+    The Semantic Model states a metric's type on its version:
+    ``semantic_concept_versions.value_type`` carries ``'money'`` among its ten
+    values (migration 142:139-142). That is a DECLARATION a person published, not
+    a guess from a name or a unit -- which is exactly why story 48.3 stopped
+    classifying money from ``unit IS NOT NULL`` and moved
+    ``capability_compilers.MoneyCapability`` onto this same predicate. This is
+    that predicate, asked for one metric.
+
+    Only ``published`` versions answer, and platform Concepts (``project_id IS
+    NULL``) answer alongside the Project's own -- the same shape
+    ``capability_compilers`` reads, so the compiler's monetary set and this
+    function cannot disagree about a metric.
+
+    ``project_id`` MAY BE ``None``, and asking is then still the right thing --
+    repaired 2026-08-31. ``is_metric_monetary`` used to skip this function
+    entirely without a Project, on the stated reason that "a Concept is scoped to
+    a Project or to the platform catalogue, and asking without a Project would
+    answer from a scope the caller never named". The clause ``OR c.project_id IS
+    NULL`` below refutes it: without a Project this query reads the PLATFORM
+    catalogue and nothing else -- exactly the scope a caller who named no Project
+    is asking about. Measured before the repair, against a published platform
+    Concept declaring ``value_type = 'money'``: *semantic model asked: False*.
+
+    ``None`` means "no published Concept carries this name": NOT "not money".
+    The caller falls through to the lower store rather than reading silence as a
+    verdict.
+    """
+    with _connection(conn) as connection:
+        with connection.cursor() as cur:
+            cur.execute(
+                """
+                SELECT v.value_type
+                  FROM app.semantic_concepts c
+                  JOIN app.semantic_concept_versions v ON v.id = c.current_version_id
+                 WHERE c.lifecycle_status = 'published'
+                   AND (c.project_id = %s OR c.project_id IS NULL)
+                   AND v.kind = 'metric'
+                   AND c.name = %s
+                 ORDER BY c.project_id NULLS LAST
+                 LIMIT 1
+                """,
+                (project_id, canonical_name),
+            )
+            row = cur.fetchone()
+    if row is None:
+        return None
+    return str(row[0]) == "money"
 
 
 def is_metric_monetary(canonical_name: str, *, project_id: str | None = None) -> bool:
     """Return whether *canonical_name* is a MONETARY metric (Story 39.1, E39-FR01/AD1).
 
-    The PLATFORM-WIDE entry point every money rule reads instead of re-deciding:
-      * ``project_id`` given  -> resolve through the PROJECT > ORG > PLATFORM cascade
-        (resolve_metric_definitions) and read the stored ``monetary`` flag, so a project
-        that reclassified a custom metric wins (E39-NFR04).
-      * ``project_id`` None   -> read the PLATFORM default row's ``monetary``.
-    FAIL-SOFT: if no stored row exists (or the DB is unreachable), fall back to the pure
-    ``_classify_monetary`` classifier -- never crash, mirroring resolve_*'s fail-to-platform
-    posture. An unknown metric name classifies to False (no naked-amount false positive)."""
+    The PLATFORM-WIDE entry point every money rule reads instead of re-deciding.
+
+    SEMANTIC MODEL FIRST SINCE 2026-08-25 (story 49.3 AC1), and this is the same
+    repair story 60.2 made to additivity in ``resolve_declared_additivity`` --
+    ``is_metric_monetary``'s twin, which said so in its own header while reading
+    the opposite order. ``app.metric_definitions`` was the ONLY store consulted
+    here, and its authoring doors are retired: a project that reclassifies a
+    metric now does it in the Concept workbench, and E39-NFR04 ("a project that
+    reclassified a custom metric wins") holds through the store that has the
+    version, the review and the last word.
+
+    The order, most authoritative first:
+      1. a PUBLISHED Concept version's ``value_type = 'money'``
+         (:func:`_semantic_model_declares_money`) -- asked WITH or WITHOUT a
+         Project, because its scope clause reads the platform catalogue on its
+         own when there is no Project to name;
+      2. then ``app.metric_definitions`` through the PROJECT > ORG > PLATFORM
+         cascade (``resolve_metric_definitions``) and its stored ``monetary``
+         flag -- the layer below, for a metric no published Concept carries;
+      3. ``project_id`` None and no Concept -> the PLATFORM definition row's
+         ``monetary``, then the classifier.
+
+    THE NULL-PROJECT CARVE-OUT IS GONE, 2026-08-31. Until then step 1 was skipped
+    entirely without a Project, so a published platform Concept declaring
+    ``value_type = 'money'`` was never consulted and the name classifier decided
+    -- for every caller that reaches here without a Project, which is
+    ``datamodel.get_target_field`` and ``currency_refusal._is_monetary_metric``
+    among others. The carve-out's stated reason ("asking without a Project would
+    answer from a scope the caller never named") was refuted by its own SQL: the
+    query already carries ``OR c.project_id IS NULL``, so with no Project it
+    reads the platform catalogue and nothing else. The store with the version,
+    the review and the last word now answers first on BOTH paths, which is what
+    ``governance.md`` requires -- *a reader classifies a metric as money without
+    asking the Semantic Model first* is one of its `Incomplete if` clauses.
+
+    FAIL-SOFT at every step: an unreachable database (or a store that answers
+    nothing) falls through to the pure ``_classify_monetary`` classifier -- never
+    a crash, mirroring resolve_*'s fail-to-platform posture. An unknown metric
+    name classifies to False (no naked-amount false positive)."""
     try:
+        try:
+            declared = _semantic_model_declares_money(canonical_name, project_id)
+        except Exception as exc:  # noqa: BLE001 -- fall through to the lower store
+            logger.warning(
+                "metric_semantics: semantic model unreadable for %s in project=%s: %s",
+                canonical_name,
+                project_id,
+                exc,
+            )
+            declared = None
+        if declared is not None:
+            return declared
         if project_id is not None:
             resolved = resolve_metric_definitions(project_id)
             row = resolved.get(canonical_name)
@@ -620,29 +707,195 @@ def is_metric_monetary(canonical_name: str, *, project_id: str | None = None) ->
         return _classify_monetary(canonical_name)
 
 
-def resolve_reconciliation(project_id: str, metric: str) -> dict | None:
-    """Return the EFFECTIVE reconciliation rule for (*project_id*, *metric*), or None.
+# ---------------------------------------------------------------------------
+# Declared additivity (Story 60.2) -- is_metric_monetary's twin.
+# ---------------------------------------------------------------------------
+#
+# THE DEFECT THIS ENTRY POINT CLOSES, MEASURED. Additivity was declared in three
+# places and read at render time in none of them:
+#   * app.semantic_concept_versions.additivity_class (142:157-160), shown by
+#     governance_read_model.py:756 and consumed by nothing else;
+#   * app.metric_definitions.additive (049:83), cascaded but never consulted by a
+#     roll-up;
+#   * two frozensets of FOUR literal names (cards.py:163, rollup.py:58) plus a
+#     name suffix (is_ratio_name), which is what actually decided.
+# A client ratio named `efficiency_index` matches no frozenset and no suffix, so
+# it was summed across days: 22,25 EUR printed where 11,90 EUR is the number.
+#
+# The three classes are the SCHEMA's three -- additive / semi_additive /
+# non_additive (142:157-160, semantic_expressions.ADDITIVITY_CLASSES). No fourth
+# vocabulary is minted here.
 
-    The most specific overlap group (PROJECT > ORG > PLATFORM) covering *metric*, with
-    its rule joined. None when no group covers the metric at any level (= no declared
-    overlap; summing across sources stays forbidden without a rule, but 27.1 does not
-    apply it -- 27.3 does). For method=PRIORITY, ``priority_order`` is ORDERED, ready to
-    reproduce the mart's ORDER BY.
-
-    S-4: ``project_id`` is assumed ALREADY AUTHORIZED -- this read has no guard; the calling
-    surface must have checked org access first (see the module TRUST CONTRACT)."""
-    org_id = _project_org_id(project_id)
-    rows = _load_reconciliation_rows(org_id=org_id, project_id=project_id, metric=metric)
-    return reduce_reconciliation_by_specificity(rows, metric)
+#: Mirrors `core.semantic_expressions.ADDITIVITY_CLASSES`. Kept as a literal so
+#: this module does not import the expression contract for one frozenset; the
+#: equality is asserted by `test_calculated_field_additivity.py`.
+ADDITIVITY_ADDITIVE = "additive"
+ADDITIVITY_SEMI_ADDITIVE = "semi_additive"
+ADDITIVITY_NON_ADDITIVE = "non_additive"
+ADDITIVITY_CLASSES = frozenset(
+    {ADDITIVITY_ADDITIVE, ADDITIVITY_SEMI_ADDITIVE, ADDITIVITY_NON_ADDITIVE}
+)
 
 
-def resolve_reconciliation_platform(metric: str) -> dict | None:
-    """Return the PLATFORM reconciliation rule for *metric*, or None (no cascade).
+def _load_declared_additivity_rows(project_id: str, conn=None) -> list[tuple[str, str]]:
+    """(metric name, additivity_class) of this Project's PUBLISHED metric versions.
 
-    A convenience read of the platform default without a project context: loads only
-    the PLATFORM overlap group (+ joined rule) covering *metric*."""
-    rows = _load_reconciliation_rows(org_id=None, project_id=None, metric=metric)
-    return reduce_reconciliation_by_specificity(rows, metric)
+    The Semantic Model is the authority governance.md names ("The Semantic Model
+    owns canonical metrics, dimensions, relationships, aggregation behavior"), so
+    it is read first and wins over `app.metric_definitions`. Only `published`
+    versions answer: a draft is a proposal, and a proposal must not change a
+    number that is already on a screen.
+    """
+    sql = """
+        SELECT DISTINCT ON (v.name) v.name, v.additivity_class
+        FROM app.semantic_concept_versions v
+        WHERE v.project_id = %s
+          AND v.kind = 'metric'
+          AND v.status = 'published'
+          AND v.additivity_class IS NOT NULL
+        ORDER BY v.name, v.version_number DESC
+    """
+    with _connection(conn) as connection:
+        with connection.cursor() as cur:
+            cur.execute(sql, (project_id,))
+            return [(str(name), str(klass)) for name, klass in cur.fetchall()]
+
+
+def resolve_declared_additivity(project_id: str | None) -> dict[str, str]:
+    """Return ``{canonical_name -> additivity class}`` DECLARED for *project_id*.
+
+    Two declaring stores, most authoritative first:
+
+      1. ``app.semantic_concept_versions.additivity_class`` -- the Semantic Model
+         class a person chose in the Concept workbench. Migration 237 makes it
+         NOT NULL for every metric version, so a row here always answers.
+      2. ``app.metric_definitions`` through the PROJECT > ORG > PLATFORM cascade:
+         ``additive = FALSE`` reads as ``non_additive``, and an ``additive``
+         definition that names ``non_additive_dimensions`` reads as
+         ``semi_additive`` -- the same reading `validate_aggregation` enforces on
+         the way in (`semantic_expressions.py:746-763`).
+
+    ONLY DECLARATIONS ARE RETURNED. A metric absent from the result is a metric
+    NOBODY declared, and the caller keeps its own platform default rather than
+    receiving a guess dressed as an answer. This is the whole difference from
+    `is_ratio_name`, which answers for every string ever passed to it.
+
+    FAIL-SOFT, deliberately: an unreachable database returns ``{}``, so a render
+    degrades to the platform defaults it had before this function existed instead
+    of failing. It never returns a *wider* answer than it read.
+
+    S-4: ``project_id`` is assumed ALREADY AUTHORIZED -- this read has no guard;
+    the calling surface must have checked access first (module TRUST CONTRACT).
+    """
+    if not project_id:
+        return {}
+    declared: dict[str, str] = {}
+    try:
+        for name, klass in _load_declared_additivity_rows(project_id):
+            if klass in ADDITIVITY_CLASSES:
+                declared[name] = klass
+    except Exception as exc:  # noqa: BLE001 -- fail-soft to platform defaults
+        logger.warning(
+            "metric_semantics: declared additivity unreadable for project=%s: %s",
+            project_id,
+            exc,
+        )
+    try:
+        for name, row in resolve_metric_definitions(project_id).items():
+            if name in declared:
+                continue  # the Semantic Model already answered for this metric.
+            additive = row.get("additive")
+            if additive is None:
+                continue
+            if not additive:
+                declared[name] = ADDITIVITY_NON_ADDITIVE
+            elif list(row.get("non_additive_dimensions") or ()):
+                declared[name] = ADDITIVITY_SEMI_ADDITIVE
+            else:
+                declared[name] = ADDITIVITY_ADDITIVE
+    except Exception as exc:  # noqa: BLE001 -- fail-soft, same posture
+        logger.warning(
+            "metric_semantics: metric definitions unreadable for project=%s: %s",
+            project_id,
+            exc,
+        )
+    return declared
+
+
+def declared_non_additive(declared: dict[str, str]) -> frozenset[str]:
+    """The names of *declared* that must NOT be summed. Pure, offline-testable.
+
+    ``semi_additive`` is on this side of the line: it means "summable across SOME
+    dimensions", and a roll-up that does not know which ones cannot tell whether
+    the one in front of it is allowed. Treating it as summable is the failure the
+    class exists to name.
+    """
+    return frozenset(
+        name for name, klass in declared.items() if klass != ADDITIVITY_ADDITIVE
+    )
+
+
+
+
+
+
+def reference_reconciliation(*, project_id: str | None, metric: str) -> dict | None:
+    """The `reconciliation` entry of the reference layer, from the GOVERNED Rule Set.
+
+    ONE resolver for the two read surfaces (REST reference + MCP tool), and the
+    same one the runtime uses -- :func:`core.controls_quality.governed_runtime_rule`.
+    Until AI-295 both surfaces resolved this through the PLATFORM > ORG > PROJECT
+    cascade over ``app.overlap_groups``, the store Story 49.4 retired for the
+    runtime. A screen and the engine behind it therefore answered from two
+    different models, which `governance.md` forbids in as many words.
+
+    Measured against a live database before the cut, and this is why the cascade
+    could not stay: ``_load_reconciliation_rows(project_id="proj_EXAMPLE")`` -- a
+    project that exists nowhere -- returned the PLATFORM ``cost-verification``
+    group with ``method=KEEP_SEPARATE``, while ``governed_runtime_rule`` returned
+    ``None`` for the same pair. A rule served for nobody is worse than an empty
+    one: it is a rule a person can act on.
+
+    ``project_id is None`` yields ``None``, and that is the model rather than a
+    limitation: a governed rule belongs to the Project that published it, so an
+    ORG-scoped read of the reference has no reconciliation to serve. The caller
+    keeps its default behaviour instead of borrowing a rule from a scope it
+    cannot see.
+
+    Fail-soft, and the reason is the caller rather than the store: both surfaces
+    build a WHOLE ``metrics[]`` list, one entry per canonical metric. A policy
+    read that raises would take the entire reference down -- every metric, over
+    one unreadable rule -- so it degrades to "no rule" here, which is the answer
+    that forbids summing rather than the one that permits it. Held by
+    `tests/core/test_reference_reconciliation_is_governed.py`, which failed
+    before this clause existed.
+    """
+    if not project_id:
+        return None
+    from core.controls_quality import governed_runtime_rule  # noqa: PLC0415
+
+    try:
+        rule = governed_runtime_rule(project_id, metric)
+    except Exception as exc:  # noqa: BLE001 -- an unreadable policy is "no rule"
+        logger.warning(
+            "metric_semantics: governed reconciliation unreadable project=%s metric=%s: %s",
+            project_id,
+            metric,
+            exc,
+        )
+        return None
+    if rule is None:
+        return None
+    return {
+        "method": rule.get("method"),
+        "priority_order": rule.get("priority_order"),
+        "join_key": rule.get("join_key"),
+        "truth_connector": rule.get("truth_connector"),
+        "resolved_scope": rule.get("scope_level"),
+        # The published version, so a reader can name the exact policy that
+        # answered rather than infer it from a scope label.
+        "rule_set_version_id": rule.get("rule_set_version_id"),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -650,9 +903,10 @@ def resolve_reconciliation_platform(metric: str) -> dict | None:
 # ---------------------------------------------------------------------------
 
 
-def _load_definition_rows(*, org_id: str | None, project_id: str | None) -> list[dict]:
+def _load_definition_rows(
+    *, org_id: str | None, project_id: str | None, conn=None
+) -> list[dict]:
     """Load PLATFORM + (org's) ORG + (project's) PROJECT definition rows."""
-    from core.db import get_connection  # noqa: PLC0415
 
     clauses = ["scope_level = 'PLATFORM'"]
     params: list = []
@@ -676,8 +930,8 @@ def _load_definition_rows(*, org_id: str | None, project_id: str | None) -> list
         ORDER BY scope_level, canonical_name
     """
     rows: list[dict] = []
-    with get_connection() as conn:
-        with conn.cursor() as cur:
+    with _connection(conn) as connection:
+        with connection.cursor() as cur:
             cur.execute(sql, params)
             cols = [desc[0] for desc in cur.description]
             for row in cur.fetchall():
@@ -685,41 +939,6 @@ def _load_definition_rows(*, org_id: str | None, project_id: str | None) -> list
     return rows
 
 
-def _load_reconciliation_rows(
-    *, org_id: str | None, project_id: str | None, metric: str
-) -> list[dict]:
-    """Load PLATFORM/ORG/PROJECT overlap groups (+ joined rule) covering *metric*."""
-    from core.db import get_connection  # noqa: PLC0415
-
-    clauses = ["g.scope_level = 'PLATFORM'"]
-    params: list = [metric]  # first %s is the canonical_name filter below
-    if org_id is not None:
-        clauses.append("(g.scope_level = 'ORG' AND g.org_id = %s)")
-        params.append(org_id)
-    if project_id is not None:
-        clauses.append("(g.scope_level = 'PROJECT' AND g.project_id = %s)")
-        params.append(project_id)
-    scope_where = " OR ".join(clauses)
-    # SQL clauses are HARD-CODED (scope-level literals, column list, ORDER BY); only the
-    # metric + scope VALUES flow in as %s params -- no value is interpolated into the SQL.
-    # ORDER BY gives a stable row order; the reducer only needs determinism, not sort.
-    sql = f"""
-        SELECT g.id AS overlap_group_id, g.canonical_name, g.name, g.scope_level,
-               g.org_id, g.project_id, r.method, r.priority_order, r.join_key,
-               r.truth_connector, r.target_mart
-        FROM app.overlap_groups g
-        LEFT JOIN app.reconciliation_rules r ON r.overlap_group_id = g.id
-        WHERE g.canonical_name = %s AND ({scope_where})
-        ORDER BY g.scope_level, g.canonical_name
-    """
-    rows: list[dict] = []
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            cols = [desc[0] for desc in cur.description]
-            for row in cur.fetchall():
-                rows.append(dict(zip(cols, row)))
-    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -854,9 +1073,9 @@ def upsert_metric_definition(
     """
     if additive and (is_ratio_name(canonical_name) or aggregation_type == "ratio"):
         raise ValueError(
-            f"Le metrique {canonical_name!r} est un ratio (non additif) et ne peut pas "
+            f"Metric {canonical_name!r} is a ratio (non-additive) and cannot "
             "etre declare additive (AD-4) : sommer un ratio sur plusieurs jours ou canaux "
-            "est mathematiquement faux et corromprait fact_daily_kpi. Declarez-le avec "
+            "is mathematically wrong and would corrupt fact_daily_kpi. Declare it with "
             "additive=False et ses ratio_numerator/ratio_denominator ; le ratio est "
             "recalcule a la volee dans la couche semantique."
         )
@@ -1077,312 +1296,34 @@ def delete_metric_definition(
 # Store CRUD -- overlap groups (+ members) and reconciliation rules.
 # ---------------------------------------------------------------------------
 
-_OVERLAP_GROUP_COLUMNS = (
-    "id, metric_definition_id, canonical_name, name, description, scope_level, "
-    "org_id, project_id, created_by, created_at, updated_at"
-)
 
 
-def _row_to_group(cols, row) -> dict:
-    record: dict = {}
-    _ts = {"created_at", "updated_at"}
-    for col, val in zip(cols, row):
-        record[col] = val.isoformat() if col in _ts and val is not None else val
-    return record
 
 
-def _select_group(conn, *, scope_level, org_id, project_id, name) -> dict | None:
-    with conn.cursor() as cur:
-        cur.execute(
-            f"""
-            SELECT {_OVERLAP_GROUP_COLUMNS}
-            FROM app.overlap_groups
-            WHERE scope_level = %s
-              AND COALESCE(org_id, '') = COALESCE(%s, '')
-              AND COALESCE(project_id, '') = COALESCE(%s, '')
-              AND name = %s
-            """,
-            (scope_level, org_id, project_id, name),
-        )
-        row = cur.fetchone()
-        if row is None:
-            return None
-        cols = [desc[0] for desc in cur.description]
-    return _row_to_group(cols, row)
 
 
-def upsert_overlap_group(
-    *,
-    canonical_name: str,
-    name: str,
-    scope_level: str = SCOPE_PLATFORM,
-    org_id: str | None = None,
-    project_id: str | None = None,
-    created_by: str,
-    metric_definition_id: str | None = None,
-    description: str | None = None,
-) -> dict:
-    """UPSERT one overlap group (keyed on scope+name unicity) + audit."""
-    from core.db import get_connection  # noqa: PLC0415
-
-    validate_scope(scope_level, org_id, project_id)
-    new_id = _mint_id(_ID_PREFIXES["overlap_group"])
-
-    with get_connection() as conn:
-        before = _select_group(
-            conn, scope_level=scope_level, org_id=org_id, project_id=project_id, name=name
-        )
-        with conn.cursor() as cur:
-            cur.execute(
-                f"""
-                INSERT INTO app.overlap_groups
-                    (id, metric_definition_id, canonical_name, name, description,
-                     scope_level, org_id, project_id, created_by, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now(), now())
-                ON CONFLICT (scope_level, COALESCE(org_id, ''),
-                             COALESCE(project_id, ''), name)
-                DO UPDATE SET
-                    metric_definition_id = EXCLUDED.metric_definition_id,
-                    canonical_name       = EXCLUDED.canonical_name,
-                    description          = EXCLUDED.description,
-                    updated_at           = now()
-                RETURNING {_OVERLAP_GROUP_COLUMNS}
-                """,
-                (
-                    new_id,
-                    metric_definition_id,
-                    canonical_name,
-                    name,
-                    description,
-                    scope_level,
-                    org_id,
-                    project_id,
-                    created_by,
-                ),
-            )
-            row = cur.fetchone()
-            cols = [desc[0] for desc in cur.description]
-        after = _row_to_group(cols, row)
-
-        if _group_changed(before, after):
-            _write_semantics_audit(
-                conn,
-                identity=created_by,
-                action=ACTION_CREATED if before is None else ACTION_UPSERTED,
-                entity_type="overlap_group",
-                entity_id=after["id"],
-                scope_level=scope_level,
-                org_id=org_id,
-                project_id=project_id,
-                before=before,
-                after=after,
-            )
-        conn.commit()
-    return after
 
 
-_GROUP_VOLATILE = frozenset({"id", "created_at", "updated_at"})
 
 
-def _group_changed(before: dict | None, after: dict) -> bool:
-    if before is None:
-        return True
-    for key, value in after.items():
-        if key in _GROUP_VOLATILE:
-            continue
-        if before.get(key) != value:
-            return True
-    return False
 
 
-def set_overlap_group_members(
-    *, overlap_group_id: str, connectors: list[str], created_by: str,
-    scope_level: str, org_id: str | None = None, project_id: str | None = None,
-) -> list[dict]:
-    """Ensure *connectors* are members of a group (ADDITIVE, idempotent) + audit.
-
-    ADDITIVE by design in 27.1: adds any missing member (one audit 'created' each) and
-    never re-adds an existing one (idempotency), but NEVER REMOVES a member that is no
-    longer in *connectors*. A shrinking call is therefore a no-op for the dropped member
-    -- it survives. Member REMOVAL (and whether it should audit / cascade the rule's
-    priority_order) is out of scope for 27.1; 27.3 decides the removal semantics.
-    account_scope stays NULL in v1. Returns the current member rows."""
-    from core.db import get_connection  # noqa: PLC0415
-
-    with get_connection() as conn:
-        existing = _select_group_member_connectors(conn, overlap_group_id)
-        for connector in connectors:
-            if connector in existing:
-                continue
-            member_id = _mint_id(_ID_PREFIXES["overlap_group_member"])
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO app.overlap_group_members
-                        (id, overlap_group_id, connector, account_scope, created_at)
-                    VALUES (%s, %s, %s, NULL, now())
-                    ON CONFLICT (overlap_group_id, connector, account_scope) DO NOTHING
-                    RETURNING id
-                    """,
-                    (member_id, overlap_group_id, connector),
-                )
-                inserted = cur.fetchone()
-            if inserted is not None:
-                _write_semantics_audit(
-                    conn,
-                    identity=created_by,
-                    action=ACTION_CREATED,
-                    entity_type="overlap_group_member",
-                    entity_id=inserted[0],
-                    scope_level=scope_level,
-                    org_id=org_id,
-                    project_id=project_id,
-                    before=None,
-                    after={"overlap_group_id": overlap_group_id, "connector": connector},
-                )
-        conn.commit()
-        return _list_group_members(conn, overlap_group_id)
 
 
-def _select_group_member_connectors(conn, overlap_group_id: str) -> set[str]:
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT connector FROM app.overlap_group_members WHERE overlap_group_id = %s",
-            (overlap_group_id,),
-        )
-        return {r[0] for r in cur.fetchall()}
 
 
-def _list_group_members(conn, overlap_group_id: str) -> list[dict]:
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT id, overlap_group_id, connector, account_scope "
-            "FROM app.overlap_group_members WHERE overlap_group_id = %s "
-            "ORDER BY connector",
-            (overlap_group_id,),
-        )
-        cols = [desc[0] for desc in cur.description]
-        return [dict(zip(cols, r)) for r in cur.fetchall()]
 
 
-_RECONCILIATION_RULE_COLUMNS = (
-    "id, overlap_group_id, method, priority_order, join_key, truth_connector, "
-    "target_mart, created_by, created_at, updated_at"
-)
 
 
-def _row_to_rule(cols, row) -> dict:
-    record: dict = {}
-    _ts = {"created_at", "updated_at"}
-    for col, val in zip(cols, row):
-        record[col] = val.isoformat() if col in _ts and val is not None else val
-    return record
 
 
-def upsert_reconciliation_rule(
-    *,
-    overlap_group_id: str,
-    method: str,
-    created_by: str,
-    scope_level: str,
-    org_id: str | None = None,
-    project_id: str | None = None,
-    priority_order: list[str] | None = None,
-    join_key: str | None = None,
-    truth_connector: str | None = None,
-    target_mart: str | None = None,
-) -> dict:
-    """UPSERT the single living rule of a group (keyed on overlap_group_id) + audit.
-
-    Validates the method's required shape (PRIORITY -> priority_order, DEDUP_ID ->
-    join_key) applicatively before writing (InvalidReconciliationRule)."""
-    import json  # noqa: PLC0415
-
-    from core.db import get_connection  # noqa: PLC0415
-
-    validate_reconciliation_rule(
-        method, {"priority_order": priority_order, "join_key": join_key}
-    )
-    new_id = _mint_id(_ID_PREFIXES["reconciliation_rule"])
-    priority_json = json.dumps(priority_order) if priority_order is not None else None
-
-    with get_connection() as conn:
-        before = _select_rule(conn, overlap_group_id)
-        with conn.cursor() as cur:
-            cur.execute(
-                f"""
-                INSERT INTO app.reconciliation_rules
-                    (id, overlap_group_id, method, priority_order, join_key,
-                     truth_connector, target_mart, created_by, created_at, updated_at)
-                VALUES (%s, %s, %s, %s::jsonb, %s, %s, %s, %s, now(), now())
-                ON CONFLICT (overlap_group_id)
-                DO UPDATE SET
-                    method          = EXCLUDED.method,
-                    priority_order  = EXCLUDED.priority_order,
-                    join_key        = EXCLUDED.join_key,
-                    truth_connector = EXCLUDED.truth_connector,
-                    target_mart     = EXCLUDED.target_mart,
-                    updated_at      = now()
-                RETURNING {_RECONCILIATION_RULE_COLUMNS}
-                """,
-                (
-                    new_id,
-                    overlap_group_id,
-                    method,
-                    priority_json,
-                    join_key,
-                    truth_connector,
-                    target_mart,
-                    created_by,
-                ),
-            )
-            row = cur.fetchone()
-            cols = [desc[0] for desc in cur.description]
-        after = _row_to_rule(cols, row)
-
-        if _rule_changed(before, after):
-            _write_semantics_audit(
-                conn,
-                identity=created_by,
-                action=ACTION_CREATED if before is None else ACTION_UPSERTED,
-                entity_type="reconciliation_rule",
-                entity_id=after["id"],
-                scope_level=scope_level,
-                org_id=org_id,
-                project_id=project_id,
-                before=before,
-                after=after,
-            )
-        conn.commit()
-    return after
 
 
-def _select_rule(conn, overlap_group_id: str) -> dict | None:
-    with conn.cursor() as cur:
-        cur.execute(
-            f"SELECT {_RECONCILIATION_RULE_COLUMNS} FROM app.reconciliation_rules "
-            "WHERE overlap_group_id = %s",
-            (overlap_group_id,),
-        )
-        row = cur.fetchone()
-        if row is None:
-            return None
-        cols = [desc[0] for desc in cur.description]
-    return _row_to_rule(cols, row)
 
 
-_RULE_VOLATILE = frozenset({"id", "created_at", "updated_at"})
 
 
-def _rule_changed(before: dict | None, after: dict) -> bool:
-    if before is None:
-        return True
-    for key, value in after.items():
-        if key in _RULE_VOLATILE:
-            continue
-        if before.get(key) != value:
-            return True
-    return False
 
 
 # ---------------------------------------------------------------------------
@@ -1528,11 +1469,26 @@ def import_platform_defaults(
 ) -> dict:
     """Read the dbt seeds and UPSERT the matching scope=PLATFORM rows (idempotent).
 
-    Writes app.metric_definitions (from dim_metric.csv) + app.overlap_groups /
-    _members / reconciliation_rules PRIORITY (from metric_source_priority.csv).
+    Writes app.metric_definitions (from dim_metric.csv), and NOTHING ELSE.
     IDEMPOTENT: re-running creates no duplicate (UPSERT keyed on scope unicity) and
     emits an 'upserted' audit only on a real change. Returns counts
-    {definitions, groups, members, rules} for observability."""
+    {definitions, groups, members, rules} for observability -- the last three are
+    kept at 0 rather than dropped, so an existing caller reading them gets the
+    honest count instead of a KeyError.
+
+    WHAT IT NO LONGER WRITES, and why (AI-295). It also upserted
+    ``app.overlap_groups`` / ``_members`` / ``reconciliation_rules`` from
+    ``metric_source_priority.csv``, plus a supplementary cost-verification group.
+    Those rows were the SECOND reconciliation model: the runtime stopped reading
+    them in Story 49.4, the two read surfaces stopped in the commit before this
+    one, and a store that nothing reads but a bootstrap route still fills is a
+    trap -- the next reader finds rows and believes them.
+
+    The seed is untouched and still read. ``metric_source_priority.csv`` feeds
+    :func:`core.controls_quality._seed_priorities`, which turns it into the
+    editable Project draft a governed publication starts from. The seed was never
+    the problem; the second LIVE store was.
+    """
     defaults = platform_defaults_from_seeds(seeds_dir)
 
     counts = {"definitions": 0, "groups": 0, "members": 0, "rules": 0}
@@ -1549,36 +1505,9 @@ def import_platform_defaults(
         )
         counts["definitions"] += 1
 
-    for group in defaults["groups"]:
-        persisted = upsert_overlap_group(
-            canonical_name=group["canonical_name"],
-            name=group["name"],
-            scope_level=SCOPE_PLATFORM,
-            created_by=identity,
-        )
-        counts["groups"] += 1
-        members = set_overlap_group_members(
-            overlap_group_id=persisted["id"],
-            connectors=group["members"],
-            created_by=identity,
-            scope_level=SCOPE_PLATFORM,
-        )
-        counts["members"] += len(members)
-        upsert_reconciliation_rule(
-            overlap_group_id=persisted["id"],
-            method=group["method"],
-            priority_order=group["priority_order"],
-            target_mart=group.get("target_mart"),  # Story 27.3 B.1 (NULL when not routable)
-            scope_level=SCOPE_PLATFORM,
-            created_by=identity,
-        )
-        counts["rules"] += 1
-
-    # Story 27.3 B.2: the cost-verification KEEP_SEPARATE pilot. A SUPPLEMENTARY PLATFORM
-    # group (outside the seed CSV) carrying the default rule of the future
-    # verifier x ad-server overlap. Idempotent like the others; it adds NO metric_definition
-    # (cost is already defined by dim_metric.csv) -- only a group + members + rule.
-    _import_cost_verification_pilot(counts, identity=identity)
+    # AI-295: the groups / members / rules half of this import is GONE. It wrote the
+    # second reconciliation model on every org bootstrap, through a route no screen
+    # calls, into tables the runtime stopped reading in Story 49.4.
 
     logger.info(
         "metric_semantics: imported platform defaults defs=%d groups=%d members=%d rules=%d",
@@ -1588,38 +1517,3 @@ def import_platform_defaults(
         counts["rules"],
     )
     return counts
-
-
-def _import_cost_verification_pilot(counts: dict, *, identity: str) -> None:
-    """UPSERT the cost-verification KEEP_SEPARATE pilot group + members + rule (idempotent).
-
-    Story 27.3 B.2. A supplementary PLATFORM group outside the seed CSV, sourced from the
-    documented product-decision constant PLATFORM_COST_VERIFICATION_GROUP. Idempotent: the
-    same _group_changed / _rule_changed guards as the seed groups mean a second import emits
-    no 'upserted' audit. Adds NO metric_definition (cost is defined by dim_metric.csv).
-    Increments the shared *counts* dict in place (groups/members/rules) for observability.
-    """
-    pilot = PLATFORM_COST_VERIFICATION_GROUP
-    persisted = upsert_overlap_group(
-        canonical_name=pilot["canonical_name"],
-        name=pilot["name"],
-        scope_level=SCOPE_PLATFORM,
-        created_by=identity,
-    )
-    counts["groups"] += 1
-    members = set_overlap_group_members(
-        overlap_group_id=persisted["id"],
-        connectors=pilot["members"],
-        created_by=identity,
-        scope_level=SCOPE_PLATFORM,
-    )
-    counts["members"] += len(members)
-    upsert_reconciliation_rule(
-        overlap_group_id=persisted["id"],
-        method=pilot["method"],
-        truth_connector=pilot["truth_connector"],
-        target_mart=pilot["target_mart"],
-        scope_level=SCOPE_PLATFORM,
-        created_by=identity,
-    )
-    counts["rules"] += 1

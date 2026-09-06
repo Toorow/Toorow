@@ -57,4 +57,6 @@ markers = [
     "conformance_layer_4: golden pull fixture layer",
     "conformance_layer_5: context-event golden fixture layer (Story 4.5)",
     "conformance_layer_6: report-pack definition validation layer (Story 6.1)",
+    "pg_owner: live-Postgres test whose fixture does DDL; needs the schema owner",
+    "pg_app_role: live-Postgres test asserting RLS; needs a non-owner application role",
 ]

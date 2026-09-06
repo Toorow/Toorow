@@ -26,12 +26,15 @@ WITH honesty_row AS (
 -- CARDINALITY GUARD: the honesty row must exist, else this proves nothing.
 cardinality_guard AS (
     SELECT
-        CAST(NULL AS VARCHAR) AS project_id,
+        CAST(NULL AS {{ toorow_string_type() }}) AS project_id,
         CAST(NULL AS DATE) AS date,
-        CAST(NULL AS VARCHAR) AS connector,
-        CAST(NULL AS VARCHAR) AS source_currency,
+        CAST(NULL AS {{ toorow_string_type() }}) AS connector,
+        CAST(NULL AS {{ toorow_string_type() }}) AS source_currency,
         'CARDINALITY_FAIL: honesty_missing_currency row absent -- seed not run or fixture emptied'
             AS failure_reason
+    -- BigQuery refuses a WHERE with no FROM; DuckDB allows it. One constant row,
+    -- accepted by both, keeps this guard a guard on either engine.
+    FROM (SELECT 1) AS one_row
     WHERE (SELECT COUNT(*) FROM honesty_row) = 0
 ),
 -- FABRICATION VIOLATION: the honesty row must be honestly un-currencied. If it somehow carries a

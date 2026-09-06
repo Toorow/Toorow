@@ -1507,3 +1507,177 @@ def resolve_field_bindings(
 
 # Re-exported so a surface never has to import two modules to validate a scope.
 __all__ += ["InvalidScope", "SCOPE_PLATFORM", "SCOPE_ORG", "SCOPE_PROJECT"]
+
+
+# ===========================================================================
+# H. INGESTION -- the adapter applied where a row enters the product.
+#
+# `adapt_source_value` above is the pure per-value adapter. Nothing called it:
+# a manifest bound `language` and `languageCode` to ONE dimension and the generic
+# rename map -- a dict comprehension -- let the last field of the JSON file win,
+# so a pull selecting both columns silently dropped one of them and could publish
+# 'English' as a canonical value.
+#
+# The rule this implements is written in
+# docs/product-architecture/governance.md, "'Language' is three dimensions,
+# and an encoding is not one of them":
+#   - several source fields MAY feed one language dimension (the encoding case);
+#   - the row keeps the value of the FINEST grain the source gave;
+#   - two encodings disagreeing on the primary subtag is a source contradiction,
+#     NAMED, never settled by field order;
+#   - a value no adapter parses is a gap carrying the raw value, never a drop.
+# ===========================================================================
+
+#: A row carried two encodings of one dimension whose primary subtags differ.
+GAP_CONFLICTING_ENCODINGS = "conflicting_language_encodings"
+
+#: The manifest key that declares source_field -> canonical dimension.
+_MANIFEST_DIMENSION_MAPPING_KEY = "canonical_dimension_mapping"
+
+
+def _grain_rank(tag: LanguageTag) -> int:
+    """How fine the value the source gave is. Higher wins, ties are not broken here.
+
+    A region or a script is strictly more than a bare subtag, and a display name is
+    the coarsest thing a provider can send -- it cannot carry a locale at all. This
+    is the same "conform to the finest" rule the grain section states; it is NOT a
+    preference between fields, which is why field order never appears in it.
+    """
+    if tag.region or tag.script:
+        return 2
+    if tag.source_encoding == ENCODING_DISPLAY_NAME:
+        return 0
+    return 1
+
+
+@dataclass(frozen=True)
+class LanguageFieldGap:
+    """One thing this row could not say about a language dimension (PURE)."""
+
+    canonical_dimension: str
+    source_fields: tuple[str, ...]
+    source_values: tuple[str, ...]
+    reason: str
+
+
+def language_targets(dimension_mapping) -> dict[str, str]:
+    """{source_field -> canonical dimension} for the language members of a mapping.
+
+    Reads a manifest's ``canonical_dimension_mapping`` as data: a connector that binds
+    a language tomorrow is adapted by the same code, with no list of connectors here.
+    """
+    return {
+        str(source): str(target)
+        for source, target in (dimension_mapping or {}).items()
+        if isinstance(target, str) and is_language_dimension(target)
+    }
+
+
+def adapt_language_row(raw_row, dimension_mapping) -> tuple[dict[str, str], list[LanguageFieldGap]]:
+    """Resolve the language dimensions of ONE raw row (PURE).
+
+    Returns ``({canonical_dimension: canonical_value}, gaps)``. A dimension appears in
+    the result only when the row said something canonical about it; everything else is
+    a gap naming the fields and the raw values, so the caller reports it instead of
+    inventing a language.
+    """
+    targets = language_targets(dimension_mapping)
+    if not targets or not isinstance(raw_row, dict):
+        return {}, []
+
+    seen: dict[str, list[tuple[str, object]]] = {}
+    for source_field, dimension in targets.items():
+        if source_field in raw_row:
+            seen.setdefault(dimension, []).append((source_field, raw_row[source_field]))
+
+    resolved: dict[str, str] = {}
+    gaps: list[LanguageFieldGap] = []
+    for dimension, entries in seen.items():
+        adapted = [(field, value, adapt_source_value(value)) for field, value in entries]
+        usable = [(field, item) for field, _value, item in adapted if item.canonical_value]
+
+        unparseable = [
+            (field, value) for field, value, item in adapted if not item.canonical_value
+        ]
+        if unparseable and not usable:
+            gaps.append(
+                LanguageFieldGap(
+                    canonical_dimension=dimension,
+                    source_fields=tuple(field for field, _ in unparseable),
+                    source_values=tuple(str(value) for _, value in unparseable),
+                    reason=GAP_UNPARSEABLE,
+                )
+            )
+            continue
+        if not usable:
+            continue
+
+        primaries = {item.tag.language for _field, item in usable if item.tag}
+        if len(primaries) > 1:
+            # The source contradicts itself. Storing either encoding would be a guess,
+            # and storing the first one would make the JSON field order the decision.
+            gaps.append(
+                LanguageFieldGap(
+                    canonical_dimension=dimension,
+                    source_fields=tuple(field for field, _ in usable),
+                    source_values=tuple(str(item.source_value) for _, item in usable),
+                    reason=GAP_CONFLICTING_ENCODINGS,
+                )
+            )
+            continue
+
+        best = max(usable, key=lambda pair: _grain_rank(pair[1].tag))
+        resolved[dimension] = best[1].canonical_value
+
+    return resolved, sorted(gaps, key=lambda gap: gap.canonical_dimension)
+
+
+def apply_language_adapters(raw_row, canonical_row, dimension_mapping) -> list[LanguageFieldGap]:
+    """Overwrite the language dimensions of *canonical_row* IN PLACE, and return the gaps.
+
+    THE function every connector transform calls once it has renamed its fields. It
+    removes whatever the generic rename map put there -- which was one arbitrary source
+    encoding -- and writes the canonical value, or nothing when the row has no honest
+    answer.
+    """
+    targets = language_targets(dimension_mapping)
+    if not targets or not isinstance(canonical_row, dict):
+        return []
+    resolved, gaps = adapt_language_row(raw_row, dimension_mapping)
+    for dimension in set(targets.values()):
+        canonical_row.pop(dimension, None)
+    canonical_row.update(resolved)
+    return gaps
+
+
+def adapt_manifest_row_languages(raw_row, canonical_row, manifest) -> list[LanguageFieldGap]:
+    """`apply_language_adapters` for a connector holding its own manifest.
+
+    ONE call site shape for every connector transform, so a manifest that binds a
+    language tomorrow is adapted without touching this file or that one. Gaps are
+    logged here rather than in each connector: one wording, one owner. A gap never
+    stops the row -- the rest of the pull is still true.
+    """
+    gaps = apply_language_adapters(
+        raw_row, canonical_row, (manifest or {}).get(_MANIFEST_DIMENSION_MAPPING_KEY)
+    )
+    for gap in gaps:
+        logger.warning(
+            "language_dimensions: %s not resolved for connector '%s' -- %s (fields=%s values=%s)",
+            gap.canonical_dimension,
+            (manifest or {}).get("name", "unknown"),
+            gap.reason,
+            ",".join(gap.source_fields),
+            ",".join(gap.source_values),
+        )
+    return gaps
+
+
+__all__ += [
+    "GAP_CONFLICTING_ENCODINGS",
+    "LanguageFieldGap",
+    "adapt_language_row",
+    "adapt_manifest_row_languages",
+    "apply_language_adapters",
+    "language_targets",
+]

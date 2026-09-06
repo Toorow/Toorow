@@ -590,6 +590,1171 @@
       "identifier": "118",
       "filename": "118_context_owner_column.sql",
       "sha256": "64f8beec3058b0daeef94e4ee629083dc355708a4e2e28f49cacde87ccdd118e"
+    },
+    {
+      "identifier": "119",
+      "filename": "119_fee_tax_alignment.sql",
+      "sha256": "2f6b6a0b723189669c209b909d6be31b5da906dad390a0fa4643b7f4afd9f69f"
+    },
+    {
+      "identifier": "120",
+      "filename": "120_drop_seeded_demo_content.sql",
+      "sha256": "3f671af5af9546c500e96987be9e75cf90a710a1df07c8c55844856ead912a7c"
+    },
+    {
+      "identifier": "121",
+      "filename": "121_purge_test_fixture_rows.sql",
+      "sha256": "6c002d0bcf6e8a014ae7aceee94dc2cfb3dbb74faeabbf5b000ba3c4d8c236bf"
+    },
+    {
+      "identifier": "122",
+      "filename": "122_derived_columns.sql",
+      "sha256": "f153f62badc8fbcb650e007deb3bfdf0093bada0fc73e851d4b3a5f9bfeff97d"
+    },
+    {
+      "identifier": "123",
+      "filename": "123_fee_tax_119_inplace_edit_repair.sql",
+      "sha256": "080fd406c08636bdb761f7471b90b8008243a1279041fb9ddd2879e0facc7c48"
+    },
+    {
+      "identifier": "124",
+      "filename": "124_derived_columns_kinds.sql",
+      "sha256": "9dc1b1b088f407087ce171d9288e73f8d56e42d66260ce7aaee28585dba35524"
+    },
+    {
+      "identifier": "125",
+      "filename": "125_derived_columns_expressions.sql",
+      "sha256": "57577421c83ac98caf791117e894f1e47bd8c1750ac99c4d6a8daae110cb16ec"
+    },
+    {
+      "identifier": "126",
+      "filename": "126_reference_tables.sql",
+      "sha256": "f9c8d8dabbe8800fed931e8ca8370f1fb9bb18190416efa7b86adf1c69113e6d"
+    },
+    {
+      "identifier": "127",
+      "filename": "127_derived_columns_sql.sql",
+      "sha256": "aa36d750794f0121ea1ecf796331f568211e99fc855210287dbb007c37a95ce1"
+    },
+    {
+      "identifier": "128",
+      "filename": "128_connection_ref_google_direct_nullable.sql",
+      "sha256": "0bf6c00e74811a79905416ce4a9cc70b9a9183943dcacf446c82904d84a1fdf1"
+    },
+    {
+      "identifier": "129",
+      "filename": "129_drop_legacy_knowledge_entries.sql",
+      "sha256": "9496efc0ead33dad3bee9bb9c98a75e5830320d5ca8f5d81baba7c284b2c808f"
+    },
+    {
+      "identifier": "130",
+      "filename": "130_business_taxonomy_context_paths.sql",
+      "sha256": "838990c488f68b47daf084eb5f1c660405c16cf853513fe786e177af5fe7b367"
+    },
+    {
+      "identifier": "131",
+      "filename": "131_project_settings_control_plane.sql",
+      "sha256": "0dbbd04743985a87708402b7924c33bb7e80923b1c583e11f4e97d674dd12fb7"
+    },
+    {
+      "identifier": "132",
+      "filename": "132_global_scope_and_journey.sql",
+      "sha256": "fda498a6891e68b3776b39025c26b7a3659be971152e76c43087a51bd04fb56d"
+    },
+    {
+      "identifier": "133",
+      "filename": "133_data_surface_identities.sql",
+      "sha256": "bd75e900ee44e78bdd603f29290cb37a71a6ed50cd9b3398dc627be300f03b29"
+    },
+    {
+      "identifier": "134",
+      "filename": "134_datastream_preconfiguration.sql",
+      "sha256": "c972cefd13675cec77c02815f0222ace2d662949af19caed339bbfc211fb1457"
+    },
+    {
+      "identifier": "135",
+      "filename": "135_datastream_setup_observations.sql",
+      "sha256": "3350aa95264230115b10d748a8e6babe294f7097b98db745419918d6f1d5229a"
+    },
+    {
+      "identifier": "136",
+      "filename": "136_datastream_business_domain_links.sql",
+      "sha256": "f335c6cb9f4e1e9f76bdea69d6896f9d8c5072c0b943f6e5d0232fc3fdc8a3f5"
+    },
+    {
+      "identifier": "137",
+      "filename": "137_datastream_setup_activation.sql",
+      "sha256": "695ae09a26006ff4cd28becd077e7e72b861987cdd52e732e9d416a62e7b7d01"
+    },
+    {
+      "identifier": "138",
+      "filename": "138_datastream_workbench_evidence.sql",
+      "sha256": "a45830a35e5aed3bb1487953e98ed4ce627c1d9d6727606bc426d4ba2b5c1c87"
+    },
+    {
+      "identifier": "139",
+      "filename": "139_project_capability_proposals.sql",
+      "sha256": "0cad32194abe0ea2fa3942066a0fad446f8d0cda89a539db076e903c88d7c545"
+    },
+    {
+      "identifier": "140",
+      "filename": "140_master_data_registries.sql",
+      "sha256": "c2dc5c4d43fc3fba020db9d6f683b2873722b5b7aa93894167be2c5faa645e93"
+    },
+    {
+      "identifier": "141",
+      "filename": "141_master_data_generic_core.sql",
+      "sha256": "f9a09a9c40c262b2fc19677480f5780d372daa4d198ab780dc23dd491a78185a"
+    },
+    {
+      "identifier": "142",
+      "filename": "142_semantic_model.sql",
+      "sha256": "e9e39113c457308aa71908491b60341af3e494b26961cfbc44cb6ed064aae7fc"
+    },
+    {
+      "identifier": "143",
+      "filename": "143_master_data_one_authority.sql",
+      "sha256": "3e0c86ef005fd80b7fa7b28b42cc127f6b00959e93746a4ae92e5ed41cc63b8f"
+    },
+    {
+      "identifier": "144",
+      "filename": "144_money_and_time_governance.sql",
+      "sha256": "233a977a8bf23fd7375ca54f6159d3d4598bbf85d1c97bcbcda792903a25ef57"
+    },
+    {
+      "identifier": "145",
+      "filename": "145_controls_and_quality.sql",
+      "sha256": "6a4e57bd23adafd61bf6bf428da224deb656dc905526a664cfd02c70e1605b55"
+    },
+    {
+      "identifier": "146",
+      "filename": "146_tax_fee_governed_ladder.sql",
+      "sha256": "a0acb5bef09f8be7310cc9a92d29720150013f2e634a63cdb93a84614ecacb26"
+    },
+    {
+      "identifier": "147",
+      "filename": "147_tracked_entity_evidence.sql",
+      "sha256": "885aa5470b981c575896831c64770958bbf474165120b25e87dfa255bdb14a14"
+    },
+    {
+      "identifier": "148",
+      "filename": "148_tax_fee_activation_pins_money.sql",
+      "sha256": "42a0ce32b98268a7380e179ca3fdd4117a2814437bbd27a6d30c12f3fd4b71c1"
+    },
+    {
+      "identifier": "149",
+      "filename": "149_evidence_reference_index.sql",
+      "sha256": "d76dd32eebda896d1838bbc48ad486fa8920fa352b9b33a9f86b5d3063f25802"
+    },
+    {
+      "identifier": "150",
+      "filename": "150_ai_path_observed_evidence.sql",
+      "sha256": "7266116504e536dcbe44350c555624e26e4b8609a4e255f220fec8480e54551a"
+    },
+    {
+      "identifier": "151",
+      "filename": "151_query_specs_and_results.sql",
+      "sha256": "f2c0b5630f3c0d21f62e45222b6306cc98d07f5638052a014fc0a1b85d38b8fb"
+    },
+    {
+      "identifier": "152",
+      "filename": "152_project_preference_origin_is_earned.sql",
+      "sha256": "7498766349b2cb128cf50318d9086449393d378c125a526efd2512099b5563db"
+    },
+    {
+      "identifier": "153",
+      "filename": "153_product_evaluation_evidence.sql",
+      "sha256": "a31f2db9b2ec24874c32dd64516d6f449a300d20071944927e8894af7e29ece5"
+    },
+    {
+      "identifier": "154",
+      "filename": "154_reports_notebooks_renders.sql",
+      "sha256": "f760fc54f8a6990e0eaf56de31ae1aae220bc970658cb63d4a65ea1db53cfa5d"
+    },
+    {
+      "identifier": "155",
+      "filename": "155_honest_literals_are_null_proof.sql",
+      "sha256": "c10336d1d543ce42e75308302a1c667f4928b79db3bd3876745d21f69217c399"
+    },
+    {
+      "identifier": "156",
+      "filename": "156_visualization_specs.sql",
+      "sha256": "992570956b072a4381f3e9d35ab7e694dabc8d9c3b6f3dd8e0b5a308cb45c222"
+    },
+    {
+      "identifier": "157",
+      "filename": "157_baseline_supersession_is_reachable.sql",
+      "sha256": "81e0df9b90d17a26a988ccb5ee3920e01e1e126a240690784fd6250e0ce4ec19"
+    },
+    {
+      "identifier": "158",
+      "filename": "158_render_spec_fk_and_dispatch.sql",
+      "sha256": "5e81c47f5e0b58c92f696b6f9b4c670dc68b6b7d07ce99881696574e3e43a2b2"
+    },
+    {
+      "identifier": "159",
+      "filename": "159_null_is_not_a_satisfied_check.sql",
+      "sha256": "221acf640feb24ec56569c1ba4b6277ccc9e613c9c0ecdbff766a666b4885f42"
+    },
+    {
+      "identifier": "160",
+      "filename": "160_renderer_runtime_builds.sql",
+      "sha256": "8949b2387a6785e6fc753c0fd8c25e2edc1dbcd4273e2f3d0a16c0ceadc4aeca"
+    },
+    {
+      "identifier": "161",
+      "filename": "161_result_app_grants.sql",
+      "sha256": "1eeb50409363deac7aae8d6d293b5e1a53cb13bcf6e5f461ea8e7d12c162ccba"
+    },
+    {
+      "identifier": "162",
+      "filename": "162_render_shares_ad30.sql",
+      "sha256": "d58ae0f5a4df26c51b5068fa6c4d91d02317f5cea279cfbe3d53efbebfc9237a"
+    },
+    {
+      "identifier": "163",
+      "filename": "163_governed_mutations_can_commit.sql",
+      "sha256": "c6497a710f8a622a36d784f2c3286e7b17c89b76bf599c06d7e7c4c3419a5a8e"
+    },
+    {
+      "identifier": "164",
+      "filename": "164_visualization_pin_cannot_drift.sql",
+      "sha256": "aa859e49518c96dcbfd8ea6788f4875dfcf7c439fa8d4126b97206d8e3699112"
+    },
+    {
+      "identifier": "165",
+      "filename": "165_cardinality_is_not_array_length.sql",
+      "sha256": "3749dc80981f4bcb4f5b66eba1f3f1a67d581ef1317e357fa4dd34722ef7346e"
+    },
+    {
+      "identifier": "166",
+      "filename": "166_the_render_pin_can_finally_be_filled.sql",
+      "sha256": "62e0e4995abc8aa33d5b82008e700eeef6b97df885e259bdd23f7490050216b2"
+    },
+    {
+      "identifier": "167",
+      "filename": "167_render_frozen_payloads.sql",
+      "sha256": "0497c67c9c9574070ac6757ad94fb38d254a00afd357bac9f8f589a30357b2f8"
+    },
+    {
+      "identifier": "168",
+      "filename": "168_the_mcp_dimension_waits_on_evidence_not_on_a_story.sql",
+      "sha256": "aceef3830cf48f7e8a0e3e3bdb2a7788ab7de578a7448a0768a1f170e66d2532"
+    },
+    {
+      "identifier": "169",
+      "filename": "169_file_source_templates_rgpd_hatch.sql",
+      "sha256": "a9f91f394f29bf7c08227d39ff2e72cb5415b8db40740d45b8905ca431f7f605"
+    },
+    {
+      "identifier": "170",
+      "filename": "170_answerable_topics_are_a_project_object.sql",
+      "sha256": "1a558901fc2004fa272e0f7bad7189b6cf181c7fd60050c986b478d20ad734b0"
+    },
+    {
+      "identifier": "171",
+      "filename": "171_inbound_raw_imports_per_attachment.sql",
+      "sha256": "4a4767045a65a8f4ab46bc2c81dd24011cf85c1634234588a88ed289a5da3f77"
+    },
+    {
+      "identifier": "172",
+      "filename": "172_a_topic_binds_its_governed_queries.sql",
+      "sha256": "36d5e56301ccf3d41720b1a467f2bf2fba0d8a240b76c6637ee6cb2a62f93e46"
+    },
+    {
+      "identifier": "173",
+      "filename": "173_a_topic_declares_the_knowledge_it_may_read.sql",
+      "sha256": "1fcf2c21ec6a001e1ea677418cc972d79ced9de61f14676e4af8e6b745ffc289"
+    },
+    {
+      "identifier": "174",
+      "filename": "174_the_language_labels_the_105_never_wrote.sql",
+      "sha256": "4d4f649ebef3ec5c866649176f5834b131b073f2b4aab117a7f55b5a4724fcfa"
+    },
+    {
+      "identifier": "175",
+      "filename": "175_an_inspected_branch_leaves_a_trace.sql",
+      "sha256": "ba5301cd3ce828ffd07fce2abfad6ea4dc4ca9aeb71d8f28bde2e3c6bdcc505c"
+    },
+    {
+      "identifier": "176",
+      "filename": "176_a_judged_branch_outlives_the_person_watching.sql",
+      "sha256": "f3ceda210551cdd4aa237321fd1201c0bddcc284385e8da06cbdcac5a94be9c4"
+    },
+    {
+      "identifier": "177",
+      "filename": "177_the_mcp_app_slot_was_declarable_all_along.sql",
+      "sha256": "b9aebee9c0db81bc206c82cd8a577fbd75c75235e902ca40ff25146db3399d89"
+    },
+    {
+      "identifier": "178",
+      "filename": "178_connector_installation_transition_guard.sql",
+      "sha256": "e882cfd77d52c80d1f22cde17c4efb2c98d7dd77a31791009435a512ddae6bed"
+    },
+    {
+      "identifier": "179",
+      "filename": "179_connector_domain_config_guard.sql",
+      "sha256": "8ffaff9d2d1c258ce26ea4842ede9e2383c699185a43496b174cfc1500e68363"
+    },
+    {
+      "identifier": "180",
+      "filename": "180_connector_verification_run_guard.sql",
+      "sha256": "1a8290117383510b307c17eed91ab0a5693664ca9ab7e7d3aa0d19799f253946"
+    },
+    {
+      "identifier": "181",
+      "filename": "181_connector_activation_guard.sql",
+      "sha256": "b7988f3351dd36cb85b0864e2354245cba5903e8636216e3805dd83f432a50ca"
+    },
+    {
+      "identifier": "182",
+      "filename": "182_import_template_contract_guard.sql",
+      "sha256": "e0c49aa6293bd67a5a6bff7c0f6e82f32d8f4dbf549f77d65ae0ae584b578486"
+    },
+    {
+      "identifier": "183",
+      "filename": "183_inbound_credential_lifecycle_guard.sql",
+      "sha256": "3e9d2a9233e5e4c84718669fa07c826d7fc79e68d36d2f401c8cc24f7ac931bb"
+    },
+    {
+      "identifier": "184",
+      "filename": "184_inbound_receipt_durability_guard.sql",
+      "sha256": "4ce960bf80e265931b35181d8e972ebacd0d02eaaa80b5643da89ba29ee64431"
+    },
+    {
+      "identifier": "185",
+      "filename": "185_inbound_raw_import_durability_guard.sql",
+      "sha256": "232ef22a451605b6681731cb76c59d8e7c8bf0bf6cab80e959e9e7bdcf2a3e3b"
+    },
+    {
+      "identifier": "186",
+      "filename": "186_inbound_scan_jobs.sql",
+      "sha256": "58e5f4124fa8aee064dbaa896d2e2ee6f59f821966a502d302ba4388af6f04a2"
+    },
+    {
+      "identifier": "187",
+      "filename": "187_inbound_scan_recovery_receipt_transition.sql",
+      "sha256": "d2a4b4e20fe9daed67140ffcdd404920c39aa9e9a3b6f23a863865a7e2d3d3f6"
+    },
+    {
+      "identifier": "188",
+      "filename": "188_file_source_template_confirmation.sql",
+      "sha256": "0fffb2de8debc99a686a2e76cca4a3e2dc9e8c1cbdef19c6cf4f09fd33f2ed5b"
+    },
+    {
+      "identifier": "189",
+      "filename": "189_inbound_scan_attempt_range_guard.sql",
+      "sha256": "e79eb73a6c69c55abe66fde9882801b580bc054246d7a8b543135103abc09e20"
+    },
+    {
+      "identifier": "190",
+      "filename": "190_inbound_scan_recovery_idempotency.sql",
+      "sha256": "3b1d32b0ca3956d627aa818b89153fc2b42d75970e3faafb43ba5fb580c4ad89"
+    },
+    {
+      "identifier": "191",
+      "filename": "191_waterfall_visual_family.sql",
+      "sha256": "b5f5894cc9c8ec9d594923db52782d48e680f369a6fcf19fe127f5964014d7ec"
+    },
+    {
+      "identifier": "192",
+      "filename": "192_csv_excel_contract_confirmation.sql",
+      "sha256": "87e1b91a6e0cbcadbed1f4c7c96e6548f99fb635499bc5d73f6a73b35c58c86e"
+    },
+    {
+      "identifier": "193",
+      "filename": "193_sav_governed_format.sql",
+      "sha256": "89e81d933de666fb07241e800ec30365cdee788bfadbf4508ee8944fcd4068e2"
+    },
+    {
+      "identifier": "194",
+      "filename": "194_managed_file_dispatch.sql",
+      "sha256": "026f30914a2403f7d82fd0570ff39bacf9946fd02352037911db756a155d627f"
+    },
+    {
+      "identifier": "195",
+      "filename": "195_platform_clock_registry.sql",
+      "sha256": "ba550759c9ef91b17b5c96fbb036adfbad6821267c0f2b5428974db6eb15fc67"
+    },
+    {
+      "identifier": "196",
+      "filename": "196_platform_operating_procedure.sql",
+      "sha256": "c4a886a08581831a67ddecd30045a034b9b2b2be4ac921a6f56f2cf5f52495c4"
+    },
+    {
+      "identifier": "197",
+      "filename": "197_platform_clock_job_identity.sql",
+      "sha256": "a0894b7868101f0977a6b62c454041c70503ccbcfcced9ab01c7097634ef7ada"
+    },
+    {
+      "identifier": "198",
+      "filename": "198_org_plan_history_delete_grant.sql",
+      "sha256": "0240208a05e9166bb668425b27fdfb610a806b0ddadb2b8192867fbdfd977367"
+    },
+    {
+      "identifier": "199",
+      "filename": "199_inbound_rate_events_rgpd_hatch.sql",
+      "sha256": "ea4f29d0e97417f906eeec9f4712f30f8fe167f599e14e500d0b5cff62e37a02"
+    },
+    {
+      "identifier": "200",
+      "filename": "200_rgpd_erasure_hatch_for_all_append_only_guards.sql",
+      "sha256": "34367522f14110fd957cfb6fb7db05d0931ec3f34cdc65acad7e67197fd2712c"
+    },
+    {
+      "identifier": "201",
+      "filename": "201_business_link_targets_catch_up_with_the_code.sql",
+      "sha256": "6ad94facee5450d08a13225e7d7106e38aca5688f0f2be88cccb6f590cdbe3e1"
+    },
+    {
+      "identifier": "202",
+      "filename": "202_what_an_agent_may_return_to_the_governed_base.sql",
+      "sha256": "3df16223f3b4aa70088706bdc2f4a32085dffa4b5df80101286a28e3b31cad57"
+    },
+    {
+      "identifier": "203",
+      "filename": "203_keywords_are_not_governed_metrics.sql",
+      "sha256": "be76f4f34d0e05787451e21e630d9befbbb08be7c4d2ad24770563fdf34e7370"
+    },
+    {
+      "identifier": "204",
+      "filename": "204_datastream_weekly_schedule.sql",
+      "sha256": "0279c20912dbc4cd484674381177a7f4e4ce0cb2e13b6df05c0dc87a704cac47"
+    },
+    {
+      "identifier": "205",
+      "filename": "205_a_queued_remark_may_carry_the_change_it_proposes.sql",
+      "sha256": "0656ef7451432899d824a101ba95221b6d3a0fb08df5ae469919cbfb808b3900"
+    },
+    {
+      "identifier": "206",
+      "filename": "206_datastream_window_offset.sql",
+      "sha256": "fcbb3d1e91e208c353dc90da3e66299313b1451d1a826ee2eede35bf4413ce9f"
+    },
+    {
+      "identifier": "207",
+      "filename": "207_the_application_role_can_finally_be_one.sql",
+      "sha256": "7df4878804d2e1720561ffe1c6d162fcc081189d7aa14a8938dd3a1c514feb74"
+    },
+    {
+      "identifier": "208",
+      "filename": "208_a_client_name_must_be_able_to_leave_an_append_only_row.sql",
+      "sha256": "2a9f4498f666017c4bf6ca3e61a7c5b72c91c4dd9b4a8d239574ae4fdff4e690"
+    },
+    {
+      "identifier": "209",
+      "filename": "209_the_rgpd_hatch_re_armed_minus_the_allowlist_099_wrote.sql",
+      "sha256": "1e9614e1f43d422db77bf8b9d2f9507eb9f186992327730c6365bee83d7f6955"
+    },
+    {
+      "identifier": "210",
+      "filename": "210_an_account_remembers_which_connector_found_it.sql",
+      "sha256": "6617aeaa91b6093b10bfc7aa5a316de375d0380205fadbe6033a6cfdcf67e7d4"
+    },
+    {
+      "identifier": "211",
+      "filename": "211_a_datastream_names_its_own_source_account.sql",
+      "sha256": "c8c506c15de1d07662c30c9b14019424aa3b51e3f3dcf0f9aebe10a8cc5c3b5f"
+    },
+    {
+      "identifier": "212",
+      "filename": "212_an_event_binding_cannot_be_undone_by_an_update.sql",
+      "sha256": "147bcae3ccc14a6e0f4d393167dab6da92848a570a4af0a8613d1bab6b74afda"
+    },
+    {
+      "identifier": "213",
+      "filename": "213_the_ledger_may_name_either_contract_it_actually_used.sql",
+      "sha256": "0b64fb3ae0193700064c0daa6cb32444400b0b1649226f33ef15e8d9391d1ac3"
+    },
+    {
+      "identifier": "214",
+      "filename": "214_a_receipt_remembers_who_sent_it.sql",
+      "sha256": "da9a39bc5ee9a93a13034b78c525078a97ada488163b34ac38fcb37ef5a78d5e"
+    },
+    {
+      "identifier": "215",
+      "filename": "215_a_remark_belongs_to_one_organization.sql",
+      "sha256": "bcf0e97c0100e039c3bce47b403c5fbd5c271efc4478aca646aace099dd12c9e"
+    },
+    {
+      "identifier": "216",
+      "filename": "216_a_saved_setup_can_be_reopened_elsewhere.sql",
+      "sha256": "8f6f490ce1c0be2f34a49b975cd0cc65066417f7ff645d282b48a1166306acb2"
+    },
+    {
+      "identifier": "217",
+      "filename": "217_an_arrival_hour_is_a_value_not_a_consequence.sql",
+      "sha256": "c42773a498c5fa6232a5858cbdf15f665142bd387acf8ee8152d3c67e1abbfdc"
+    },
+    {
+      "identifier": "218",
+      "filename": "218_a_running_collection_writes_where_it_is.sql",
+      "sha256": "bb61be7c95595f6d3c6b9c2b83843612c5f9bf287144fc9ab6b8a1306f57f393"
+    },
+    {
+      "identifier": "219",
+      "filename": "219_the_rate_of_a_stream_is_read_bounded.sql",
+      "sha256": "33b2af05ffc884688f067364791368e1f533713e5f48470d9385d75d197f7f0b"
+    },
+    {
+      "identifier": "220",
+      "filename": "220_a_window_that_never_started_can_be_refused.sql",
+      "sha256": "cf42cd090237e08369b5b9ac204c0d009bc02a43eefab5b44704e589077aec62"
+    },
+    {
+      "identifier": "221",
+      "filename": "221_a_window_of_days_is_read_by_its_bounds.sql",
+      "sha256": "5b80c69af173066c212947796ccbb539a5b3c54584dbce7d9b81134f0107f406"
+    },
+    {
+      "identifier": "222",
+      "filename": "222_an_anomaly_names_the_run_that_found_it.sql",
+      "sha256": "6bc482d17a5bd8a75ad537d1f06e66f43662e8c52b2ad089ff6392efd4d99943"
+    },
+    {
+      "identifier": "223",
+      "filename": "223_a_step_of_a_run_has_a_duration.sql",
+      "sha256": "734d6b12b6d1f0251ae3b0f45fc8c078dbb3b0f8902a2396957825a3d8876fdb"
+    },
+    {
+      "identifier": "224",
+      "filename": "224_a_materialization_may_precede_its_mapping.sql",
+      "sha256": "e49fdbe43c675b958e35b2c6e90d84e29fe0e15759d563262d6dabffb8ac865a"
+    },
+    {
+      "identifier": "225",
+      "filename": "225_the_confirmation_vocabulary_learns_the_commands_the_code_issues.sql",
+      "sha256": "c57778a6022253004d06609b738f431e079bab0a97eddc83316d6fbd9ff09371"
+    },
+    {
+      "identifier": "226",
+      "filename": "226_a_datastream_without_a_source_kind_is_insertable.sql",
+      "sha256": "4705e1be8cc65e79e70fa21d6a4a851c3089f7781c094c48dc9c55d98fbb9a5e"
+    },
+    {
+      "identifier": "227",
+      "filename": "227_a_managed_feed_declares_the_key_that_supersedes_it.sql",
+      "sha256": "ace695ca523d15c8fa651bed639d3f9c7f973cb7266d4f8640f5e5214b38228c"
+    },
+    {
+      "identifier": "228",
+      "filename": "228_a_crossing_may_carry_its_reasons.sql",
+      "sha256": "098c74f40a4d965385a404f35155eb78e302ef8b52ffe38b4c5150124ea2364c"
+    },
+    {
+      "identifier": "229",
+      "filename": "229_one_fact_is_one_alert.sql",
+      "sha256": "ae19a509f3753281a64f1cea894f5ffb0741317bb9bbf5486f17df79bffc9a08"
+    },
+    {
+      "identifier": "230",
+      "filename": "230_a_credential_no_datastream_owns_is_removable_once.sql",
+      "sha256": "1e4e935d90e402c0f20d07cae57aa19b72d7dddc3a8813e1480b62bb0ce556e4"
+    },
+    {
+      "identifier": "231",
+      "filename": "231_a_deferred_setup_is_completed_by_a_second_act.sql",
+      "sha256": "ff721e0134af21cefc1a73bbf2f77106adbca96292fa8dc2eabbefe9ce72bc24"
+    },
+    {
+      "identifier": "232",
+      "filename": "232_a_reviewed_contract_fits_the_budget_it_is_measured_against.sql",
+      "sha256": "18db3d4283d81c3a65c1f0ea73e0e56911a5175b463fb78ba0b687f47e402b0b"
+    },
+    {
+      "identifier": "233",
+      "filename": "233_a_governed_node_is_joinable_in_the_warehouse.sql",
+      "sha256": "3e8c18aaea96400bdacfd5f40ba71efa351173d99e6a9105b4315fc8c8efae40"
+    },
+    {
+      "identifier": "234",
+      "filename": "234_an_alert_names_the_destination_it_leaves_by.sql",
+      "sha256": "c680d1fc3f0d216b50276ea36bcc26ffd16435b8e8384af352b2a6050e8ea83e"
+    },
+    {
+      "identifier": "235",
+      "filename": "235_a_client_value_table_names_the_streams_it_serves.sql",
+      "sha256": "749b4dce2df65e5d216d0e4a1886eba7115cc2e1066a70515d1d91a03b23675a"
+    },
+    {
+      "identifier": "236",
+      "filename": "236_a_client_object_kind_names_what_feeds_it.sql",
+      "sha256": "c303cbf2dcbb4f84f04ced8be8af8ee43e9f99ce55a732a6239035f0f1af5ed5"
+    },
+    {
+      "identifier": "237",
+      "filename": "237_a_metric_declares_its_additivity_or_it_is_not_stored.sql",
+      "sha256": "bb7b6c9e16f543e3c139a72b3252efb0ff625aa02d7dfd4fbebe4823b600c43e"
+    },
+    {
+      "identifier": "238",
+      "filename": "238_a_source_says_how_its_rows_become_objects.sql",
+      "sha256": "0dd8b6f199895cab53a35990f5323ab610d650ad7f7a216b635e8a6c8dfd91c7"
+    },
+    {
+      "identifier": "239",
+      "filename": "239_a_client_property_is_typed_and_joinable.sql",
+      "sha256": "59445c34de615d3957577b79e0f7296b89dfdc4f67fb53425180658665691e5c"
+    },
+    {
+      "identifier": "240",
+      "filename": "240_a_cleanup_rule_stores_a_pattern_not_sql.sql",
+      "sha256": "ad0861c5f57a776a4e54ac002f9cdf59f5d3e176755f14df77bd41dbb4f67598"
+    },
+    {
+      "identifier": "241",
+      "filename": "241_a_field_says_which_object_it_qualifies.sql",
+      "sha256": "1ad866cae0bb48196cac1122510c79aa165e93fcade94d5783cb5af05ba6a078"
+    },
+    {
+      "identifier": "242",
+      "filename": "242_a_transformation_rule_remembers_what_it_was.sql",
+      "sha256": "c9effa7025a9eba805b8c51ea9bf848f78f37ebb2443e971b328dcc3b0b36f62"
+    },
+    {
+      "identifier": "243",
+      "filename": "243_a_project_carries_its_sixth_capability.sql",
+      "sha256": "8cf41d426b3aa4198ce208522480b687b28ad2e5d13e4d8472f7781e21df078c"
+    },
+    {
+      "identifier": "244",
+      "filename": "244_a_plan_line_names_the_placements_it_bought.sql",
+      "sha256": "20d989fbc437ff354b44a7ddd406eb84acafd93392a986dd4ac699078be4cf01"
+    },
+    {
+      "identifier": "245",
+      "filename": "245_a_spend_outside_the_plan_is_accepted_by_a_person.sql",
+      "sha256": "f670cdbcc54a388383052d0177c07d5d63824395e9f0c0368cffb3127c69fb6d"
+    },
+    {
+      "identifier": "246",
+      "filename": "246_a_plan_match_says_how_it_was_obtained.sql",
+      "sha256": "9c64a6552952321703ba0fd4467f76de1a38a15617322bfe8c6e1c503cd6ddb5"
+    },
+    {
+      "identifier": "247",
+      "filename": "247_a_pull_connector_contract_hangs_from_its_module.sql",
+      "sha256": "cc85d95a0028e642b14339bc1af2d297135454298b58c46af342f9dd1ba1c77f"
+    },
+    {
+      "identifier": "248",
+      "filename": "248_share_freezes_ai_path_evidence.sql",
+      "sha256": "2b65446a1cc27abbbccfd347eee70f696d44757ea8c9bba3d8b109b2a0c30409"
+    },
+    {
+      "identifier": "249",
+      "filename": "249_exact_analyze_feedback.sql",
+      "sha256": "8165df5a774fcd748674ed63aef8b104a7ee1d11a7eef2b50e5026206cfc3e7b"
+    },
+    {
+      "identifier": "250",
+      "filename": "250_a_connector_contract_has_no_installation.sql",
+      "sha256": "cb9eb042987d45e7fb765b4424bd9242394e45be64af7008dc23417d616aca51"
+    },
+    {
+      "identifier": "251",
+      "filename": "251_feedback_review_exact_cohorts.sql",
+      "sha256": "658d2a90cfbf29b98fca8859863b6da6f35e1aea5b1900b8a0aea089a084f7dc"
+    },
+    {
+      "identifier": "252",
+      "filename": "252_feedback_regression_cases.sql",
+      "sha256": "63da7be6d0e25bad7ee5ce42938b6e4f8b2acceebd083b58980ede7d6c579035"
+    },
+    {
+      "identifier": "253",
+      "filename": "253_a_spreadsheet_of_twenty_two_columns_fits_the_budget_too.sql",
+      "sha256": "d11f794c478f324f9f49ec4c5ae3efad8e78b0000613ad0f0de5fd30a856ef26"
+    },
+    {
+      "identifier": "254",
+      "filename": "254_a_selection_is_a_path_not_a_leaf.sql",
+      "sha256": "6c2f9fc6062f673c33e4a29299d72107cde0854ab031f2bd6d50f3b668a3775c"
+    },
+    {
+      "identifier": "255",
+      "filename": "255_a_preparation_says_whether_its_base_was_in_force.sql",
+      "sha256": "9272c6b26bc99e89c78f3c59d970789cbde804259bf13699b295293bf487dfae"
+    },
+    {
+      "identifier": "256",
+      "filename": "256_an_archived_datastream_stops_holding_its_name.sql",
+      "sha256": "edc2161db603504c1385621258ddce94f24066f84775667f7b71fd1a479c646b"
+    },
+    {
+      "identifier": "257",
+      "filename": "257_a_view_version_is_not_a_concept_version.sql",
+      "sha256": "895c4f71047dbec5b07f4fe28d87e0d3307308f8231ae5339bb00fe35d2882de"
+    },
+    {
+      "identifier": "258",
+      "filename": "258_a_common_key_is_declared_once.sql",
+      "sha256": "5dd9a7b730907ffeb274fe03db0487ec139ed44e9bd820b17089167b1bc7f68e"
+    },
+    {
+      "identifier": "259",
+      "filename": "259_scope_common_key_relationships_to_project.sql",
+      "sha256": "53504af89257def1fe0f06f908fa12051ac6462c6277baf24d3a0323d92b4954"
+    },
+    {
+      "identifier": "260",
+      "filename": "260_a_relationship_approves_one_datastream_pair.sql",
+      "sha256": "b30bc73a472046ca97375281b063fa5ca3e9f5fc4a1b7efe3a1df67839c7bde5"
+    },
+    {
+      "identifier": "261",
+      "filename": "261_a_measure_declares_its_total_and_its_breakdowns.sql",
+      "sha256": "ba3198cc73a254c3c85bc4565ed317c0041b8b4a04c7ca5d7905b2bbe9a60ab1"
+    },
+    {
+      "identifier": "262",
+      "filename": "262_an_event_names_the_entity_it_is_about.sql",
+      "sha256": "cc12ec114ece99f3d5d9e2a8ff3bffda810f5e073652a5919b56b9a2fbd3a76d"
+    },
+    {
+      "identifier": "263",
+      "filename": "263_a_second_expression_path_is_removed.sql",
+      "sha256": "b2610b78678f30f8590bd40a892a2f72c4c953a471225950e51c61f00a72837c"
+    },
+    {
+      "identifier": "264",
+      "filename": "264_nine_more_guards_yield_to_an_erasure.sql",
+      "sha256": "6c7c3d61b74603a41a2dbd7391b448ab51518939b0d3aad4da1e25537465860a"
+    },
+    {
+      "identifier": "265",
+      "filename": "265_a_mapping_review_freezes_its_file_and_template.sql",
+      "sha256": "66ba0b2e147a5b8ca023b9728907fac94b498e5f57c0a7909d285c9c5f1ef94d"
+    },
+    {
+      "identifier": "266",
+      "filename": "266_five_headers_named_the_wrong_eraser.sql",
+      "sha256": "d9b6672ae24a835d7b7d8e4145f0badd27c90c185819687cd9d9e6241c50c134"
+    },
+    {
+      "identifier": "267",
+      "filename": "267_an_api_connector_owes_no_domain.sql",
+      "sha256": "b3c03509c3d74f86b978ed503efdddbeeb42300198eaa0e4c85120fb9702c92b"
+    },
+    {
+      "identifier": "268",
+      "filename": "268_verification_evidence_without_a_routing_contract.sql",
+      "sha256": "d227df2ed51a0cb19b0c0e93523d052584cd55fd53273241d66f9871fe7b91e0"
+    },
+    {
+      "identifier": "269",
+      "filename": "269_tax_reads_the_published_country_meaning.sql",
+      "sha256": "87e74dfee9efda3036ff336a6c7579579b69eeb9105bf6742582796a5769b8c5"
+    },
+    {
+      "identifier": "270",
+      "filename": "270_no_sentinel_can_be_a_member.sql",
+      "sha256": "c098841f5ef671b1f7ce03e0197be29e13749e8781c9679efd2a7f9c34cfcb24"
+    },
+    {
+      "identifier": "271",
+      "filename": "271_the_second_reconciliation_model_is_retired.sql",
+      "sha256": "84eea223a3e4fba89422fe528a60a56a138a04b4cbb8fc26b11cf4f4503f473f"
+    },
+    {
+      "identifier": "272",
+      "filename": "272_a_governed_node_is_linkable_in_the_context_hub.sql",
+      "sha256": "52d3c40ff460969f69c9a06560d89a706e94648e3f4e4635ba9e9a8fa7ff6267"
+    },
+    {
+      "identifier": "273",
+      "filename": "273_every_org_scoped_table_carries_a_policy.sql",
+      "sha256": "7fe54d43c55b5089b024186b0af23dcd8db115238aff0dff3f64f616a9646e2b"
+    },
+    {
+      "identifier": "274",
+      "filename": "274_a_row_without_an_org_belongs_to_no_tenant.sql",
+      "sha256": "e2de79a02ab94840661c1b727d5092b7a7119b06d65df6b36b0f335403c5fe02"
+    },
+    {
+      "identifier": "275",
+      "filename": "275_a_pull_belongs_to_its_datastream.sql",
+      "sha256": "adb6e6cb93eab678b8b517f4c93a21bb895f31a452ddaf224b5c6434db7b8580"
+    },
+    {
+      "identifier": "276",
+      "filename": "276_a_red_health_names_the_pull_that_raised_it.sql",
+      "sha256": "af62bda7158079a1348c202d85a5337101b72d2a9be2f8fb30ed1ef1568cb0de"
+    },
+    {
+      "identifier": "277",
+      "filename": "277_the_erasure_hatch_is_a_privilege_too.sql",
+      "sha256": "59eb5f7bc38d0bd4785a817842c6c93e44e3b02b7b6d3894ee20777ce932f235"
+    },
+    {
+      "identifier": "278",
+      "filename": "278_a_recreated_guard_keeps_the_erasure_clause.sql",
+      "sha256": "78c4b61b6c9aef089b4533126fcad38919cc3e0ee3f4a3ad398002fca4d0c1dc"
+    },
+    {
+      "identifier": "279",
+      "filename": "279_a_posed_rate_carries_a_method_of_its_own.sql",
+      "sha256": "154dca14987038a0ab6428f829be8c17029522ed1747e87aedb509cede19e324"
+    },
+    {
+      "identifier": "280",
+      "filename": "280_a_sealed_ticket_can_finally_be_torn_up.sql",
+      "sha256": "b14a1ec9ba2f439e32ab7c5771602bea407fcc53023be240d30aeeae3b24b910"
+    },
+    {
+      "identifier": "281",
+      "filename": "281_a_published_insight_names_its_result.sql",
+      "sha256": "ad1d9bbefa1094fb6a463da381e64592cb55f783d50b02c93545ecb49a1ebadb"
+    },
+    {
+      "identifier": "282",
+      "filename": "282_a_declared_source_currency_is_a_version_not_a_row.sql",
+      "sha256": "9467ce4ef2001d5799405ee8d0dea3710f334e40e0a6a15513c2c2ef379a8eee"
+    },
+    {
+      "identifier": "283",
+      "filename": "283_a_bound_host_context_can_be_cut.sql",
+      "sha256": "b7f886de256fe3d171f6f77696d8fe9ced2dbce00201dc377c51199cc7b296e3"
+    },
+    {
+      "identifier": "284",
+      "filename": "284_a_draft_state_nobody_can_reach_is_retired.sql",
+      "sha256": "0b16fe26650b141de25ac6522a729ce46e06a4171d881c3b9045d151a35868a3"
+    },
+    {
+      "identifier": "285",
+      "filename": "285_an_archived_analysis_artifact_names_who_archived_it.sql",
+      "sha256": "f86f74f4e42362b8b5079827ecbff44ab6fb4865268723a2564ae773c53ea135"
+    },
+    {
+      "identifier": "286",
+      "filename": "286_a_manual_event_can_be_corrected_and_retired.sql",
+      "sha256": "d0f8c0f6c78fabf371c5bff44d8dedd09d55b402223c884d72f767c2f35e1739"
+    },
+    {
+      "identifier": "287",
+      "filename": "287_a_manual_annotation_was_never_an_observation.sql",
+      "sha256": "f44ecc84fb3f948fff0100b7faf5ba44fc85aebac0dcc606b13ad9b4f28ab8ff"
+    },
+    {
+      "identifier": "288",
+      "filename": "288_a_posed_rate_can_name_the_case_it_holds_for.sql",
+      "sha256": "55e9073a0c90cddb1a7e20e44bc7e59a08ee70848ccf100a6649c5d17012be0a"
+    },
+    {
+      "identifier": "289",
+      "filename": "289_a_canonical_field_can_be_linked_in_the_base_too.sql",
+      "sha256": "181d16f24a23bc4b68bdc0acc377a190f6be7f6c1d48e90d59790672d1c06238"
+    },
+    {
+      "identifier": "290",
+      "filename": "290_dataset_access_grant_lifecycle.sql",
+      "sha256": "2c23b15917bcc6047356c41b4038f532070e1ad9787e10dcfa87c40e3e747e0f"
+    },
+    {
+      "identifier": "291",
+      "filename": "291_a_platform_alert_belongs_to_no_project.sql",
+      "sha256": "07e15efc4c41183042e3aa04d86331f65f31f84b3bfab69fd08e6f6fac87fd89"
+    },
+    {
+      "identifier": "292",
+      "filename": "292_the_import_ledger_carries_a_policy.sql",
+      "sha256": "edf2dc904322ad5d80d16f429e02da0e625c56f70744a55fd309c7dad4ed7a4f"
+    },
+    {
+      "identifier": "293",
+      "filename": "293_a_declared_entity_type_names_its_canonical_key.sql",
+      "sha256": "7f71490d7f0394e2e238bc886e2d361488cdb7eea69593049b4a192188d83a9b"
+    },
+    {
+      "identifier": "294",
+      "filename": "294_a_derived_attribute_names_the_rule_that_made_it.sql",
+      "sha256": "68191cd92faf28592ef0db0ce616d3ea0cb9125acfa909b757eb401ec18f79a9"
+    },
+    {
+      "identifier": "295",
+      "filename": "295_a_node_version_names_the_import_that_landed_it.sql",
+      "sha256": "cb7c6edf3a96337732aef89269e76112f1b22f8e76add51897b7c5fbd6230699"
+    },
+    {
+      "identifier": "296",
+      "filename": "296_a_bound_key_occurrence_carries_a_verdict.sql",
+      "sha256": "dea3803ac8ab9d1348ea1a535785cd0d0f74a745a7ac4cf0afe66f36acea5e02"
+    },
+    {
+      "identifier": "297",
+      "filename": "297_a_refused_pull_is_not_an_empty_one.sql",
+      "sha256": "6b523d34725b8aeff7b45028b8c94017ca416f30f187611b093129c06bd8a874"
+    },
+    {
+      "identifier": "298",
+      "filename": "298_the_last_ungoverned_dq_baseline_is_retired.sql",
+      "sha256": "24fd5574b192929febb16e87d79d222d38796ea700b5ed61f757f0e7291157b4"
+    },
+    {
+      "identifier": "299",
+      "filename": "299_a_managed_feed_declares_which_column_is_a_measure.sql",
+      "sha256": "4be0664dc9b913b0e3223e42b70e5878f55571612b595a55a1aa11a71bb824c4"
+    },
+    {
+      "identifier": "300",
+      "filename": "300_an_attribute_is_readable_at_the_date_of_the_row.sql",
+      "sha256": "77f8a97963ee1b46b01a3e6d8a1061108db7e84e660c7cf6ef77be685e9acbf4"
+    },
+    {
+      "identifier": "301",
+      "filename": "301_a_label_identity_keeps_the_shape_it_documents.sql",
+      "sha256": "9d6a1f64d7f3184b8b93eeb3d21dd27603fda921e9aaf7fcb63ed19827331663"
+    },
+    {
+      "identifier": "302",
+      "filename": "302_the_grain_of_a_managed_feed_names_landed_columns.sql",
+      "sha256": "952cdeaa7152cecf3ef8e2570e283f388ebbd2a6f887f341ea10aed84c508ee7"
+    },
+    {
+      "identifier": "303",
+      "filename": "303_a_media_plan_names_the_datastream_that_carries_it.sql",
+      "sha256": "b5d290586978204406e965d2d4e71431f562762b1705001c80672707c9916746"
+    },
+    {
+      "identifier": "304",
+      "filename": "304_picture_in_picture_is_a_profile_the_product_has.sql",
+      "sha256": "4b898f4286341b94f8cb9b2663efc1a7ebccb3615478df0e06879d5586a8e44d"
+    },
+    {
+      "identifier": "305",
+      "filename": "305_a_posed_rate_reaches_the_relation_that_converts.sql",
+      "sha256": "8a27e296341bbec332fefd5ba7c309025b590546dad0a4658cc77d04daba989f"
+    },
+    {
+      "identifier": "306",
+      "filename": "306_a_governed_business_row_is_superseded_never_destroyed.sql",
+      "sha256": "531ac373a9d6a9f688e51ce18798c8b87695d451df06009edb77a1d66567a2ef"
+    },
+    {
+      "identifier": "307",
+      "filename": "307_a_carried_identity_has_the_shape_its_writers_actually_mint.sql",
+      "sha256": "345907a94455c8d38e481e68551c3c4ca3733e07a2efc033051d4dfdfa82956e"
+    },
+    {
+      "identifier": "308",
+      "filename": "308_a_marts_read_names_the_project_it_opens.sql",
+      "sha256": "7f111f0825448b1eef1273b92e7cd81e57cb2d5606c92ef67197a51f2b82f752"
+    },
+    {
+      "identifier": "309",
+      "filename": "309_two_datastreams_are_aligned_by_a_named_person.sql",
+      "sha256": "1301b0422cee91791180aea65f6b3a6967af24e7954f8e6927d9365f4d26e0da"
+    },
+    {
+      "identifier": "310",
+      "filename": "310_a_ventilated_share_names_the_volume_that_split_it.sql",
+      "sha256": "89a784ffa7d3d413313feac290e3bdb1d91fa11cdea1438da434e736eab50659"
+    },
+    {
+      "identifier": "311",
+      "filename": "311_a_published_view_registers_the_domain_it_names.sql",
+      "sha256": "9278d5c1c78324959b5578a18e81ce243a1faf26b3403f0792b1717d7eefa1f7"
+    },
+    {
+      "identifier": "312",
+      "filename": "312_the_purge_names_what_309_claimed_it_walked.sql",
+      "sha256": "b00a6c06a9d56ac2d97225e76fd1e174ce9af38529e4011d8f8d850e1c4e9263"
+    },
+    {
+      "identifier": "313",
+      "filename": "313_the_dataset_check_refuses_every_slate_token_the_code_does.sql",
+      "sha256": "61a5c7687d1a518d0b554c3b82cf5916888f4f6de60d833f8e6cadb80f771e82"
+    },
+    {
+      "identifier": "314",
+      "filename": "314_a_pinned_concept_no_longer_makes_a_project_unerasable.sql",
+      "sha256": "220e8cb1832ee88c139856fa680b6a63a678318a2800c361b820682873296ea2"
+    },
+    {
+      "identifier": "315",
+      "filename": "315_a_metric_names_the_dimensions_it_is_reported_against.sql",
+      "sha256": "8632fda17e3eb82d92b879afb1bfb327d99dec0bbafff5aacc106b0f6bb2a901"
+    },
+    {
+      "identifier": "316",
+      "filename": "316_a_narrow_grant_is_declarative_until_the_revoke_lands.sql",
+      "sha256": "9e9945f813d40f1507df3f5a67e1200e40319fff9a4aab23632e252785738077"
+    },
+    {
+      "identifier": "317",
+      "filename": "317_a_context_relation_has_one_writer_and_a_version_it_cannot_rewrite.sql",
+      "sha256": "447982738ad2ce28712f962df3e21daa7c0c92776c507ab0ea357c41f822fc1f"
+    },
+    {
+      "identifier": "318",
+      "filename": "318_the_head_of_a_context_relation_moves_on_four_columns_only.sql",
+      "sha256": "bde808092126f680124178ab47c26004113cd021842018280c156fbda318f401"
+    },
+    {
+      "identifier": "319",
+      "filename": "319_a_catalog_template_declares_where_its_rows_sit.sql",
+      "sha256": "d083b33f623f92b34594594a76d5cf001eef0e0b6266c3179d99f7f483be3533"
+    },
+    {
+      "identifier": "320",
+      "filename": "320_the_ledger_names_the_catalog_template_it_actually_used.sql",
+      "sha256": "859283789dbbadc45946e968c7e1d6b5782fd58a9e24c24d895d891164d4d1fd"
+    },
+    {
+      "identifier": "321",
+      "filename": "321_a_daily_insight_is_retracted_never_deleted.sql",
+      "sha256": "b7e2a6dfa9240bf15b3d7d6d00d2d9e6889f3b9182541a585715d0cf1de66675"
+    },
+    {
+      "identifier": "322",
+      "filename": "322_an_annotation_names_the_metric_it_is_about.sql",
+      "sha256": "fa2628937373ea5db3be5c14e87184c022ece20fc6aea4a3e6063c4248f82874"
+    },
+    {
+      "identifier": "323",
+      "filename": "323_a_share_leaves_the_platform_only_when_a_second_holder_says_so.sql",
+      "sha256": "7e1e306de57b5594d8d813a263bb155d9e3048f3d0b273b720e8ec11e04b65cb"
+    },
+    {
+      "identifier": "324",
+      "filename": "324_a_retracted_row_is_frozen_whole_and_never_born_retracted.sql",
+      "sha256": "63bdc0ad282661292b1553bd0d9daa4b45ac4ac016e29a69714d1604f820ac2f"
+    },
+    {
+      "identifier": "325",
+      "filename": "325_a_nightly_step_that_never_ran_leaves_its_open_row.sql",
+      "sha256": "05cfdacb17fc11f9e1a855f469938bdf9a3dd796e55574ec973ebc9a0a2578db"
+    },
+    {
+      "identifier": "326",
+      "filename": "326_a_new_unresolved_value_announces_itself_once.sql",
+      "sha256": "4c00a118b2666a526c7ba7ca659c811c70e0d2ee8ae0a7d05b84b9931bc8bf37"
+    },
+    {
+      "identifier": "327",
+      "filename": "327_a_version_number_designates_one_content.sql",
+      "sha256": "b9b5db4c9fe7b2ee530916aba65c33df67f70cdaf0d214b19c370f9d2f350407"
+    },
+    {
+      "identifier": "328",
+      "filename": "328_an_annotations_earlier_wording_survives_its_correction.sql",
+      "sha256": "1b814fe7062962b2b86eca6a7910654052c31d2a1d0234226f8e98a6119ead90"
+    },
+    {
+      "identifier": "329",
+      "filename": "329_a_node_version_sits_in_the_scope_its_node_sits_in.sql",
+      "sha256": "abfe776d60572cfda439fbc8e1a032899674361812fb33d0f5705590de4da267"
+    },
+    {
+      "identifier": "330",
+      "filename": "330_a_pin_the_validator_accepts_is_a_pin_the_key_can_hold.sql",
+      "sha256": "0788fc36333cf517ecc55eea55b8bc3a3d2b9f26b3cf6a3f4d18a32373a93e3d"
+    },
+    {
+      "identifier": "331",
+      "filename": "331_a_providers_refusal_at_pull_time_is_a_fact_of_health.sql",
+      "sha256": "801fd4aa062cc0d762220dc095604b4a51df79debfd3fe24d00e1cdae8ceaa02"
+    },
+    {
+      "identifier": "332",
+      "filename": "332_a_wizard_draft_ends_by_being_discarded.sql",
+      "sha256": "8d71b16789f346221903fb6b291c1bb88e2c97409a59e19c82e8e5e73eb7b093"
+    },
+    {
+      "identifier": "333",
+      "filename": "333_a_chart_template_is_an_object_a_pin_can_reach.sql",
+      "sha256": "f778f32ed12b43d322d1ca5e100893940b48b0ab56b7d928fbff00ccd7e9dcd7"
+    },
+    {
+      "identifier": "334",
+      "filename": "334_a_chart_template_document_declares_requires_and_names_no_evidence.sql",
+      "sha256": "aebb4c7cd74e6d6a29db096067c91e7ffcd5852c4e08c559ca726396bd28b273"
+    },
+    {
+      "identifier": "335",
+      "filename": "335_a_materialised_spec_says_which_template_it_came_from.sql",
+      "sha256": "1fa7e1dbe28a192c06cc4c9bac74eabc1350a5cb7c432b0a7390bbdbedd6c7d7"
+    },
+    {
+      "identifier": "336",
+      "filename": "336_a_member_role_is_the_concepts_kind_and_an_artifact_is_rederived.sql",
+      "sha256": "3194f1618ec653ee5969ce3d6d80f2d3c774d04c781199c0702d6c549cc7b747"
+    },
+    {
+      "identifier": "337",
+      "filename": "337_a_check_that_evaluates_to_null_is_a_check_that_accepts.sql",
+      "sha256": "5a7cc14d1a75d80244d9dc5e33d9943b1b4c1222c71a03405861f4191f89fbd1"
+    },
+    {
+      "identifier": "338",
+      "filename": "338_a_read_projection_dies_with_the_project_it_names.sql",
+      "sha256": "feddc50200491eed49635523a98c9fabfe6ccffb0af19fd15ec2f70e911fdbbf"
+    },
+    {
+      "identifier": "339",
+      "filename": "339_the_erasure_hatch_is_derived_not_listed.sql",
+      "sha256": "1894d176d8f8ed1dda7f81ceae0c47f910a01da9a8c32655003e4bfc7418c29b"
+    },
+    {
+      "identifier": "340",
+      "filename": "340_a_dossier_composes_frozen_renders_into_one_shareable_document.sql",
+      "sha256": "d1edea46968503917e6e5b09eecfb4b34eb9e419545374d1f660491443db1d32"
+    },
+    {
+      "identifier": "341",
+      "filename": "341_a_share_can_open_a_dossier_version.sql",
+      "sha256": "a9cabff08aed184a1ba13e1dae9927b180d6e9670e5ca33a08a5d8385e20bdb6"
+    },
+    {
+      "identifier": "342",
+      "filename": "342_the_dossier_tables_carry_the_rls_floor_and_the_share_reader_may_read_a_version.sql",
+      "sha256": "fac5a3498b185b38d3bfe375b86a4c8de1731d5b36c33ac8c1d5d164b43c4aa9"
+    },
+    {
+      "identifier": "343",
+      "filename": "343_the_server_mints_the_host_workspace_and_presence_evidence.sql",
+      "sha256": "da9d07279861c107506cdb1d48832194be06811603a22642155351c894f93fdd"
+    },
+    {
+      "identifier": "344",
+      "filename": "344_the_platform_role_may_become_the_share_reader.sql",
+      "sha256": "f88a3bddbf37dfd2baaa371eea487591e74c7c59a7ff67eeb7c60e7b4b33b884"
+    },
+    {
+      "identifier": "345",
+      "filename": "345_an_exploration_calculation_is_proposed_before_it_is_governed.sql",
+      "sha256": "e8dcc79d7a501599832fe8c7f50b89d219de4592fbb912ad371119805a43de64"
+    },
+    {
+      "identifier": "346",
+      "filename": "346_ai_settings_are_one_object_per_scope_and_a_cleared_override_is_a_version.sql",
+      "sha256": "705ef296f898522acbd02e923b01a67be2a5c38acf7056ec3ee0e07b4930a270"
+    },
+    {
+      "identifier": "347",
+      "filename": "347_a_topic_names_its_semantic_views_and_the_paths_it_allows.sql",
+      "sha256": "4604bc39f64a22458cb7bc4645d1f47bdebaf7ccdf41fc2bc0addc0eedfa328f"
+    },
+    {
+      "identifier": "348",
+      "filename": "348_a_presentation_rides_the_scope_cascade_without_duplicating_the_definition.sql",
+      "sha256": "4f6cfd81431498b9cbe40e0331b92c3968608dff9b2f01e25506c62b445fad4c"
+    },
+    {
+      "identifier": "349",
+      "filename": "349_ai_path_steps_are_findable_by_skill_version.sql",
+      "sha256": "090d0dbe0dfb6e17353629b023275a4337a8223efaeb232f1263fb90cbdca7e6"
+    },
+    {
+      "identifier": "350",
+      "filename": "350_the_skill_index_leads_on_the_project_and_the_version.sql",
+      "sha256": "33c8669f4df92dd40376c534da727c129772bbdd07e2eb60ed7b3b4a3946053e"
+    },
+    {
+      "identifier": "351",
+      "filename": "351_a_step_appends_under_the_lock_the_finalizer_takes.sql",
+      "sha256": "9aea5444810b93fa1eb8113df99ea8bacff3756aad03a6dc426b0cf4582002a0"
     }
   ]
 }

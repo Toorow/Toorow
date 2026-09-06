@@ -29,7 +29,15 @@ from pathlib import Path
 
 import pytest
 
+# This file's fixtures do DDL (disabling immutability triggers, ALTER TABLE), so
+# it needs the schema owner. As a plain application role every test in it dies on
+# "must be owner of table ...", which measures the connection and not the code.
+# The marker turns that into an honest skip naming the role it wants.
+pytestmark = pytest.mark.pg_owner
+
 ROOT = Path(__file__).resolve().parents[3]
+from tests.migration_ledger import apply_migrations_absent_from_the_ledger  # noqa: E402
+
 MIGRATIONS = ROOT / "infra" / "nango" / "migrations"
 INTENT_MIGRATION = MIGRATIONS / "030_versioned_datastream_intents.sql"
 MAPPING_MIGRATION = MIGRATIONS / "032_datastream_field_mappings.sql"
@@ -50,16 +58,23 @@ def _id(prefix: str) -> str:
 
 
 def _apply_migrations(conn) -> None:
-    with conn.cursor() as cur:
-        for path in (
+    """Ne rejouer que ce que le ledger ne porte pas -- voir `tests.migration_ledger`.
+
+    Les cinq sont ANTERIEURES a la `099` et ouvrent par `DROP TRIGGER IF EXISTS`.
+    Les rejouer contre une base migree recree les six gardes DELETE de l arbre org
+    SANS la clause `rgpd_erasure` -- c est ce fichier, avec la chaine complete,
+    qui les jette toutes les six d un coup.
+    """
+    apply_migrations_absent_from_the_ledger(
+        conn,
+        (
             INTENT_MIGRATION,
             MAPPING_MIGRATION,
             REGISTRY_MIGRATION,
             LEDGER_MIGRATION,
             CONTRACT_MIGRATION,
-        ):
-            cur.execute(path.read_text(encoding="utf-8"))
-    conn.commit()
+        ),
+    )
 
 
 def _seed(conn, project_id: str, ds_id: str, plan_id: str, mapping_id: str) -> None:

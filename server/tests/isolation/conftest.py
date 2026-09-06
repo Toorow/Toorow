@@ -124,8 +124,8 @@ def _seed_duckdb_mart(path: str) -> None:
 def _seed_project(cur, pid: str, slug: str, name: str) -> None:
     cur.execute(
         """
-        INSERT INTO app.projects (id, name, slug, status, currency, timezone, created_by, org_id)
-        VALUES (%s, %s, %s, 'active', 'EUR', 'Europe/Paris', 'isolation-test', 'org_test_fixture')
+        INSERT INTO app.projects (id, name, slug, status, created_by, org_id)
+        VALUES (%s, %s, %s, 'active', 'isolation-test', 'org_test_fixture')
         ON CONFLICT (id) DO NOTHING
         """,
         (pid, name, slug),
@@ -249,6 +249,23 @@ def _purge_projects(conn, ids: tuple[str, ...]) -> None:
                 f"DELETE FROM {table} WHERE project_id = ANY(%s)",  # noqa: S608
                 (list(ids),),
             )
+        # LA LISTE CI-DESSUS EST DATEE, et le commentaire qui la precede explique
+        # pourquoi elle etait juste le jour ou elle a ete ecrite.
+        # `project_capabilities` est arrivee depuis, ne cascade pas, et le DELETE
+        # final echouait sur elle -- dans le NETTOYAGE, apres des assertions
+        # passees, donc chaque test de ce module rapportait un echec qu'il
+        # n'avait pas subi.
+        #
+        # Confier l'arbre a `org_purge.purge_org_tree` serait le bon reflexe et
+        # NE MARCHE PAS ICI : mesure du 2026-08-05, 44 des 48 declencheurs
+        # append-only ne portent pas la trappe `app.rgpd_erasure` que le marcheur
+        # arme, donc il bute sur `managed_feed_rejected_rows`. C'est un defaut
+        # produit, pas de fixture -- il est trace, et cette fixture reste sur
+        # l'enumeration en attendant.
+        cur.execute(
+            "DELETE FROM app.project_capabilities WHERE project_id = ANY(%s)",
+            (list(ids),),
+        )
         cur.execute("DELETE FROM app.projects WHERE id = ANY(%s)", (list(ids),))
     conn.commit()
 

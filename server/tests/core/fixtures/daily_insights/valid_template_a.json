@@ -19,6 +19,6 @@
     "template": "conversions",
     "metrics": ["conversions", "cost"]
   },
-  "evidenceRefs": ["ev_1"],
+  "evidenceRefs": ["metric:conversions", "dimension:campaign"],
   "sourceRefs": ["report:meta/daily"]
 }

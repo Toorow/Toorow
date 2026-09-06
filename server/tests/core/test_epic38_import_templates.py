@@ -28,6 +28,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from tests.conftest import REPO_ROOT
+
 # ---------------------------------------------------------------------------
 # Shared mock helpers (mirrors test_epic38_connector_activation.py style).
 # ---------------------------------------------------------------------------
@@ -78,9 +80,15 @@ def _stub_operation(monkeypatch, module=None, *, capture=None):
 # ---------------------------------------------------------------------------
 
 _TV_CONTRACT = {
-    "required_fields": ["datastream_id", "campaign_id_toorow", "media_type",
-                        "channel_or_network", "event_start_timestamp", "media_date",
-                        "net_cost_eur"],
+    "required_fields": [
+        "datastream_id",
+        "campaign_id_toorow",
+        "media_type",
+        "channel_or_network",
+        "event_start_timestamp",
+        "media_date",
+        "net_cost_eur",
+    ],
     "optional_fields": ["duration_seconds", "gross_cost_eur", "creative_id"],
     "identity_keys": ["event_start_timestamp", "channel_or_network"],
     "grain": "broadcast_spot",
@@ -122,8 +130,14 @@ def _fake_generic_template():
 
 
 # Minimal datastream dict returned by the Epic 12 seam stub.
-def _fake_ds(ds_id="ds_TEST001", template_code="OFFLINE_TV_V1", version=1,
-             channels=None, publishable=True, enabled=True):
+def _fake_ds(
+    ds_id="ds_TEST001",
+    template_code="OFFLINE_TV_V1",
+    version=1,
+    channels=None,
+    publishable=True,
+    enabled=True,
+):
     return {
         "id": ds_id,
         "project_id": "proj-1",
@@ -132,6 +146,7 @@ def _fake_ds(ds_id="ds_TEST001", template_code="OFFLINE_TV_V1", version=1,
         "source_kind": "managed_feed",
         "enabled": enabled,
         "config": {
+            "connector_name": "inbound",
             "template_code": template_code,
             "template_version": version,
             "channels": sorted(channels or ["email"]),
@@ -152,6 +167,14 @@ def _fake_ds(ds_id="ds_TEST001", template_code="OFFLINE_TV_V1", version=1,
         "refetch_days": 3,
         "date_window_days": 30,
     }
+
+
+@pytest.fixture(autouse=True)
+def _active_connector(monkeypatch):
+    monkeypatch.setattr(
+        "core.connector_activation.get_activation",
+        lambda *args, **kwargs: {"state": "ACTIVE"},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +228,7 @@ def test_create_inbound_datastream_uses_epic12_create_datastream(monkeypatch):
         conn,
         project_id="proj-1",
         name="TV test",
+        connector_name="inbound",
         template_code="OFFLINE_TV_V1",
         template_version=1,
         channels=["email"],
@@ -216,9 +240,7 @@ def test_create_inbound_datastream_uses_epic12_create_datastream(monkeypatch):
     # The Epic 12 seam was called exactly once.
     assert len(captured_calls) == 1, "create_datastream must be called exactly once"
     data_arg, project_id_arg, created_by_arg = captured_calls[0]
-    assert data_arg["source_kind"] == "managed_feed", (
-        "source_kind must be managed_feed (AC1)"
-    )
+    assert data_arg["source_kind"] == "managed_feed", "source_kind must be managed_feed (AC1)"
     assert project_id_arg == "proj-1"
     assert created_by_arg == "user@example.com"
 
@@ -243,6 +265,7 @@ def test_create_inbound_datastream_config_pins_template_and_channels(monkeypatch
         conn,
         project_id="proj-1",
         name="TV test",
+        connector_name="inbound",
         template_code="OFFLINE_TV_V1",
         template_version=1,
         channels=["email", "webhook"],
@@ -254,9 +277,7 @@ def test_create_inbound_datastream_config_pins_template_and_channels(monkeypatch
     cfg = captured_data.get("config", {})
     assert cfg.get("template_code") == "OFFLINE_TV_V1", "config must pin template_code"
     assert cfg.get("template_version") == 1, "config must pin template_version"
-    assert sorted(cfg.get("channels", [])) == ["email", "webhook"], (
-        "config must pin channels"
-    )
+    assert sorted(cfg.get("channels", [])) == ["email", "webhook"], "config must pin channels"
     assert "publishable" in cfg, "config must include publishable"
     assert cfg["publishable"] is True, "non-generic template must be publishable=True"
 
@@ -281,8 +302,15 @@ def test_create_inbound_datastream_non_generic_is_publishable(monkeypatch):
     monkeypatch.setattr(it, "get_template", lambda conn, code, v: _fake_tv_template())
 
     it.create_inbound_datastream(
-        MagicMock(), project_id="p", name="n", template_code="OFFLINE_TV_V1",
-        template_version=1, channels=["upload"], created_by="u", org_id="o",
+        MagicMock(),
+        project_id="p",
+        name="n",
+        connector_name="inbound",
+        template_code="OFFLINE_TV_V1",
+        template_version=1,
+        channels=["upload"],
+        created_by="u",
+        org_id="o",
         idempotency_key="ik-1",
     )
 
@@ -310,8 +338,15 @@ def test_create_inbound_datastream_generic_is_draft(monkeypatch):
     monkeypatch.setattr(it, "get_template", lambda conn, code, v: _fake_generic_template())
 
     it.create_inbound_datastream(
-        MagicMock(), project_id="p", name="generic ds", template_code="GENERIC_TABULAR_V1",
-        template_version=1, channels=["upload"], created_by="u", org_id="o",
+        MagicMock(),
+        project_id="p",
+        name="generic ds",
+        connector_name="inbound",
+        template_code="GENERIC_TABULAR_V1",
+        template_version=1,
+        channels=["upload"],
+        created_by="u",
+        org_id="o",
         idempotency_key="ik-generic",
     )
 
@@ -336,8 +371,15 @@ def test_generic_publish_gate_in_config(monkeypatch):
     monkeypatch.setattr(it, "get_template", lambda conn, code, v: _fake_generic_template())
 
     it.create_inbound_datastream(
-        MagicMock(), project_id="p", name="g", template_code="GENERIC_TABULAR_V1",
-        template_version=1, channels=["email"], created_by="u", org_id="o",
+        MagicMock(),
+        project_id="p",
+        name="g",
+        connector_name="inbound",
+        template_code="GENERIC_TABULAR_V1",
+        template_version=1,
+        channels=["email"],
+        created_by="u",
+        org_id="o",
         idempotency_key="ik-gate",
     )
 
@@ -364,8 +406,15 @@ def test_create_inbound_datastream_unknown_template_fails_closed(monkeypatch):
 
     with pytest.raises(TemplateNotFound):
         it.create_inbound_datastream(
-            MagicMock(), project_id="p", name="n", template_code="NO_SUCH_CODE",
-            template_version=1, channels=["email"], created_by="u", org_id="o",
+            MagicMock(),
+            project_id="p",
+            name="n",
+            connector_name="inbound",
+            template_code="NO_SUCH_CODE",
+            template_version=1,
+            channels=["email"],
+            created_by="u",
+            org_id="o",
             idempotency_key="ik-notfound",
         )
 
@@ -381,8 +430,15 @@ def test_unknown_template_version_fails_closed(monkeypatch):
 
     with pytest.raises(TemplateNotFound):
         it.create_inbound_datastream(
-            MagicMock(), project_id="p", name="n", template_code="OFFLINE_TV_V1",
-            template_version=99, channels=["email"], created_by="u", org_id="o",
+            MagicMock(),
+            project_id="p",
+            name="n",
+            connector_name="inbound",
+            template_code="OFFLINE_TV_V1",
+            template_version=99,
+            channels=["email"],
+            created_by="u",
+            org_id="o",
             idempotency_key="ik-noversion",
         )
 
@@ -392,15 +448,18 @@ def test_unknown_template_version_fails_closed(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("channels", [
-    ["email"],
-    ["webhook"],
-    ["upload"],
-    ["email", "webhook"],
-    ["email", "upload"],
-    ["webhook", "upload"],
-    ["email", "webhook", "upload"],
-])
+@pytest.mark.parametrize(
+    "channels",
+    [
+        ["email"],
+        ["webhook"],
+        ["upload"],
+        ["email", "webhook"],
+        ["email", "upload"],
+        ["webhook", "upload"],
+        ["email", "webhook", "upload"],
+    ],
+)
 def test_valid_channel_subsets_accepted(monkeypatch, channels):
     """All non-empty subsets of {email, webhook, upload} are accepted."""
     import core.import_templates as it
@@ -416,8 +475,15 @@ def test_valid_channel_subsets_accepted(monkeypatch, channels):
     monkeypatch.setattr(it, "get_template", lambda conn, code, v: _fake_tv_template())
 
     it.create_inbound_datastream(
-        MagicMock(), project_id="p", name="n", template_code="OFFLINE_TV_V1",
-        template_version=1, channels=channels, created_by="u", org_id="o",
+        MagicMock(),
+        project_id="p",
+        name="n",
+        connector_name="inbound",
+        template_code="OFFLINE_TV_V1",
+        template_version=1,
+        channels=channels,
+        created_by="u",
+        org_id="o",
         idempotency_key=f"ik-{'_'.join(sorted(channels))}",
     )
     assert captured, "create_datastream must have been called"
@@ -438,9 +504,16 @@ def test_unknown_channel_raises(monkeypatch):
 
     with pytest.raises(TemplateChannelError):
         it.create_inbound_datastream(
-            MagicMock(), project_id="p", name="n", template_code="OFFLINE_TV_V1",
-            template_version=1, channels=["fax"],
-            created_by="u", org_id="o", idempotency_key="ik-bad-ch",
+            MagicMock(),
+            project_id="p",
+            name="n",
+            connector_name="inbound",
+            template_code="OFFLINE_TV_V1",
+            template_version=1,
+            channels=["fax"],
+            created_by="u",
+            org_id="o",
+            idempotency_key="ik-bad-ch",
         )
     assert not called
 
@@ -454,9 +527,16 @@ def test_empty_channels_raises(monkeypatch):
 
     with pytest.raises(TemplateChannelError):
         it.create_inbound_datastream(
-            MagicMock(), project_id="p", name="n", template_code="OFFLINE_TV_V1",
-            template_version=1, channels=[],
-            created_by="u", org_id="o", idempotency_key="ik-empty",
+            MagicMock(),
+            project_id="p",
+            name="n",
+            connector_name="inbound",
+            template_code="OFFLINE_TV_V1",
+            template_version=1,
+            channels=[],
+            created_by="u",
+            org_id="o",
+            idempotency_key="ik-empty",
         )
 
 
@@ -469,9 +549,16 @@ def test_none_channels_raises(monkeypatch):
 
     with pytest.raises(TemplateChannelError):
         it.create_inbound_datastream(
-            MagicMock(), project_id="p", name="n", template_code="OFFLINE_TV_V1",
-            template_version=1, channels=None,
-            created_by="u", org_id="o", idempotency_key="ik-none-ch",
+            MagicMock(),
+            project_id="p",
+            name="n",
+            connector_name="inbound",
+            template_code="OFFLINE_TV_V1",
+            template_version=1,
+            channels=None,
+            created_by="u",
+            org_id="o",
+            idempotency_key="ik-none-ch",
         )
 
 
@@ -488,8 +575,11 @@ def test_pinned_version_never_auto_bumped(monkeypatch):
 
     # latest_version says version 3 exists, but we pin v1.
     monkeypatch.setattr(it, "latest_version", lambda conn, code: 3)
-    monkeypatch.setattr(it, "get_template",
-                        lambda conn, code, version: _fake_tv_template() if version == 1 else None)
+    monkeypatch.setattr(
+        it,
+        "get_template",
+        lambda conn, code, version: _fake_tv_template() if version == 1 else None,
+    )
 
     def fake_create_datastream(data, project_id, created_by, conn):
         captured.update(data)
@@ -499,9 +589,16 @@ def test_pinned_version_never_auto_bumped(monkeypatch):
     _stub_operation(monkeypatch, it)
 
     it.create_inbound_datastream(
-        MagicMock(), project_id="p", name="n", template_code="OFFLINE_TV_V1",
+        MagicMock(),
+        project_id="p",
+        name="n",
+        connector_name="inbound",
+        template_code="OFFLINE_TV_V1",
         template_version=1,  # explicit pin at v1
-        channels=["email"], created_by="u", org_id="o", idempotency_key="ik-pin",
+        channels=["email"],
+        created_by="u",
+        org_id="o",
+        idempotency_key="ik-pin",
     )
 
     assert captured["config"]["template_version"] == 1, (
@@ -519,27 +616,36 @@ def test_list_templates_no_secret_fields(monkeypatch):
     import core.import_templates as it
 
     secret_fields = {
-        "signing_secret", "api_key", "token", "credential", "password",
-        "dns_evidence_hash", "evidence_hash",
+        "signing_secret",
+        "api_key",
+        "token",
+        "credential",
+        "password",
+        "dns_evidence_hash",
+        "evidence_hash",
     }
 
     # Build a mock conn that returns one row.
-    cur = _cur(fetchall=[
-        ("OFFLINE_TV_V1", 1, "TV spend", _TV_CONTRACT, False, None),
-    ])
+    cur = _cur(
+        fetchall=[
+            ("OFFLINE_TV_V1", 1, "TV spend", _TV_CONTRACT, False, None),
+        ]
+    )
     cur.fetchall.return_value = [("OFFLINE_TV_V1", 1, "TV spend", _TV_CONTRACT, False, None)]
     cur.description = [
-        ("template_code",), ("version",), ("title",),
-        ("contract",), ("is_generic",), ("created_at",),
+        ("template_code",),
+        ("version",),
+        ("title",),
+        ("contract",),
+        ("is_generic",),
+        ("created_at",),
     ]
     conn = _conn_with(cur)
 
     results = it.list_templates(conn)
     for entry in results:
         for key in entry:
-            assert key not in secret_fields, (
-                f"list_templates must not expose secret field '{key}'"
-            )
+            assert key not in secret_fields, f"list_templates must not expose secret field '{key}'"
 
 
 def test_catalog_read_model_fields():
@@ -547,16 +653,27 @@ def test_catalog_read_model_fields():
     import core.import_templates as it
 
     expected_keys = {
-        "template_code", "version", "title", "required_fields",
-        "optional_fields", "identity_keys", "grain", "is_generic", "created_at",
+        "template_code",
+        "version",
+        "title",
+        "required_fields",
+        "optional_fields",
+        "identity_keys",
+        "grain",
+        "is_generic",
+        "created_at",
     }
 
     cur = MagicMock()
     cur.__enter__.return_value = cur
     cur.__exit__.return_value = False
     cur.description = [
-        ("template_code",), ("version",), ("title",), ("contract",),
-        ("is_generic",), ("created_at",),
+        ("template_code",),
+        ("version",),
+        ("title",),
+        ("contract",),
+        ("is_generic",),
+        ("created_at",),
     ]
     cur.fetchall.return_value = [
         ("OFFLINE_TV_V1", 1, "TV spend", _TV_CONTRACT, False, None),
@@ -633,9 +750,15 @@ def test_list_inbound_templates_mcp_returns_templates(monkeypatch):
 
     fake_templates = [
         {
-            "template_code": "OFFLINE_TV_V1", "version": 1, "title": "TV spend",
-            "required_fields": ["net_cost_eur"], "optional_fields": [],
-            "identity_keys": [], "grain": "spot", "is_generic": False, "created_at": None,
+            "template_code": "OFFLINE_TV_V1",
+            "version": 1,
+            "title": "TV spend",
+            "required_fields": ["net_cost_eur"],
+            "optional_fields": [],
+            "identity_keys": [],
+            "grain": "spot",
+            "is_generic": False,
+            "created_at": None,
         }
     ]
 
@@ -756,11 +879,18 @@ def test_patch_enable_generic_draft_is_publish_gated(monkeypatch):
 
         def __exit__(self, *a):
             return False
+
     monkeypatch.setattr(db_mod, "get_connection", lambda: _Ctx())
+
+    from core import datastreams_api  # noqa: PLC0415
 
     app = Router(
         routes=[
-            Route("/api/datastreams/{id}", endpoint=admin_api._patch_datastream, methods=["PATCH"]),
+            Route(
+                "/api/datastreams/{id}",
+                endpoint=datastreams_api._patch_datastream,
+                methods=["PATCH"],
+            ),
         ]
     )
     client = TestClient(app, raise_server_exceptions=False)
@@ -786,12 +916,8 @@ def test_post_datastreams_conflict(_import_template_app, monkeypatch):
         raise OperationIdempotencyConflict("conflict")
 
     monkeypatch.setattr("core.db.get_connection", fake_gc)
-    monkeypatch.setattr(
-        "core.import_templates_api._check_project_member", lambda *a: True
-    )
-    monkeypatch.setattr(
-        "core.import_templates.create_inbound_datastream", _raise_conflict
-    )
+    monkeypatch.setattr("core.import_templates_api._check_project_member", lambda *a: True)
+    monkeypatch.setattr("core.import_templates.create_inbound_datastream", _raise_conflict)
 
     client = _import_template_app
     resp = client.post(
@@ -814,9 +940,15 @@ def test_get_templates_returns_catalog(_import_template_app, monkeypatch):
 
     fake_catalog = [
         {
-            "template_code": "OFFLINE_TV_V1", "version": 1, "title": "TV spend",
-            "required_fields": [], "optional_fields": [], "identity_keys": [],
-            "grain": "spot", "is_generic": False, "created_at": None,
+            "template_code": "OFFLINE_TV_V1",
+            "version": 1,
+            "title": "TV spend",
+            "required_fields": [],
+            "optional_fields": [],
+            "identity_keys": [],
+            "grain": "spot",
+            "is_generic": False,
+            "created_at": None,
         }
     ]
 
@@ -842,9 +974,7 @@ def test_post_datastreams_non_member_gets_404(_import_template_app, monkeypatch)
         yield MagicMock()
 
     monkeypatch.setattr("core.db.get_connection", fake_gc)
-    monkeypatch.setattr(
-        "core.import_templates_api._check_project_member", lambda *a: False
-    )
+    monkeypatch.setattr("core.import_templates_api._check_project_member", lambda *a: False)
 
     client = _import_template_app
     resp = client.post(
@@ -877,12 +1007,8 @@ def test_post_datastreams_unknown_template_returns_422(_import_template_app, mon
         raise TemplateNotFound("no such template")
 
     monkeypatch.setattr("core.db.get_connection", fake_gc)
-    monkeypatch.setattr(
-        "core.import_templates_api._check_project_member", lambda *a: True
-    )
-    monkeypatch.setattr(
-        "core.import_templates.create_inbound_datastream", _raise_not_found
-    )
+    monkeypatch.setattr("core.import_templates_api._check_project_member", lambda *a: True)
+    monkeypatch.setattr("core.import_templates.create_inbound_datastream", _raise_not_found)
 
     client = _import_template_app
     resp = client.post(
@@ -914,12 +1040,8 @@ def test_post_datastreams_bad_channels_returns_422(_import_template_app, monkeyp
         raise TemplateChannelError("bad channel")
 
     monkeypatch.setattr("core.db.get_connection", fake_gc)
-    monkeypatch.setattr(
-        "core.import_templates_api._check_project_member", lambda *a: True
-    )
-    monkeypatch.setattr(
-        "core.import_templates.create_inbound_datastream", _raise_channel_error
-    )
+    monkeypatch.setattr("core.import_templates_api._check_project_member", lambda *a: True)
+    monkeypatch.setattr("core.import_templates.create_inbound_datastream", _raise_channel_error)
 
     client = _import_template_app
     resp = client.post(
@@ -964,8 +1086,15 @@ def test_request_payload_has_no_random_id(monkeypatch):
     )
 
     it.create_inbound_datastream(
-        MagicMock(), project_id="p", name="TV test", template_code="OFFLINE_TV_V1",
-        template_version=1, channels=["email"], created_by="u", org_id="o",
+        MagicMock(),
+        project_id="p",
+        name="TV test",
+        connector_name="inbound",
+        template_code="OFFLINE_TV_V1",
+        template_version=1,
+        channels=["email"],
+        created_by="u",
+        org_id="o",
         idempotency_key="ik-deterministic",
     )
 
@@ -973,24 +1102,137 @@ def test_request_payload_has_no_random_id(monkeypatch):
     payload = captured_specs[0].request_payload
     # Payload must contain only stable business fields; no ULID/random id.
     allowed_keys = {
-        "template_code", "template_version", "channels", "publishable",
-        "project_id", "name",
+        "connector_name",
+        "template_code",
+        "template_version",
+        "channels",
+        "publishable",
+        "project_id",
+        "name",
     }
     assert set(payload.keys()).issubset(allowed_keys), (
         f"request_payload contains unexpected keys: {set(payload.keys()) - allowed_keys}"
     )
     # Calling twice with same inputs produces same hash (deterministic).
     from core.operations import _canonical_hash
+
     hash1 = _canonical_hash(payload)
 
     captured_specs.clear()
     it.create_inbound_datastream(
-        MagicMock(), project_id="p", name="TV test", template_code="OFFLINE_TV_V1",
-        template_version=1, channels=["email"], created_by="u", org_id="o",
+        MagicMock(),
+        project_id="p",
+        name="TV test",
+        connector_name="inbound",
+        template_code="OFFLINE_TV_V1",
+        template_version=1,
+        channels=["email"],
+        created_by="u",
+        org_id="o",
         idempotency_key="ik-deterministic",
     )
     hash2 = _canonical_hash(captured_specs[0].request_payload)
     assert hash1 == hash2, "request_payload must be deterministic over business inputs"
+
+
+def test_connector_is_pinned_and_inactive_activation_blocks_creation(monkeypatch):
+    import core.import_templates as it
+
+    monkeypatch.setattr(it, "get_template", lambda *args: _fake_tv_template())
+    _stub_operation(monkeypatch, it)
+    captured = {}
+
+    def fake_create(data, project_id, created_by, conn):
+        captured.update(data)
+        result = _fake_ds()
+        result["config"] = dict(data["config"])
+        return result
+
+    monkeypatch.setattr("core.datastreams.create_datastream", fake_create)
+    result = it.create_inbound_datastream(
+        MagicMock(),
+        project_id="p",
+        name="TV",
+        connector_name="inbound",
+        template_code="OFFLINE_TV_V1",
+        template_version=1,
+        channels=["email"],
+        created_by="u",
+        org_id="o",
+        idempotency_key="ik-connector",
+    )
+    assert captured["config"]["connector_name"] == "inbound"
+    assert result["config"]["connector_name"] == "inbound"
+
+    monkeypatch.setattr("core.connector_activation.get_activation", lambda *a, **k: None)
+    with pytest.raises(it.ConnectorActivationRequired):
+        it.create_inbound_datastream(
+            MagicMock(),
+            project_id="p",
+            name="TV",
+            connector_name="inbound",
+            template_code="OFFLINE_TV_V1",
+            template_version=1,
+            channels=["email"],
+            created_by="u",
+            org_id="o",
+            idempotency_key="ik-inactive",
+        )
+
+
+def test_operation_replay_returns_full_stable_shape(monkeypatch):
+    import core.import_templates as it
+    import core.operations as operations
+
+    expected = _fake_ds()
+    monkeypatch.setattr(it, "get_template", lambda *args: _fake_tv_template())
+    monkeypatch.setattr(
+        operations,
+        "execute_operation",
+        lambda conn, spec, *, mutation: operations.OperationResult(
+            "op-replay", "succeeded", expected, "audit", "outbox", True
+        ),
+    )
+    result = it.create_inbound_datastream(
+        MagicMock(),
+        project_id="p",
+        name="TV",
+        connector_name="inbound",
+        template_code="OFFLINE_TV_V1",
+        template_version=1,
+        channels=["email"],
+        created_by="u",
+        org_id="o",
+        idempotency_key="ik-replay",
+    )
+    assert result == expected
+    assert result["id"] == "ds_TEST001"
+
+
+def test_contract_shape_guard_is_additive_and_complete():
+    from pathlib import Path
+
+    migration = Path(
+        REPO_ROOT / "infra/nango/migrations/182_import_template_contract_guard.sql"
+    ).read_text(
+        encoding="utf-8"
+    )
+    assert "ck_import_templates_contract_shape" in migration
+    assert "NOT VALID" in migration
+    for key in (
+        "required_fields",
+        "optional_fields",
+        "aliases",
+        "field_types",
+        "grain",
+        "identity_keys",
+        "date_timezone",
+        "currency_unit",
+        "sensitive_classification",
+        "validation",
+        "canonical_bindings",
+    ):
+        assert f"'{key}'" in migration
 
 
 # ---------------------------------------------------------------------------
@@ -998,18 +1240,19 @@ def test_request_payload_has_no_random_id(monkeypatch):
 # ---------------------------------------------------------------------------
 
 _LIVE_PG = pytest.mark.skipif(
-    True,  # always skip in offline suite; run with -k "live" against real PG
-    reason="live-PG-gated: run with PLATFORM_DB_URL set and -k 'live'",
+    not __import__("os").environ.get("TEST_POSTGRES_DSN"),
+    reason="TEST_POSTGRES_DSN not set -- live-PG probe skipped",
 )
 
 
 @_LIVE_PG
 def test_live_pg_immutability_trigger():
     """Live PG: UPDATE and DELETE on app.import_templates must raise."""
-    import psycopg
-    from core.audit import _db_url
+    import os
 
-    with psycopg.connect(_db_url()) as conn:
+    import psycopg
+
+    with psycopg.connect(os.environ["TEST_POSTGRES_DSN"]) as conn:
         # Attempt UPDATE -- must fail.
         with pytest.raises(Exception, match="immutable"):
             with conn.cursor() as cur:
@@ -1032,10 +1275,11 @@ def test_live_pg_immutability_trigger():
 @_LIVE_PG
 def test_live_pg_primary_key_unique():
     """Live PG: duplicate (template_code, version) is rejected by PK."""
-    import psycopg
-    from core.audit import _db_url
+    import os
 
-    with psycopg.connect(_db_url()) as conn:
+    import psycopg
+
+    with psycopg.connect(os.environ["TEST_POSTGRES_DSN"]) as conn:
         with pytest.raises(Exception):
             with conn.cursor() as cur:
                 cur.execute(
@@ -1062,22 +1306,19 @@ def test_live_pg_six_seeds_present():
     }
     with psycopg.connect(_db_url()) as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT template_code FROM app.import_templates WHERE version = 1"
-            )
+            cur.execute("SELECT template_code FROM app.import_templates WHERE version = 1")
             found = {row[0] for row in cur.fetchall()}
-    assert expected_codes.issubset(found), (
-        f"Missing seeds: {expected_codes - found}"
-    )
+    assert expected_codes.issubset(found), f"Missing seeds: {expected_codes - found}"
 
 
 @_LIVE_PG
 def test_live_pg_generic_is_generic_true():
     """Live PG: GENERIC_TABULAR_V1 seed has is_generic = TRUE."""
-    import psycopg
-    from core.audit import _db_url
+    import os
 
-    with psycopg.connect(_db_url()) as conn:
+    import psycopg
+
+    with psycopg.connect(os.environ["TEST_POSTGRES_DSN"]) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT is_generic FROM app.import_templates "

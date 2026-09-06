@@ -1,0 +1,24 @@
+[
+  {
+    "report_profile": "account_daily",
+    "date": "2026-07-30",
+    "account_id": "17841400000000000",
+    "unique_reach": 842,
+    "profile_views": 91,
+    "_fixture_note": "Canonical daily account facts."
+  },
+  {
+    "report_profile": "media_performance",
+    "date": "2026-07-29",
+    "account_id": "17841400000000000",
+    "post_id": "18000000000000001",
+    "media_type": "VIDEO",
+    "media_product_type": "REELS",
+    "post_url": "https://www.instagram.com/reel/example/",
+    "post_caption": "Example Reel",
+    "published_at": "2026-07-29T18:30:00+0000",
+    "shares": 17,
+    "comments": 6,
+    "_fixture_note": "Canonical lifetime media snapshot facts."
+  }
+]

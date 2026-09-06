@@ -53,5 +53,10 @@
       "status": "deferred",
       "story_ref": null
     }
+  },
+  "probe": {
+    "request_style": "metrics_dimensions",
+    "batch_size": 20,
+    "structural_note": "X Ads API v12 GET /stats/accounts with metric_groups and metrics params over a date range. 400 invalid_request errors are bisected to capture rejected metric names."
   }
 }

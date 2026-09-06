@@ -2,601 +2,541 @@
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 4428.0,
+    "rolling_mean": 6975.0,
     "rolling_stddev": null
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 4251.0,
-    "rolling_stddev": 250.31580054003783
+    "rolling_mean": 6706.5,
+    "rolling_stddev": 379.716341497176
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 5048.333333333333,
-    "rolling_stddev": 1392.3183304594297
+    "rolling_mean": 5985.333333333333,
+    "rolling_stddev": 1277.629184596741
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 5514.0,
-    "rolling_stddev": 1469.6083378460628
+    "rolling_mean": 5489.0,
+    "rolling_stddev": 1440.0039351798082
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 5850.8,
-    "rolling_stddev": 1478.8450561164277
+    "rolling_mean": 5734.0,
+    "rolling_stddev": 1362.106273386919
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 5986.166666666667,
-    "rolling_stddev": 1363.6462028937956
+    "rolling_mean": 6000.0,
+    "rolling_stddev": 1381.5942964560907
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6096.428571428572,
-    "rolling_stddev": 1278.5589358261716
+    "rolling_mean": 6201.714285714285,
+    "rolling_stddev": 1369.4851483052205
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 5879.75,
-    "rolling_stddev": 1332.9588730125386
+    "rolling_mean": 6269.5,
+    "rolling_stddev": 1282.3110832733664
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 5674.444444444444,
-    "rolling_stddev": 1390.6959688507686
+    "rolling_mean": 6328.888888888889,
+    "rolling_stddev": 1212.6519950550987
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 5783.4,
-    "rolling_stddev": 1355.675329863312
+    "rolling_mean": 6163.1,
+    "rolling_stddev": 1257.772939232939
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 5924.909090909091,
-    "rolling_stddev": 1369.0665034647116
+    "rolling_mean": 5996.545454545455,
+    "rolling_stddev": 1314.890897651692
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 5984.333333333333,
-    "rolling_stddev": 1321.485206695539
+    "rolling_mean": 6059.25,
+    "rolling_stddev": 1272.3773829117893
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6025.538461538462,
-    "rolling_stddev": 1273.9185358167279
+    "rolling_mean": 6180.846153846154,
+    "rolling_stddev": 1294.698925500561
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6045.285714285715,
-    "rolling_stddev": 1226.1695471025848
+    "rolling_mean": 6270.285714285715,
+    "rolling_stddev": 1288.136425441595
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 5930.533333333334,
-    "rolling_stddev": 1262.3870736860085
+    "rolling_mean": 6326.2,
+    "rolling_stddev": 1260.0279588734754
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 5810.875,
-    "rolling_stddev": 1310.1410547469052
+    "rolling_mean": 6360.5625,
+    "rolling_stddev": 1225.0380657351016
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 5892.294117647059,
-    "rolling_stddev": 1312.2059558576295
+    "rolling_mean": 6261.823529411765,
+    "rolling_stddev": 1254.0585729589204
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 5953.666666666667,
-    "rolling_stddev": 1299.382839930512
+    "rolling_mean": 6160.611111111111,
+    "rolling_stddev": 1290.1722702523505
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6011.473684210527,
-    "rolling_stddev": 1287.6674160158773
+    "rolling_mean": 6222.789473684211,
+    "rolling_stddev": 1282.7808152147586
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6070.95,
-    "rolling_stddev": 1281.2370040419205
+    "rolling_mean": 6299.9,
+    "rolling_stddev": 1295.3148733233286
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6101.047619047619,
-    "rolling_stddev": 1256.388891871879
+    "rolling_mean": 6366.523809523809,
+    "rolling_stddev": 1298.9079882365652
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6022.681818181818,
-    "rolling_stddev": 1280.0203639140404
+    "rolling_mean": 6441.090909090909,
+    "rolling_stddev": 1314.9701394071526
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 5954.652173913043,
-    "rolling_stddev": 1292.4479806199922
+    "rolling_mean": 6472.913043478261,
+    "rolling_stddev": 1293.769612518658
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 5991.625,
-    "rolling_stddev": 1276.950471018662
+    "rolling_mean": 6403.916666666667,
+    "rolling_stddev": 1309.7007928021826
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6048.64,
-    "rolling_stddev": 1282.1577477050164
+    "rolling_mean": 6319.36,
+    "rolling_stddev": 1350.0334835353774
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6112.576923076923,
-    "rolling_stddev": 1297.8665315995147
+    "rolling_mean": 6365.884615384615,
+    "rolling_stddev": 1343.8619073974253
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6166.851851851852,
-    "rolling_stddev": 1303.5361286694124
+    "rolling_mean": 6426.444444444444,
+    "rolling_stddev": 1354.8162047738979
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6194.785714285715,
-    "rolling_stddev": 1287.680583729632
+    "rolling_mean": 6481.071428571428,
+    "rolling_stddev": 1360.551166325793
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6147.413793103448,
-    "rolling_stddev": 1289.954083270336
+    "rolling_mean": 6530.206896551724,
+    "rolling_stddev": 1361.9850633571139
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6094.933333333333,
-    "rolling_stddev": 1299.703359612687
+    "rolling_mean": 6556.533333333334,
+    "rolling_stddev": 1346.0423914350654
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6187.3,
-    "rolling_stddev": 1275.3901945192545
+    "rolling_mean": 6491.8,
+    "rolling_stddev": 1371.6765578336406
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6298.066666666667,
-    "rolling_stddev": 1228.9783234623098
+    "rolling_mean": 6433.966666666666,
+    "rolling_stddev": 1410.06200605489
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6325.966666666666,
-    "rolling_stddev": 1246.4553737902431
+    "rolling_mean": 6537.733333333334,
+    "rolling_stddev": 1380.33673885892
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6356.4,
-    "rolling_stddev": 1272.1138151206005
+    "rolling_mean": 6672.033333333334,
+    "rolling_stddev": 1319.577348305479
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6359.833333333333,
-    "rolling_stddev": 1274.6001153393124
+    "rolling_mean": 6720.766666666666,
+    "rolling_stddev": 1347.8738476561527
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6305.733333333334,
-    "rolling_stddev": 1295.5601087569419
+    "rolling_mean": 6747.4,
+    "rolling_stddev": 1368.0697350647006
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6227.6,
-    "rolling_stddev": 1337.3515927977282
+    "rolling_mean": 6751.166666666667,
+    "rolling_stddev": 1370.1166847699712
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6317.133333333333,
-    "rolling_stddev": 1297.534099833174
+    "rolling_mean": 6707.966666666666,
+    "rolling_stddev": 1390.6284484394798
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6447.733333333334,
-    "rolling_stddev": 1256.1157406954935
+    "rolling_mean": 6644.333333333333,
+    "rolling_stddev": 1429.2236458598975
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6486.3,
-    "rolling_stddev": 1283.6215510059405
+    "rolling_mean": 6757.666666666667,
+    "rolling_stddev": 1401.8919072240305
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6514.433333333333,
-    "rolling_stddev": 1311.9146493299163
+    "rolling_mean": 6895.433333333333,
+    "rolling_stddev": 1357.5738929106744
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6529.233333333334,
-    "rolling_stddev": 1315.8552137975366
+    "rolling_mean": 6949.566666666667,
+    "rolling_stddev": 1383.6614017571799
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6475.633333333333,
-    "rolling_stddev": 1348.5872936171936
+    "rolling_mean": 6984.066666666667,
+    "rolling_stddev": 1414.0399675698905
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6422.266666666666,
-    "rolling_stddev": 1386.8306445927742
+    "rolling_mean": 6997.066666666667,
+    "rolling_stddev": 1420.0893593382589
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6526.9,
-    "rolling_stddev": 1340.71052572623
+    "rolling_mean": 6934.166666666667,
+    "rolling_stddev": 1456.2895715110901
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6667.033333333334,
-    "rolling_stddev": 1287.880977669784
+    "rolling_mean": 6871.2,
+    "rolling_stddev": 1499.10008407343
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6699.966666666666,
-    "rolling_stddev": 1314.210828710086
+    "rolling_mean": 6983.966666666666,
+    "rolling_stddev": 1455.3445257071423
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6744.2,
-    "rolling_stddev": 1346.4885468865123
+    "rolling_mean": 7116.866666666667,
+    "rolling_stddev": 1395.849876656125
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6764.433333333333,
-    "rolling_stddev": 1355.8016761523313
+    "rolling_mean": 7154.033333333334,
+    "rolling_stddev": 1416.7391038951905
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6695.133333333333,
-    "rolling_stddev": 1385.5245423561664
+    "rolling_mean": 7189.8,
+    "rolling_stddev": 1445.938745304383
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6635.833333333333,
-    "rolling_stddev": 1422.74656873618
+    "rolling_mean": 7204.4,
+    "rolling_stddev": 1453.449347895052
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6745.866666666667,
-    "rolling_stddev": 1368.6463167048985
+    "rolling_mean": 7124.433333333333,
+    "rolling_stddev": 1473.623511628051
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6880.366666666667,
-    "rolling_stddev": 1333.8823678512163
+    "rolling_mean": 7058.866666666667,
+    "rolling_stddev": 1514.5783465427241
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6921.6,
-    "rolling_stddev": 1351.6562917526344
+    "rolling_mean": 7189.766666666666,
+    "rolling_stddev": 1483.5203166404758
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6960.5,
-    "rolling_stddev": 1382.838453925538
+    "rolling_mean": 7341.833333333333,
+    "rolling_stddev": 1407.9183480275565
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6968.766666666666,
-    "rolling_stddev": 1388.2105247114143
+    "rolling_mean": 7381.333333333333,
+    "rolling_stddev": 1429.803346336622
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6887.6,
-    "rolling_stddev": 1422.1322408077342
+    "rolling_mean": 7394.9,
+    "rolling_stddev": 1437.79436806088
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6815.9,
-    "rolling_stddev": 1472.2698251105448
+    "rolling_mean": 7406.7,
+    "rolling_stddev": 1443.9973767766792
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 6924.8,
-    "rolling_stddev": 1440.0983060313913
-  },
-  {
-    "connector": "google-analytics",
-    "metric": "sessions",
-    "rolling_mean": 7068.866666666667,
-    "rolling_stddev": 1412.6360717695013
-  },
-  {
-    "connector": "google-analytics",
-    "metric": "sessions",
-    "rolling_mean": 7116.7,
-    "rolling_stddev": 1441.2009635166703
-  },
-  {
-    "connector": "google-analytics",
-    "metric": "sessions",
-    "rolling_mean": 7151.333333333333,
-    "rolling_stddev": 1460.523603165077
-  },
-  {
-    "connector": "google-analytics",
-    "metric": "sessions",
-    "rolling_mean": 7161.3,
-    "rolling_stddev": 1463.860157962148
-  },
-  {
-    "connector": "google-analytics",
-    "metric": "sessions",
-    "rolling_mean": 7087.266666666666,
-    "rolling_stddev": 1485.1960263822446
-  },
-  {
-    "connector": "google-analytics",
-    "metric": "sessions",
-    "rolling_mean": 7013.733333333334,
-    "rolling_stddev": 1528.2358531942984
-  },
-  {
-    "connector": "google-analytics",
-    "metric": "sessions",
-    "rolling_mean": 7132.0,
-    "rolling_stddev": 1507.369505989227
-  },
-  {
-    "connector": "google-analytics",
-    "metric": "sessions",
-    "rolling_mean": 7297.8,
-    "rolling_stddev": 1471.2186456975985
-  },
-  {
-    "connector": "google-analytics",
-    "metric": "sessions",
-    "rolling_mean": 7361.866666666667,
-    "rolling_stddev": 1501.546392162457
-  },
-  {
-    "connector": "google-analytics",
-    "metric": "sessions",
-    "rolling_mean": 7383.766666666666,
-    "rolling_stddev": 1515.1496269194083
-  },
-  {
-    "connector": "google-analytics",
-    "metric": "sessions",
-    "rolling_mean": 7399.566666666667,
-    "rolling_stddev": 1523.3940935843934
-  },
-  {
-    "connector": "google-analytics",
-    "metric": "sessions",
-    "rolling_mean": 7320.466666666666,
-    "rolling_stddev": 1542.74343037137
+    "rolling_mean": 7332.4,
+    "rolling_stddev": 1474.4452048377268
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
     "rolling_mean": 7257.633333333333,
-    "rolling_stddev": 1590.4398108554824
+    "rolling_stddev": 1530.8848575665113
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 7382.4,
-    "rolling_stddev": 1546.2870010626007
+    "rolling_mean": 7376.066666666667,
+    "rolling_stddev": 1489.7282310202927
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 7534.166666666667,
-    "rolling_stddev": 1496.6754902077155
+    "rolling_mean": 7520.733333333334,
+    "rolling_stddev": 1430.7575021243317
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 7597.6,
-    "rolling_stddev": 1533.4311672936562
+    "rolling_mean": 7552.133333333333,
+    "rolling_stddev": 1444.1030083932985
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 7631.733333333334,
-    "rolling_stddev": 1558.9477205481583
+    "rolling_mean": 7576.533333333334,
+    "rolling_stddev": 1458.549911274263
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 7644.9,
-    "rolling_stddev": 1565.4188235432225
+    "rolling_mean": 7580.833333333333,
+    "rolling_stddev": 1460.5669207143703
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 7567.9,
-    "rolling_stddev": 1587.5195866291017
+    "rolling_mean": 7498.533333333334,
+    "rolling_stddev": 1497.7032009583604
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 7490.566666666667,
-    "rolling_stddev": 1638.6139787223738
+    "rolling_mean": 7434.133333333333,
+    "rolling_stddev": 1537.5334867860622
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 7630.566666666667,
-    "rolling_stddev": 1608.4116963817041
+    "rolling_mean": 7560.3,
+    "rolling_stddev": 1524.172158571832
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 7781.0,
-    "rolling_stddev": 1556.758901006212
+    "rolling_mean": 7708.2,
+    "rolling_stddev": 1470.969499672076
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 7831.633333333333,
-    "rolling_stddev": 1577.8530258754672
+    "rolling_mean": 7750.366666666667,
+    "rolling_stddev": 1499.5810330597822
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 7858.533333333334,
-    "rolling_stddev": 1596.2884911965123
+    "rolling_mean": 7791.466666666666,
+    "rolling_stddev": 1536.2626780899006
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 7888.0,
-    "rolling_stddev": 1608.6100661215528
+    "rolling_mean": 7797.5,
+    "rolling_stddev": 1538.9782940818793
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 7793.866666666667,
-    "rolling_stddev": 1648.6075573528467
+    "rolling_mean": 7704.833333333333,
+    "rolling_stddev": 1567.746660641962
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 8067.566666666667,
-    "rolling_stddev": 2249.1706468942225
+    "rolling_mean": 7625.266666666666,
+    "rolling_stddev": 1621.2040424099728
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 8210.466666666667,
-    "rolling_stddev": 2192.4227778377076
+    "rolling_mean": 7760.533333333334,
+    "rolling_stddev": 1582.6027609133553
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 8369.066666666668,
-    "rolling_stddev": 2107.5048481693875
+    "rolling_mean": 8521.5,
+    "rolling_stddev": 3938.280131802679
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 8416.166666666666,
-    "rolling_stddev": 2116.7757375283068
+    "rolling_mean": 8566.8,
+    "rolling_stddev": 3940.663399427336
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 8441.1,
-    "rolling_stddev": 2126.9910323563045
+    "rolling_mean": 8604.7,
+    "rolling_stddev": 3944.7380241671744
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 8451.633333333333,
-    "rolling_stddev": 2128.7609717186765
+    "rolling_mean": 8604.266666666666,
+    "rolling_stddev": 3944.7555226317045
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 8369.433333333332,
-    "rolling_stddev": 2176.462087779208
+    "rolling_mean": 8517.233333333334,
+    "rolling_stddev": 3968.1547408243086
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 8297.666666666666,
-    "rolling_stddev": 2231.405391897337
+    "rolling_mean": 8431.9,
+    "rolling_stddev": 4003.977551265052
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 8430.933333333332,
-    "rolling_stddev": 2183.800703508376
+    "rolling_mean": 8563.833333333334,
+    "rolling_stddev": 3972.8077023976234
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 8586.0,
-    "rolling_stddev": 2102.4024845154063
+    "rolling_mean": 8712.766666666666,
+    "rolling_stddev": 3926.0615580338604
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 8620.5,
-    "rolling_stddev": 2110.911287931646
+    "rolling_mean": 8740.333333333334,
+    "rolling_stddev": 3929.1905486774363
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 8648.866666666667,
-    "rolling_stddev": 2127.2354851297964
+    "rolling_mean": 8775.066666666668,
+    "rolling_stddev": 3934.813222867202
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 8652.333333333334,
-    "rolling_stddev": 2127.863204271354
+    "rolling_mean": 8780.266666666666,
+    "rolling_stddev": 3934.8328180174476
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 8574.0,
-    "rolling_stddev": 2172.3794042160475
+    "rolling_mean": 8699.133333333333,
+    "rolling_stddev": 3967.729488253203
   },
   {
     "connector": "google-analytics",
     "metric": "sessions",
-    "rolling_mean": 8498.533333333333,
-    "rolling_stddev": 2217.6648752348888
+    "rolling_mean": 8613.866666666667,
+    "rolling_stddev": 4003.7030250311623
+  },
+  {
+    "connector": "google-analytics",
+    "metric": "sessions",
+    "rolling_mean": 8743.6,
+    "rolling_stddev": 3968.1563129667575
+  },
+  {
+    "connector": "google-analytics",
+    "metric": "sessions",
+    "rolling_mean": 8917.766666666666,
+    "rolling_stddev": 3915.998597119728
   }
 ]

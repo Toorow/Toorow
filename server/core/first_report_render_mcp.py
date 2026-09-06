@@ -91,20 +91,146 @@ def _guard_project_view(project_id: str, identity: str):
     ``not_found`` (E36-NFR02). Fail closed: never proceed unguarded on a guard
     failure.
     """
-    from core.db import get_connection  # noqa: PLC0415
+    from core.db import request_connection  # noqa: PLC0415
     from core.project_access import resolve_strict_resource_access  # noqa: PLC0415
 
     try:
-        with get_connection() as conn:
+        with request_connection(identity) as conn:
             decision = resolve_strict_resource_access(
                 identity, conn, project_id=project_id, minimum_capability="view"
             )
     except Exception as exc:  # noqa: BLE001 -- fail-closed (never unguarded).
         logger.error("first_report_render_mcp: access guard failed: %s", type(exc).__name__)
-        raise _tool_error("not_found", "Rapport introuvable.") from exc
+        raise _tool_error("not_found", "Report not found.") from exc
     if not decision.allowed or not decision.org_id:
-        raise _tool_error("not_found", "Rapport introuvable.")
+        raise _tool_error("not_found", "Report not found.")
     return decision
+
+
+# ---- Read: render + validate the first correct answer (starter request) -----
+def render_starter_report(project_id: str, datastream_id: str):
+    """Rend et VALIDE le premier rapport correct (requete de demarrage, lecture).
+
+    Ne s'execute QUE si l'etat de preparation (Story 36.10) est ``ready`` ou
+    ``degraded`` (degrade dans la politique) ; ``blocked`` -> refuse (rien a
+    rendre). La reponse CITE fraicheur / couverture / provenance (version de
+    mapping) / exclusions et rend l'UI finale du rapport quand l'hote la
+    supporte. SANS UI applicative : texte compact incluant une PREUVE BORNEE
+    obligatoire (totaux / empreintes / quelques figures) + un lien profond
+    authentifie optionnel, SANS envoyer le jeu de donnees complet dans le
+    contexte du modele (E36-NFR06). Les figures referencent la publication
+    active + la version de mapping pour que la validation confirme la
+    correspondance ; etat degrade/perime honnete, non-couleur, explicite.
+    Guard strict AD-5 (vue) ; rapport etranger -> not_found (existence cachee).
+    Lecture pure : ne mute rien.
+    """
+    project_id = (project_id or "").strip() or None
+    datastream_id = (datastream_id or "").strip() or None
+    if project_id is None or datastream_id is None:
+        raise _tool_error("missing_param", "project_id and datastream_id are required.")
+    identity = _identity()
+    _guard_project_view(project_id, identity)
+
+    from core.db import request_connection  # noqa: PLC0415
+    from core.first_report_render import (  # noqa: PLC0415
+        FirstReportRenderUnavailable,
+        render_first_report,
+    )
+
+    try:
+        with request_connection(identity) as conn:
+            rendered = render_first_report(
+                conn,
+                datastream_id=datastream_id,
+                project_id=project_id,
+                actor=identity,
+            )
+    except FirstReportRenderUnavailable:
+        # Readiness is blocked / not renderable: honest, NOT an access leak
+        # (the caller already passed the view guard).
+        raise _tool_error(
+            "not_renderable",
+            "The report cannot be rendered yet: the recent pull is not published.",
+        )
+    except Exception as exc:  # noqa: BLE001
+        if exc.__class__.__name__ == "ToolError":
+            raise
+        logger.error("first_report_render_mcp: render failed: %s", type(exc).__name__)
+        raise _tool_error("server_error", "Report rendering unavailable.") from exc
+
+    data = rendered.as_dict()
+    mode = "app UI" if data["ui_supported"] else "compact text + bounded evidence"
+    summary = (
+        f"First report rendered ({data['overall']}, {mode}) for datastream "
+        f"{datastream_id!r}: publication "
+        f"{(data.get('publication') or {}).get('execution_id')!r}, mapping v"
+        f"{(data.get('mapping') or {}).get('version_number')}."
+    )
+    return _result(summary, data)
+
+
+# ---- Read: reproduce for a SECOND authorized user (independent access) -------
+def reproduce_starter_report(
+    project_id: str, datastream_id: str, workspace_ref: str | None = None
+):
+    """Reproduit le premier rapport pour un SECOND utilisateur (lecture, acces independant).
+
+    L'acces du SECOND utilisateur est reevalue INDEPENDAMMENT via le seam
+    strict AD-5 (et, si fourni, le SECOND espace de travail ``workspace_ref``).
+    Autorise -> le MEME resultat publication/provenance est reproductible
+    (memes versions, meme preuve bornee). NON autorise (autre utilisateur ou
+    espace) -> refus SANS exposer l'existence du rapport ni le resultat du
+    premier utilisateur (not_found, existence cachee). SANS UI applicative :
+    texte compact + preuve bornee (jamais le jeu complet). Lecture pure.
+    """
+    project_id = (project_id or "").strip() or None
+    datastream_id = (datastream_id or "").strip() or None
+    workspace_ref = (workspace_ref or "").strip() or None
+    if project_id is None or datastream_id is None:
+        raise _tool_error("missing_param", "project_id and datastream_id are required.")
+    second_actor = _identity()
+
+    from core.db import request_connection  # noqa: PLC0415
+    from core.first_report_render import (  # noqa: PLC0415
+        FirstReportRenderUnavailable,
+        FirstReportReproductionDenied,
+        reproduce_first_report,
+    )
+
+    try:
+        with request_connection(second_actor) as conn:
+            rendered = reproduce_first_report(
+                conn,
+                datastream_id=datastream_id,
+                project_id=project_id,
+                second_actor=second_actor,
+                workspace_ref=workspace_ref,
+            )
+    except FirstReportReproductionDenied:
+        # Existence-hiding: the second user/workspace is NOT authorized. NEVER
+        # disclose report existence or the first-user result.
+        raise _tool_error("not_found", "Report not found.")
+    except FirstReportRenderUnavailable:
+        # Authorized second user, but readiness is not renderable -> honest.
+        raise _tool_error(
+            "not_renderable",
+            "The report cannot be rendered yet: the recent pull is not published.",
+        )
+    except Exception as exc:  # noqa: BLE001
+        if exc.__class__.__name__ == "ToolError":
+            raise
+        logger.error("first_report_render_mcp: reproduce failed: %s", type(exc).__name__)
+        raise _tool_error("server_error", "Report reproduction unavailable.") from exc
+
+    data = rendered.as_dict()
+    data["reproduced"] = True
+    summary = (
+        f"Reproduction confirmed ({data['overall']}) for datastream "
+        f"{datastream_id!r}: same publication "
+        f"{(data.get('publication') or {}).get('execution_id')!r} "
+        f"(the second user's access evaluated independently)."
+    )
+    return _result(summary, data)
 
 
 def register(mcp) -> None:
@@ -117,129 +243,6 @@ def register(mcp) -> None:
     """
     from core.mcp_profiles import register_profiled  # noqa: PLC0415
 
-    # ---- Read: render + validate the first correct answer (starter request) -----
-    def render_starter_report(project_id: str, datastream_id: str):
-        """Rend et VALIDE le premier rapport correct (requete de demarrage, lecture).
-
-        Ne s'execute QUE si l'etat de preparation (Story 36.10) est ``ready`` ou
-        ``degraded`` (degrade dans la politique) ; ``blocked`` -> refuse (rien a
-        rendre). La reponse CITE fraicheur / couverture / provenance (version de
-        mapping) / exclusions et rend l'UI finale du rapport quand l'hote la
-        supporte. SANS UI applicative : texte compact incluant une PREUVE BORNEE
-        obligatoire (totaux / empreintes / quelques figures) + un lien profond
-        authentifie optionnel, SANS envoyer le jeu de donnees complet dans le
-        contexte du modele (E36-NFR06). Les figures referencent la publication
-        active + la version de mapping pour que la validation confirme la
-        correspondance ; etat degrade/perime honnete, non-couleur, explicite.
-        Guard strict AD-5 (vue) ; rapport etranger -> not_found (existence cachee).
-        Lecture pure : ne mute rien.
-        """
-        project_id = (project_id or "").strip() or None
-        datastream_id = (datastream_id or "").strip() or None
-        if project_id is None or datastream_id is None:
-            raise _tool_error("missing_param", "project_id et datastream_id sont requis.")
-        identity = _identity()
-        _guard_project_view(project_id, identity)
-
-        from core.db import get_connection  # noqa: PLC0415
-        from core.first_report_render import (  # noqa: PLC0415
-            FirstReportRenderUnavailable,
-            render_first_report,
-        )
-
-        try:
-            with get_connection() as conn:
-                rendered = render_first_report(
-                    conn,
-                    datastream_id=datastream_id,
-                    project_id=project_id,
-                    actor=identity,
-                )
-        except FirstReportRenderUnavailable:
-            # Readiness is blocked / not renderable: honest, NOT an access leak
-            # (the caller already passed the view guard).
-            raise _tool_error(
-                "not_renderable",
-                "Le rapport n'est pas encore rendable : le pull recent n'est pas publie.",
-            )
-        except Exception as exc:  # noqa: BLE001
-            if exc.__class__.__name__ == "ToolError":
-                raise
-            logger.error("first_report_render_mcp: render failed: %s", type(exc).__name__)
-            raise _tool_error("server_error", "Rendu du rapport indisponible.") from exc
-
-        data = rendered.as_dict()
-        mode = "UI applicative" if data["ui_supported"] else "texte compact + preuve bornee"
-        summary = (
-            f"Premier rapport rendu ({data['overall']}, {mode}) pour le flux "
-            f"{datastream_id!r} : publication "
-            f"{(data.get('publication') or {}).get('execution_id')!r}, mapping v"
-            f"{(data.get('mapping') or {}).get('version_number')}."
-        )
-        return _result(summary, data)
-
-    # ---- Read: reproduce for a SECOND authorized user (independent access) -------
-    def reproduce_starter_report(
-        project_id: str, datastream_id: str, workspace_ref: str | None = None
-    ):
-        """Reproduit le premier rapport pour un SECOND utilisateur (lecture, acces independant).
-
-        L'acces du SECOND utilisateur est reevalue INDEPENDAMMENT via le seam
-        strict AD-5 (et, si fourni, le SECOND espace de travail ``workspace_ref``).
-        Autorise -> le MEME resultat publication/provenance est reproductible
-        (memes versions, meme preuve bornee). NON autorise (autre utilisateur ou
-        espace) -> refus SANS exposer l'existence du rapport ni le resultat du
-        premier utilisateur (not_found, existence cachee). SANS UI applicative :
-        texte compact + preuve bornee (jamais le jeu complet). Lecture pure.
-        """
-        project_id = (project_id or "").strip() or None
-        datastream_id = (datastream_id or "").strip() or None
-        workspace_ref = (workspace_ref or "").strip() or None
-        if project_id is None or datastream_id is None:
-            raise _tool_error("missing_param", "project_id et datastream_id sont requis.")
-        second_actor = _identity()
-
-        from core.db import get_connection  # noqa: PLC0415
-        from core.first_report_render import (  # noqa: PLC0415
-            FirstReportRenderUnavailable,
-            FirstReportReproductionDenied,
-            reproduce_first_report,
-        )
-
-        try:
-            with get_connection() as conn:
-                rendered = reproduce_first_report(
-                    conn,
-                    datastream_id=datastream_id,
-                    project_id=project_id,
-                    second_actor=second_actor,
-                    workspace_ref=workspace_ref,
-                )
-        except FirstReportReproductionDenied:
-            # Existence-hiding: the second user/workspace is NOT authorized. NEVER
-            # disclose report existence or the first-user result.
-            raise _tool_error("not_found", "Rapport introuvable.")
-        except FirstReportRenderUnavailable:
-            # Authorized second user, but readiness is not renderable -> honest.
-            raise _tool_error(
-                "not_renderable",
-                "Le rapport n'est pas encore rendable : le pull recent n'est pas publie.",
-            )
-        except Exception as exc:  # noqa: BLE001
-            if exc.__class__.__name__ == "ToolError":
-                raise
-            logger.error("first_report_render_mcp: reproduce failed: %s", type(exc).__name__)
-            raise _tool_error("server_error", "Reproduction du rapport indisponible.") from exc
-
-        data = rendered.as_dict()
-        data["reproduced"] = True
-        summary = (
-            f"Reproduction confirmee ({data['overall']}) pour le flux "
-            f"{datastream_id!r} : meme publication "
-            f"{(data.get('publication') or {}).get('execution_id')!r} "
-            f"(acces du second utilisateur evalue independamment)."
-        )
-        return _result(summary, data)
 
     register_profiled(
         mcp, render_starter_report,

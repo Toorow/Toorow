@@ -127,3 +127,48 @@ describe("LineChart", () => {
     expect(screen.getByTestId("line-chart-empty")).toBeInTheDocument();
   });
 });
+
+describe("les repères datés — une sortie n'est pas une mesure", () => {
+  const series = [
+    {
+      label: "views",
+      points: [
+        { index: "2026-07-13", value: 200 },
+        { index: "2026-07-14", value: 210 },
+        { index: "2026-07-15", value: 1201 },
+        { index: "2026-07-16", value: 480 },
+      ],
+    },
+  ];
+
+  it("pose le repère sur le jour de l'axe, avec son titre lisible", () => {
+    render(
+      <LineChart
+        series={series}
+        markers={[{ index: "2026-07-15", label: "Pique-nique végan" }]}
+      />,
+    );
+
+    const marker = document.querySelector('[data-marker="2026-07-15"]');
+    expect(marker).toBeTruthy();
+    // Le titre voyage avec le repère : c'est ce qu'une personne lit, jamais l'id.
+    expect(marker?.querySelector("title")?.textContent).toBe("Pique-nique végan");
+  });
+
+  it("ne dessine pas un repère dont la date n'est sur aucun point tracé", () => {
+    // Le poser demanderait d'inventer une position sur l'axe.
+    render(
+      <LineChart series={series} markers={[{ index: "2025-01-01", label: "Vieille sortie" }]} />,
+    );
+
+    expect(document.querySelector('[data-marker="2025-01-01"]')).toBeNull();
+  });
+
+  it("reste la même courbe sans repère — la propriété est additive", () => {
+    const { container: withoutMarkers } = render(<LineChart series={series} />);
+    const polylines = withoutMarkers.querySelectorAll("polyline");
+
+    expect(polylines.length).toBe(1);
+    expect(withoutMarkers.querySelector("[data-marker]")).toBeNull();
+  });
+});

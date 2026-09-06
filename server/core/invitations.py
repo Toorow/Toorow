@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 
 from ulid import ULID
 
+from core.audit import declare_action
 from core.operations import (
     MutationResult,
     OperationResult,
@@ -22,6 +23,17 @@ from core.operations import (
     execute_operation,
     prepare_operation,
 )
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12). Celles-ci n'etaient declarees NULLE PART : la valeur
+# etait retapee en dur ici, parce que la liste centrale de `core/audit.py`
+# etait trop loin pour valoir le detour. Mesure ce jour-la sur le journal
+# vivant : 29 des 64 actions reellement ecrites -- 45 % -- etaient dans ce
+# cas, et rien ne pouvait distinguer une action d'une faute de frappe.
+ACTION_INVITATION_ACCEPT = declare_action("invitation.accept")
+ACTION_INVITATION_ISSUE = declare_action("invitation.issue")
+
 
 
 class InvitationValidationError(ValueError):
@@ -190,7 +202,7 @@ def issue_invitation(
     identity_hash = prepare_identity_binding(normalized).identity_hash
     bindings = [grant.__dict__ for grant in grants]
     spec = OperationSpec(
-        command_type="invitation.issue",
+        command_type=ACTION_INVITATION_ISSUE,
         actor=issuer,
         effective_org_id=org_id,
         resource_path=invitation_resource_path(org_id, f"invitation-subject:{identity_hash}"),
@@ -353,6 +365,7 @@ class InvitationExchangePreview:
     role_derived: str
     explicit_grants: tuple[dict, ...]
     expires_at: datetime
+
 
 @dataclass(frozen=True)
 class InvitationAcceptanceResult:
@@ -522,7 +535,7 @@ def _acceptance_result_from_operation(
         operation_id=operation.operation_id,
         audit_event_id=operation.audit_event_id,
         outbox_event_id=operation.outbox_event_id,
-        next_url=payload.get("next_url", "/onboarding/responsibilities"),
+        next_url=payload.get("next_url", CREATE_ORGANIZATION_NEXT_URL),
         replayed=operation.replayed,
     )
 
@@ -531,7 +544,6 @@ def _acceptance_result_from_operation(
 # is the console root: signing in with no org lands on "Welcome to toorow -> Create
 # your organization", which is exactly where an entry invitation must arrive.
 CREATE_ORGANIZATION_NEXT_URL = "/"
-RESPONSIBILITIES_NEXT_URL = "/onboarding/responsibilities"
 
 
 def accept_invitation(
@@ -654,7 +666,7 @@ def accept_invitation(
         )
 
     spec = OperationSpec(
-        command_type="invitation.accept",
+        command_type=ACTION_INVITATION_ACCEPT,
         actor=membership_identity,
         effective_org_id=org_id,
         resource_path=invitation_resource_path(org_id, f"invitation:{invitation_id}"),
@@ -723,11 +735,28 @@ def accept_invitation(
                         (now, org_id, membership_identity),
                     )
                 for item in bindings:
+                    # `granted_by` is the ISSUER, read from the invitation in the
+                    # same statement -- exactly as the `org_members` INSERT above
+                    # already does it.
+                    #
+                    # It passed `membership_identity`, so every grant created by
+                    # accepting an invitation recorded the person who RECEIVED
+                    # the access as the person who GAVE it. `039_resource_grants
+                    # .sql:60` documents the column as the granting identity, and
+                    # "who gave this access" is the whole question an access
+                    # audit asks. The row is append-only in practice: nothing
+                    # rewrites `granted_by`, so a wrong value is permanent.
+                    #
+                    # The issuer was already at hand and thrown away: `:573`
+                    # selects `i.issuer` and `row[14]` is read nowhere in this
+                    # file. Taking it from the table keeps the two INSERTs
+                    # consistent and needs no new parameter.
                     cur.execute(
                         """
                         INSERT INTO app.resource_grants
                             (id, org_id, identity, scope_type, scope_id, capability, granted_by)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        SELECT %s, %s, %s, %s, %s, %s, issuer
+                        FROM app.invitations WHERE id = %s
                         """,
                         (
                             f"rgrant_{ULID()}",
@@ -736,7 +765,7 @@ def accept_invitation(
                             item["scope_type"],
                             item["scope_id"],
                             item["capability"],
-                            membership_identity,
+                            invitation_id,
                         ),
                     )
             cur.execute(
@@ -769,19 +798,15 @@ def accept_invitation(
             # not created their organization yet has no journey to bootstrap: it will
             # start with the organization they create.
             journey_id = None
-            if org_id is not None:
-                from core.setup_responsibilities import (  # noqa: PLC0415
-                    bootstrap_journey_from_acceptance,
-                )
+            if org_id is not None and project_id is not None:
+                from core.getting_started import bootstrap_project_journey
 
-                journey_id = bootstrap_journey_from_acceptance(
+                journey_id = bootstrap_project_journey(
                     operation_conn,
                     invitation_id=invitation_id,
                     org_id=org_id,
                     project_id=project_id,
-                    operator_identity=membership_identity,
-                    toorow_admin_identity=row[14] if len(row) > 14 else membership_identity,
-                    accepted_at=now,
+                    actor_identity=membership_identity,
                 )
             result = {
                 "invitation_id": invitation_id,
@@ -789,9 +814,13 @@ def accept_invitation(
                 "role": role,
                 "explicit_grants": list(bindings),
                 "next_url": (
-                    f"/p/{project_id}/overview/getting-started"
+                    f"/org/{org_id}/project/{project_id}/getting-started"
                     if project_id is not None
-                    else CREATE_ORGANIZATION_NEXT_URL
+                    else (
+                        f"/org/{org_id}/settings/members"
+                        if org_id
+                        else CREATE_ORGANIZATION_NEXT_URL
+                    )
                 ),
                 "journey_id": journey_id,
             }

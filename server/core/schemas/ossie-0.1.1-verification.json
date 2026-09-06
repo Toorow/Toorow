@@ -1,0 +1,83 @@
+{
+  "$comment": "Story 49.3. NOT a schema. This is the VERIFICATION RECORD for the Apache Ossie interchange boundary: what the official 0.1.1 contract says, where that was read, and exactly where the pre-existing local profile diverges from it. It exists because 'we have a file called ossie-0.1.1-profile.schema.json' was being treated as proof of conformance, and it was not.",
+  "verified_on": "2026-07-30",
+  "source": {
+    "project": "Apache Ossie (incubating)",
+    "repository": "https://github.com/apache/ossie",
+    "tag": "osi-0.1.1-rc1",
+    "commit": "faf581054dcf7964d5fe0ceae7d6f415c8ce32a5",
+    "document": "core-spec/spec.md",
+    "url": "https://raw.githubusercontent.com/apache/ossie/faf581054dcf7964d5fe0ceae7d6f415c8ce32a5/core-spec/spec.md",
+    "declared_version": "0.1.1"
+  },
+  "findings": {
+    "no_published_json_schema": "The 0.1.1 contract is a normative field table in a Markdown specification. Apache publishes no JSON Schema artifact for it, so no upstream schema hash can be pinned. What is pinned instead is the exact commit of the normative document, above.",
+    "main_branch_is_ahead": "The repository default branch declares 0.2.0.dev0 and states the schema may change before 0.2.0 is released. It is NOT the contract this codebase writes against, and the interchange version is deliberately not bumped to it."
+  },
+  "normative_0_1_1": {
+    "semantic_model": {
+      "required": ["name", "datasets"],
+      "optional": ["description", "ai_context", "relationships", "metrics", "custom_extensions"]
+    },
+    "dataset": {
+      "required": ["name", "source"],
+      "optional": ["primary_key", "unique_keys", "description", "ai_context", "fields", "custom_extensions"]
+    },
+    "field": {
+      "required": ["name", "expression"],
+      "optional": ["dimension", "label", "description", "ai_context", "custom_extensions"]
+    },
+    "dimension": {
+      "required": [],
+      "optional": ["is_time"]
+    },
+    "metric": {
+      "required": ["name", "expression"],
+      "optional": ["description", "ai_context", "custom_extensions"]
+    },
+    "relationship": {
+      "required": ["name", "from", "to", "from_columns", "to_columns"],
+      "optional": ["ai_context", "custom_extensions"]
+    },
+    "custom_extension": {
+      "required": ["vendor_name", "data"],
+      "vendor_name_enum": ["COMMON", "SNOWFLAKE", "SALESFORCE", "DBT", "DATABRICKS", "GOODDATA"],
+      "data_type": "string"
+    }
+  },
+  "local_profile_divergences": {
+    "$comment": "Measured against server/core/schemas/ossie-0.1.1-profile.schema.json, sha256 06cc6d533214497894884b1e115ddf7c120af3a7abd80151432294cafeac4b5e. That file is the DATA-owned Datastream mapping projection (migration 032, server/core/datastream_field_mapping.py::project_ossie). Story 49.3 does not own physical mapping projection, so it is left in place and its divergences are recorded here rather than silently rewritten under Data's feet. The Semantic View projection this story introduces uses ossie-0.1.1.schema.json, which is conformant.",
+    "items": [
+      {
+        "entity": "semantic_model",
+        "divergence": "`name` is required by the contract and absent from the local profile; `relationships` and `metrics` are optional in the contract and required locally.",
+        "effect": "A locally valid projection can be missing the one field the contract requires, and a model with no relationships cannot be expressed at all."
+      },
+      {
+        "entity": "dataset",
+        "divergence": "The contract requires `source` and permits `primary_key` / `unique_keys`; the local profile has none of the three and requires `fields` instead.",
+        "effect": "Join-key provability is not expressible, which is exactly what relationship safety needs."
+      },
+      {
+        "entity": "field",
+        "divergence": "The contract requires `expression` and permits `dimension` and `label`; the local profile has none of them.",
+        "effect": "A local field carries no definition at all, only a name and free text."
+      },
+      {
+        "entity": "metric",
+        "divergence": "The local profile requires `dataset`, which is not a field of a 0.1.1 metric.",
+        "effect": "An additional required property that no conformant reader will supply."
+      },
+      {
+        "entity": "relationship",
+        "divergence": "The contract uses `from`, `to`, `from_columns`, `to_columns`; the local profile uses `from_dataset`, `to_dataset`, `relationship_type` and carries no join columns.",
+        "effect": "The join keys are absent, so fan-out cannot be reasoned about from the projection."
+      },
+      {
+        "entity": "custom_extension",
+        "divergence": "`vendor_name` is an enumeration of six values in the contract; the local profile accepts any non-empty string and the Data projection writes `\"toorow\"`.",
+        "effect": "Every projection Data has published to date carries a vendor name the contract does not admit. The conformant namespacing is vendor_name `COMMON` with the toorow payload nested under a `toorow` key inside `data`."
+      }
+    ]
+  }
+}

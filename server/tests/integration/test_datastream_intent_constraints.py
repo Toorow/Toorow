@@ -81,7 +81,14 @@ def test_plan_versions_are_immutable_and_pointer_is_same_datastream(live_postgre
                 )
             cur.execute("SAVEPOINT immutable_check")
 
-        with pytest.raises(psycopg.errors.RaiseException):
+        # THE CLASS THE TRIGGER REALLY RAISES (re-measured 2026-08-31). Migration
+        # 030 raises `USING ERRCODE = '23000'`, which psycopg maps to
+        # `IntegrityConstraintViolation`; `RaiseException` is SQLSTATE `P0001`,
+        # the class of a RAISE that declares no errcode. So this walk failed on a
+        # database where the trigger fired exactly as designed -- the assertion
+        # named the wrong refusal, not the wrong behaviour. `match=` pins the
+        # sentence so the class alone cannot be satisfied by another constraint.
+        with pytest.raises(psycopg.errors.IntegrityConstraintViolation, match="immutable"):
             with conn.cursor() as cur:
                 cur.execute(
                     "UPDATE app.datastream_plan_versions SET executable = TRUE WHERE id = %s",

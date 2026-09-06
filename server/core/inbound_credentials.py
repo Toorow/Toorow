@@ -11,13 +11,14 @@ AD-14). This module owns:
                         with an overlap window (or REVOKED if policy is immediate).
   * ``revoke``        : flip state -> REVOKED; immediately fail-closed.
   * ``resolve_for_delivery`` : hash the presented token; constant-time lookup of
-                        an ACTIVE/ROTATING credential for an ENABLED Datastream.
+                        an ACTIVE/ROTATING credential for a receivable Draft or
+                        Active Datastream. The ingest seam separately gates processing.
                         Used by the 38.8 receipt path (wired there, not here).
   * ``get_credential_state`` : safe read-model projection (state, safe_suffix,
                         version, expires_at, overlap_until). NEVER the hash or
                         raw token.
-  * ``check_rate_limit`` : non-enumerating rate-limit decision (env / provider /
-                        datastream-capability scopes). Throttled or unknown
+  * ``check_rate_limit`` : non-enumerating rate-limit decision (environment /
+                        connector / datastream-capability scopes). Throttled or unknown
                         credential -> constant-shape denial.
 
 INVARIANTS (adversarially enforced):
@@ -49,9 +50,9 @@ INVARIANTS (adversarially enforced):
     inside the mutation closure. Two identical issues with the same Idempotency-Key
     replay cleanly.
 
-  * ROWCOUNT RECONCILED. The partial-unique constraint (one ACTIVE/ROTATING per
-    (datastream_id, channel)) is enforced at the DB level; the mutation closure
-    reconciles on race.
+  * CONCURRENT WRITES FAIL CLOSED. Advisory scope locks and row-level locks
+    serialize lifecycle decisions; a losing issue/rotate raises a conflict and
+    never returns a locally generated secret.
 
 Mirrors ``connector_activation.py`` conventions: ``from __future__ import
 annotations``, lazy imports of shared seams, mutations only through the operation
@@ -60,6 +61,7 @@ seam, ASCII-only source.
 
 from __future__ import annotations
 
+import datetime
 import hashlib
 import hmac
 import os
@@ -68,7 +70,21 @@ from typing import Any
 
 from ulid import ULID
 
+from core.audit import declare_action
 from core.operations import MutationResult, OperationSpec, execute_operation
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12) : declarees ICI, a cote du code qui les ecrit, et non
+# dans `core/audit.py`. Ce fichier etait un carrefour -- 43 editions de 29
+# sujets depuis juin, dont 34 n'ajoutaient qu'une constante -- et 45 % des
+# actions reellement ecrites en production n'y etaient meme pas declarees,
+# parce que la liste etait trop loin pour valoir le detour. `write_audit_row`
+# refuse desormais une action que personne n'a declaree.
+ACTION_INBOUND_CREDENTIAL_ISSUED = declare_action("inbound.credential.issued")
+ACTION_INBOUND_CREDENTIAL_REVOKED = declare_action("inbound.credential.revoked")
+ACTION_INBOUND_CREDENTIAL_ROTATED = declare_action("inbound.credential.rotated")
+
 
 # ---------------------------------------------------------------------------
 # Credential states.
@@ -97,13 +113,16 @@ _SAFE_SUFFIX_CHARS: int = 6
 _TOKEN_BYTES: int = 32
 
 # ---------------------------------------------------------------------------
-# Rate-limit defaults (read from env; non-enumerating on denial).
+# Rate-limit defaults (read dynamically so deployments can tune them).
 # ---------------------------------------------------------------------------
 
-_RL_MAX_ISSUES_PER_HOUR: int = int(os.environ.get("INBOUND_RL_MAX_ISSUES_PER_HOUR", "10"))
-_RL_MAX_ROTATIONS_PER_HOUR: int = int(
-    os.environ.get("INBOUND_RL_MAX_ROTATIONS_PER_HOUR", "5")
-)
+_RL_DEFAULTS: dict[str, dict[str, int]] = {
+    "issue": {"capability": 10, "connector": 100, "environment": 1000},
+    "rotate": {"capability": 5, "connector": 50, "environment": 500},
+    "resolve": {"capability": 120, "connector": 1200, "environment": 12000},
+}
+_MAX_EXPIRY_SECONDS = 365 * 24 * 60 * 60
+_MAX_OVERLAP_SECONDS = 7 * 24 * 60 * 60
 
 # ---------------------------------------------------------------------------
 # Exceptions.
@@ -130,7 +149,7 @@ class InboundCredentialDomainNotReady(RuntimeError):
 
 
 class InboundCredentialRateLimited(RuntimeError):
-    """A rate-limit scope (env / provider / datastream-capability) was exceeded.
+    """A rate-limit scope (environment / connector / capability) was exceeded.
 
     The denial is constant-shape (non-enumerating): this exception carries no
     detail about whether the credential exists or what scope triggered the limit.
@@ -174,6 +193,33 @@ def _dt2iso(ts: Any) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+def _utc_boundary(value: Any) -> datetime.datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if not isinstance(value, datetime.datetime):
+        raise TypeError("invalid credential boundary")
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=datetime.timezone.utc)
+    return value.astimezone(datetime.timezone.utc)
+
+
+def _effective_state(state: str, *, expires_at: Any, overlap_until: Any) -> str:
+    """Project time-bounded credentials as EXPIRED at the exact boundary."""
+    now = datetime.datetime.now(datetime.timezone.utc)
+    try:
+        expires_boundary = _utc_boundary(expires_at)
+        overlap_boundary = _utc_boundary(overlap_until)
+        if expires_boundary is not None and now >= expires_boundary:
+            return "EXPIRED"
+        if state == "ROTATING" and (overlap_boundary is None or now >= overlap_boundary):
+            return "EXPIRED"
+    except (TypeError, ValueError):
+        return "EXPIRED"
+    return state
+
+
 def _safe_read_model(
     *,
     credential_id: str,
@@ -187,25 +233,79 @@ def _safe_read_model(
     issued_by: str,
     created_at: Any,
 ) -> dict[str, Any]:
-    """Build the secret-free read-model for one credential row.
-
-    Fields: credential_id, datastream_id, channel, safe_suffix, state, version,
-    expires_at, overlap_until, issued_by, created_at.
-    NEVER includes token_hash, raw token, or any cross-tenant detail.
-    Identical shape whether returned by REST or MCP (AC2, E38-NFR03).
-    """
+    """Build the secret-free read-model for one credential row."""
     return {
         "credential_id": credential_id,
         "datastream_id": datastream_id,
         "channel": channel,
         "safe_suffix": safe_suffix,
-        "state": state,
+        "state": _effective_state(state, expires_at=expires_at, overlap_until=overlap_until),
         "version": version,
         "expires_at": _dt2iso(expires_at),
         "overlap_until": _dt2iso(overlap_until),
         "issued_by": issued_by,
         "created_at": _dt2iso(created_at),
     }
+
+
+def _bounded_optional_seconds(value: int | None, *, name: str, maximum: int) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise InboundCredentialValidationError(f"{name} must be an integer")
+    if value < 1 or value > maximum:
+        raise InboundCredentialValidationError(f"{name} must be between 1 and {maximum}")
+    return value
+
+
+def _require_operation_result(
+    data: dict[str, Any] | None, *, replayed: bool = False
+) -> dict[str, Any]:
+    required = {
+        "credential_id",
+        "datastream_id",
+        "channel",
+        "safe_suffix",
+        "state",
+        "version",
+        "issued_by",
+    }
+    if not isinstance(data, dict) or not required.issubset(data):
+        if replayed:
+            raise InboundCredentialConflict("credential operation is still in progress")
+        raise RuntimeError("credential operation returned an incomplete result")
+    return data
+
+
+def _operation_read_model(data: dict[str, Any]) -> dict[str, Any]:
+    return _safe_read_model(
+        credential_id=str(data["credential_id"]),
+        datastream_id=str(data["datastream_id"]),
+        channel=str(data["channel"]),
+        safe_suffix=data.get("safe_suffix"),
+        state=str(data["state"]),
+        version=int(data["version"]),
+        expires_at=data.get("expires_at"),
+        overlap_until=data.get("overlap_until"),
+        issued_by=str(data["issued_by"]),
+        created_at=data.get("created_at"),
+    )
+
+
+def _show_once_result(op_result, *, ephemeral: dict[str, str]) -> dict[str, Any]:
+    safe_model = _operation_read_model(
+        _require_operation_result(op_result.result, replayed=op_result.replayed)
+    )
+    if op_result.replayed:
+        return {**safe_model, "secret_available": False}
+    secret = ephemeral.pop("full_secret", None)
+    if not secret:
+        raise RuntimeError("new credential operation returned no ephemeral secret")
+    return {**safe_model, "secret_available": True, "full_secret": secret}
+
+
+def _is_unique_violation(exc: Exception) -> bool:
+    return getattr(exc, "sqlstate", None) == "23505"
 
 
 # ---------------------------------------------------------------------------
@@ -240,8 +340,15 @@ def _load_active_credential(
     if row is None:
         return None
     (
-        cred_id, token_hash, safe_suffix, state, version,
-        expires_at, overlap_until, issued_by, created_at,
+        cred_id,
+        token_hash,
+        safe_suffix,
+        state,
+        version,
+        expires_at,
+        overlap_until,
+        issued_by,
+        created_at,
     ) = row
     return {
         "id": cred_id,
@@ -257,31 +364,77 @@ def _load_active_credential(
 
 
 # ---------------------------------------------------------------------------
-# _get_datastream_status -- verify ENABLED and retrieve connector_name/environment.
+# _get_datastream_status -- retrieve canonical connector and lifecycle facts.
 # ---------------------------------------------------------------------------
 
 
-def _get_datastream_status(conn, *, datastream_id: str) -> dict[str, Any] | None:
-    """Return minimal Datastream facts or None if absent.
-
-    Returns dict with {connector_name, environment, org_id, enabled}.
-    Source-agnostic: connector_name is an opaque identifier string (AD-2).
-    """
+def _get_datastream_status(
+    conn, *, datastream_id: str, hold_lifecycle: bool = False
+) -> dict[str, Any] | None:
+    """Return canonical connector, lifecycle and configured-channel facts."""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT source_kind, org_id "
-            "FROM app.datastreams "
-            "WHERE id = %s",
+            "SELECT COALESCE(config->>'connector_name', module_name), org_id, "
+            "enabled, lifecycle_state, COALESCE(config->'channels', '[]'::jsonb) "
+            "FROM app.datastreams WHERE id = %s" + (" FOR SHARE" if hold_lifecycle else ""),
             (datastream_id,),
         )
         row = cur.fetchone()
     if row is None:
         return None
-    source_kind, org_id = row
-    return {
-        "connector_name": source_kind or "",
-        "org_id": org_id or "",
+    if len(row) == 4:  # Compatibility for offline fakes created before channel binding.
+        connector_name, org_id, enabled, lifecycle_state = row
+        raw_channels = ["email", "webhook"]
+    else:
+        connector_name, org_id, enabled, lifecycle_state, raw_channels = row
+    configured_channels = {
+        "email" if str(value).strip().lower() == "inbound_email" else str(value).strip().lower()
+        for value in (raw_channels or [])
     }
+    return {
+        "connector_name": connector_name or "",
+        "org_id": org_id or "",
+        "enabled": bool(enabled),
+        "lifecycle_state": lifecycle_state or ("active" if enabled else "draft"),
+        "channels": configured_channels & CREDENTIAL_CHANNELS,
+    }
+
+
+def datastream_matches_connector(conn, *, datastream_id: str, connector_name: str) -> bool:
+    """Bind REST connector paths to the Datastream's canonical connector."""
+    info = _get_datastream_status(conn, datastream_id=datastream_id)
+    return bool(info and hmac.compare_digest(info["connector_name"], connector_name))
+
+
+def _require_receivable(info: dict[str, Any], *, channel: str | None = None) -> None:
+    """Allow draft discovery and active intake for configured delivery channels."""
+    if not info.get("connector_name") or info.get("lifecycle_state") not in {
+        "draft",
+        "active",
+    }:
+        raise InboundCredentialUnavailable("datastream is not receivable")
+    if channel is not None and channel not in info.get("channels", set()):
+        raise InboundCredentialUnavailable("delivery channel is not configured")
+
+
+def _ready_domain(conn, *, connector_name: str, environment: str) -> str:
+    from core.connector_domain import get_domain_config  # noqa: PLC0415
+    from core.connector_installation_api import (  # noqa: PLC0415
+        ConnectorNotReady,
+        refuse_activation_unless_ready,
+    )
+
+    domain_cfg = get_domain_config(conn, environment=environment, connector_name=connector_name)
+    if domain_cfg is None:
+        raise InboundCredentialDomainNotReady("connector domain is not configured and verified")
+    try:
+        refuse_activation_unless_ready(conn, connector_name=connector_name, environment=environment)
+    except ConnectorNotReady as exc:
+        raise InboundCredentialDomainNotReady("connector installation is not ready") from exc
+    domain = str(domain_cfg.get("domain") or "").strip()
+    if not domain:
+        raise InboundCredentialDomainNotReady("connector domain is not verified")
+    return domain
 
 
 # ---------------------------------------------------------------------------
@@ -289,48 +442,205 @@ def _get_datastream_status(conn, *, datastream_id: str) -> dict[str, Any] | None
 # ---------------------------------------------------------------------------
 
 
+def _rate_limit_value(operation: str, scope: str) -> int:
+    env_name = f"INBOUND_RL_{scope.upper()}_MAX_{operation.upper()}S_PER_HOUR"
+    raw = os.environ.get(env_name)
+    if raw is None and scope == "capability":
+        raw = os.environ.get(f"INBOUND_RL_MAX_{operation.upper()}S_PER_HOUR")
+    try:
+        value = int(raw) if raw is not None else _RL_DEFAULTS[operation][scope]
+    except (TypeError, ValueError):
+        value = _RL_DEFAULTS[operation][scope]
+    return max(1, value)
+
+
 def check_rate_limit(
     conn,
     *,
-    datastream_id: str,
+    environment: str,
+    connector_name: str,
+    datastream_id: str | None,
     channel: str,
     operation: str,
 ) -> None:
-    """Check rate limits at env / datastream-capability scopes.
-
-    ``operation`` is 'issue' or 'rotate'. Raises ``InboundCredentialRateLimited``
-    when a limit is exceeded. The denial is constant-shape (non-enumerating):
-    the exception message carries no existence detail about the credential or
-    the exact scope that triggered the limit (AC4).
-
-    Limits are intentionally lightweight (count-based, read from env vars) so
-    this module requires no external rate-limit service. A future story may wire
-    a token-bucket engine; the interface here is stable.
-    """
-    if operation not in ("issue", "rotate"):
-        return  # unknown operation: pass through (fail-open for extensibility)
-
-    max_ops = (
-        _RL_MAX_ISSUES_PER_HOUR if operation == "issue" else _RL_MAX_ROTATIONS_PER_HOUR
+    """Serialize and enforce environment/connector/capability lifecycle limits."""
+    if operation not in _RL_DEFAULTS:
+        raise InboundCredentialValidationError("unsupported rate-limit operation")
+    # One hierarchy everywhere: environment -> connector -> capability.
+    lock_keys = (
+        f"inbound-credential:{environment}:{operation}",
+        f"inbound-credential:{environment}:{connector_name}:{operation}",
+        f"inbound-credential:{environment}:{connector_name}:{datastream_id}:{channel}:{operation}",
     )
-
-    # Count non-terminal credentials for this (datastream_id, channel) issued
-    # within the last hour as a simple rolling-window approximation.
     with conn.cursor() as cur:
+        for lock_key in lock_keys:
+            cur.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (lock_key,),
+            )
         cur.execute(
-            "SELECT COUNT(*) FROM app.datastream_inbound_credentials "
-            "WHERE datastream_id = %s AND channel = %s "
-            "AND created_at >= NOW() - INTERVAL '1 hour'",
-            (datastream_id, channel),
+            "SELECT environment_count, connector_count, capability_count "
+            "FROM app.count_inbound_credential_rate_events(%s, %s, %s, %s, %s)",
+            (environment, connector_name, datastream_id, channel, operation),
         )
         row = cur.fetchone()
+    counts = tuple(int(value or 0) for value in (row or (0, 0, 0)))
+    limits = (
+        _rate_limit_value(operation, "environment"),
+        _rate_limit_value(operation, "connector"),
+        _rate_limit_value(operation, "capability"),
+    )
+    if any(count >= limit for count, limit in zip(counts, limits, strict=True)):
+        raise InboundCredentialRateLimited("credential lifecycle rate limit exceeded")
 
-    count = int(row[0]) if row else 0
-    if count >= max_ops:
-        # Non-enumerating: same exception regardless of which scope triggered.
-        raise InboundCredentialRateLimited(
-            "operation rate limit exceeded -- retry after the window resets"
+
+def _record_rate_limit_event(
+    conn,
+    *,
+    operation_id: str | None,
+    environment: str,
+    connector_name: str,
+    datastream_id: str | None,
+    channel: str,
+    operation: str,
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT app.record_inbound_credential_rate_event(%s, %s, %s, %s, %s, %s, %s)",
+            (
+                f"dcre_{ULID()}",
+                operation_id,
+                environment,
+                connector_name,
+                datastream_id,
+                channel,
+                operation,
+            ),
         )
+
+
+def _enforce_resolution_rate_limit(conn, **scope: Any) -> None:
+    check_rate_limit(conn, operation="resolve", **scope)
+
+
+def _record_resolution_rate_event(conn, **scope: Any) -> None:
+    _record_rate_limit_event(conn, operation_id=None, operation="resolve", **scope)
+
+
+def _materialize_due_expirations(
+    conn,
+    *,
+    datastream_id: str | None = None,
+    credential_id: str | None = None,
+) -> None:
+    """Persist time-derived EXPIRED states through operation, audit and outbox."""
+    clauses = [
+        "c.state IN ('ACTIVE', 'ROTATING')",
+        "(c.expires_at <= NOW() OR (c.state = 'ROTATING' AND c.overlap_until <= NOW()))",
+    ]
+    params: list[str] = []
+    if datastream_id is not None:
+        clauses.append("c.datastream_id = %s")
+        params.append(datastream_id)
+    if credential_id is not None:
+        clauses.append("c.id = %s")
+        params.append(credential_id)
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT c.id, c.datastream_id, c.channel, c.state, c.version, "
+            "c.safe_suffix, c.issued_by, c.created_at, c.expires_at, "
+            "c.overlap_until, d.org_id "
+            "FROM app.datastream_inbound_credentials c "
+            "JOIN app.datastreams d ON d.id = c.datastream_id WHERE "
+            + " AND ".join(clauses)
+            + " ORDER BY c.datastream_id, c.channel, c.version FOR UPDATE OF c",
+            tuple(params),
+        )
+        due_rows = list(cur.fetchall())
+
+    for row in due_rows:
+        (
+            due_id,
+            due_datastream_id,
+            due_channel,
+            due_state,
+            due_version,
+            safe_suffix,
+            issued_by,
+            created_at,
+            expires_at,
+            overlap_until,
+            org_id,
+        ) = row
+        boundary = _dt2iso(expires_at if due_state == "ACTIVE" else overlap_until)
+        spec = OperationSpec(
+            command_type="inbound.credential.expired",
+            actor="system:credential-expiry",
+            effective_org_id=org_id,
+            resource_path=(
+                f"organization:{org_id}",
+                f"datastream:{due_datastream_id}",
+                f"credential:{due_id}",
+            ),
+            idempotency_key=f"credential-expiry:{due_id}:{boundary}",
+            host_context={},
+            versions={
+                "policy": "inbound-credential-v2",
+                "catalog": "inbound-credential-v2",
+                "tool": "expiry-v1",
+            },
+            request_payload={"credential_id": due_id, "boundary": boundary},
+            provider_references={},
+            confirmation_mode="server",
+            confirmation_reference=f"inbound-credential:{due_id}:expire",
+            trace_id=None,
+        )
+
+        def mutation(operation_conn, operation_id: str, *, expected_state=due_state):  # noqa: ANN001
+            from core.operations import _canonical_hash  # noqa: PLC0415
+
+            with operation_conn.cursor() as mutation_cur:
+                mutation_cur.execute(
+                    "UPDATE app.datastream_inbound_credentials SET state = 'EXPIRED', "
+                    "overlap_until = NULL, expires_at = COALESCE(expires_at, NOW()), "
+                    "operation_id = %s, updated_at = NOW() "
+                    "WHERE id = %s AND state = %s "
+                    "AND (expires_at <= NOW() OR "
+                    "(state = 'ROTATING' AND overlap_until <= NOW())) "
+                    "RETURNING expires_at",
+                    (operation_id, due_id, expected_state),
+                )
+                changed = mutation_cur.fetchone()
+            if changed is None:
+                raise InboundCredentialConflict(
+                    "credential expiration lost its locked lifecycle boundary"
+                )
+            result = {
+                "credential_id": due_id,
+                "datastream_id": due_datastream_id,
+                "channel": due_channel,
+                "safe_suffix": safe_suffix,
+                "state": "EXPIRED",
+                "version": due_version,
+                "expires_at": _dt2iso(changed[0]),
+                "overlap_until": None,
+                "issued_by": issued_by,
+                "created_at": _dt2iso(created_at),
+            }
+            return MutationResult(
+                outcome="succeeded",
+                before_hash=_canonical_hash({"credential_id": due_id, "state": expected_state}),
+                after_hash=_canonical_hash(result),
+                result=result,
+                outbox_payload={
+                    "credential_id": due_id,
+                    "datastream_id": due_datastream_id,
+                    "state": "EXPIRED",
+                    "boundary": boundary,
+                },
+            )
+
+        execute_operation(conn, spec, mutation=mutation)
 
 
 # ---------------------------------------------------------------------------
@@ -347,37 +657,9 @@ def issue(
     idempotency_key: str,
     host_context: dict[str, Any],
     trace_id: str | None,
-    overlap_seconds: int | None = None,
     expires_seconds: int | None = None,
 ) -> dict[str, Any]:
-    """Issue a new delivery credential for a managed-feed Datastream (AC1, AC2).
-
-    Generates a high-entropy token via ``secrets.token_urlsafe``. Computes
-    ``token_hash = sha256(token)`` and a ``safe_suffix`` (last 6 chars). The
-    full secret is returned EXACTLY ONCE in the result dict under the key
-    ``full_secret`` and is NEVER persisted, logged, placed in request_payload,
-    audit payload, outbox payload, or any read-model.
-
-    For email channel: the full_secret is the complete inbound address
-    ``ds_<token>@<verified-domain>``.
-    For webhook channel: the full_secret is the raw bearer token.
-
-    Preconditions (fail-closed before SQL):
-      - ``datastream_id``, ``channel``, ``actor``, ``idempotency_key`` must be
-        non-empty strings.
-      - ``channel`` must be 'email' or 'webhook'.
-      - The connector installation domain MUST be READY (verified); otherwise
-        ``InboundCredentialDomainNotReady`` is raised.
-      - At most one ACTIVE/ROTATING credential per (datastream_id, channel)
-        at any time (partial-unique constraint; existing ACTIVE = 409).
-
-    Returns a dict containing the safe read-model PLUS ``full_secret`` (once).
-    The caller MUST include ``full_secret`` in the HTTP response and then discard
-    it; it will NOT be accessible via GET or MCP.
-    """
-    # ------------------------------------------------------------------
-    # Input validation (fail-closed before SQL).
-    # ------------------------------------------------------------------
+    """Issue a high-entropy delivery capability and reveal it once."""
     if not isinstance(datastream_id, str) or not datastream_id.strip():
         raise InboundCredentialValidationError("datastream_id is required")
     if not isinstance(channel, str) or channel not in CREDENTIAL_CHANNELS:
@@ -388,245 +670,159 @@ def issue(
         raise InboundCredentialValidationError("actor is required")
     if not isinstance(idempotency_key, str) or not idempotency_key.strip():
         raise InboundCredentialValidationError("idempotency_key is required")
-
     datastream_id = datastream_id.strip()
     channel = channel.strip()
     actor = actor.strip()
-
-    # ------------------------------------------------------------------
-    # Domain READY gate (AC1): refuse if the installation is not READY.
-    # Read the verified domain for email address construction.
-    # ------------------------------------------------------------------
-    ds_info = _get_datastream_status(conn, datastream_id=datastream_id)
-    if ds_info is None:
-        raise InboundCredentialUnavailable("datastream not found")
-
-    connector_name = ds_info.get("connector_name", "")
-
-    # Read the domain config to get the verified domain and check READY.
-    # We re-use connector_domain.get_domain_config which reads the active config.
-    # The installation READY check reuses the connector_installation_api guard.
-    from core.connector_domain import get_domain_config  # noqa: PLC0415
-
-    # Determine environment from env var (same as other 38.x modules).
-    environment = os.environ.get("TOOROW_ENVIRONMENT", "production").strip() or "production"
-
-    domain_cfg = None
-    if connector_name:
-        domain_cfg = get_domain_config(conn, environment=environment, connector_name=connector_name)
-
-    if domain_cfg is None:
-        raise InboundCredentialDomainNotReady(
-            "no domain configuration found for this connector -- "
-            "configure and verify the domain before issuing credentials"
-        )
-
-    # Verify the installation is READY (the gate guard from 38.2).
-    from core.connector_installation_api import (  # noqa: PLC0415
-        ConnectorNotReady,
-        refuse_activation_unless_ready,
+    idempotency_key = idempotency_key.strip()
+    expires_seconds = _bounded_optional_seconds(
+        expires_seconds, name="expires_seconds", maximum=_MAX_EXPIRY_SECONDS
     )
 
-    try:
-        refuse_activation_unless_ready(conn, connector_name=connector_name, environment=environment)
-    except ConnectorNotReady as exc:
-        raise InboundCredentialDomainNotReady(
-            "connector installation is not READY -- verify domain before issuing credentials"
-        ) from exc
-
-    verified_domain: str = domain_cfg["domain"]
-
-    # ------------------------------------------------------------------
-    # Rate-limit check (AC4) before token generation.
-    # ------------------------------------------------------------------
-    check_rate_limit(conn, datastream_id=datastream_id, channel=channel, operation="issue")
-
-    # ------------------------------------------------------------------
-    # Generate the ephemeral token (NEVER persisted).
-    # token_hash and safe_suffix are the only token derivatives stored.
-    # ------------------------------------------------------------------
-    raw_token, token_hash, safe_suffix = _generate_token()
-
-    # Build the channel-specific full_secret (returned ONCE to caller).
-    if channel == "email":
-        full_secret = f"ds_{raw_token}@{verified_domain}"
-    else:
-        # webhook: the bearer token itself is the capability secret.
-        full_secret = raw_token
-
-    # Immediately discard raw_token from local scope after building full_secret.
-    # Python GC will reclaim it; we do not zero-fill (stdlib limitation).
-    del raw_token
-
-    # ------------------------------------------------------------------
-    # Build the OperationSpec.
-    # DETERMINISTIC PAYLOAD (review H1): no random id AND no raw token in
-    # request_payload. The row id is generated at WRITE TIME inside the
-    # mutation closure.
-    # ------------------------------------------------------------------
-    org_id = ds_info.get("org_id", "platform")
-
+    info = _get_datastream_status(conn, datastream_id=datastream_id)
+    if info is None:
+        raise InboundCredentialUnavailable("datastream not found")
+    connector_name = info["connector_name"]
+    org_id = info["org_id"] or None
+    environment = os.environ.get("TOOROW_ENVIRONMENT", "production").strip() or "production"
+    _materialize_due_expirations(conn, datastream_id=datastream_id)
     spec = OperationSpec(
-        command_type="inbound.credential.issued",
+        command_type=ACTION_INBOUND_CREDENTIAL_ISSUED,
         actor=actor,
         effective_org_id=org_id,
         resource_path=(
-            f"organization:{org_id}",
+            f"organization:{org_id or 'platform'}",
             f"datastream:{datastream_id}",
             f"channel:{channel}",
         ),
         idempotency_key=idempotency_key,
         host_context=host_context,
         versions={
-            "policy": "inbound-credential-v1",
-            "catalog": "inbound-credential-v1",
+            "policy": "inbound-credential-v2",
+            "catalog": "inbound-credential-v2",
             "tool": "rest-v1",
         },
-        # NO raw token here. token_hash is a safe digest, not secret material.
-        # The _is_secret_key scanner in operations.py accepts 'token_hash'
-        # because it ends with the '_hash' safe-id suffix pattern.
         request_payload={
             "datastream_id": datastream_id,
             "channel": channel,
             "issued_by": actor,
-            "token_hash": token_hash,
-            "version": 1,
+            "expires_seconds": expires_seconds,
         },
         provider_references={},
         confirmation_mode="server",
-        confirmation_reference=(
-            f"inbound-credential:{datastream_id}:{channel}:issue"
-        ),
+        confirmation_reference=f"inbound-credential:{datastream_id}:{channel}:issue",
         trace_id=trace_id,
     )
-
-    # Capture token_hash and safe_suffix for the closure (they are not secret;
-    # token_hash is a one-way digest and safe_suffix is a display hint).
-    _token_hash = token_hash
-    _safe_suffix = safe_suffix
+    ephemeral: dict[str, str] = {}
 
     def mutation(operation_conn, operation_id: str) -> MutationResult:  # noqa: ANN001
         from core.operations import _canonical_hash  # noqa: PLC0415
 
+        locked_info = _get_datastream_status(
+            operation_conn, datastream_id=datastream_id, hold_lifecycle=True
+        )
+        if locked_info is None:
+            raise InboundCredentialUnavailable("datastream not found")
+        _require_receivable(locked_info, channel=channel)
+        if locked_info["connector_name"] != connector_name:
+            raise InboundCredentialConflict("datastream connector changed")
+        check_rate_limit(
+            operation_conn,
+            environment=environment,
+            connector_name=connector_name,
+            datastream_id=datastream_id,
+            channel=channel,
+            operation="issue",
+        )
+        with operation_conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, state, version FROM app.datastream_inbound_credentials "
+                "WHERE datastream_id = %s AND channel = %s "
+                "ORDER BY version DESC, created_at DESC, id DESC FOR UPDATE",
+                (datastream_id, channel),
+            )
+            history = list(cur.fetchall())
+        if any(row[1] in _NONTERMINAL_STATES for row in history):
+            raise InboundCredentialConflict(
+                "a non-terminal credential already exists for this channel"
+            )
+        new_version = max((int(row[2]) for row in history), default=0) + 1
+        verified_domain = _ready_domain(
+            operation_conn, connector_name=connector_name, environment=environment
+        )
+        raw_token, token_hash, safe_suffix = _generate_token()
+        full_secret = f"ds_{raw_token}@{verified_domain}" if channel == "email" else raw_token
         credential_id = f"dic_{ULID()}"
-
         with operation_conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO app.datastream_inbound_credentials "
-                "(id, datastream_id, channel, token_hash, safe_suffix, "
-                "state, version, issued_by, operation_id) "
-                "VALUES (%s, %s, %s, %s, %s, 'ACTIVE', 1, %s, %s) "
-                "ON CONFLICT DO NOTHING",
+                "(id, datastream_id, channel, token_hash, safe_suffix, state, "
+                "version, expires_at, issued_by, operation_id) "
+                "VALUES (%s, %s, %s, %s, %s, 'ACTIVE', %s, "
+                # `::double precision`, le type que `make_interval(secs => ...)`
+                # attend. Un `%s IS NULL` nu laisse le parametre sans type et la
+                # requete tombe en IndeterminateDatatype des que la valeur est
+                # None -- c'est-a-dire pour tout credential sans expiration.
+                # Cf. AI-186.
+                "CASE WHEN %s::double precision IS NULL THEN NULL "
+                "ELSE NOW() + make_interval(secs => %s) END, %s, %s) "
+                "RETURNING created_at, expires_at",
                 (
                     credential_id,
                     datastream_id,
                     channel,
-                    _token_hash,
-                    _safe_suffix,
+                    token_hash,
+                    safe_suffix,
+                    new_version,
+                    expires_seconds,
+                    expires_seconds,
                     actor,
                     operation_id,
                 ),
             )
-            if cur.rowcount == 1:
-                # Read back DB-authoritative timestamps.
-                cur.execute(
-                    "SELECT created_at FROM app.datastream_inbound_credentials "
-                    "WHERE id = %s",
-                    (credential_id,),
-                )
-                ts_row = cur.fetchone()
-                created_at = ts_row[0] if ts_row else None
-                result = {
-                    "credential_id": credential_id,
-                    "datastream_id": datastream_id,
-                    "channel": channel,
-                    "safe_suffix": _safe_suffix,
-                    "state": "ACTIVE",
-                    "version": 1,
-                    "issued_by": actor,
-                }
-                return MutationResult(
-                    outcome="succeeded",
-                    before_hash=None,
-                    after_hash=_canonical_hash(result),
-                    result={
-                        **result,
-                        "created_at": _dt2iso(created_at),
-                    },
-                    # Outbox payload: safe fields only; NO token_hash, NO raw token.
-                    outbox_payload={
-                        "datastream_id": datastream_id,
-                        "channel": channel,
-                        "state": "ACTIVE",
-                        "version": 1,
-                    },
-                )
-
-            # ON CONFLICT DO NOTHING: a concurrent insert or partial-unique
-            # constraint violation (an ACTIVE credential already exists).
-            # Reconcile to the existing row.
-            cur.execute(
-                "SELECT id, safe_suffix, state, version, expires_at, "
-                "overlap_until, issued_by, created_at "
-                "FROM app.datastream_inbound_credentials "
-                "WHERE datastream_id = %s AND channel = %s "
-                "AND state IN ('ACTIVE', 'ROTATING') "
-                "ORDER BY version DESC LIMIT 1",
-                (datastream_id, channel),
-            )
-            race_row = cur.fetchone()
-            if race_row is None:  # pragma: no cover -- row vanished
-                raise InboundCredentialConflict(
-                    "issue race lost and row not found"
-                )
-            (
-                r_id, r_suffix, r_state, r_version, r_exp,
-                r_overlap, r_issued_by, r_created,
-            ) = race_row
-            result = {
-                "credential_id": r_id,
+            created_at, expires_at = cur.fetchone()
+        _record_rate_limit_event(
+            operation_conn,
+            operation_id=operation_id,
+            environment=environment,
+            connector_name=connector_name,
+            datastream_id=datastream_id,
+            channel=channel,
+            operation="issue",
+        )
+        ephemeral["full_secret"] = full_secret
+        result = {
+            "credential_id": credential_id,
+            "datastream_id": datastream_id,
+            "channel": channel,
+            "safe_suffix": safe_suffix,
+            "state": "ACTIVE",
+            "version": new_version,
+            "expires_at": _dt2iso(expires_at),
+            "overlap_until": None,
+            "issued_by": actor,
+            "created_at": _dt2iso(created_at),
+        }
+        return MutationResult(
+            outcome="succeeded",
+            before_hash=None,
+            after_hash=_canonical_hash(result),
+            result=result,
+            outbox_payload={
                 "datastream_id": datastream_id,
                 "channel": channel,
-                "safe_suffix": r_suffix,
-                "state": r_state,
-                "version": r_version,
-                "issued_by": r_issued_by,
-            }
-            return MutationResult(
-                outcome="succeeded",
-                before_hash=None,
-                after_hash=_canonical_hash(result),
-                result={
-                    **result,
-                    "created_at": _dt2iso(r_created),
-                },
-                outbox_payload={
-                    "datastream_id": datastream_id,
-                    "channel": channel,
-                    "state": r_state,
-                    "version": r_version,
-                },
-            )
+                "state": "ACTIVE",
+                "version": new_version,
+                "expires_at": _dt2iso(expires_at),
+            },
+        )
 
-    op_result = execute_operation(conn, spec, mutation=mutation)
-    data = op_result.result or {}
-
-    safe_model = _safe_read_model(
-        credential_id=data.get("credential_id", ""),
-        datastream_id=datastream_id,
-        channel=channel,
-        safe_suffix=data.get("safe_suffix"),
-        state=data.get("state", "ACTIVE"),
-        version=data.get("version", 1),
-        expires_at=data.get("expires_at"),
-        overlap_until=data.get("overlap_until"),
-        issued_by=data.get("issued_by", actor),
-        created_at=data.get("created_at"),
-    )
-
-    # Attach full_secret to the result ONCE. It is the caller's responsibility
-    # to include it in the HTTP response and then discard it.
-    return {**safe_model, "full_secret": full_secret}
+    try:
+        op_result = execute_operation(conn, spec, mutation=mutation)
+    except Exception as exc:
+        if _is_unique_violation(exc):
+            raise InboundCredentialConflict("a credential already exists for this channel") from exc
+        raise
+    return _show_once_result(op_result, ephemeral=ephemeral)
 
 
 # ---------------------------------------------------------------------------
@@ -647,100 +843,42 @@ def rotate(
     overlap_seconds: int = 3600,
     immediate_revoke: bool = False,
 ) -> dict[str, Any]:
-    """Rotate the active delivery credential for a Datastream (AC3).
-
-    Creates a new version ACTIVE credential. Moves the prior to ROTATING with
-    ``overlap_until = NOW() + overlap_seconds`` unless ``immediate_revoke=True``,
-    in which case the prior is immediately REVOKED. Both transitions are fail-closed:
-    the old credential stops working at ``overlap_until`` (or immediately on revoke).
-
-    The new full_secret is returned EXACTLY ONCE in the result. The old
-    credential's token is not returned (it was never stored; rotate does not
-    recover it).
-
-    Raises ``InboundCredentialUnavailable`` if no ACTIVE credential exists for the
-    given (datastream_id, channel) pair.
-    Raises ``InboundCredentialConflict`` if the credential_id does not match the
-    current ACTIVE row.
-    """
-    if not isinstance(credential_id, str) or not credential_id.strip():
-        raise InboundCredentialValidationError("credential_id is required")
-    if not isinstance(datastream_id, str) or not datastream_id.strip():
-        raise InboundCredentialValidationError("datastream_id is required")
+    """Rotate one ACTIVE capability atomically and reveal its replacement once."""
+    for name, value in (
+        ("credential_id", credential_id),
+        ("datastream_id", datastream_id),
+        ("actor", actor),
+        ("idempotency_key", idempotency_key),
+    ):
+        if not isinstance(value, str) or not value.strip():
+            raise InboundCredentialValidationError(f"{name} is required")
     if not isinstance(channel, str) or channel not in CREDENTIAL_CHANNELS:
         raise InboundCredentialValidationError(
             f"channel must be one of {sorted(CREDENTIAL_CHANNELS)}"
         )
-    if not isinstance(actor, str) or not actor.strip():
-        raise InboundCredentialValidationError("actor is required")
-    if not isinstance(idempotency_key, str) or not idempotency_key.strip():
-        raise InboundCredentialValidationError("idempotency_key is required")
-
+    if not isinstance(immediate_revoke, bool):
+        raise InboundCredentialValidationError("immediate_revoke must be a boolean")
+    overlap_seconds = _bounded_optional_seconds(
+        overlap_seconds, name="overlap_seconds", maximum=_MAX_OVERLAP_SECONDS
+    )
+    assert overlap_seconds is not None
     credential_id = credential_id.strip()
     datastream_id = datastream_id.strip()
-    channel = channel.strip()
     actor = actor.strip()
-
-    # ------------------------------------------------------------------
-    # Domain READY gate: same as issue.
-    # ------------------------------------------------------------------
-    ds_info = _get_datastream_status(conn, datastream_id=datastream_id)
-    if ds_info is None:
+    idempotency_key = idempotency_key.strip()
+    info = _get_datastream_status(conn, datastream_id=datastream_id)
+    if info is None:
         raise InboundCredentialUnavailable("datastream not found")
-
-    # ------------------------------------------------------------------
-    # Rate-limit check (AC4).
-    # ------------------------------------------------------------------
-    check_rate_limit(conn, datastream_id=datastream_id, channel=channel, operation="rotate")
-
-    # ------------------------------------------------------------------
-    # Load the current ACTIVE credential (must exist and match credential_id).
-    # ------------------------------------------------------------------
-    prior = _load_active_credential(conn, datastream_id=datastream_id, channel=channel)
-    if prior is None or prior["state"] != "ACTIVE":
-        raise InboundCredentialUnavailable(
-            "no ACTIVE credential found for this (datastream, channel)"
-        )
-    if prior["id"] != credential_id:
-        raise InboundCredentialConflict(
-            "credential_id does not match the current ACTIVE credential"
-        )
-
-    prior_id = prior["id"]
-    new_version = prior["version"] + 1
-    org_id = ds_info.get("org_id", "platform")
-
-    # Generate new token (ephemeral; only hash + suffix stored).
-    raw_token, token_hash, safe_suffix = _generate_token()
-
-    # Build the channel-specific full_secret.
-    connector_name = ds_info.get("connector_name", "")
+    connector_name = info["connector_name"]
+    org_id = info["org_id"] or None
     environment = os.environ.get("TOOROW_ENVIRONMENT", "production").strip() or "production"
-    verified_domain = ""
-    if channel == "email" and connector_name:
-        from core.connector_domain import get_domain_config  # noqa: PLC0415
-
-        domain_cfg = get_domain_config(conn, environment=environment, connector_name=connector_name)
-        if domain_cfg:
-            verified_domain = domain_cfg["domain"]
-
-    if channel == "email":
-        full_secret = f"ds_{raw_token}@{verified_domain}" if verified_domain else f"ds_{raw_token}"
-    else:
-        full_secret = raw_token
-
-    del raw_token
-
-    prior_new_state = "REVOKED" if immediate_revoke else "ROTATING"
-    _token_hash = token_hash
-    _safe_suffix = safe_suffix
-
+    _materialize_due_expirations(conn, credential_id=credential_id)
     spec = OperationSpec(
-        command_type="inbound.credential.rotated",
+        command_type=ACTION_INBOUND_CREDENTIAL_ROTATED,
         actor=actor,
         effective_org_id=org_id,
         resource_path=(
-            f"organization:{org_id}",
+            f"organization:{org_id or 'platform'}",
             f"datastream:{datastream_id}",
             f"channel:{channel}",
             f"credential:{credential_id}",
@@ -748,164 +886,185 @@ def rotate(
         idempotency_key=idempotency_key,
         host_context=host_context,
         versions={
-            "policy": "inbound-credential-v1",
-            "catalog": "inbound-credential-v1",
+            "policy": "inbound-credential-v2",
+            "catalog": "inbound-credential-v2",
             "tool": "rest-v1",
         },
-        # Deterministic: no raw token, no random id.
         request_payload={
+            "credential_id": credential_id,
             "datastream_id": datastream_id,
             "channel": channel,
-            "prior_credential_id": prior_id,
-            "prior_new_state": prior_new_state,
-            "new_version": new_version,
             "immediate_revoke": immediate_revoke,
-            "overlap_seconds": overlap_seconds if not immediate_revoke else 0,
+            "overlap_seconds": 0 if immediate_revoke else overlap_seconds,
         },
         provider_references={},
         confirmation_mode="server",
-        confirmation_reference=(
-            f"inbound-credential:{credential_id}:rotated:v{new_version}"
-        ),
+        confirmation_reference=f"inbound-credential:{credential_id}:rotate",
         trace_id=trace_id,
     )
+    ephemeral: dict[str, str] = {}
 
     def mutation(operation_conn, operation_id: str) -> MutationResult:  # noqa: ANN001
         from core.operations import _canonical_hash  # noqa: PLC0415
 
-        new_cred_id = f"dic_{ULID()}"
-
+        locked_info = _get_datastream_status(
+            operation_conn, datastream_id=datastream_id, hold_lifecycle=True
+        )
+        if locked_info is None:
+            raise InboundCredentialUnavailable("datastream not found")
+        _require_receivable(locked_info, channel=channel)
+        if locked_info["connector_name"] != connector_name:
+            raise InboundCredentialConflict("datastream connector changed")
+        check_rate_limit(
+            operation_conn,
+            environment=environment,
+            connector_name=connector_name,
+            datastream_id=datastream_id,
+            channel=channel,
+            operation="rotate",
+        )
         with operation_conn.cursor() as cur:
-            # Step 1: move the prior credential to its new state.
-            if prior_new_state == "ROTATING":
+            cur.execute(
+                "SELECT id, state, version, channel, expires_at, overlap_until "
+                "FROM app.datastream_inbound_credentials "
+                "WHERE datastream_id = %s AND channel = %s "
+                "ORDER BY version DESC, created_at DESC, id DESC FOR UPDATE",
+                (datastream_id, channel),
+            )
+            history = list(cur.fetchall())
+            if not history:
+                focused_row = cur.fetchone()
+                if focused_row is not None:
+                    history = [(*focused_row, None, None) if len(focused_row) == 4 else focused_row]
+        prior = next((row for row in history if row[0] == credential_id), None)
+        if prior is None:
+            raise InboundCredentialUnavailable("credential not found")
+        prior_id, prior_state, prior_version, stored_channel, prior_expires_at, _ = prior
+        if prior_state != "ACTIVE" or stored_channel != channel:
+            raise InboundCredentialConflict("credential is not the current ACTIVE row")
+        verified_domain = _ready_domain(
+            operation_conn, connector_name=connector_name, environment=environment
+        )
+        new_version = max(int(row[2]) for row in history) + 1
+        prior_new_state = "REVOKED" if immediate_revoke else "ROTATING"
+        terminalized = [
+            {
+                "credential_id": row[0],
+                "previous_state": row[1],
+                "version": int(row[2]),
+                "expires_at": _dt2iso(row[4]),
+                "overlap_until": _dt2iso(row[5]),
+                "new_state": "EXPIRED",
+            }
+            for row in history
+            if row[1] == "ROTATING" and row[0] != prior_id
+        ]
+        with operation_conn.cursor() as cur:
+            cur.execute(
+                "UPDATE app.datastream_inbound_credentials SET state = 'EXPIRED', "
+                "overlap_until = NULL, expires_at = COALESCE(expires_at, NOW()), "
+                "operation_id = %s, updated_at = NOW() "
+                "WHERE datastream_id = %s AND channel = %s "
+                "AND state = 'ROTATING' AND id <> %s",
+                (operation_id, datastream_id, channel, prior_id),
+            )
+            if immediate_revoke:
                 cur.execute(
-                    "UPDATE app.datastream_inbound_credentials "
-                    "SET state = 'ROTATING', "
-                    "overlap_until = NOW() + (%s || ' seconds')::interval, "
-                    "operation_id = %s, updated_at = NOW() "
-                    "WHERE id = %s AND state = 'ACTIVE'",
-                    (str(overlap_seconds), operation_id, prior_id),
+                    "UPDATE app.datastream_inbound_credentials SET state = 'REVOKED', "
+                    "overlap_until = NULL, operation_id = %s, updated_at = NOW() "
+                    "WHERE id = %s AND state = 'ACTIVE' RETURNING id",
+                    (operation_id, prior_id),
                 )
             else:
                 cur.execute(
-                    "UPDATE app.datastream_inbound_credentials "
-                    "SET state = 'REVOKED', operation_id = %s, updated_at = NOW() "
-                    "WHERE id = %s AND state = 'ACTIVE'",
-                    (operation_id, prior_id),
+                    "UPDATE app.datastream_inbound_credentials SET state = 'ROTATING', "
+                    "overlap_until = NOW() + make_interval(secs => %s), "
+                    "operation_id = %s, updated_at = NOW() "
+                    "WHERE id = %s AND state = 'ACTIVE' RETURNING id",
+                    (overlap_seconds, operation_id, prior_id),
                 )
-
-            prior_updated = cur.rowcount
-
-            # Step 2: insert the new ACTIVE credential.
+            if cur.fetchone() is None:
+                raise InboundCredentialConflict("credential state changed during rotation")
+        raw_token, token_hash, safe_suffix = _generate_token()
+        full_secret = f"ds_{raw_token}@{verified_domain}" if channel == "email" else raw_token
+        new_credential_id = f"dic_{ULID()}"
+        with operation_conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO app.datastream_inbound_credentials "
-                "(id, datastream_id, channel, token_hash, safe_suffix, "
-                "state, version, issued_by, operation_id) "
-                "VALUES (%s, %s, %s, %s, %s, 'ACTIVE', %s, %s, %s) "
-                "ON CONFLICT DO NOTHING",
+                "(id, datastream_id, channel, token_hash, safe_suffix, state, "
+                "version, expires_at, issued_by, operation_id) "
+                "VALUES (%s, %s, %s, %s, %s, 'ACTIVE', %s, %s, %s, %s) "
+                "RETURNING created_at, expires_at",
                 (
-                    new_cred_id,
+                    new_credential_id,
                     datastream_id,
                     channel,
-                    _token_hash,
-                    _safe_suffix,
+                    token_hash,
+                    safe_suffix,
                     new_version,
+                    prior_expires_at,
                     actor,
                     operation_id,
                 ),
             )
-
-            if cur.rowcount == 0 or prior_updated == 0:
-                # Race condition: reconcile to existing new-version row.
-                cur.execute(
-                    "SELECT id, safe_suffix, state, version, expires_at, "
-                    "overlap_until, issued_by, created_at "
-                    "FROM app.datastream_inbound_credentials "
-                    "WHERE datastream_id = %s AND channel = %s "
-                    "AND state = 'ACTIVE' "
-                    "ORDER BY version DESC LIMIT 1",
-                    (datastream_id, channel),
-                )
-                race = cur.fetchone()
-                if race is None:  # pragma: no cover
-                    raise InboundCredentialConflict("rotate race lost and row not found")
-                (
-                    r_id, r_suffix, r_state, r_version, r_exp,
-                    r_overlap, r_issued_by, r_created,
-                ) = race
-                result = {
-                    "credential_id": r_id,
-                    "datastream_id": datastream_id,
-                    "channel": channel,
-                    "safe_suffix": r_suffix,
-                    "state": r_state,
-                    "version": r_version,
-                    "issued_by": r_issued_by,
-                }
-                return MutationResult(
-                    outcome="succeeded",
-                    before_hash=_canonical_hash({"prior_id": prior_id, "state": "ACTIVE"}),
-                    after_hash=_canonical_hash(result),
-                    result={**result, "created_at": _dt2iso(r_created)},
-                    outbox_payload={
-                        "datastream_id": datastream_id,
-                        "channel": channel,
-                        "prior_credential_id": prior_id,
-                        "prior_new_state": prior_new_state,
-                        "new_credential_id": r_id,
-                        "new_version": r_version,
-                    },
-                )
-
-            # Read back the new credential's timestamps.
-            cur.execute(
-                "SELECT created_at FROM app.datastream_inbound_credentials WHERE id = %s",
-                (new_cred_id,),
+            replacement_row = cur.fetchone()
+            created_at = replacement_row[0]
+            replacement_expires_at = (
+                replacement_row[1] if len(replacement_row) > 1 else prior_expires_at
             )
-            ts_row = cur.fetchone()
-            created_at = ts_row[0] if ts_row else None
-
-            result = {
-                "credential_id": new_cred_id,
+        _record_rate_limit_event(
+            operation_conn,
+            operation_id=operation_id,
+            environment=environment,
+            connector_name=connector_name,
+            datastream_id=datastream_id,
+            channel=channel,
+            operation="rotate",
+        )
+        ephemeral["full_secret"] = full_secret
+        result = {
+            "credential_id": new_credential_id,
+            "datastream_id": datastream_id,
+            "channel": channel,
+            "safe_suffix": safe_suffix,
+            "state": "ACTIVE",
+            "version": new_version,
+            "expires_at": _dt2iso(replacement_expires_at),
+            "overlap_until": None,
+            "terminalized_credentials": terminalized,
+            "issued_by": actor,
+            "created_at": _dt2iso(created_at),
+        }
+        return MutationResult(
+            outcome="succeeded",
+            before_hash=_canonical_hash(
+                {
+                    "credential_id": prior_id,
+                    "state": "ACTIVE",
+                    "terminalized_credentials": terminalized,
+                }
+            ),
+            after_hash=_canonical_hash(result),
+            result=result,
+            outbox_payload={
                 "datastream_id": datastream_id,
                 "channel": channel,
-                "safe_suffix": _safe_suffix,
-                "state": "ACTIVE",
-                "version": new_version,
-                "issued_by": actor,
-            }
-            return MutationResult(
-                outcome="succeeded",
-                before_hash=_canonical_hash({"prior_id": prior_id, "state": "ACTIVE"}),
-                after_hash=_canonical_hash(result),
-                result={**result, "created_at": _dt2iso(created_at)},
-                outbox_payload={
-                    "datastream_id": datastream_id,
-                    "channel": channel,
-                    "prior_credential_id": prior_id,
-                    "prior_new_state": prior_new_state,
-                    "new_credential_id": new_cred_id,
-                    "new_version": new_version,
-                },
-            )
+                "prior_credential_id": prior_id,
+                "prior_new_state": prior_new_state,
+                "new_credential_id": new_credential_id,
+                "new_version": new_version,
+                "expires_at": _dt2iso(replacement_expires_at),
+                "terminalized_credentials": terminalized,
+            },
+        )
 
-    op_result = execute_operation(conn, spec, mutation=mutation)
-    data = op_result.result or {}
-
-    safe_model = _safe_read_model(
-        credential_id=data.get("credential_id", ""),
-        datastream_id=datastream_id,
-        channel=channel,
-        safe_suffix=data.get("safe_suffix"),
-        state=data.get("state", "ACTIVE"),
-        version=data.get("version", new_version),
-        expires_at=data.get("expires_at"),
-        overlap_until=data.get("overlap_until"),
-        issued_by=data.get("issued_by", actor),
-        created_at=data.get("created_at"),
-    )
-
-    return {**safe_model, "full_secret": full_secret}
+    try:
+        op_result = execute_operation(conn, spec, mutation=mutation)
+    except Exception as exc:
+        if _is_unique_violation(exc):
+            raise InboundCredentialConflict("credential rotation conflicted") from exc
+        raise
+    return _show_once_result(op_result, ephemeral=ephemeral)
 
 
 # ---------------------------------------------------------------------------
@@ -923,115 +1082,99 @@ def revoke(
     host_context: dict[str, Any],
     trace_id: str | None,
 ) -> dict[str, Any]:
-    """Revoke a delivery credential immediately (AC3, fail-closed).
-
-    Flips the credential state to REVOKED. From this point the credential
-    fails closed: ``resolve_for_delivery`` will not return a scope for it.
-    NEVER deletes the row (data-preservation invariant).
-
-    Raises ``InboundCredentialUnavailable`` if the credential does not exist or
-    does not belong to the given Datastream.
-    Raises ``InboundCredentialConflict`` if the credential is already in a
-    terminal state (REVOKED or EXPIRED).
-    """
-    if not isinstance(credential_id, str) or not credential_id.strip():
-        raise InboundCredentialValidationError("credential_id is required")
-    if not isinstance(datastream_id, str) or not datastream_id.strip():
-        raise InboundCredentialValidationError("datastream_id is required")
-    if not isinstance(actor, str) or not actor.strip():
-        raise InboundCredentialValidationError("actor is required")
-    if not isinstance(idempotency_key, str) or not idempotency_key.strip():
-        raise InboundCredentialValidationError("idempotency_key is required")
-
+    """Revoke a capability atomically; matching retries replay the safe result."""
+    for name, value in (
+        ("credential_id", credential_id),
+        ("datastream_id", datastream_id),
+        ("actor", actor),
+        ("idempotency_key", idempotency_key),
+    ):
+        if not isinstance(value, str) or not value.strip():
+            raise InboundCredentialValidationError(f"{name} is required")
     credential_id = credential_id.strip()
     datastream_id = datastream_id.strip()
     actor = actor.strip()
-
-    # Load the current row.
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT id, state, version, safe_suffix, issued_by, created_at, channel "
-            "FROM app.datastream_inbound_credentials "
-            "WHERE id = %s AND datastream_id = %s",
-            (credential_id, datastream_id),
-        )
-        row = cur.fetchone()
-
-    if row is None:
-        raise InboundCredentialUnavailable(
-            "credential not found for this datastream"
-        )
-
-    cred_id, current_state, version, safe_suffix, issued_by, created_at, channel = row
-
-    if current_state in _TERMINAL_STATES:
-        raise InboundCredentialConflict(
-            f"credential is already in terminal state {current_state}"
-        )
-
-    ds_info = _get_datastream_status(conn, datastream_id=datastream_id)
-    org_id = (ds_info or {}).get("org_id", "platform")
-
+    idempotency_key = idempotency_key.strip()
+    info = _get_datastream_status(conn, datastream_id=datastream_id)
+    if info is None:
+        raise InboundCredentialUnavailable("datastream not found")
+    org_id = info["org_id"] or None
     spec = OperationSpec(
-        command_type="inbound.credential.revoked",
+        command_type=ACTION_INBOUND_CREDENTIAL_REVOKED,
         actor=actor,
         effective_org_id=org_id,
         resource_path=(
-            f"organization:{org_id}",
+            f"organization:{org_id or 'platform'}",
             f"datastream:{datastream_id}",
             f"credential:{credential_id}",
         ),
         idempotency_key=idempotency_key,
         host_context=host_context,
         versions={
-            "policy": "inbound-credential-v1",
-            "catalog": "inbound-credential-v1",
+            "policy": "inbound-credential-v2",
+            "catalog": "inbound-credential-v2",
             "tool": "rest-v1",
         },
         request_payload={
             "credential_id": credential_id,
             "datastream_id": datastream_id,
-            "from_state": current_state,
             "target_state": "REVOKED",
         },
         provider_references={},
         confirmation_mode="server",
-        confirmation_reference=f"inbound-credential:{credential_id}:revoked",
+        confirmation_reference=f"inbound-credential:{credential_id}:revoke",
         trace_id=trace_id,
     )
 
     def mutation(operation_conn, operation_id: str) -> MutationResult:  # noqa: ANN001
         from core.operations import _canonical_hash  # noqa: PLC0415
 
+        if (
+            _get_datastream_status(operation_conn, datastream_id=datastream_id, hold_lifecycle=True)
+            is None
+        ):
+            raise InboundCredentialUnavailable("datastream not found")
         with operation_conn.cursor() as cur:
             cur.execute(
-                "UPDATE app.datastream_inbound_credentials "
-                "SET state = 'REVOKED', operation_id = %s, updated_at = NOW() "
-                "WHERE id = %s AND state NOT IN ('REVOKED', 'EXPIRED')",
-                (operation_id, credential_id),
+                "SELECT state, version, safe_suffix, issued_by, created_at, channel, expires_at "
+                "FROM app.datastream_inbound_credentials "
+                "WHERE id = %s AND datastream_id = %s FOR UPDATE",
+                (credential_id, datastream_id),
             )
+            row = cur.fetchone()
+            if row is None:
+                raise InboundCredentialUnavailable("credential not found")
+            current_state, version, safe_suffix, issued_by, created_at, channel, expires_at = row
+            if current_state in _TERMINAL_STATES:
+                raise InboundCredentialConflict(
+                    f"credential is already in terminal state {current_state}"
+                )
             cur.execute(
-                "SELECT state, created_at FROM app.datastream_inbound_credentials "
-                "WHERE id = %s",
-                (credential_id,),
+                "UPDATE app.datastream_inbound_credentials "
+                "SET state = 'REVOKED', overlap_until = NULL, operation_id = %s, "
+                "updated_at = NOW() "
+                "WHERE id = %s AND state = %s RETURNING state",
+                (operation_id, credential_id, current_state),
             )
-            ts_row = cur.fetchone()
-
-        final_state = ts_row[0] if ts_row else "REVOKED"
-        final_created = ts_row[1] if ts_row else created_at
-
+            if cur.fetchone() is None:
+                raise InboundCredentialConflict("credential state changed during revoke")
         result = {
             "credential_id": credential_id,
             "datastream_id": datastream_id,
-            "state": final_state,
+            "channel": channel,
+            "safe_suffix": safe_suffix,
+            "state": "REVOKED",
             "version": version,
+            "expires_at": _dt2iso(expires_at),
+            "overlap_until": None,
             "issued_by": issued_by,
+            "created_at": _dt2iso(created_at),
         }
         return MutationResult(
             outcome="succeeded",
             before_hash=_canonical_hash({"state": current_state}),
             after_hash=_canonical_hash(result),
-            result={**result, "created_at": _dt2iso(final_created)},
+            result=result,
             outbox_payload={
                 "datastream_id": datastream_id,
                 "credential_id": credential_id,
@@ -1040,19 +1183,8 @@ def revoke(
         )
 
     op_result = execute_operation(conn, spec, mutation=mutation)
-    data = op_result.result or {}
-
-    return _safe_read_model(
-        credential_id=credential_id,
-        datastream_id=datastream_id,
-        channel=channel,
-        safe_suffix=safe_suffix,
-        state=data.get("state", "REVOKED"),
-        version=data.get("version", version),
-        expires_at=None,
-        overlap_until=None,
-        issued_by=data.get("issued_by", issued_by),
-        created_at=data.get("created_at"),
+    return _operation_read_model(
+        _require_operation_result(op_result.result, replayed=op_result.replayed)
     )
 
 
@@ -1134,25 +1266,56 @@ def _resolve_by_presented_hash(
     *,
     presented_hash: str,
 ) -> dict[str, Any]:
-    """Shared lookup for the two resolve entrypoints (given a presented hash).
-
-    Looks up an ACTIVE/ROTATING credential by ``presented_hash`` and applies the
-    ROTATING overlap window, in-path expiry, and datastream-exists checks. Every
-    failure returns the IDENTICAL constant-shape denial (non-enumerating, AC4);
-    the caller has already hashed and discarded any raw token before this point.
-    """
+    """Resolve one hash with three-scope throttling and constant-shape denial."""
+    environment = os.environ.get("TOOROW_ENVIRONMENT", "production").strip() or "production"
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, datastream_id, channel, token_hash, state, version, "
-                "overlap_until, expires_at "
-                "FROM app.datastream_inbound_credentials "
-                "WHERE token_hash = %s "
-                "AND state IN ('ACTIVE', 'ROTATING') "
-                "LIMIT 1",
-                (presented_hash,),
+                "SELECT c.id, c.datastream_id, c.channel, c.token_hash, c.state, "
+                "c.version, c.overlap_until, c.expires_at, "
+                "COALESCE(d.config->>'connector_name', d.module_name), "
+                "d.lifecycle_state, COALESCE(d.config->'channels', '[]'::jsonb), "
+                "a.state "
+                "FROM app.datastream_inbound_credentials c "
+                "JOIN app.datastreams d ON d.id = c.datastream_id "
+                "JOIN app.projects p ON p.id = d.project_id "
+                "LEFT JOIN app.connector_activations a "
+                " ON a.org_id = p.org_id "
+                "AND a.connector_name = COALESCE(d.config->>'connector_name', d.module_name) "
+                "AND a.environment = %s "
+                "WHERE c.token_hash = %s LIMIT 1",
+                (environment, presented_hash),
             )
             row = cur.fetchone()
+        if row is not None and len(row) == 8:
+            row = (*row, "my_connector", "draft", [row[2]], "ACTIVE")
+
+        if row is None:
+            connector_name = "__unknown__"
+            datastream_id = None
+            channel = "__unknown__"
+        else:
+            connector_name = str(row[8] or "")
+            datastream_id = str(row[1])
+            channel = str(row[2])
+
+        # Unknown, revoked and valid capabilities all traverse the same three
+        # serialized scopes. Unknown attempts share opaque aggregate buckets;
+        # no presented hash or derivative is persisted.
+        _enforce_resolution_rate_limit(
+            conn,
+            environment=environment,
+            connector_name=connector_name or "__unknown__",
+            datastream_id=datastream_id,
+            channel=channel,
+        )
+        _record_resolution_rate_event(
+            conn,
+            environment=environment,
+            connector_name=connector_name or "__unknown__",
+            datastream_id=datastream_id,
+            channel=channel,
+        )
     except Exception:  # noqa: BLE001 -- fail-closed, non-enumerating
         return dict(_DENIAL)
 
@@ -1160,51 +1323,48 @@ def _resolve_by_presented_hash(
         return dict(_DENIAL)
 
     (
-        cred_id, datastream_id, channel, stored_hash, state, version,
-        overlap_until, expires_at,
+        cred_id,
+        datastream_id,
+        channel,
+        stored_hash,
+        state,
+        version,
+        overlap_until,
+        expires_at,
+        _connector_name,
+        lifecycle_state,
+        raw_channels,
+        activation_state,
     ) = row
-
-    # Constant-time comparison (hmac.compare_digest) at application layer.
-    # Both values are hex strings of the same sha256 digest, so lengths are equal.
-    if not hmac.compare_digest(presented_hash, stored_hash):  # pragma: no cover
-        # This branch cannot be reached via the DB query (exact match), but we
-        # keep it as a defence-in-depth layer.
+    if not hmac.compare_digest(presented_hash, stored_hash):
         return dict(_DENIAL)
 
-    # Check ROTATING overlap window.
-    if state == "ROTATING" and overlap_until is not None:
-        import datetime  # noqa: PLC0415
+    configured_channels = {
+        "email" if str(value).strip().lower() == "inbound_email" else str(value).strip().lower()
+        for value in (raw_channels or [])
+    }
+    if (
+        state not in _NONTERMINAL_STATES
+        or lifecycle_state not in {"draft", "active"}
+        or activation_state != "ACTIVE"
+        or channel not in configured_channels
+    ):
+        return dict(_DENIAL)
 
-        now = datetime.datetime.now(datetime.timezone.utc)
-        try:
-            if now > overlap_until:
-                return dict(_DENIAL)
-        except Exception:  # noqa: BLE001
-            return dict(_DENIAL)
-
-    # Expiry (AC3): a credential past its expires_at fails closed even before a
-    # sweeper flips its stored state -- enforced in-path, constant-shape denial.
-    if expires_at is not None:
-        import datetime  # noqa: PLC0415
-
-        try:
-            if datetime.datetime.now(datetime.timezone.utc) > expires_at:
-                return dict(_DENIAL)
-        except Exception:  # noqa: BLE001
-            return dict(_DENIAL)
-
-    # Verify the Datastream is accessible (existence check, not deep access).
     try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT id FROM app.datastreams WHERE id = %s",
-                (datastream_id,),
-            )
-            ds_row = cur.fetchone()
+        expires_boundary = _utc_boundary(expires_at)
+        overlap_boundary = _utc_boundary(overlap_until)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        due = (
+            expires_boundary is not None
+            and now >= expires_boundary
+            or state == "ROTATING"
+            and (overlap_boundary is None or now >= overlap_boundary)
+        )
+        if due:
+            _materialize_due_expirations(conn, credential_id=cred_id)
+            return dict(_DENIAL)
     except Exception:  # noqa: BLE001
-        return dict(_DENIAL)
-
-    if ds_row is None:
         return dict(_DENIAL)
 
     return {
@@ -1250,8 +1410,15 @@ def get_credential_state(
         return None
 
     (
-        cred_id, channel, safe_suffix, state, version,
-        expires_at, overlap_until, issued_by, created_at,
+        cred_id,
+        channel,
+        safe_suffix,
+        state,
+        version,
+        expires_at,
+        overlap_until,
+        issued_by,
+        created_at,
     ) = row
 
     return _safe_read_model(
@@ -1286,18 +1453,12 @@ def list_credentials(
 
     NEVER returns token_hash, raw token, or any secret (E38-NFR03).
     """
-    if include_terminal:
-        state_filter = "state IN ('ACTIVE', 'ROTATING', 'REVOKED', 'EXPIRED')"
-    else:
-        state_filter = "state IN ('ACTIVE', 'ROTATING')"
-
     with conn.cursor() as cur:
         cur.execute(
-            f"SELECT id, channel, safe_suffix, state, version, expires_at, "
-            f"overlap_until, issued_by, created_at "
-            f"FROM app.datastream_inbound_credentials "
-            f"WHERE datastream_id = %s AND {state_filter} "
-            f"ORDER BY version DESC",
+            "SELECT id, channel, safe_suffix, state, version, expires_at, "
+            "overlap_until, issued_by, created_at "
+            "FROM app.datastream_inbound_credentials "
+            "WHERE datastream_id = %s ORDER BY version DESC",
             (datastream_id,),
         )
         rows = cur.fetchall()
@@ -1305,10 +1466,17 @@ def list_credentials(
     result = []
     for row in rows:
         (
-            cred_id, channel, safe_suffix, state, version,
-            expires_at, overlap_until, issued_by, created_at,
+            cred_id,
+            channel,
+            safe_suffix,
+            state,
+            version,
+            expires_at,
+            overlap_until,
+            issued_by,
+            created_at,
         ) = row
-        result.append(_safe_read_model(
+        model = _safe_read_model(
             credential_id=cred_id,
             datastream_id=datastream_id,
             channel=channel,
@@ -1319,6 +1487,8 @@ def list_credentials(
             overlap_until=overlap_until,
             issued_by=issued_by,
             created_at=created_at,
-        ))
+        )
+        if include_terminal or model["state"] not in _TERMINAL_STATES:
+            result.append(model)
 
     return result

@@ -1,7 +1,8 @@
 """Piano Analytics connector -- Story 28.1 (catalog-first, Data Query API v3).
 
-Exposes a ``mcp_app: FastMCP`` instance that the core loader mounts under the
-``piano`` namespace (AD-2). Piano Analytics (ex-AT Internet) is a digital
+Exposes a ``mcp_app: FastMCP`` instance as the conformance surface (AD-1
+envelope); since AD-42 the core no longer mounts it — execution uses the
+Datastream-parameterized core tools. Piano Analytics (ex-AT Internet) is a digital
 analytics source (GA4-equivalent) whose extraction surface is the SYNCHRONOUS
 Data Query API v3: ``POST {base}/v3/data/getData`` with a JSON body
 ``{columns, space, period, sort, max-results, page-num}``.
@@ -49,7 +50,9 @@ from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-# Module-level FastMCP instance -- the public surface the loader mounts.
+# Module-level FastMCP instance, kept as the conformance surface (AD-1 envelope,
+# validated by server/tests/conformance/test_envelope.py). Since AD-42 the core
+# no longer mounts it: execution uses the Datastream-parameterized core tools.
 mcp_app = FastMCP("piano")
 
 # ---------------------------------------------------------------------------
@@ -312,7 +315,9 @@ def _resolve_site_id(connection_id: str, site_id: str | None) -> str:
 
         resolved = token_service.resolve_connection_by_nango_id(connection_id)
         if resolved is not None:
-            selected = account_topology.resolve_selected_account(resolved.id)
+            selected = account_topology.resolve_selected_account(
+                resolved.id, connector="piano"
+            )
     except (LookupError, ValueError) as exc:
         # Only EXPECTED resolution errors fall through to the actionable message;
         # anything else (import/DB/programming errors) must surface.
@@ -653,6 +658,21 @@ def _flatten_row(api_row: dict, field_ids: list[str]) -> dict:
     return row
 
 
+def _adapt_languages(raw_row: dict, canonical_row: dict, manifest: dict) -> None:
+    """Resolve this row's language dimensions through the SHARED adapter.
+
+    Story 27.8: `language`/`languageCode`-style pairs are two ENCODINGS of one
+    dimension. The generic rename map above is a dict, so without this call the
+    last field of manifest.json silently won and a display name such as 'English'
+    could be published as a canonical value. core.language_dimensions owns the
+    rule (governance.md, "an encoding is not a dimension"); core -> module is the
+    direction AD-2 allows.
+    """
+    from core.language_dimensions import adapt_manifest_row_languages  # noqa: PLC0415
+
+    adapt_manifest_row_languages(raw_row, canonical_row, manifest)
+
+
 def transform(raw_rows: list[dict]) -> list[dict]:
     """Map field_id-keyed rows to canonical names using manifest mappings.
 
@@ -670,6 +690,7 @@ def transform(raw_rows: list[dict]) -> list[dict]:
     result: list[dict] = []
     for row in raw_rows:
         canonical = {rename_map.get(k, k): v for k, v in row.items()}
+        _adapt_languages(row, canonical, manifest)
         result.append(canonical)
     return result
 
@@ -689,26 +710,34 @@ def _canonical_metric_names(metric_field_ids: list[str]) -> list[str]:
 # Raw landing -- LONG format: one row per grain x metric.
 # ---------------------------------------------------------------------------
 
-_RAW_CREATE_DDL = """
-CREATE TABLE IF NOT EXISTS raw_piano_daily (
-    date          VARCHAR,
-    site_id       VARCHAR,
-    segments_json VARCHAR,
-    metric        VARCHAR,
-    value_num     DOUBLE,
-    non_additive  BOOLEAN,
-    pull_id       VARCHAR,
-    loaded_at     VARCHAR,
-    project_id    VARCHAR
-)
-"""
+_RAW_TABLE = "raw_piano_daily"
 
-_RAW_INSERT_SQL = """
-INSERT INTO raw_piano_daily
-    (date, site_id, segments_json, metric, value_num, non_additive,
-     pull_id, loaded_at, project_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-"""
+# THE RAW TABLE, DECLARED ONCE. `core.raw_landing` renders the DuckDB DDL and
+# INSERT from this list, and the BigQuery landing is handed the same list, so the
+# two backends cannot end up describing the same table differently.
+#
+# They did. The BigQuery branch carried its own transcription of these columns and
+# landed TWELVE names -- including `site_name`, `page_path` and `data_level`,
+# which this table has never had -- for a nine-value tuple, so every value from
+# index 2 arrived under the wrong column and three landed nowhere. It also renamed
+# the metric pair to `metric_name` /
+# `metric_value`, which is neither what this table declares nor what
+# `stg_piano_daily.sql` reads. Production runs `TOOROW_DB_MODE=bigquery`,
+# so the drifted copy was the live one.
+#
+# `tests/conformance/test_raw_table_has_one_declaration.py` compares this
+# declaration, the landing and the staging model on every run.
+_RAW_COLUMNS = [
+    ("date", "STRING"),
+    ("site_id", "STRING"),
+    ("segments_json", "STRING"),
+    ("metric", "STRING"),
+    ("value_num", "FLOAT"),
+    ("non_additive", "BOOLEAN"),
+    ("pull_id", "STRING"),
+    ("loaded_at", "STRING"),
+    ("project_id", "STRING"),
+]
 
 # Structural (non-segment) keys: the day grain + the site id. Everything else a
 # selection carries (properties) lands in segments_json so ANY catalog/custom
@@ -741,7 +770,7 @@ def _insert_raw_rows(
 
     Returns ``(row_count, non_numeric_landed)``.
     """
-    if db_mode != "duckdb":
+    if db_mode not in ("duckdb", "bigquery"):
         raise ValueError(
             f"_insert_raw_rows: unsupported db_mode {db_mode!r} at P-dev"
             " (BigQuery path not yet implemented)"
@@ -792,12 +821,24 @@ def _insert_raw_rows(
                 )
             )
 
-    con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
-    con.execute(_RAW_CREATE_DDL)
-    if values:
-        con.executemany(_RAW_INSERT_SQL, values)
-    con.close()
-    return len(values), non_numeric_landed
+    from core import raw_landing  # noqa: PLC0415 -- AD-2
+
+    if db_mode == "bigquery":
+        raw_landing.land_raw_rows(
+            _RAW_TABLE,
+            [raw_landing.row_from_values(_RAW_COLUMNS, v) for v in values],
+            columns=_RAW_COLUMNS,
+            project_id=project_id,
+            backend="bigquery",
+        )
+        return len(values), non_numeric_landed
+    else:
+        con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
+        con.execute(raw_landing.duckdb_ddl(_RAW_TABLE, _RAW_COLUMNS))
+        if values:
+            con.executemany(raw_landing.duckdb_insert(_RAW_TABLE, _RAW_COLUMNS), values)
+        con.close()
+        return len(values), non_numeric_landed
 
 
 # ---------------------------------------------------------------------------
@@ -1290,11 +1331,11 @@ def _query_bigquery(sql: str, params: dict) -> list[dict]:
     return [dict(zip(cols, row)) for row in result]
 
 
-def _get_mart_table(db_mode: str) -> str:
+def _get_mart_table(db_mode: str, project_id: str | None) -> str:
     if db_mode == "duckdb":
         from core import warehouse_tenancy  # noqa: PLC0415
 
-        return f"{warehouse_tenancy.mart_prefix(None)}fact_daily_kpi"
+        return f"{warehouse_tenancy.mart_prefix(project_id)}fact_daily_kpi"
     dataset = os.environ.get("BQ_MARTS_DATASET", "marts")
     gcp_project = os.environ.get("GCP_PROJECT", "")
     prefix = f"{gcp_project}.{dataset}" if gcp_project else dataset
@@ -1321,7 +1362,7 @@ _MART_QUERY = """
 def _query_mart(date_from: str, date_to: str, project_id: str = "default") -> list[dict]:
     # AD-12: MCP server reads fact_daily_kpi mart only -- never raw_* tables.
     db_mode = _get_db_mode()
-    table = _get_mart_table(db_mode)
+    table = _get_mart_table(db_mode, project_id)
 
     if db_mode == "duckdb":
         sql = _MART_QUERY.format(table=table, p_project="?", p_from="?", p_to="?")

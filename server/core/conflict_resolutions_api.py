@@ -59,25 +59,33 @@ async def _check_auth(request: Request) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 
 
-async def _guard_project_access(project_id: str, identity: str, conn) -> bool:
-    """Return True if identity has access to project_id; False otherwise.
-
-    On False the caller returns 404 (non-disclosant -- same as unknown project).
-    """
+async def _guard_project_access(
+    project_id: str,
+    identity: str,
+    conn,
+    *,
+    minimum_capability: str,
+) -> bool:
+    """Authorize an exact project through the canonical org-rooted seam."""
     if not project_id:
-        return True  # global / unscoped calls allowed
-
-    try:
-        from core.project_access import identity_has_project_access  # noqa: PLC0415
-
-        return identity_has_project_access(project_id, identity, conn)
-    except Exception as exc:
-        logger.warning(
-            "conflict_resolutions_api: project_access_check_failed project=%s: %s",
-            project_id, exc,
-        )
         return False
 
+    try:
+        from core.admin_api import _strict_project_capability_allowed  # noqa: PLC0415
+
+        return _strict_project_capability_allowed(
+            conn,
+            identity=identity,
+            project_id=project_id,
+            minimum_capability=minimum_capability,
+        )
+    except Exception as exc:
+        logger.warning(
+            "conflict_resolutions_api: project access unavailable project=%s: %s",
+            project_id,
+            type(exc).__name__,
+        )
+        return False
 
 # ---------------------------------------------------------------------------
 # GET /api/mdm/conflicts
@@ -111,7 +119,7 @@ async def _list_conflicts(request: Request) -> Response:
     # ALL projects to any bearer token holder.
     if not project_id:
         return JSONResponse(
-            {"code": "missing_param", "message": "project_id est requis"},
+            {"code": "missing_param", "message": "project_id is required"},
             status_code=422,
         )
 
@@ -121,10 +129,12 @@ async def _list_conflicts(request: Request) -> Response:
 
         with get_connection() as conn:
             # Guard called unconditionally (project_id is now always present).
-            ok = await _guard_project_access(project_id, identity or "", conn)
+            ok = await _guard_project_access(
+                project_id, identity or "", conn, minimum_capability="view"
+            )
             if not ok:
                 return JSONResponse(
-                    {"code": "not_found", "message": "Projet introuvable"},
+                    {"code": "not_found", "message": "Project not found"},
                     status_code=404,
                 )
             conflicts = list_conflicts(project_id=project_id, conn=conn)
@@ -160,7 +170,7 @@ async def _list_resolutions(request: Request) -> Response:
     # project's resolutions to any bearer token holder.
     if not project_id:
         return JSONResponse(
-            {"code": "missing_param", "message": "project_id est requis"},
+            {"code": "missing_param", "message": "project_id is required"},
             status_code=422,
         )
 
@@ -170,10 +180,12 @@ async def _list_resolutions(request: Request) -> Response:
 
         with get_connection() as conn:
             # Guard called unconditionally (project_id is now always present).
-            ok = await _guard_project_access(project_id, identity or "", conn)
+            ok = await _guard_project_access(
+                project_id, identity or "", conn, minimum_capability="view"
+            )
             if not ok:
                 return JSONResponse(
-                    {"code": "not_found", "message": "Projet introuvable"},
+                    {"code": "not_found", "message": "Project not found"},
                     status_code=404,
                 )
             resolutions = list_fx_resolutions(project_id=project_id, conn=conn)
@@ -233,17 +245,17 @@ async def _create_resolution(request: Request) -> Response:
 
     if not project_id:
         return JSONResponse(
-            {"code": "missing_field", "message": "project_id est requis"},
+            {"code": "missing_field", "message": "project_id is required"},
             status_code=400,
         )
     if not target_field:
         return JSONResponse(
-            {"code": "missing_field", "message": "target_field est requis"},
+            {"code": "missing_field", "message": "target_field is required"},
             status_code=400,
         )
     if not source_module:
         return JSONResponse(
-            {"code": "missing_field", "message": "source_module est requis"},
+            {"code": "missing_field", "message": "source_module is required"},
             status_code=400,
         )
 
@@ -252,10 +264,12 @@ async def _create_resolution(request: Request) -> Response:
         from core.db import get_connection  # noqa: PLC0415
 
         with get_connection() as conn:
-            ok = await _guard_project_access(project_id, identity or "", conn)
+            ok = await _guard_project_access(
+                project_id, identity or "", conn, minimum_capability="edit"
+            )
             if not ok:
                 return JSONResponse(
-                    {"code": "not_found", "message": "Projet introuvable"},
+                    {"code": "not_found", "message": "Project not found"},
                     status_code=404,
                 )
             result = upsert_fx_resolution(
@@ -305,7 +319,7 @@ async def _delete_resolution(request: Request) -> Response:
         return JSONResponse(
             {
                 "code": "missing_param",
-                "message": "project_id, target_field et source_module sont requis",
+                "message": "project_id, target_field and source_module are required",
             },
             status_code=400,
         )
@@ -315,10 +329,12 @@ async def _delete_resolution(request: Request) -> Response:
         from core.db import get_connection  # noqa: PLC0415
 
         with get_connection() as conn:
-            ok = await _guard_project_access(project_id, identity or "", conn)
+            ok = await _guard_project_access(
+                project_id, identity or "", conn, minimum_capability="edit"
+            )
             if not ok:
                 return JSONResponse(
-                    {"code": "not_found", "message": "Projet introuvable"},
+                    {"code": "not_found", "message": "Project not found"},
                     status_code=404,
                 )
             delete_fx_resolution(
@@ -375,7 +391,7 @@ async def _resolve_measure(request: Request) -> Response:
     field_name = (request.path_params.get("field_name") or "").strip()
     if not field_name:
         return JSONResponse(
-            {"code": "missing_param", "message": "field_name est requis"},
+            {"code": "missing_param", "message": "field_name is required"},
             status_code=400,
         )
 
@@ -391,7 +407,7 @@ async def _resolve_measure(request: Request) -> Response:
     measure = body.get("measure")
     if measure is None:
         return JSONResponse(
-            {"code": "missing_field", "message": "measure est requis dans le corps"},
+            {"code": "missing_field", "message": "measure is required in the body"},
             status_code=400,
         )
 

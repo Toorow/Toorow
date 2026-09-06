@@ -329,7 +329,7 @@ def _load_saved_draft(
 
     if not bool(plan_row[0]) or not projection_plan.get("executable", False):
         raise RecentFirstValidationError(
-            "le brouillon enregistré n'est pas exécutable"
+            "the saved draft is not executable"
         )
 
     return {

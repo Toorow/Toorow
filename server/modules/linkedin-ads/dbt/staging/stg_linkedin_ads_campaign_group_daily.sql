@@ -46,25 +46,57 @@ SELECT
     raw.costInLocalCurrency                                AS cost_source_value,
     raw.cost_source_currency                               AS cost_source_currency,
     raw.costInLocalCurrency                                AS cost,
-    -- FX provenance columns for read-time conversion
-    fx.rate                                                AS fx_rate,
-    fx.valid_from                                          AS fx_as_of_date,
-    'seed'                                                 AS fx_source,
-    'fixed'                                                AS fx_tier,
+    -- FX evidence, emitted by ONE macro since the Story 67.13 cutover: the
+    -- governed POSED rate is asked first and the seed below is the fallback,
+    -- and a refusal (an unanswerable condition, a tie) serves no rate at all.
+    -- `fx_as_of_date` is still the day the rate was QUOTED or DECLARED, never
+    -- the day its window opens -- story 58.7's repair, carried into both arms.
+    {{ toorow_fx_evidence_columns() }}
     raw.impressions,
     raw.clicks,
     raw.externalWebsiteConversions                         AS conversions,
     -- Leads au grain campaign_group : non fourni par l'API LinkedIn (NULL honnete).
     -- AI-53 : a confirmer en passe live (Phase B) si ce champ est disponible
     -- au niveau CAMPAIGN_GROUP.
-    NULL::INTEGER                                          AS leads,
+    -- `NULL::INTEGER` was here : `::` est du Postgres/DuckDB, BigQuery le refuse
+    -- (*Syntax error: expected end of input but got ":"*). Meme obligation de
+    -- dialecte que les branches vides (AI-314, 2026-08-24) : le macro de type de
+    -- dbt s'ecrit une fois et se traduit dans les deux moteurs.
+    CAST(NULL AS {{ dbt.type_int() }})                     AS leads,
     raw.pull_id,
     raw.loaded_at,
     raw.project_id
 FROM raw
 LEFT JOIN {{ ref('dim_project') }} dp
     ON dp.project_id = raw.project_id
+-- ==========================================================================
+-- Story 67.13 -- THE GOVERNED RATE IS ASKED FIRST; the seed below is the
+-- FALLBACK. Step 4 of the cutover ratified in
+-- docs/product-architecture/capabilities/currency-fx.md ("Arbitration,
+-- 2026-08-21 -- the read path"), applied to all thirteen staging models in one
+-- change because a partial cutover would leave one Project reading the governed
+-- store for one connector and the seed for another: two rate authorities inside
+-- one total, which is worse than the one wrong authority it replaces.
+--
+-- The conversion LOCUS does not move. The source currency still stays here and
+-- `fx_convert_at_read` still converts once, in the mart. What moves is only
+-- where the RATE comes from.
+--
+-- AT MOST ONE ROW: `toorow_fx_posed_resolution` returns disjoint half-open
+-- segments per (project, pair), the winner already chosen by specificity, a tie
+-- already REFUSED and an unanswerable condition already named. No QUALIFY and no
+-- grain key are needed here, and a plain LEFT JOIN cannot pick a row where the
+-- application engine refuses.
+--
+-- WORDING A (decided 2026-08-22): the declared window governs, retroactively.
+-- Nothing below reads when a rate was posted.
+LEFT JOIN {{ toorow_fx_posed_resolution('linkedin-ads') }} fxp
+    ON  fxp.project_id     = raw.project_id
+   AND fxp.base_currency  = raw.cost_source_currency
+   AND fxp.quote_currency = dp.canonical_currency
+   AND CAST(raw.date AS DATE) >= fxp.seg_from
+   AND CAST(raw.date AS DATE) <  fxp.seg_until
 LEFT JOIN {{ ref('fx_rates') }} fx
     ON fx.from_currency = raw.cost_source_currency
-   AND fx.to_currency   = COALESCE(dp.canonical_currency, 'EUR')
+   AND fx.to_currency   = dp.canonical_currency
    AND CAST(raw.date AS DATE) BETWEEN fx.valid_from AND fx.valid_to

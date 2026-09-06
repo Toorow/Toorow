@@ -12,7 +12,7 @@ Routes:
   POST /api/dq/evaluate?project_id=                  -> manual trigger (rate-limited, Story 13.3)
 
 Auth: same _check_auth from core.admin_api (Bearer token via core.api_auth).
-AD-5: project_id scoping on every query AND identity access (identity_has_project_access).
+AD-5: project_id scoping on every query AND identity access (identity_can_read_project).
 AD-8: admin console communicates through this REST layer only.
 French error messages (Epic 8 Part B).
 
@@ -54,33 +54,39 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-logger = logging.getLogger(__name__)
-
-# DQ alert type prefixes -- Story 13.3: dq_date_format est le 5e moniteur.
-_DQ_TYPES = (
-    "dq_volume",
-    "dq_timeliness",
-    "dq_duplication",
-    "dq_schema",
-    "dq_date_format",
-    # Story 37.9: la geographie non resolue devient un moniteur DQ de plein droit.
-    # Sans cela, un agent interroge sur la fiabilite des donnees ne voit pas le trou
-    # geographique -- l'evidence country_value_unmapped ne vivait que dans la liste
-    # d'alertes de l'enveloppe de rapport.
-    "dq_geography",
+# The DQ alert types a reader may display, and the label each one carries. BOTH
+# DERIVED FROM `core.dq_monitor_registry` SINCE STORY 59.5, and neither is
+# cosmetic: `:426` and `:671` REFUSE a monitor filter absent from `_DQ_TYPES`,
+# `:739` and `:1213` build the summary from it, and five live callers of
+# `fetch_dq_report_data` read that summary.
+#
+# It held SIX types until this story -- `dq_null_rate` (59.3) and `dq_zero_rows`
+# (59.4) were written by their monitors and filtered out of every reading, so the
+# two newest monitors were invisible to
+# `daily_insight_mcp.py#_resolve_daily_insight_inputs` and
+# `data_quality_mcp.py#get_data_quality_report` (both in `main.py` back then),
+# `first_report_readiness.py:683`, `mapping_proposal_mcp.py:390,531` and
+# `project_overview.py:259`. And the labels were French on a screen in English.
+from core.audit import declare_action
+from core.dq_monitor_registry import (  # noqa: E402
+    LABELS_BY_ALERT_TYPE as _REGISTRY_LABELS,
+)
+from core.dq_monitor_registry import (
+    PUBLISHABLE_ALERT_TYPES as _REGISTRY_TYPES,
 )
 
-# French display labels for each monitor.
-# dq_date_format verifie les rejected_rows signalees par l'extracteur (lignes mal formees
-# ou hors plage de dates toleree). Label honnete : "Lignes rejetees".
-_MONITOR_LABELS: dict[str, str] = {
-    "dq_volume": "Volume",
-    "dq_timeliness": "Ponctualite",
-    "dq_duplication": "Doublons",
-    "dq_schema": "Coherence de schema",
-    "dq_date_format": "Lignes rejetees",
-    "dq_geography": "Geographie non resolue",
-}
+logger = logging.getLogger(__name__)
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12) : elles etaient retapees en dur a l appel, donc rien
+# ne pouvait distinguer une action d une faute de frappe. Declarees ici,
+# a cote du code qui les ecrit.
+ACTION_DQ_EVALUATE_TRIGGERED = declare_action("dq.evaluate.triggered")
+
+
+_DQ_TYPES = _REGISTRY_TYPES
+_MONITOR_LABELS: dict[str, str] = _REGISTRY_LABELS
 
 # ---------------------------------------------------------------------------
 # Rate-limit state for POST /api/dq/evaluate (Story 13.3)
@@ -127,56 +133,44 @@ async def _check_auth(request: Request) -> tuple[bool, str]:
 
 
 def _enforce_project_scope(
-    project_id: str, identity: str, conn, *, fail_closed: bool = False
+    project_id: str,
+    identity: str,
+    conn,
+    *,
+    fail_closed: bool = True,
+    minimum_capability: str = "view",
 ) -> bool:
-    """Verifie qu'identity a acces a project_id (AD-5).
+    """Resolve one project through the strict org-rooted capability seam.
 
-    Utilise identity_has_project_access (default-open quand app.project_members est vide,
-    closed si le projet a des membres). Renvoie False -> appelant doit retourner 404.
-    Audit best-effort via logger (pas d'import audit pour ne pas alourdir le path chaud).
-
-    fail_closed=True (obligatoire pour les endpoints WRITE) :
-        Si identity_has_project_access leve une exception (DB injoignable, curseur en
-        erreur...), le comportement par defaut est fail-open (l'exception remonte au
-        try/except externe qui renvoie 500, mais l'appel peut quand meme s'executer si
-        le 500 est mal gere). Avec fail_closed=True, toute exception est capturee et
-        renvoie False (acces refuse) au lieu de propager -- garantit qu'un check ACL
-        defaillant ne laisse jamais passer un WRITE. Le caller voit un 404 non-disclosant,
-        pas un 500 qui pourrait etre reutilise comme oracle.
-
-    fail_closed=False (defaut, READ) :
-        L'exception remonte normalement ; le caller externe catch et renvoie 500. Acceptable
-        pour les lectures car une DB down empeche de toute facon de lire des donnees.
+    ``fail_closed`` remains in the signature for brownfield callers but strict
+    access is always fail-closed. Disabled-auth compatibility is handled only
+    by the shared explicit ``anonymous`` branch.
     """
-    from core.project_access import identity_has_project_access  # noqa: PLC0415
+    del fail_closed
+    try:
+        from core.admin_api import _strict_project_capability_allowed  # noqa: PLC0415
 
-    if fail_closed:
-        try:
-            granted = identity_has_project_access(project_id, identity, conn)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "dq_api: acl_check_failed_closed project=%s identity=%s (AD-5 fail-closed): %s",
-                project_id,
-                identity,
-                exc,
-            )
-            return False
-    else:
-        granted = identity_has_project_access(project_id, identity, conn)
-
-    if not granted:
-        logger.warning(
-            "dq_api: access_denied project=%s identity=%s (AD-5)",
-            project_id,
-            identity,
+        granted = _strict_project_capability_allowed(
+            conn,
+            identity=identity,
+            project_id=project_id,
+            minimum_capability=minimum_capability,
         )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "dq_api: project access unavailable project=%s: %s",
+            project_id,
+            type(exc).__name__,
+        )
+        return False
+    if not granted:
+        logger.warning("dq_api: project access denied project=%s", project_id)
     return granted
 
 
 # ---------------------------------------------------------------------------
 # GET /api/dq/summary
 # ---------------------------------------------------------------------------
-
 
 async def _dq_summary(request: Request) -> Response:
     """GET /api/dq/summary -- 5-monitor health KPIs for the Quality page (Story 13.3).
@@ -200,7 +194,7 @@ async def _dq_summary(request: Request) -> Response:
           "total_unresolved": int,
         }
     """
-    authorized, _identity = await _check_auth(request)
+    authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
             {"code": "unauthorized", "message": "Authentification requise"},
@@ -218,6 +212,14 @@ async def _dq_summary(request: Request) -> Response:
         from core.db import get_connection  # noqa: PLC0415
 
         with get_connection() as conn:
+            if not _enforce_project_scope(
+                project_id, identity, conn, minimum_capability="view"
+            ):
+                return JSONResponse(
+                    {"code": "not_found", "message": "Project not found"},
+                    status_code=404,
+                )
+
             # Count enabled datastreams for the project (denominator for %).
             with conn.cursor() as cur:
                 cur.execute(
@@ -227,9 +229,27 @@ async def _dq_summary(request: Request) -> Response:
                 row = cur.fetchone()
                 total_streams = int(row[0]) if row else 0
 
-            # Fetch last 48h of dq_* firings for the project.
             cutoff_48h = datetime.now(tz=timezone.utc) - timedelta(hours=48)
             cutoff_24h = datetime.now(tz=timezone.utc) - timedelta(hours=24)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT COUNT(DISTINCT pj.datastream_id)
+                    FROM app.pull_jobs pj
+                    JOIN app.datastreams ds ON ds.id = pj.datastream_id
+                    LEFT JOIN app.pull_verifications pv ON pv.pull_id = pj.pull_id
+                    WHERE ds.project_id = %s
+                      AND ds.enabled = TRUE
+                      AND pj.state = 'done'
+                      AND pj.completed_at >= %s
+                      AND pv.verdict = 'ok'
+                    """,
+                    (project_id, cutoff_24h),
+                )
+                evaluated_row = cur.fetchone()
+                evaluated_streams = int(evaluated_row[0]) if evaluated_row else 0
+
+            # Fetch last 48h of dq_* firings for the project.
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -274,11 +294,11 @@ async def _dq_summary(request: Request) -> Response:
                     # For simplicity: count each unique firing as one affected stream.
                     affected_streams.add(f.get("id", ""))
 
-            if total_streams > 0:
-                healthy = max(0, total_streams - unresolved_count)
-                healthy_pct = round(healthy / total_streams * 100, 1)
+            if evaluated_streams > 0:
+                healthy = max(0, evaluated_streams - unresolved_count)
+                healthy_pct = round(healthy / evaluated_streams * 100, 1)
             else:
-                healthy_pct = 100.0
+                healthy_pct = None
 
             monitor_data.append(
                 {
@@ -295,6 +315,8 @@ async def _dq_summary(request: Request) -> Response:
                 "monitors": monitor_data,
                 "total_issues_24h": total_issues_24h,
                 "total_unresolved": total_unresolved,
+                "total_streams": total_streams,
+                "evaluated_streams": evaluated_streams,
             }
         )
 
@@ -347,6 +369,21 @@ def _module_like_pattern(module: str) -> str:
     return f'%"module_name": "{module}"%'
 
 
+def _open_firing_clause() -> str:
+    """"This firing is still open", consumed from the table's writer.
+
+    `app.alert_firings` carries no `status` column: the notion lives entirely in
+    one nullable timestamp, and this file rendered it to a person as "open
+    issues" while spelling the comparison by hand at three call sites. The
+    sentence belongs to `infra_alerts`, which writes the rows; here it is
+    consumed.
+    """
+
+    from core.infra_alerts import firing_status_predicate  # noqa: PLC0415
+
+    return firing_status_predicate("open", alias="af")
+
+
 def _module_filter_clauses(module: str) -> tuple[str, list[str]]:
     """Return (SQL fragment, params) matching either json.dumps or compact JSON format.
 
@@ -397,7 +434,7 @@ async def _dq_issues(request: Request) -> Response:
     Issues are ordered by fired_at DESC (most recent first).
     Returns last 30 days of firings by default.
     """
-    authorized, _identity = await _check_auth(request)
+    authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
             {"code": "unauthorized", "message": "Authentification requise"},
@@ -418,15 +455,21 @@ async def _dq_issues(request: Request) -> Response:
         return JSONResponse(
             {
                 "code": "invalid_param",
-                "message": f"monitor doit etre l'un de: {', '.join(_DQ_TYPES)}",
+                "message": f"monitor must be one of: {', '.join(_DQ_TYPES)}",
             },
             status_code=422,
         )
-    if status_filter and status_filter not in ("open", "acknowledged"):
+    # The vocabulary of a firing's status lives with the table's writer
+    # (`infra_alerts.FIRING_STATUSES`), not in a tuple typed here: a list
+    # written at the door is a second vocabulary the first time one of them
+    # grows a word.
+    from core.infra_alerts import FIRING_STATUSES, firing_status_predicate  # noqa: PLC0415
+
+    if status_filter and status_filter not in FIRING_STATUSES:
         return JSONResponse(
             {
                 "code": "invalid_param",
-                "message": "status doit etre 'open' ou 'acknowledged'",
+                "message": "status must be " + " or ".join(f"'{s}'" for s in FIRING_STATUSES),
             },
             status_code=422,
         )
@@ -454,14 +497,19 @@ async def _dq_issues(request: Request) -> Response:
         if monitor_filter:
             sql += " AND af.type = %s"
             params.append(monitor_filter)
-        if status_filter == "open":
-            sql += " AND af.acknowledged_at IS NULL"
-        elif status_filter == "acknowledged":
-            sql += " AND af.acknowledged_at IS NOT NULL"
+        if status_filter:
+            sql += f" AND {firing_status_predicate(status_filter, alias='af')}"
 
         sql += " ORDER BY af.fired_at DESC LIMIT 500"
 
         with get_connection() as conn:
+            if not _enforce_project_scope(
+                project_id, identity, conn, minimum_capability="view"
+            ):
+                return JSONResponse(
+                    {"code": "not_found", "message": "Project not found"},
+                    status_code=404,
+                )
             with conn.cursor() as cur:
                 cur.execute(sql, params)
                 cols = [d[0] for d in cur.description]
@@ -518,95 +566,78 @@ async def _dq_issues(request: Request) -> Response:
 
 
 async def _dq_acknowledge(request: Request) -> Response:
-    """POST /api/dq/issues/{firing_id}/acknowledge -- mark a DQ firing as acknowledged.
-
-    Path params:
-        firing_id  -- the alert_firings.id to acknowledge
-
-    Query params:
-        project_id  (required) -- project scoping (AD-5: must match the firing's project_id)
-
-    Response (200):
-        {"id": "fire_...", "acknowledged_at": "ISO-8601"}
-
-    Error responses:
-        401 -- unauthorized
-        403 -- firing belongs to a different project
-        404 -- firing not found or already a non-DQ type
-        422 -- missing project_id
-        500 -- DB error
-    """
-    authorized, _identity = await _check_auth(request)
+    """Persist acknowledgement for one firing in the authorized project."""
+    authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
             {"code": "unauthorized", "message": "Authentification requise"},
             status_code=401,
         )
 
-    firing_id = request.path_params.get("firing_id", "")
-    project_id = (request.query_params.get("project_id") or "").strip() or None
+    firing_id = (request.path_params.get("firing_id") or "").strip()
+    project_id = (request.query_params.get("project_id") or "").strip()
     if not project_id:
         return JSONResponse(
             {"code": "invalid_param", "message": "project_id est requis"},
             status_code=422,
+        )
+    if not firing_id:
+        return JSONResponse(
+            {"code": "not_found", "message": "Incident introuvable"}, status_code=404
         )
 
     try:
         from core.db import get_connection  # noqa: PLC0415
 
         with get_connection() as conn:
-            # Fetch the firing to verify it exists, is a DQ type, and belongs to this project.
+            if not _enforce_project_scope(
+                project_id, identity, conn, minimum_capability="edit"
+            ):
+                return JSONResponse(
+                    {"code": "not_found", "message": "Incident introuvable"},
+                    status_code=404,
+                )
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT id, type, project_id, acknowledged_at
-                    FROM app.alert_firings
-                    WHERE id = %s AND type LIKE 'dq_%%'
+                    UPDATE app.alert_firings
+                    SET acknowledged_at = COALESCE(acknowledged_at, NOW())
+                    WHERE id = %s
+                      AND project_id = %s
+                      AND type LIKE 'dq_%%'
+                    RETURNING acknowledged_at
                     """,
-                    (firing_id,),
+                    (firing_id, project_id),
                 )
                 row = cur.fetchone()
-
             if row is None:
                 return JSONResponse(
                     {"code": "not_found", "message": "Incident introuvable"},
                     status_code=404,
                 )
-
-            firing_project = row[2]
-            if firing_project != project_id:
-                return JSONResponse(
-                    {"code": "forbidden", "message": "Acces non autorise a cet incident"},
-                    status_code=403,
-                )
-
-            ack_at = datetime.now(tz=timezone.utc)
-
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE app.alert_firings
-                    SET acknowledged_at = %s
-                    WHERE id = %s
-                    """,
-                    (ack_at, firing_id),
-                )
             conn.commit()
 
-        logger.info(
-            "dq_api: acknowledged firing_id=%s project=%s", firing_id, project_id
+        acknowledged_at = row[0]
+        return JSONResponse(
+            {
+                "id": firing_id,
+                "project_id": project_id,
+                "acknowledged_at": (
+                    acknowledged_at.isoformat()
+                    if hasattr(acknowledged_at, "isoformat")
+                    else str(acknowledged_at)
+                ),
+            }
         )
-        return JSONResponse({"id": firing_id, "acknowledged_at": ack_at.isoformat()})
-
     except Exception as exc:
         logger.warning(
             "dq_api: acknowledge_error firing_id=%s project=%s: %s",
             firing_id,
             project_id,
-            exc,
+            type(exc).__name__,
         )
         return JSONResponse(
-            {"code": "db_error", "message": "Erreur lors de l'acquittement"},
+            {"code": "db_error", "message": "Erreur lors de l acquittement"},
             status_code=500,
         )
 
@@ -614,7 +645,6 @@ async def _dq_acknowledge(request: Request) -> Response:
 # ---------------------------------------------------------------------------
 # GET /api/dq/history  (Story 13.3)
 # ---------------------------------------------------------------------------
-
 
 async def _dq_history(request: Request) -> Response:
     """GET /api/dq/history -- taux de succes par moniteur sur une fenetre glissante.
@@ -637,7 +667,7 @@ async def _dq_history(request: Request) -> Response:
     Limitation : un projet tres recent ou sans pull_jobs verra evaluated_days = 0 (null).
     Ce choix evite l'affichage trompeur "100 %" pour un moniteur jamais execute.
 
-    AD-5 : identity_has_project_access verifie que le porteur du token appartient au
+    AD-5 : identity_can_read_project verifie que le porteur du token appartient au
     projet ; renvoie 404 non-disclosant si refus (jamais 403).
 
     Response (200):
@@ -674,7 +704,7 @@ async def _dq_history(request: Request) -> Response:
         return JSONResponse(
             {
                 "code": "invalid_param",
-                "message": f"monitor doit etre l'un de : {', '.join(_DQ_TYPES)}",
+                "message": f"monitor must be one of: {', '.join(_DQ_TYPES)}",
             },
             status_code=422,
         )
@@ -694,7 +724,7 @@ async def _dq_history(request: Request) -> Response:
             # AD-5 : verifie l'acces au projet avant toute lecture.
             if not _enforce_project_scope(project_id, identity, conn):
                 return JSONResponse(
-                    {"code": "not_found", "message": "Projet introuvable"},
+                    {"code": "not_found", "message": "Project not found"},
                     status_code=404,
                 )
 
@@ -775,6 +805,65 @@ async def _dq_history(request: Request) -> Response:
 # ---------------------------------------------------------------------------
 
 
+#: THE WORD THIS ROUTE PUBLISHES FOR EACH WINDOW STATE -- AI-307.
+#:
+#: The derivation ended with `return state`, i.e. by republishing the
+#: `app.pull_jobs.state` column as it stands. Two states already fell through it
+#: (`cancelled`, `superseded`) and a third became REACHABLE the day `prevented`
+#: was first written: this payload answered `last_status: "prevented"`, a
+#: database word on a payload meant for people, and every state added to the
+#: table's CHECK constraint would have taken the same path in silence.
+#:
+#: WHAT IT DOES NOT PROVE, and the commit that closed it claimed otherwise.
+#: Measured 2026-08-21, `grep -rn "last_status|not_allowed" ui/ web/` returns no
+#: reader, and `grep -rn "datastream-freshness"` finds no caller outside this
+#: file and its tests: NO screen was receiving the raw word, because no screen
+#: reads this route at all. The mapping is right and the class is closed on the
+#: server; the reader it protects does not exist yet.
+#:
+#: The table is CLOSED and the registry checks it
+#: (`tests/conformance/test_pull_job_state_registry.py`): a state added without a
+#: word reddens, it does not leak. `not_allowed` is NOT a synonym of `stopped`: a
+#: window a person stopped and a window the source refused call for two different
+#: gestures, and merging them here would redo exactly the `empty`/`never_fetched`
+#: merge the console undid.
+FRESHNESS_STATUS: dict[str, str] = {
+    "queued": "running",
+    "running": "running",
+    "failed": "error",
+    "dead_letter": "error",
+    "cancelled": "stopped",
+    "superseded": "replaced",
+    "prevented": "not_allowed",
+}
+
+#: A state this build does not know. Unreadable is honest; the database's own
+#: word is not, and an invented `error` would redden a healthy window.
+FRESHNESS_UNKNOWN = "unknown"
+
+
+def _map_state_to_status(state: str | None, verdict: str | None) -> str | None:
+    """Derive a window's readable status from its state + its verification verdict.
+
+    AT MODULE LEVEL, AND THAT IS THE HALF THAT COUNTS. The function lived inside
+    the route body, so `test_dq_freshness_state_mapping` COPIED a version of it
+    to "prove the contract" -- and the two had already drifted (`done` + verdict
+    `failed` answered `error` here and `partial_failure` there). A test that
+    proves its own copy proves nothing.
+    """
+    if state is None:
+        return None
+    if state == "done":
+        if verdict == "ok":
+            return "success"
+        if verdict == "partial":
+            return "partial_failure"
+        if verdict == "failed":
+            return "error"
+        return FRESHNESS_UNKNOWN
+    return FRESHNESS_STATUS.get(state, FRESHNESS_UNKNOWN)
+
+
 async def _dq_datastream_freshness(request: Request) -> Response:
     """GET /api/dq/datastream-freshness -- derniere extraction par datastream.
 
@@ -792,19 +881,27 @@ async def _dq_datastream_freshness(request: Request) -> Response:
 
     Derivation des champs de reponse :
       last_pull_at    = MAX(COALESCE(completed_at, enqueued_at)) par datastream_id
-      last_status     = derive de state du dernier job :
-                          'done' + verdict in (ok, partial) -> 'success'
-                          'done' + verdict='failed'         -> 'partial_failure'
-                          'done' + verdict IS NULL          -> 'success'  (pas de verif)
+      last_status     = derived from the last job's state -- `_map_state_to_status`,
+                        at module level, and `FRESHNESS_STATUS` is the CLOSED
+                        table: this route never republishes the raw value of
+                        `app.pull_jobs.state` (AI-307).
+                          'done' + verdict='ok'             -> 'success'
+                          'done' + verdict='partial'        -> 'partial_failure'
+                          'done' + verdict='failed'         -> 'error'
+                          'done' + verdict IS NULL          -> 'unknown' (no verification)
                           'failed' | 'dead_letter'          -> 'error'
                           'running' | 'queued'              -> 'running'
+                          'cancelled'                       -> 'stopped'
+                          'superseded'                      -> 'replaced'
+                          'prevented'                       -> 'not_allowed'
+                          a state this build does not know   -> 'unknown'
       last_success_at = dernier completed_at où state='done' et verdict IN ('ok','partial',NULL)
       row_count       = pv.actual_rows du dernier job termine (state='done')
 
     Integre dans /api/dq/datastream-freshness (route separee) pour ne pas surcharger
     le payload initial du tableau de bord.
 
-    AD-5 : identity_has_project_access controle l'acces au projet ; 404 si refus.
+    AD-5 : identity_can_read_project controle l'acces au projet ; 404 si refus.
 
     Query params:
         project_id  (requis) -- scope projet (AD-5)
@@ -818,7 +915,9 @@ async def _dq_datastream_freshness(request: Request) -> Response:
               "module_name":     "...",
               "last_pull_at":    "ISO-8601" | null,
               "last_success_at": "ISO-8601" | null,
-              "last_status":     "success" | "partial_failure" | "error" | "running" | null,
+              "last_status":     "success" | "partial_failure" | "error" | "running"
+                                 | "stopped" | "replaced" | "not_allowed"
+                                 | "unknown" | null,
               "row_count":       int | null,
             },
             ...
@@ -846,7 +945,7 @@ async def _dq_datastream_freshness(request: Request) -> Response:
             # AD-5 : verifie l'acces au projet avant toute lecture.
             if not _enforce_project_scope(project_id, identity, conn):
                 return JSONResponse(
-                    {"code": "not_found", "message": "Projet introuvable"},
+                    {"code": "not_found", "message": "Project not found"},
                     status_code=404,
                 )
 
@@ -898,7 +997,7 @@ async def _dq_datastream_freshness(request: Request) -> Response:
                         LEFT JOIN app.pull_verifications pv ON pv.pull_id = pj.pull_id
                         WHERE pj.datastream_id = ANY(%s)
                           AND pj.state = 'done'
-                          AND (pv.verdict IN ('ok', 'partial') OR pv.verdict IS NULL)
+                          AND pv.verdict = 'ok'
                         ORDER BY pj.datastream_id, pj.completed_at DESC NULLS LAST
                         """,
                         (ds_ids,),
@@ -909,20 +1008,6 @@ async def _dq_datastream_freshness(request: Request) -> Response:
                         last_success[ds_id] = (
                             ts.isoformat() if ts and hasattr(ts, "isoformat") else None
                         )
-
-        def _map_state_to_status(state: str | None, verdict: str | None) -> str | None:
-            """Derive un statut lisible depuis pj.state + pv.verdict."""
-            if state is None:
-                return None
-            if state == "done":
-                if verdict == "failed":
-                    return "partial_failure"
-                return "success"  # ok, partial ou None (pas de verification) -> succes
-            if state in ("failed", "dead_letter"):
-                return "error"
-            if state in ("running", "queued"):
-                return "running"
-            return state  # valeur inconnue: passer telle quelle
 
         datastreams = []
         for row in rows:
@@ -967,7 +1052,7 @@ async def _dq_evaluate(request: Request) -> Response:
     Audit : ecrit une ligne audit_log avec action 'dq.evaluate.triggered'.
     Execution : run_dq_monitors(project_id) lance en thread separee (non bloquant).
 
-    AD-5 (fail-closed obligatoire car WRITE) : identity_has_project_access controle
+    AD-5 (fail-closed obligatoire car WRITE) : identity_can_read_project controle
     l'acces avant le rate-limit check et le lancement du thread. 404 si refus.
 
     Query params:
@@ -1007,7 +1092,7 @@ async def _dq_evaluate(request: Request) -> Response:
         with get_connection() as conn:
             if not _enforce_project_scope(project_id, identity, conn, fail_closed=True):
                 return JSONResponse(
-                    {"code": "not_found", "message": "Projet introuvable"},
+                    {"code": "not_found", "message": "Project not found"},
                     status_code=404,
                 )
     except Exception as exc:
@@ -1015,8 +1100,8 @@ async def _dq_evaluate(request: Request) -> Response:
         # Renvoie 503 non-disclosant : DB injoignable, pas d'execution.
         logger.warning("dq_api: evaluate_scope_check_failed project=%s: %s", project_id, exc)
         return JSONResponse(
-            {"code": "service_unavailable", "message": "Service temporairement indisponible"},
-            status_code=503,
+            {"code": "not_found", "message": "Project not found"},
+            status_code=404,
         )
 
     # Rate-limit : 2 appels / 60 s par project_id.
@@ -1043,7 +1128,7 @@ async def _dq_evaluate(request: Request) -> Response:
 
         write_audit_row(
             identity=identity or "anonymous",
-            action="dq.evaluate.triggered",
+            action=ACTION_DQ_EVALUATE_TRIGGERED,
             provider_account="",
             connection_ref="",
             metadata={"project_id": project_id, "triggered_at": triggered_at.isoformat()},
@@ -1174,8 +1259,8 @@ def fetch_dq_report_data(
             WHERE af.project_id = %s
               AND af.type LIKE 'dq_%%'
               AND af.fired_at >= %s
-              AND af.acknowledged_at IS NULL
-        """
+              AND {open_firing}
+        """.format(open_firing=_open_firing_clause())  # noqa: S608
         firing_params: list = [project_id, cutoff_30d]
         if module is not None:
             # Module filter: extract from message JSON metadata (best-effort).
@@ -1215,7 +1300,7 @@ def fetch_dq_report_data(
             healthy = max(0, total_streams - unresolved_count)
             healthy_pct = round(healthy / total_streams * 100, 1)
         else:
-            healthy_pct = 100.0  # no streams => trivially healthy (no data to evaluate)
+            healthy_pct = None  # no evaluated streams: unknown, never all-clear
         monitor_rows.append(
             {
                 "type": dq_type,
@@ -1245,8 +1330,8 @@ def fetch_dq_report_data(
             WHERE af.project_id = %s
               AND af.type LIKE 'dq_%%'
               AND af.fired_at >= %s
-              AND af.acknowledged_at IS NULL
-        """
+              AND {open_firing}
+        """.format(open_firing=_open_firing_clause())  # noqa: S608
         issues_params: list = [project_id, cutoff_30d]
         if module is not None:
             # Same dual-format LIKE as Q2 (json.dumps with space + compact fallback).

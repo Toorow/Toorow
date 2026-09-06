@@ -208,6 +208,15 @@ _PROCEDURE_TABLE: dict[str, _Procedure] = {
         operations_kind="reconcile",
         write_effect=True,
     ),
+    # --- Published regression -> rollback (operator, write) -----------------------
+    "published_regression": _Procedure(
+        procedure="rollback",
+        owner=_OWNER_OPERATOR,
+        route=_ROUTE_OPERATIONS,
+        safe_action_fr="Revenir a la derniere version publiee valide (rollback).",
+        operations_kind="rollback",
+        write_effect=True,
+    ),
 }
 
 
@@ -371,7 +380,7 @@ def propose_recovery(conn, *, datastream_id: str, project_id: str | None, actor:
             "status": "no_recovery_needed",
             "procedure": None,
             "owner": None,
-            "safe_action": "Aucune defaillance canonique : aucune recuperation requise.",
+            "safe_action": "No canonical failure: no recovery required.",
             "write_effect": False,
             **visible,
         }

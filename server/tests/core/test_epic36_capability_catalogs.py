@@ -26,6 +26,11 @@ def _clean_registry(monkeypatch):
     from core import mcp_profiles
 
     monkeypatch.setenv("TOOROW_MCP_HIGHRISK_ENABLED", "1")
+    # The registry these calls empty is PROCESS-GLOBAL, and clearing it on
+    # teardown used to leave the catalog empty for every test that ran afterwards.
+    # Repaired once, at the harness: see `_restore_mcp_capability_registry` in
+    # `tests/conftest.py`. Nothing to add here, and nothing to remove -- this file
+    # genuinely wants a known-empty registry while it runs.
     mcp_profiles.reset_registry_for_tests()
     yield
     mcp_profiles.reset_registry_for_tests()
@@ -85,7 +90,7 @@ def test_register_rejects_insights_write_contradiction():
     # Insights must be read-only: a write-effect insights tool fails closed.
     with pytest.raises(CatalogValidationError):
         _register(
-            mcp_profiles, MagicMock(), "leaky", "insights", "write", "public", "none"
+            mcp_profiles, MagicMock(), "leaky", "insights", "confirmed_write", "public", "none"
         )
 
 
@@ -104,11 +109,11 @@ def test_validate_catalog_flags_a_contradictory_tool_injected_into_registry():
     from core import mcp_profiles
     from core.mcp_profiles import CatalogValidationError, ToolDeclaration
 
-    # Inject an insights/write contradiction directly into the registry.
+    # Inject an insights/mutation contradiction directly into the registry.
     mcp_profiles._REGISTRY.declarations["rogue"] = ToolDeclaration(
         name="rogue",
         profile="insights",
-        effect="write",
+        effect="confirmed_write",
         data_class="public",
         confirmation_mode="none",
     )
@@ -121,8 +126,8 @@ def test_validate_catalog_accepts_a_well_formed_catalog():
 
     mcp = MagicMock()
     _register(mcp_profiles, mcp, "report_read", "insights", "read", "public", "none")
-    _register(mcp_profiles, mcp, "pull_retry", "operations", "write", "operational", "server")
-    _register(mcp_profiles, mcp, "publish", "governance", "write", "sensitive", "host")
+    _register(mcp_profiles, mcp, "pull_retry", "operations", "prepare", "operational", "server")
+    _register(mcp_profiles, mcp, "publish", "governance", "confirmed_write", "sensitive", "host")
     decls = mcp_profiles.validate_catalog()
     assert {d.name for d in decls} == {"report_read", "pull_retry", "publish"}
     # register_profiled must have tagged + meta-annotated the FastMCP tool.
@@ -162,25 +167,32 @@ def test_default_discovery_lists_insights_only(monkeypatch):
     assert [t.name for t in result] == ["report_read"]
 
 
-def test_legacy_undeclared_tools_stay_visible_but_high_risk_still_hidden(monkeypatch):
-    """The dozens of Epic 1-35 tools register via plain mcp.tool (no meta.profile).
+def test_an_undeclared_tool_is_visible_to_nobody(monkeypatch):
+    """AD-43 -- this test used to assert the OPPOSITE, and that is why it changed.
 
-    Installing the capability middleware must NOT hide the existing safe-read
-    surface: an undeclared tool is treated as the Insights default and stays
-    listed, while an explicitly declared high-risk tool is still hidden without
-    an evidence-backed opt-in."""
+    It read: "an undeclared tool is treated as the Insights default and stays
+    listed". Insights is the profile that is always visible, so that default
+    bounded exactly half the surface. Measured on the assembled catalog on
+    2026-08-12: 83 of the 92 tools a default host saw carried no declaration --
+    39 of them named after a connector, twelve of them tools that WRITE.
+
+    An undeclared tool is now in no caller's visible set. This is the runtime
+    backstop only: `assert_every_tool_is_declared` refuses to BOOT with one, so a
+    tool a client calls today gets a declaration rather than a disappearance."""
     from core import mcp_profiles
 
     mw = mcp_profiles.build_middleware()
-    legacy_read = SimpleNamespace(name="get_card", meta=None, tags=set())
+    undeclared = SimpleNamespace(name="get_card", meta=None, tags=set())
+    declared_read = _tool("report_read", "insights")
     declared_ops = _tool("pull_retry", "operations")
 
     async def call_next(_context):
-        return [legacy_read, declared_ops]
+        return [undeclared, declared_read, declared_ops]
 
     monkeypatch.setattr(mcp_profiles, "_capability_context", lambda: ("anonymous", {}, {}))
     result = asyncio.run(mw.on_list_tools(SimpleNamespace(), call_next))
-    assert [t.name for t in result] == ["get_card"]  # legacy visible, ops hidden
+    assert [t.name for t in result] == ["report_read"]
+    assert mcp_profiles._tool_profile(undeclared) is None
 
 
 def test_verified_context_reveals_enabled_high_risk_profiles(monkeypatch):
@@ -197,6 +209,10 @@ def test_verified_context_reveals_enabled_high_risk_profiles(monkeypatch):
         return tools
 
     grants = {
+        # 67-16: only an ATTESTED context (a live app.mcp_capability_contexts row,
+        # read by `_capability_context`) can carry this key, and only it unlocks a
+        # high-risk profile. A fabricated claim of the same shape buys Insights.
+        "attested_context_id": "mcpctx_TESTATTESTED",
         "enabled_profiles": ["insights", "operations"],
         "endpoint_binding": "admin-endpoint",
         "workspace_evidence_hash": "a" * 64,
@@ -223,6 +239,7 @@ def test_no_host_ordering_only_capability_drives_visibility():
     from core import mcp_profiles
 
     grants = {
+        "attested_context_id": "mcpctx_TESTATTESTED",
         "enabled_profiles": ["insights", "governance"],
         "endpoint_binding": "e",
         "workspace_evidence_hash": "b" * 64,
@@ -241,7 +258,7 @@ def test_direct_call_to_hidden_tool_is_denied(monkeypatch):
     from core import mcp_profiles
 
     mcp = MagicMock()
-    _register(mcp_profiles, mcp, "publish", "governance", "write", "sensitive", "host")
+    _register(mcp_profiles, mcp, "publish", "governance", "confirmed_write", "sensitive", "host")
 
     mw = mcp_profiles.build_middleware()
     call_next = MagicMock()  # must NOT be awaited when denied
@@ -255,7 +272,7 @@ def test_direct_call_to_hidden_tool_is_denied(monkeypatch):
     context = SimpleNamespace(message=SimpleNamespace(name="publish"))
     with pytest.raises(Exception) as exc:
         asyncio.run(mw.on_call_tool(context, call_next))
-    assert "introuvable" in str(exc.value)
+    assert "Tool not found." in str(exc.value)
     call_next.assert_not_called()
 
 
@@ -294,7 +311,7 @@ def test_catalog_version_is_deterministic_and_read_stable_across_admin_churn():
     assert mcp_profiles.catalog_version("read") == read_before
 
     # Add an admin tool -> read version MUST NOT change (E36-NFR04); admin changes.
-    _register(mcp_profiles, mcp, "pull_retry", "operations", "write", "operational", "server")
+    _register(mcp_profiles, mcp, "pull_retry", "operations", "prepare", "operational", "server")
     assert mcp_profiles.catalog_version("read") == read_before
     assert mcp_profiles.catalog_version("admin") != admin_before
 
@@ -317,9 +334,9 @@ def test_catalog_version_rejects_unknown_connection_class():
 
 
 def test_migration_067_contains_capability_context_contract():
-    from pathlib import Path
+    from tests.conftest import REPO_ROOT
 
-    sql = Path("infra/nango/migrations/067_capability_catalogs.sql").read_text()
+    sql = (REPO_ROOT / "infra/nango/migrations/067_capability_catalogs.sql").read_text()
     assert "CREATE TABLE IF NOT EXISTS app.mcp_capability_contexts" in sql
     assert "endpoint_binding" in sql
     assert "enabled_profiles" in sql

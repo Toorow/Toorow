@@ -36,6 +36,15 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+class TenantKeyBackendUnavailable(RuntimeError):
+    """The configured backend cannot be reached at all (SDK absent, no project id).
+
+    Distinct from "this tenant has no key": that answers None. This says the key
+    store itself is unusable, which must never be mistaken for an empty one --
+    the mistake that lets a caller mint a replacement key over a live one.
+    """
+
+
 class TenantKeyBackend(ABC):
     """Abstract base class for per-tenant key storage backends.
 
@@ -49,7 +58,33 @@ class TenantKeyBackend(ABC):
 
         Thread-safe: concurrent calls for the same project_id must converge on
         the same key (last-write-wins for local; atomic Secret Manager version).
+
+        ENCRYPTION ONLY. A decryption path that calls this mints a fresh key when
+        the real one is missing and then fails to open its own ciphertext with a
+        message that blames the ciphertext (AI-278: that is exactly how a live
+        Google credential came to be unreadable, one `key_created` log line
+        before every `cannot decrypt` — see docs/claude-md-incidents.md). Read
+        with ``get_key`` / ``decryption_keys`` instead.
         """
+
+    @abstractmethod
+    def get_key(self, project_id: str) -> bytes | None:
+        """Return the project's current key, or None when there is none.
+
+        NEVER creates. This is the read side of ``get_or_create_key``: it lets a
+        decryption path tell "no key here" (unrecoverable, say so) apart from
+        "wrong key" instead of manufacturing a third possibility.
+        """
+
+    def decryption_keys(self, project_id: str) -> list[bytes]:
+        """Keys to try when opening EXISTING ciphertext, newest first.
+
+        A backend that keeps previous key versions alive during a rotation
+        overlap window (AI-42) overrides this to return them after the current
+        one. The default is the single current key, or nothing at all.
+        """
+        key = self.get_key(project_id)
+        return [key] if key is not None else []
 
     @abstractmethod
     def delete_key(self, project_id: str) -> bool:
@@ -161,6 +196,27 @@ class LocalFileKeyBackend(TenantKeyBackend):
         logger.info("tenant_keys: key_created project_id=[REDACTED]")
         return key
 
+    def get_key(self, project_id: str) -> bytes | None:
+        """Return the stored key, or None. Never creates, never regenerates."""
+        key_path = self._key_path(project_id)
+        if not key_path.exists():
+            return None
+        try:
+            key = base64.urlsafe_b64decode(key_path.read_text(encoding="ascii").strip())
+        except Exception as exc:  # noqa: BLE001 -- corrupted file, not a key
+            logger.warning(
+                "tenant_keys: unreadable key file for project %r: %s", project_id, exc
+            )
+            return None
+        if len(key) != 32:
+            logger.warning(
+                "tenant_keys: key file for project %r holds %d bytes (expected 32)",
+                project_id,
+                len(key),
+            )
+            return None
+        return key
+
     def delete_key(self, project_id: str) -> bool:
         """Delete the key file. Returns True if deleted, False if not found."""
         key_path = self._key_path(project_id)
@@ -193,14 +249,10 @@ class SecretManagerKeyBackend(TenantKeyBackend):
     Secret naming convention:
         projects/<gcp_project>/secrets/tenant-key-<project_id>/versions/latest
 
-    This backend is NOT implemented at P3-dev.  It raises NotImplementedError
-    with a clear human gate message (HG-A) so the error is actionable.
+    Switch: set TENANT_KEY_BACKEND=secret_manager. No code changes required --
+    the factory function (get_tenant_key_backend) handles the wiring.
 
-    Phase B switch: set TENANT_KEY_BACKEND=secret_manager once HG-A (GCP billing
-    account) is satisfied.  No code changes required -- the factory function
-    (get_tenant_key_backend) handles the wiring.
-
-    KEY ROTATION OVERLAP WINDOW (AI-42 -- design, to implement WITH this backend)
+    KEY ROTATION OVERLAP WINDOW (AI-42 -- implemented in ``decryption_keys``)
     ----------------------------------------------------------------------------
     LocalFileKeyBackend.rotate_key() overwrites the single key file: any value
     encrypted under the old key becomes undecryptable the instant rotation
@@ -220,25 +272,232 @@ class SecretManagerKeyBackend(TenantKeyBackend):
       4. Every rotation writes a tka_ audit row (write_key_audit_row) with the
          old/new version numbers -- never key material (AD-3).
 
-    Implementing rotate_key() here without steps 2-3 would silently break
-    in-flight decryption; do not flip TENANT_KEY_BACKEND=secret_manager before
-    the fallback path exists.
+    Steps 1 and 2 are live below. Step 3's scheduled disable and step 4's audit
+    row are an operator action for now: rotation is manual, and a version left
+    enabled costs correctness nothing -- only the size of the window.
+
+    WHY THIS EXISTS (AI-278). The local backend cannot hold a production key: the
+    only writable directory a Cloud Run container has is its own ephemeral
+    filesystem, so the key file died with the instance and `get_or_create_key`
+    minted a fresh key on the next request. Every Google credential and every
+    alert-destination secret sealed under the old key became permanently
+    unreadable, silently, one request later.
     """
 
-    _HG_A_MSG = (
-        "SecretManagerKeyBackend requires HG-A: GCP billing account + Secret Manager API. "
-        "Set TENANT_KEY_BACKEND=local for Phase A (P3-dev). "
-        "See Story 7.3 AC1 for the Phase B rollout plan."
+    _MISSING_SDK_MSG = (
+        "google-cloud-secret-manager is not installed -- TENANT_KEY_BACKEND=secret_manager "
+        "cannot read or write tenant keys. Install the dependency or set "
+        "TENANT_KEY_BACKEND=local."
     )
 
+    # How many previous versions stay eligible for DECRYPTION after a rotation
+    # (AI-42 dual-version window). Encryption always uses the newest.
+    _DECRYPT_FALLBACK_VERSIONS = 1
+
+    def __init__(self, gcp_project: str | None = None) -> None:
+        """Initialise against a GCP project.
+
+        Args:
+            gcp_project: the GCP project holding the secrets. Defaults to
+                GCP_PROJECT, then GOOGLE_CLOUD_PROJECT.
+        """
+        self._gcp_project = (
+            gcp_project
+            or os.environ.get("GCP_PROJECT")
+            or os.environ.get("GOOGLE_CLOUD_PROJECT")
+            or ""
+        ).strip()
+        self._client = None
+
+    # -- plumbing ----------------------------------------------------------
+
+    def _secret_id(self, project_id: str) -> str:
+        """Secret name for a tenant. Sanitised to Secret Manager's charset.
+
+        Secret ids accept ``[A-Za-z0-9_-]`` only, which is already the shape of
+        ``proj_<ULID>``; the filter is here so a hand-made id cannot produce a
+        path that names a DIFFERENT tenant's secret.
+        """
+        safe_id = "".join(c for c in project_id if c.isalnum() or c in ("-", "_"))
+        if not safe_id:
+            raise ValueError(f"project_id produces empty secret name: {project_id!r}")
+        return f"tenant-key-{safe_id}"
+
+    def _api(self):
+        """Return the Secret Manager client, created once per backend instance."""
+        if self._client is None:
+            try:
+                from google.cloud import secretmanager  # noqa: PLC0415
+            except ImportError as exc:
+                raise TenantKeyBackendUnavailable(self._MISSING_SDK_MSG) from exc
+            if not self._gcp_project:
+                raise TenantKeyBackendUnavailable(
+                    "TENANT_KEY_BACKEND=secret_manager requires GCP_PROJECT (or "
+                    "GOOGLE_CLOUD_PROJECT) to name the project holding the secrets."
+                )
+            self._client = secretmanager.SecretManagerServiceClient()
+        return self._client
+
+    def _parent(self) -> str:
+        return f"projects/{self._gcp_project}"
+
+    def _version_path(self, project_id: str, version: str = "latest") -> str:
+        return f"{self._parent()}/secrets/{self._secret_id(project_id)}/versions/{version}"
+
+    @staticmethod
+    def _decode(payload: bytes, where: str) -> bytes | None:
+        """Decode a stored payload to raw 32 bytes, or None when it is not one."""
+        try:
+            key = base64.urlsafe_b64decode(payload.strip())
+        except Exception as exc:  # noqa: BLE001 -- corrupted payload, not a key
+            logger.warning("tenant_keys: unreadable secret payload (%s): %s", where, exc)
+            return None
+        if len(key) != 32:
+            logger.warning(
+                "tenant_keys: secret payload (%s) holds %d bytes (expected 32)",
+                where,
+                len(key),
+            )
+            return None
+        return key
+
+    def _add_version(self, project_id: str, key: bytes) -> None:
+        """Append a new enabled version carrying *key*. Never destroys a prior one."""
+        client = self._api()
+        client.add_secret_version(
+            request={
+                "parent": f"{self._parent()}/secrets/{self._secret_id(project_id)}",
+                "payload": {"data": base64.urlsafe_b64encode(key)},
+            }
+        )
+
+    # -- interface ---------------------------------------------------------
+
+    def get_key(self, project_id: str) -> bytes | None:
+        """Return the newest key version, or None when the secret does not exist."""
+        from google.api_core import exceptions as gexc  # noqa: PLC0415
+
+        client = self._api()
+        try:
+            response = client.access_secret_version(
+                request={"name": self._version_path(project_id)}
+            )
+        except gexc.NotFound:
+            return None
+        except gexc.FailedPrecondition:
+            # Every version disabled/destroyed -- the secret exists but holds no
+            # usable key. Same answer as absent, and honest about it.
+            logger.warning("tenant_keys: secret has no enabled version project_id=[REDACTED]")
+            return None
+        return self._decode(response.payload.data, "latest")
+
     def get_or_create_key(self, project_id: str) -> bytes:
-        raise NotImplementedError(self._HG_A_MSG)
+        """Return the newest key version, creating the secret on first use.
+
+        Concurrency: two callers racing on a first-ever key both try to create
+        the secret; the loser catches AlreadyExists and re-reads, so both return
+        the SAME key rather than one silently overwriting the other.
+        """
+        from google.api_core import exceptions as gexc  # noqa: PLC0415
+
+        existing = self.get_key(project_id)
+        if existing is not None:
+            return existing
+
+        client = self._api()
+        key = os.urandom(32)
+        try:
+            client.create_secret(
+                request={
+                    "parent": self._parent(),
+                    "secret_id": self._secret_id(project_id),
+                    "secret": {"replication": {"automatic": {}}},
+                }
+            )
+        except gexc.AlreadyExists:
+            # The secret exists but had no readable version (a create that died
+            # between create_secret and add_secret_version, or a race). Fall
+            # through: adding a version is exactly the repair.
+            pass
+        self._add_version(project_id, key)
+        # AD-3: log the event only -- never the key value.
+        logger.info("tenant_keys: key_created project_id=[REDACTED] backend=secret_manager")
+        return key
+
+    def decryption_keys(self, project_id: str) -> list[bytes]:
+        """Newest key first, then the rotation-overlap predecessors (AI-42).
+
+        This is what makes ``rotate_key`` safe: ciphertext sealed under the
+        previous version keeps opening until that version is disabled.
+        """
+        from google.api_core import exceptions as gexc  # noqa: PLC0415
+
+        client = self._api()
+        try:
+            versions = list(
+                client.list_secret_versions(
+                    request={
+                        "parent": f"{self._parent()}/secrets/{self._secret_id(project_id)}",
+                        "filter": "state:ENABLED",
+                    }
+                )
+            )
+        except gexc.NotFound:
+            return []
+        # list_secret_versions returns newest first; keep that order explicit so a
+        # future API change cannot silently make the OLDEST key the encryption key.
+        versions.sort(key=lambda v: int(str(v.name).rsplit("/", 1)[-1]), reverse=True)
+
+        keys: list[bytes] = []
+        for version in versions[: 1 + self._DECRYPT_FALLBACK_VERSIONS]:
+            try:
+                payload = client.access_secret_version(request={"name": version.name})
+            except gexc.GoogleAPIError as exc:
+                logger.warning("tenant_keys: version unreadable: %s", type(exc).__name__)
+                continue
+            key = self._decode(payload.payload.data, "version")
+            if key is not None:
+                keys.append(key)
+        return keys
 
     def delete_key(self, project_id: str) -> bool:
-        raise NotImplementedError(self._HG_A_MSG)
+        """Delete the whole secret. Returns False when there was nothing to delete."""
+        from google.api_core import exceptions as gexc  # noqa: PLC0415
+
+        client = self._api()
+        try:
+            client.delete_secret(
+                request={"name": f"{self._parent()}/secrets/{self._secret_id(project_id)}"}
+            )
+        except gexc.NotFound:
+            return False
+        logger.info("tenant_keys: key_deleted project_id=[REDACTED] backend=secret_manager")
+        return True
 
     def rotate_key(self, project_id: str) -> bytes:
-        raise NotImplementedError(self._HG_A_MSG)
+        """Add a NEW version and return it. The previous version stays ENABLED.
+
+        Destroying the predecessor here would break every in-flight decryption;
+        it is disabled later, outside the grace window, by an operator.
+        """
+        from google.api_core import exceptions as gexc  # noqa: PLC0415
+
+        client = self._api()
+        new_key = os.urandom(32)
+        try:
+            self._add_version(project_id, new_key)
+        except gexc.NotFound:
+            # Rotating a tenant that never had a key: create it rather than fail.
+            client.create_secret(
+                request={
+                    "parent": self._parent(),
+                    "secret_id": self._secret_id(project_id),
+                    "secret": {"replication": {"automatic": {}}},
+                }
+            )
+            self._add_version(project_id, new_key)
+        logger.info("tenant_keys: key_rotated project_id=[REDACTED] backend=secret_manager")
+        return new_key
 
 
 # ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@ version: 2
 
 sources:
   - name: raw_monday
-    schema: main
+    schema: "{{ var('raw_schema', 'main') }}"  # 24.4 AC2: org_<wslug>_raw injected by orchestrator, 'main' without var (bit-identique)
     description: Append-only monday board/item/column/schema snapshots.
     tables:
       - name: raw_monday_board_snapshot

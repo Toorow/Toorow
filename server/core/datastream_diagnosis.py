@@ -54,6 +54,12 @@ from __future__ import annotations
 
 import logging
 
+# Import au niveau module -- et non paresseux comme les autres appels a `core`
+# ici : `_ALLOWED_USER_ACTIONS` en derive au chargement. `pull_errors` n'importe
+# rien de `core`, donc il n'y a pas de cycle a craindre.
+from core import pull_errors
+from core.pull_job_states import PREVENTED as _PREVENTED_STATE
+
 logger = logging.getLogger(__name__)
 
 # Envelope schema version (mirrors core.main.SCHEMA_VERSION -- kept local so this
@@ -83,7 +89,19 @@ _ALLOWED_ERROR_CLASSES = frozenset(
 
 # The canonical set of recommended user actions we may emit (allowlist). Any other
 # string is dropped to None -- we never echo a free-form provider instruction.
-_ALLOWED_USER_ACTIONS = frozenset(("reconnect",))
+#
+# LU depuis `core.pull_errors`, jamais retranscrit. Une seconde copie de ce
+# vocabulaire derive : elle a le droit de vieillir d'un cote sans que rien ne le
+# dise, et le symptome est muet -- une action legitime coercee a None laisse
+# l'ecran sans bouton, exactement comme si l'echec n'etait pas reparable.
+#
+# Cet ensemble valait `{"reconnect"}` jusqu'au 2026-08-01, alors que la cible en
+# nomme trois (`datastream-workbench-and-wizard.md:107` : Sources / Mapping /
+# Governance, plus << Select a usable Source Account >> dans son tableau
+# d'ecarts). Les deux autres existaient dans le produit et n'avaient nulle part
+# ou sortir : un pull dont le compte n'est pas choisi, et un plan qui demande ce
+# que la source ne rend plus, s'affichaient tous deux comme un echec sans action.
+_ALLOWED_USER_ACTIONS = frozenset(pull_errors.USER_ACTIONS)
 
 # The canonical RECOVERY-class vocabulary (Story 36.16 reachability fix). These are
 # the recovery-relevant classes the diagnosis expresses through TYPED, ENUM evidence
@@ -109,15 +127,10 @@ _ALLOWED_RECOVERY_CLASSES = frozenset(
         "uncertain_publication",
         "dq_failure",
         "mapping_drift",
+        "published_regression",
     )
 )
 
-# Maps a TYPED execution ``error_code`` (a bounded, closed enum written by
-# datastream_publication -- NEVER free provider text) to a canonical recovery class.
-# error_code is the typed gate/failure code (mapping_drift, schema_hash_mismatch,
-# dq_gate_failed, empty_candidate, row_count_delta_exceeded, content_hash_mismatch,
-# reconciliation_inconclusive). error_DETAIL (the adjacent free text) is NEVER read.
-# A code absent from this map contributes NO recovery class (fail-closed to nothing).
 _EXECUTION_ERROR_CODE_TO_RECOVERY = {
     # Schema / mapping hash drift -> a governed mapping replacement is required.
     "mapping_drift": "mapping_drift",
@@ -129,6 +142,9 @@ _EXECUTION_ERROR_CODE_TO_RECOVERY = {
     "content_hash_mismatch": "dq_failure",
     # A publish whose cross-store outcome could not be resolved -> reconcile.
     "reconciliation_inconclusive": "uncertain_publication",
+    # Published regression or rollback signal -> rollback procedure.
+    "published_regression": "published_regression",
+    "rollback_needed": "published_regression",
 }
 
 # The typed verification verdicts (app.pull_verifications.verdict, closed enum) that
@@ -201,11 +217,11 @@ def _guard_datastream_read(datastream_id: str, identity: str) -> str:
     ``not_found`` -- we NEVER disclose whether the Datastream exists (E36-NFR02).
     The read must NOT proceed unguarded on a guard failure (fail-closed).
     """
-    from core.db import get_connection  # noqa: PLC0415
+    from core.db import request_connection  # noqa: PLC0415
     from core.project_access import resolve_strict_resource_access  # noqa: PLC0415
 
     try:
-        with get_connection() as conn:
+        with request_connection(identity) as conn:
             decision = resolve_strict_resource_access(
                 identity, conn, datastream_id=datastream_id, minimum_capability="view"
             )
@@ -213,9 +229,9 @@ def _guard_datastream_read(datastream_id: str, identity: str) -> str:
         logger.error(
             "datastream_diagnosis: access guard failed ds=%s: %s", datastream_id, exc
         )
-        raise _tool_error("not_found", "Flux introuvable.") from exc
+        raise _tool_error("not_found", "Datastream not found.") from exc
     if not decision.allowed or not decision.org_id:
-        raise _tool_error("not_found", "Flux introuvable.")
+        raise _tool_error("not_found", "Datastream not found.")
     return str(decision.org_id)
 
 
@@ -341,6 +357,20 @@ def _retryable_for_class(error_class) -> bool | None:
 # ---------------------------------------------------------------------------
 
 
+def _prevented_pair(error_detail) -> tuple[str | None, str | None]:
+    """Read (reason, sentence) off a PREVENTED window's ``error_detail`` -- AI-307.
+
+    DELEGATED, NEVER RE-PARSED. `core.pull_envelope` is what wrote those two keys
+    and it is what reads them back, for every surface: this timeline, the extract
+    ledger, and the day grid the ledger feeds. Its docstring carries the
+    E36-NFR01 argument and the clamps; a second parser here would put the same
+    bound in two places, one edit away from a surface that forgot it.
+    """
+    from core.pull_envelope import prevented_pair  # noqa: PLC0415
+
+    return prevented_pair(error_detail)
+
+
 def _sanitize_pull_event(row: dict) -> dict:
     """Serialize ONE pull_jobs row into an allowlisted timeline event.
 
@@ -348,14 +378,43 @@ def _sanitize_pull_event(row: dict) -> dict:
     action, attempts, affected interval, copyable correlation IDs (pull_id,
     execution_id absent here, trace_id absent here) and safe timestamps. The raw
     ``error_detail`` NEVER appears -- only its canonical mapping.
+
+    AI-307: a `prevented` window is NOT an error and carries no error class.
+    Mapping it to one would tell the reader to reconnect a credential that works
+    perfectly, and mark as retryable a window that will be refused identically
+    until a person obtains a grant at the provider. It carries its own two keys
+    instead, and every other state carries them as None.
     """
+    state = _safe_enum(row.get("state"))
+    if state == _PREVENTED_STATE:
+        reason, sentence = _prevented_pair(row.get("error_detail"))
+        return {
+            "kind": "pull",
+            "state": state,
+            "error_class": None,
+            "retryable": False,
+            "recommended_action": None,
+            "prevented_reason": reason,
+            "prevented_message": sentence,
+            "attempts": _safe_attempts(row.get("attempt_count")),
+            "affected_interval": _safe_interval(
+                row.get("date_from"), row.get("date_to")
+            ),
+            "correlation": {
+                "pull_id": _safe_id(row.get("pull_id")),
+                "job_id": _safe_id(row.get("id")),
+            },
+            "at": _safe_ts(row.get("completed_at") or row.get("enqueued_at")),
+        }
     error_class, user_action = _canonical_error(row.get("error_detail"))
     return {
         "kind": "pull",
-        "state": _safe_enum(row.get("state")),
+        "state": state,
         "error_class": error_class,
         "retryable": _retryable_for_class(error_class),
         "recommended_action": user_action,
+        "prevented_reason": None,
+        "prevented_message": None,
         "attempts": _safe_attempts(row.get("attempt_count")),
         "affected_interval": _safe_interval(row.get("date_from"), row.get("date_to")),
         "correlation": {
@@ -823,10 +882,10 @@ def _diagnose_summary(diagnosis: dict, context: dict) -> str:
     ds = context.get("datastream_id")
     lines = [f"Diagnostic du flux {ds!r}."]
     if diagnosis.get("verdict") == "ok":
-        lines.append("Aucune defaillance canonique detectee sur la fenetre.")
+        lines.append("No canonical failure detected in the window.")
         health = context.get("connection_health")
         if health:
-            lines.append(f"Sante de la connexion : {health}.")
+            lines.append(f"Connection health: {health}.")
         return "\n".join(lines[:30])
 
     error_class = diagnosis.get("error_class")
@@ -881,7 +940,7 @@ def _support_disclose(
     evidence is the SAME sanitized canonical diagnosis -- never raw logs/rows.
     """
     from core import operations  # noqa: PLC0415
-    from core.db import get_connection  # noqa: PLC0415
+    from core.db import request_connection  # noqa: PLC0415
 
     evidence = {
         "class": diagnosis.get("error_class") or "unclassified",
@@ -894,7 +953,7 @@ def _support_disclose(
     resource_path = (f"organization:{org_id}", f"flux:{datastream_id}")
     idempotency_key = f"support.diagnosis:{org_id}:{datastream_id}:{evidence_hash}"
 
-    with get_connection() as conn:
+    with request_connection(identity) as conn:
         op_result = operations.prepare_support_disclosure(
             conn,
             actor=identity,
@@ -911,7 +970,7 @@ def _support_disclose(
         conn.commit()  # durable audit committed FIRST (AC: audit-committed-first).
 
     # Re-verify the audit from a fresh post-commit transaction before responding.
-    with get_connection() as conn:
+    with request_connection(identity) as conn:
         reference = operations.confirm_support_audit_committed(
             conn, op_result.audit_event_id
         )
@@ -930,6 +989,118 @@ def _support_disclose(
 # ---------------------------------------------------------------------------
 
 
+# ---- Read: sanitized bounded/paginated pull history -------------------
+def datastream_pull_history(
+    datastream_id: str,
+    cursor: int = 0,
+    page_size: int = _MAX_PAGE_SIZE,
+):
+    """Chronologie SANITISEE et PAGINEE des pulls d'UN flux (Story 36.12).
+
+    Compose les modeles de lecture existants (pull_jobs, pull_verifications,
+    executions/publication, audit, sante de connexion) en une chronologie
+    BORNEE : au plus 50 evenements par page + curseur d'offset (E36-NFR06).
+    Chaque evenement passe par le serialiseur allow-list (E36-NFR01) : classe
+    d'erreur canonique, rejouabilite, action recommandee, tentatives,
+    intervalle affecte, identifiants de correlation copiables (pull_id /
+    execution_id / trace_id). Le ``error_detail`` brut (qui peut contenir un
+    provider_payload) n'apparait JAMAIS -- seulement sa classe canonique. Guard
+    d'acces strict AD-5 ; flux etranger -> not_found (existence cachee). Ne mute
+    aucun pointeur de publication (surface de lecture pure).
+    """
+    datastream_id = (datastream_id or "").strip() or None
+    if datastream_id is None:
+        raise _tool_error("missing_param", "datastream_id is required.")
+    identity = _identity()
+    _guard_datastream_read(datastream_id, identity)
+
+    page_size_b = _bound_page_size(page_size)
+    cursor_b = _bound_offset(cursor)
+    try:
+        from core.db import request_connection  # noqa: PLC0415
+
+        with request_connection(identity) as conn:
+            events, context = _collect_events(conn, datastream_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "datastream_diagnosis: history failed ds=%s: %s", datastream_id, exc
+        )
+        raise _tool_error("server_error", "Erreur serveur.") from exc
+
+    timeline = _assemble_timeline(events, cursor=cursor_b, page_size=page_size_b)
+    data = {"context": context, "timeline": timeline}
+    shown = timeline["page"]["size"]
+    summary = (
+        f"Historique du flux {context.get('datastream_id')!r} : "
+        f"{shown} event(s) shown out of {timeline['total']} "
+        f"(curseur {timeline['page']['cursor']})."
+    )
+    return _result(summary, data)
+
+
+# ---- Read: canonical single diagnosis ---------------------------------
+def datastream_diagnose(datastream_id: str, disclose_support: bool = False):
+    """Diagnostic CANONIQUE d'UN flux : classe d'erreur + rejouabilite + action.
+
+    Compose la meme chronologie sanitisee puis derive le diagnostic canonique
+    (E36-FR08) : classe d'erreur canonique, rejouabilite, action recommandee,
+    tentatives, intervalle affecte, identifiants de correlation copiables --
+    via le schema allow-list (E36-NFR01). Le resume compact porte TOUJOURS la
+    preuve bornee obligatoire, meme sans hote UI (jamais une reponse
+    deep-link-only, E36-NFR06). Aucune donnee brute (logs/lignes/echantillons)
+    n'est retournee ; la recherche d'observabilite brute reste une action
+    humaine controlee via l'ID de correlation. ``disclose_support=True`` (flux
+    Support restreint) renvoie une preuve bornee redigee APRES un audit durable
+    committe d'abord ; la reponse porte alors ``audit_event_id``. Guard strict
+    AD-5 ; flux etranger -> not_found. Ne mute aucun pointeur de publication.
+    """
+    datastream_id = (datastream_id or "").strip() or None
+    if datastream_id is None:
+        raise _tool_error("missing_param", "datastream_id is required.")
+    identity = _identity()
+    org_id = _guard_datastream_read(datastream_id, identity)
+
+    try:
+        from core.db import request_connection  # noqa: PLC0415
+
+        with request_connection(identity) as conn:
+            events, context = _collect_events(conn, datastream_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "datastream_diagnosis: diagnose failed ds=%s: %s", datastream_id, exc
+        )
+        raise _tool_error("server_error", "Erreur serveur.") from exc
+
+    diagnosis = _diagnose(events)
+    # Bounded, paginated first page of the supporting evidence timeline.
+    timeline = _assemble_timeline(events, cursor=0, page_size=_MAX_PAGE_SIZE)
+    data: dict = {
+        "context": context,
+        "diagnosis": diagnosis,
+        "evidence": timeline,
+    }
+
+    if disclose_support:
+        try:
+            data["support_disclosure"] = _support_disclose(
+                identity=identity,
+                org_id=org_id,
+                datastream_id=datastream_id,
+                diagnosis=diagnosis,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "datastream_diagnosis: support disclosure failed ds=%s: %s",
+                datastream_id,
+                exc,
+            )
+            raise _tool_error(
+                "server_error", "Support disclosure unavailable."
+            ) from exc
+
+    return _result(_diagnose_summary(diagnosis, context), data)
+
+
 def register(mcp) -> None:
     """Register the sanitized pull-history / diagnosis MCP tools on *mcp*.
 
@@ -938,121 +1109,28 @@ def register(mcp) -> None:
     registration form (like metric_semantics_mcp), so this module never imports the
     mcp instance at module level (no cycle).
 
-    Story 36.11 note: once ``mcp_profiles`` lands these tools must be re-registered
-    via ``mcp_profiles.register_profiled(profile="insights", effect="read",
-    data_class="operational", confirmation_mode="none")``. For now they register
-    with plain ``mcp.tool`` (Insights-default, read-only).
+    Story 36.11 left a note here saying these must be re-registered via
+    ``register_profiled(profile="insights", effect="read", data_class="operational",
+    confirmation_mode="none")`` and that "for now" they use plain ``mcp.tool``.
+    AD-43 closed that: they carry the declaration the note asked for, and a tool
+    reaching the catalog without one now aborts boot instead of inheriting Insights.
     """
 
-    # ---- Read: sanitized bounded/paginated pull history -------------------
-    def datastream_pull_history(
-        datastream_id: str,
-        cursor: int = 0,
-        page_size: int = _MAX_PAGE_SIZE,
-    ):
-        """Chronologie SANITISEE et PAGINEE des pulls d'UN flux (Story 36.12).
+    from core.mcp_profiles import register_profiled  # noqa: PLC0415
 
-        Compose les modeles de lecture existants (pull_jobs, pull_verifications,
-        executions/publication, audit, sante de connexion) en une chronologie
-        BORNEE : au plus 50 evenements par page + curseur d'offset (E36-NFR06).
-        Chaque evenement passe par le serialiseur allow-list (E36-NFR01) : classe
-        d'erreur canonique, rejouabilite, action recommandee, tentatives,
-        intervalle affecte, identifiants de correlation copiables (pull_id /
-        execution_id / trace_id). Le ``error_detail`` brut (qui peut contenir un
-        provider_payload) n'apparait JAMAIS -- seulement sa classe canonique. Guard
-        d'acces strict AD-5 ; flux etranger -> not_found (existence cachee). Ne mute
-        aucun pointeur de publication (surface de lecture pure).
-        """
-        datastream_id = (datastream_id or "").strip() or None
-        if datastream_id is None:
-            raise _tool_error("missing_param", "datastream_id est requis.")
-        identity = _identity()
-        _guard_datastream_read(datastream_id, identity)
-
-        page_size_b = _bound_page_size(page_size)
-        cursor_b = _bound_offset(cursor)
-        try:
-            from core.db import get_connection  # noqa: PLC0415
-
-            with get_connection() as conn:
-                events, context = _collect_events(conn, datastream_id)
-        except Exception as exc:  # noqa: BLE001
-            logger.error(
-                "datastream_diagnosis: history failed ds=%s: %s", datastream_id, exc
-            )
-            raise _tool_error("server_error", "Erreur serveur.") from exc
-
-        timeline = _assemble_timeline(events, cursor=cursor_b, page_size=page_size_b)
-        data = {"context": context, "timeline": timeline}
-        shown = timeline["page"]["size"]
-        summary = (
-            f"Historique du flux {context.get('datastream_id')!r} : "
-            f"{shown} evenement(s) affiche(s) sur {timeline['total']} "
-            f"(curseur {timeline['page']['cursor']})."
-        )
-        return _result(summary, data)
-
-    # ---- Read: canonical single diagnosis ---------------------------------
-    def datastream_diagnose(datastream_id: str, disclose_support: bool = False):
-        """Diagnostic CANONIQUE d'UN flux : classe d'erreur + rejouabilite + action.
-
-        Compose la meme chronologie sanitisee puis derive le diagnostic canonique
-        (E36-FR08) : classe d'erreur canonique, rejouabilite, action recommandee,
-        tentatives, intervalle affecte, identifiants de correlation copiables --
-        via le schema allow-list (E36-NFR01). Le resume compact porte TOUJOURS la
-        preuve bornee obligatoire, meme sans hote UI (jamais une reponse
-        deep-link-only, E36-NFR06). Aucune donnee brute (logs/lignes/echantillons)
-        n'est retournee ; la recherche d'observabilite brute reste une action
-        humaine controlee via l'ID de correlation. ``disclose_support=True`` (flux
-        Support restreint) renvoie une preuve bornee redigee APRES un audit durable
-        committe d'abord ; la reponse porte alors ``audit_event_id``. Guard strict
-        AD-5 ; flux etranger -> not_found. Ne mute aucun pointeur de publication.
-        """
-        datastream_id = (datastream_id or "").strip() or None
-        if datastream_id is None:
-            raise _tool_error("missing_param", "datastream_id est requis.")
-        identity = _identity()
-        org_id = _guard_datastream_read(datastream_id, identity)
-
-        try:
-            from core.db import get_connection  # noqa: PLC0415
-
-            with get_connection() as conn:
-                events, context = _collect_events(conn, datastream_id)
-        except Exception as exc:  # noqa: BLE001
-            logger.error(
-                "datastream_diagnosis: diagnose failed ds=%s: %s", datastream_id, exc
-            )
-            raise _tool_error("server_error", "Erreur serveur.") from exc
-
-        diagnosis = _diagnose(events)
-        # Bounded, paginated first page of the supporting evidence timeline.
-        timeline = _assemble_timeline(events, cursor=0, page_size=_MAX_PAGE_SIZE)
-        data: dict = {
-            "context": context,
-            "diagnosis": diagnosis,
-            "evidence": timeline,
-        }
-
-        if disclose_support:
-            try:
-                data["support_disclosure"] = _support_disclose(
-                    identity=identity,
-                    org_id=org_id,
-                    datastream_id=datastream_id,
-                    diagnosis=diagnosis,
-                )
-            except Exception as exc:  # noqa: BLE001
-                logger.error(
-                    "datastream_diagnosis: support disclosure failed ds=%s: %s",
-                    datastream_id,
-                    exc,
-                )
-                raise _tool_error(
-                    "server_error", "Divulgation Support indisponible."
-                ) from exc
-
-        return _result(_diagnose_summary(diagnosis, context), data)
-
-    mcp.tool(datastream_pull_history)
-    mcp.tool(datastream_diagnose)
+    register_profiled(
+        mcp,
+        datastream_pull_history,
+        profile="insights",
+        effect="read",
+        data_class="operational",
+        confirmation_mode="none",
+    )
+    register_profiled(
+        mcp,
+        datastream_diagnose,
+        profile="insights",
+        effect="read",
+        data_class="operational",
+        confirmation_mode="none",
+    )

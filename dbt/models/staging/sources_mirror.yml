@@ -31,6 +31,9 @@ sources:
                    with zero mirror_sync code change, HG-8). platform = level 1 of the
                    platform>type>label event identity; value = optional MMM regressor
                    magnitude (NULL = unit pulse); source = 'manual' | '<connector>'.
+                   metric (migration 322) = the governed metric the event is about,
+                   NULL when it is about every metric -- the discriminant the two
+                   scoped context walks compare to a claim's own metric.
         # TODO(Story-5.x): add freshness: check if dbt source freshness tests are desired.
         # Example:
         # freshness:
@@ -45,7 +48,12 @@ sources:
           Columns: project_id, canonical_currency, reporting_timezone,
           verification_source_type, verification_source_id, lead_event_name
           (Story 17.1, migration 028 — propagated by the SELECT * sync with zero
-          mirror_sync code change), created_at, updated_at.
+          mirror_sync code change), created_at, updated_at,
+          fee_tax_alignment_enabled (Story 41.1, migration 119 — the per-project
+          fee & tax alignment switch, NOT NULL DEFAULT FALSE; likewise carried by
+          the SELECT * sync with zero mirror_sync code change. FALSE, or an absent
+          preferences row, means the module is OFF and every Epic 41 surface is
+          inert).
         # TODO(Story-5.x): add freshness check.
 
       - name: connection_ref_dim
@@ -163,21 +171,401 @@ sources:
                    created_by, created_at, updated_at.
 
       # ---------------------------------------------------------------------------
-      # Story 13.2: FX conflict resolutions mirror (AD-6, AD-8). Postgres is the sole
-      # writer; mirror.* is read-only for dbt. The stg_*_daily.sql staging models JOIN
-      # on this table to prefer the declared source currency when a CURRENCY_CONFLICT
-      # resolution exists: COALESCE(res.resolved_source_currency, raw.cost_source_currency).
-      # NO Python converts currencies (AD-6). Resolution is non-retroactive: it applies
-      # only to the next dbt run / publication, never to committed published outputs.
+      # Story 13.2, re-sourced by Story 67.20 (migration 282). Declared source
+      # currencies (AD-6, AD-8). Postgres is the sole writer; mirror.* is read-only
+      # for dbt. The stg_*_daily.sql staging models JOIN this relation to prefer the
+      # declared source currency when a CURRENCY_CONFLICT resolution exists:
+      # COALESCE(res.resolved_source_currency, raw.cost_source_currency).
+      # NO Python converts currencies (AD-6). Non-retroactive: it applies only to the
+      # next dbt run / publication, never to committed published outputs.
+      #
+      # WHAT CHANGED. The entry used to be `fx_conflict_resolutions`, mirroring
+      # `app.fx_conflict_resolutions` -- a store migration 145 dethroned and
+      # migration 282 sealed, whose upsert overwrote `decided_by`/`decided_at` in
+      # place. The same declarations now live in the governed `source_currency`
+      # Rule Set family as immutable published versions, and
+      # `app.fx_source_currency_bindings_v` projects the published version back
+      # into this exact shape. Same columns, same COALESCE, an auditable ledger
+      # underneath.
       # ---------------------------------------------------------------------------
 
-      - name: fx_conflict_resolutions
+      - name: fx_source_currency_bindings
         description: >
-          Postgres app.fx_conflict_resolutions synced by mirror_sync.py (Story 13.2). Read-only.
-          CURRENCY_CONFLICT resolutions: declares which source currency to use per
-          (project_id, target_field, source_module). Consumed by stg_*_daily.sql via LEFT JOIN
-          to override raw.cost_source_currency when a resolution exists. AD-6: no Python
-          conversion; AD-8: Postgres is the sole writer. Non-retroactive: applies to the next
-          dbt materialisation, not to committed published outputs.
-          Columns: id, project_id, target_field, source_module, resolved_source_currency,
-                   decided_by, decided_at, note.
+          Postgres app.fx_source_currency_bindings_v synced by mirror_sync.py
+          (Story 67.20, migration 282). Read-only. The PUBLISHED source-currency
+          declarations of each Project: which source currency to read per
+          (project_id, target_field, source_module). Consumed by stg_*_daily.sql via
+          LEFT JOIN to override raw.cost_source_currency when a declaration exists.
+          AD-6: no Python conversion; AD-8: Postgres is the sole writer.
+          Non-retroactive: applies to the next dbt materialisation, not to committed
+          published outputs. Replaces the Story 13.2 entry `fx_conflict_resolutions`.
+          Columns: project_id, target_field, source_module, resolved_source_currency,
+                   decided_by, decided_at, note, rule_set_id, rule_set_version_id.
+
+      # ---------------------------------------------------------------------------
+      # Story 41.1: Fee & tax alignment mirror (Epic 41, migration 119, AD-8).
+      #
+      # Story 41.1 registers EVERY mirror entry Epic 41 will ever need (decision
+      # C.8/2), including two whose only consumers are 41.2 and 41.3. After this
+      # story, no Epic-41 story touches mirror_sync.py or this block again.
+      #
+      # NO raw JSONB and NO array crosses the mirror (decision C.8/1). Note the
+      # correct reason: it is NOT that "no mirrored table has ever carried JSONB" --
+      # project_preferences has been mirrored by SELECT * since Story 4.4 and carries
+      # local_markets (JSONB) and local_market_country_codes (TEXT[]). The point is
+      # that those columns have no PINNED warehouse type and no model reads them as
+      # structured values: mirror_sync goes psycopg -> pandas -> DuckDB, so a column
+      # of Python dicts/lists lands as whatever pandas and DuckDB infer, and the
+      # empty-table branch declares EVERY column VARCHAR -- so a column's type can
+      # differ between a populated and an empty sync, and again on BigQuery. The 41.3
+      # cascade does arithmetic on these values, so it cannot be built on that.
+      # Migration 119 flattens `conditions`, `tiers` and `source_type_scope` into
+      # relational Postgres views where the types are exact, and THOSE are mirrored.
+      # The dbt engine therefore needs no JSON macro at all.
+      #
+      # AVAILABILITY: mirror_sync SKIPS any of these entries whose Postgres relation
+      # does not exist yet (migration 119 is applied by hand and is human-gated), so
+      # the relation may be absent from the warehouse entirely rather than present
+      # and empty. The skip is reported in the sync result and logged; the rest of
+      # the mirror still syncs. The one exception is datastream_country_binding_dim
+      # -- see its own note.
+      #
+      # Postgres is the sole writer; mirror.* is read-only for dbt. NO model is
+      # defined here (the 6-phase cascade is Story 41.3). There is no dbt seed for
+      # the mirror.* schema; the DEV DuckDB seeder for these relations is 41.3's.
+      # ---------------------------------------------------------------------------
+
+      - name: fee_tax_rules
+        description: >
+          Postgres app.fee_tax_rules_dim_v synced by mirror_sync.py (Story 41.1). Read-only.
+          The declared fee/tax ladder as governed DATA -- one row per rule. SCALARS ONLY:
+          `conditions`, `tiers` and `source_type_scope` are deliberately absent and reach
+          the warehouse through fee_tax_rule_conditions / fee_tax_rule_tiers instead.
+          Only status='confirmed' is ever meant to enter the 41.3 cascade; 'proposed' rows
+          are auto-populated proposals awaiting human confirmation and must NOT be summed.
+          Money is exact: rate is NUMERIC(12,6) (0.030000 = 3 percent) and amounts are
+          integer micros. AD-8: Postgres is the sole writer.
+          Columns: id, project_id, scope_kind, scope_ref, category, form, rate,
+                   amount_micros, cpm_micros, currency, base_target, cascade_phase,
+                   sequence_order, effective_from, effective_to, status, origin,
+                   dedup_hash, label, created_by, created_at, updated_at.
+
+      - name: fee_tax_rule_conditions
+        description: >
+          Postgres app.fee_tax_rule_conditions_v synced by mirror_sync.py (Story 41.1).
+          Read-only. One row per (rule, condition key, condition value) -- the relational
+          flattening of the `conditions` JSONB, plus `source_type_scope` unnested as rows
+          with condition_key = 'source_type' so arrays and object conditions share ONE
+          uniform matching mechanism.
+          A rule with NO row here matches EVERY row: an empty `conditions` object and an
+          empty `source_type_scope` both mean "applies to everything", and both correctly
+          yield zero rows. Absence is never "no match".
+          Recognised declarable condition_key values: country, market, placement_type,
+          connector, tax_code (plus the derived 'source_type'). An unrecognised key cannot
+          be stored (core/fee_tax_rules.py refuses it at declaration) and, if one ever
+          reaches 41.3, it is a typed UNRESOLVED gap -- never "no match, move on".
+          Columns: rule_id, condition_key, condition_value.
+
+      - name: fee_tax_rule_tiers
+        description: >
+          Postgres app.fee_tax_rule_tiers_v synced by mirror_sync.py (Story 41.1).
+          Read-only. One row per SPEND_TIERS band. tier_index is 0-BASED. `mode`
+          ('cliff' | 'marginal', default 'cliff') is DENORMALISED onto every band row so
+          the cascade branches without re-reading JSON -- the evaluation mode is RULE
+          DATA, not a platform choice, and 41.3 implements both.
+          A rule with tiers IS NULL contributes no row.
+          Columns: rule_id, tier_index, threshold_micros, rate, mode.
+
+      - name: datastream_source_types
+        description: >
+          Postgres app.datastream_source_types synced by mirror_sync.py (Story 41.1).
+          Read-only. The module-owned AD-8 source_type of a datastream (C.4) -- one row
+          per datastream. app.datastreams is NOT altered. Vocabulary: PAID_MEDIA,
+          LEAD_GEN_MEDIA, DIRECT_SERVICE_COST, COMMERCE_REVENUE, ORGANIC_ANALYTICS,
+          UNKNOWN. UNKNOWN is TYPED on purpose: it is excluded from the cost cascade and
+          never silently treated as PAID_MEDIA. Story 41.1 creates the table and declares
+          the source; the resolution ladder that FILLS it is Story 41.2, so this relation
+          is legitimately empty until then.
+          Columns: datastream_id, source_type, declared_by, declared_at.
+
+      - name: datastreams_dim
+        description: >
+          Postgres app.datastreams_dim_v synced by mirror_sync.py (Story 41.1). Read-only.
+          Minimal projection of live (archived_at IS NULL) datastreams, same
+          minimal-projection discipline as connection_ref_dim (AD-3): no token, no
+          connection_ref_id, no config JSONB.
+          `connector` is app.datastreams.module_name ALIASED so the dim speaks the
+          warehouse's vocabulary (everything joins on fact_daily_kpi.connector).
+          module_name is NULLABLE: managed_feed / external_bq datastreams are STILL
+          MIRRORED with connector = NULL and a downstream join simply does not match.
+          They are deliberately not filtered out -- an invisible datastream is a silent
+          gap, and 41.2's derivation ladder must see the row to resolve it to UNKNOWN.
+          Columns: project_id, datastream_id, connector, data_role, source_kind.
+
+      - name: managed_feed_grain
+        description: >
+          Postgres app.managed_feed_grain_v synced by mirror_sync.py (AI-227). Read-only.
+          Par Datastream managed_feed : sa table de landing (`managed_feed_<id>`, nom
+          deterministe compose par managed_feed_ledger.allocate_landing_relation) et la
+          MAILLE de son mapping PUBLIE -- la cle sur laquelle un fichier renvoye
+          supersede ce qu'il recouvre.
+          `has_grain` = FALSE veut dire << ce flux n'a pas encore de cle >>. La ligne est
+          mirroitee quand meme : un flux omis se lirait comme un flux sans probleme,
+          alors qu'il est exactement celui dont les doublons ne peuvent pas etre resolus.
+          Columns: project_id, org_id, datastream_id, landing_table, mapping_version_id,
+          grain_columns, has_grain.
+
+      - name: managed_feed_execution
+        description: >
+          Postgres app.managed_feed_execution_v synced by mirror_sync.py (story 69.2).
+          Read-only. Par execution d'un flux fichier : QUAND elle a charge.
+          Le mart exige un `loaded_at` non nul sur toutes ses branches, et la ligne
+          de landing d'un fichier ne porte pas d'heure -- la valeur a toujours vecu
+          dans app.datastream_executions.created_at, elle n'etait pas mirroitee.
+          Le staging la joint sur execution_id ; rien n'est fabrique.
+          Columns: project_id, org_id, datastream_id, execution_id, loaded_at.
+
+      - name: datastream_country_binding_dim
+        description: >
+          Projection of app.market_bindings JOINed to app.datastreams, synced by
+          mirror_sync.py (Story 41.1). Read-only. Serves the Epic 37 country/market
+          bridge: which market a datastream is bound to.
+          EMPTY UNTIL migration 104 is applied AND a writer emits
+          binding_kind='datastream' -- EMPTY IS NOT BROKEN. binding_kind is free TEXT by
+          design (AD-2, migration 104 header ships no enumeration), so 'datastream' is a
+          convention Story 41.1 introduces and nothing writes it today. mirror_sync
+          resolves this entry behind a to_regclass guard at call time and falls back to a
+          SHAPE-STABLE empty projection (same four columns, zero rows) rather than skipping
+          the entry: Story 41.3 source()s this relation while 104 is still unapplied, and a
+          dbt model cannot compile against a relation that does not exist.
+          This is a PROJECTION, not a faithful mirror of market_bindings: the INNER JOIN
+          drops a binding whose binding_id is not a live datastream. Do not use it to
+          audit bindings. The join is on (binding_id AND project_id): binding_id is free
+          TEXT with no foreign key, so joining on it alone would let a binding written
+          under project A that names project B's datastream emit project B's id beside
+          project A's market -- a cross-project leak in a client-facing dimension.
+          Columns: project_id, connector, datastream_id, market_id.
+
+      # ---------------------------------------------------------------------
+      # Declared here by Story 48.4 because `test_20_every_mirror_table_is_declared
+      # _as_a_dbt_source` was red: three entries reached `mirror_sync._DEFAULT_TABLES`
+      # without a source declaration, so a model that source()d one would fail to
+      # compile with no earlier signal. The gate exists to catch exactly that; it
+      # had caught it and nothing had answered.
+      # ---------------------------------------------------------------------
+      - name: datastream_derived_columns
+        description: >
+          Postgres app.datastream_derived_columns synced by mirror_sync.py
+          (2026-07-27). Read-only. The governed rules a dbt macro projects as extra
+          columns: they are mirrored rather than code-generated so editing a formula
+          does not mean regenerating models from Python.
+
+      - name: reference_tables
+        description: >
+          Postgres app.reference_tables synced by mirror_sync.py. Read-only. The
+          correspondence bases MAP() resolves against. Mirrored because the resolution
+          is a JOIN in the warehouse, so the rows must be in the warehouse.
+
+      - name: reference_table_entries
+        description: >
+          Postgres app.reference_table_entries synced by mirror_sync.py. Read-only.
+          One row per (reference table, key) pair.
+
+      # ---------------------------------------------------------------------
+      # Story 48.4: the ONE Tax & Fees activation authority.
+      # ---------------------------------------------------------------------
+      - name: project_tax_fee_activation
+        description: >
+          Postgres app.project_tax_fee_activation_v synced by mirror_sync.py
+          (Story 48.4). Read-only. Replaces project_preferences.fee_tax_alignment_enabled
+          as the gate of every Tax model: that column was a SECOND activation authority
+          beside app.project_capabilities, the two could disagree, and this one was the
+          one the dbt models believed -- so a Project that had disabled Tax & Fees
+          through a Change Set kept producing Tax-derived rows.
+          tax_fees_active is TRUE only when all three hold: the capability is not
+          disabled, its pin names the Project's CURRENT active configuration version,
+          and a `tax_fee` Rule Ladder version is published. An absent row is OFF.
+          reporting_currency comes from the confirmed Money Policy (Story 48.3), not
+          from project_preferences.canonical_currency and its DEFAULT 'EUR'.
+          Columns: project_id, project_configuration_version_id, capability_state,
+          tax_fees_active, rule_set_id, rule_set_version_id, rule_set_content_hash,
+          rounding, default_money_basis, rule_count, reporting_currency,
+          money_policy_version_id.
+
+      # ---------------------------------------------------------------------
+      # Story 61.4 (AI-266): the reporting currency, on its own authority.
+      # ---------------------------------------------------------------------
+      - name: project_money_policy
+        description: >
+          Postgres app.project_money_policy_v synced by mirror_sync.py (Story 61.4;
+          the view itself is migration 148). Read-only. ONE ROW PER PROJECT THAT HAS
+          PUBLISHED A MONEY POLICY -- a Project with no row has not decided, which
+          Story 48.3 keeps deliberately distinct from "decided on the default", and
+          which is why this relation must never be LEFT-JOINed with a COALESCE onto
+          project_preferences.canonical_currency.
+          Until 61.4 the only relation carrying reporting_currency was
+          project_tax_fee_activation, so a model needing the currency and having
+          nothing to do with Tax & Fees had to borrow that authority.
+          plan_vs_actual_daily reads it to LABEL a converted amount: before 61.4 it
+          stamped media_plans.currency on spend that had been converted into the
+          Project's currency, and served the result to four production callers.
+          Columns: project_id, money_policy_rule_set_id, money_policy_version_id,
+          money_policy_content_hash, reporting_currency,
+          reporting_currency_minor_unit, money_rounding.
+
+      # ---------------------------------------------------------------------
+      # Story 67.13 (migration 305): the POSED rate reaches the relation that
+      # converts. Step 2 of the cutover ratified in
+      # docs/product-architecture/capabilities/currency-fx.md.
+      #
+      # Both are read through `toorow_source_or_empty`, never through a bare
+      # source(): migration 305 is applied by hand and mirror_sync defers its
+      # BigQuery writes, so a warehouse without them must convert at the seed
+      # exactly as it did before rather than fail every staging model.
+      # ---------------------------------------------------------------------
+      - name: fx_posed_rates
+        description: >
+          Postgres app.fx_posed_rates_v synced by mirror_sync.py (Story 67.13;
+          the view itself is migration 305). Read-only. One row per POSED rate
+          (app.fx_rate_observations.method = 'fixed') of the version that governs
+          the Project -- the view resolves current-else-last-known-good exactly as
+          core.fx_rate_sets._active_rate_set_version does, so the warehouse never
+          re-derives which version is live. An INGESTED quotation is NOT here: it
+          speaks for its effective_date under a staleness policy this relation
+          carries no way to evaluate.
+          condition_key_count is the rule's SPECIFICITY -- the number of condition
+          keys it declares -- and it is the whole precedence rule of this
+          capability: the most specific matching rule wins, and the unconditional
+          rate (count 0) is therefore the fallback rather than a rival.
+          Columns: project_id, observation_id, base_currency, quote_currency,
+          rate, effective_date, valid_from, valid_to, condition_key_count,
+          provider, rate_set_version_id.
+
+      - name: fx_posed_rate_conditions
+        description: >
+          Postgres app.fx_posed_rate_conditions_v synced by mirror_sync.py
+          (Story 67.13; migration 305). Read-only. The condition of a posed rate,
+          flattened ONE ROW PER key x value -- the migration-119 shape of
+          fee_tax_rule_conditions, for the same reason: no jsonb crosses the
+          mirror, because pandas infers its dtype from the rows it happens to see
+          and an empty sync would not produce the same warehouse type as a
+          populated one.
+          Conjunction ACROSS condition_key, disjunction ACROSS the values of one
+          key. An unconditional rate produces NO ROW at all, which is what makes
+          the consuming LEFT JOIN read it as "unconstrained".
+          Columns: observation_id, condition_key, condition_value.
+
+      # ---------------------------------------------------------------------
+      # Story 64.9 / 64.10 (AI-232): the governed identity reaches the warehouse.
+      #
+      # Before these two, a dbt model could join the CLIENT's own correspondence
+      # table (reference_tables, mirrored since 126) but not the GOVERNED node
+      # behind it -- the single missing link of an otherwise complete chain from
+      # file template to Semantic View. `resolve_governed_node` reads the alias
+      # relation; the node relation carries the identity it lands on.
+      # ---------------------------------------------------------------------
+      - name: master_data_nodes_dim
+        description: >
+          Postgres app.master_data_nodes_dim_v synced by mirror_sync.py (Story 64.9,
+          migration 233). Read-only, scalars only. One row per LIVE governed node:
+          archived nodes are excluded at the view, because nothing is deleted upstream
+          (an old Result pins a version and must stay reproducible) so that WHERE clause
+          is the only thing that retires an identity.
+          Columns: org_id, project_id, node_id, registry_id, node_kind, label.
+
+      - name: master_data_aliases_dim
+        description: >
+          Postgres app.master_data_aliases_dim_v synced by mirror_sync.py (Story 64.9,
+          migration 233). Read-only, scalars only -- `evidence` is JSONB and is
+          deliberately NOT projected. One row per LIVE alias: retired ones are excluded
+          at the view.
+          `relation` and `conflict_state` travel UNRESOLVED on purpose. What counts as a
+          match is a BUILD-TIME decision taken in `resolve_governed_node`, not a policy
+          frozen into a view -- a view is frozen at creation, and Story 64.10 owns that
+          rule so it can change without a migration.
+          Columns: org_id, project_id, node_id, namespace, locale, raw_value,
+          normalized_value, relation, confidence, effective_from, effective_to,
+          provenance, conflict_state.
+
+      - name: master_data_node_attributes_dim
+        description: >
+          Postgres app.master_data_node_attributes_dim_v synced by mirror_sync.py (Story
+          64.2, migration 239, redefined by 241). Read-only, scalars only. One row per
+          (node version, attribute): the client's own properties, typed against the
+          registry's attribute contract.
+          Declared 2026-08-10. It was mirrored without ever being declared here, so
+          `test_20_every_mirror_table_is_declared_as_a_dbt_source` was RED at HEAD --
+          the generic guard 41.1 wrote found a neighbouring story's hole, which is what
+          a ratchet is for. A mirrored relation no dbt source declares is a table dbt
+          cannot `source()`: it lands in the warehouse and no model may read it.
+          The value arrives in FOUR typed columns plus the raw text, and only the column
+          matching the declared `value_type` is filled -- a number written into a `date`
+          attribute leaves `value_date` NULL rather than coercing, and `type_mismatch`
+          says why. `undeclared` marks an attribute the contract never named: neither
+          is an error the view resolves, both are facts it reports.
+          Columns: org_id, project_id, registry_id, node_id, version_id, attribute,
+          value_type, unit, value_text, value_number, value_date, value_bool,
+          undeclared, type_mismatch.
+
+      # ---------------------------------------------------------------------
+      # Story 37.9: the PUBLISHED country meaning, read by both engines.
+      # ---------------------------------------------------------------------
+      - name: master_data_node_attributes_asof
+        description: >
+          Postgres app.master_data_node_attributes_asof_v synced by mirror_sync.py
+          (story 69.3, migration 300). Read-only. Les attributs PORTES d'un noeud avec
+          la fenetre ou chacun faisait foi -- [effective_from, effective_to). La vue
+          241 (`master_data_node_attributes_dim`) rend la version COURANTE : la bonne
+          reponse a << que sait-on maintenant >>, la mauvaise a << que savait-on le 3
+          aout >>. Une ligne d'un fait se croise a SA date.
+          Columns: org_id, project_id, registry_id, node_id, version_id,
+          effective_from, effective_to, object_kind, attribute, value_text,
+          value_number.
+
+      - name: master_data_derived_attributes_dim
+        description: >
+          Postgres app.master_data_derived_attributes_dim_v synced by mirror_sync.py
+          (story 69.3, migration 300). Read-only. Les classifications que les REGLES de
+          l'utilisateur derivent (story 68.6), chacune estampillee de la version de
+          regle qui l'a produite. Republier une regle ne reecrit aucun fait : les
+          lignes de l'ancienne version restent interrogeables, et une reponse doit
+          NOMMER celle qu'elle a lue.
+          Columns: org_id, project_id, registry_id, node_id, object_kind, attribute,
+          value_text, value_number, rule_set_id, rule_set_version_id,
+          is_current_rule_version.
+
+      - name: entity_key_match_verdicts_dim
+        description: >
+          Postgres app.entity_key_match_verdicts_dim_v synced by mirror_sync.py
+          (story 69.3, migration 300). Read-only. Le verdict de rattachement d'une
+          occurrence de cle designee (story 68.3), ligne `current` seulement --
+          `resolved` / `unmatched` / `ambiguous`, avec le noeud quand il y en a un.
+          Mirroite pour que la lecture croisee LISE ce rattachement au lieu d'en
+          ecrire un second : deux resolveurs finissent par rendre deux reponses, et
+          rien ne dit laquelle fait foi.
+          Columns: org_id, project_id, datastream_id, object_kind, field_id,
+          normalized_value, node_id, verdict, reason_code, observed_from, observed_to.
+
+      - name: country_market_projection
+        description: >
+          Postgres app.country_market_projection_v synced by mirror_sync.py (Story 37.9,
+          migration 269). Read-only, flat scalars. ONE ROW PER (project, assigned
+          country) at the Project's CURRENT published Country hierarchy version,
+          effective today -- the exact structure `country_registry.load_projection`
+          builds for Analyze and for the Tax MCP proposal path.
+          It REPLACES project_preferences.geographic_mode / local_markets as the
+          geographic input of the Tax cascade. Those columns are what
+          `country_registry.py` says it "replaces outright", and the Country capability
+          confirmation never writes them back -- so a Project governed through the
+          ratified capability showed the cascade an empty posture and had every spend
+          row reported unresolvable while its geography was fully published.
+          NO ROW FOR A PROJECT IS "no published Country meaning", which every consumer
+          must read as "cannot decide" and never as Global -- `load_projection` returns
+          None for the same case and its docstring forbids the same substitution.
+          `market_kind` travels UNRESOLVED: a country assigned to the Rest of World
+          catch-all is resolved geographically but is NOT budgetable, which is exactly
+          the bridge's `binding_not_bindable` branch. Collapsing it here would make a
+          synthetic grouping look like a declared market.
+          Columns: project_id, registry_id, hierarchy_version_id, vocabulary_version_id,
+          hierarchy_content_hash, country_code, market_id, market_label, market_kind,
+          region_id, region_label, display_order.

@@ -80,13 +80,13 @@ def test_empty_dataset_produces_empty_state_message():
     )
     lines = summary.splitlines()
     assert len(lines) <= 5
-    assert "Aucune donnée" in summary
+    assert "Aucune donnée disponible" in summary
     assert "proj_x" in summary
     assert "2026-01-01" in summary
     assert "2026-01-31" in summary
 
 
-def test_summary_contains_french_labels():
+def test_summary_contains_the_expected_labels():
     """French metric labels must appear in the summary (UX-DR10)."""
     rows = _make_fixture(days=7)
     date_range = {"start": "2026-01-01", "end": "2026-01-07"}
@@ -169,12 +169,12 @@ def test_summary_with_context_events():
     # Line count must still be <=30
     assert len(lines) <= _MAX_LINES, f"Summary exceeded {_MAX_LINES} lines: {len(lines)}"
     # Events section header appears
-    assert "Evenements de contexte" in summary
+    assert "Événements de contexte" in summary
     # Event content appears
     assert "Lancement campagne ete" in summary
     assert "Panne serveur" in summary
     # The "aucun evenement connu" line must NOT appear when events are present
-    assert "aucun evenement" not in summary.lower()
+    assert "aucun événement connu" not in summary.lower()
 
 
 def test_summary_context_missing_when_none():
@@ -182,10 +182,10 @@ def test_summary_context_missing_when_none():
     rows = _make_fixture(days=7)
     date_range = {"start": "2026-01-01", "end": "2026-01-07"}
     summary = build_daily_report_summary(rows, date_range, ["my-connector"], context_events=None)
-    # HG-1: explicit "context missing" line must appear
-    assert "aucun evenement connu" in summary.lower()
+    # HG-1: explicit "contexte manquant" line must appear
+    assert "aucun événement connu" in summary.lower()
     # The events section header must NOT appear
-    assert "Evenements de contexte" not in summary
+    assert "Événements de contexte" not in summary
 
 
 def test_summary_context_empty_list():
@@ -193,10 +193,10 @@ def test_summary_context_empty_list():
     rows = _make_fixture(days=7)
     date_range = {"start": "2026-01-01", "end": "2026-01-07"}
     summary = build_daily_report_summary(rows, date_range, ["my-connector"], context_events=[])
-    # HG-1: must still have the "context missing" line
-    assert "aucun evenement connu" in summary.lower()
+    # HG-1: must still have the "contexte manquant" line
+    assert "aucun événement connu" in summary.lower()
     # Events header must NOT appear
-    assert "Evenements de contexte" not in summary
+    assert "Événements de contexte" not in summary
 
 
 def test_summary_context_events_capped_at_5():
@@ -224,7 +224,7 @@ def test_summary_context_missing_in_empty_state():
         [], {"start": "2026-01-01", "end": "2026-01-31"}, [], project_id="proj_x",
         context_events=None,
     )
-    assert "aucun evenement connu" in summary.lower()
+    assert "aucun événement connu" in summary.lower()
     assert "proj_x" in summary
 
 
@@ -238,4 +238,4 @@ def test_summary_context_events_in_empty_state():
         context_events=events,
     )
     assert "v2.0.0 deploye" in summary
-    assert "aucun evenement connu" not in summary.lower()
+    assert "aucun événement connu" not in summary.lower()

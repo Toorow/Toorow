@@ -38,14 +38,14 @@ Unlike traditional AI tools that return plain text or raw JSON wall-of-responses
 
 ### 1. Executive Morning Briefing App
 - **User Intent**: *"Give me my morning marketing briefing."*
-- **Agent Action**: Executes `get_morning_briefing(project_id)`.
+- **Agent Action**: Executes `get_daily_report(project_id)`, then `preview_daily_insight(project_id, payload)` to compose the narrative that goes with the numbers.
 - **MCP App UI Experience**: Renders an interactive **Morning Briefing Widget**. The executive can toggle date ranges, inspect daily metric deltas, and review flagged anomaly spikes with one click.
 
 ---
 
 ### 2. Multi-Channel Marketing Attribution & ROI App
 - **User Intent**: *"Compare ROI and spend efficiency between Meta Ads, TikTok, and GA4."*
-- **Agent Action**: Executes `get_daily_report(report_profile="cross_channel")`.
+- **Agent Action**: Executes `get_daily_report(project_id, connectors=["meta-ads", "tiktok-ads", "google-analytics"])`.
 - **MCP App UI Experience**: Renders a **Cross-Channel Performance Matrix Widget**. Displays side-by-side spend, CPA, and ROAS visualizations computed directly from dbt semantic ratio views (`semantic_roas`, `semantic_cpa`).
 
 ---

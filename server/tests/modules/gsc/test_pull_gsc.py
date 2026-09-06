@@ -407,7 +407,6 @@ def test_pull_query_page_daily_uses_query_page_dimensions(connector, tmp_path, m
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     db_path = str(tmp_path / "gsc_qp.duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", db_path)
-    monkeypatch.setenv("GSC_SITE_URL", _SITE_URL)
 
     qp_response = {
         "rows": [
@@ -445,6 +444,7 @@ def test_pull_query_page_daily_uses_query_page_dimensions(connector, tmp_path, m
             date_to="2026-07-03",
             project_id="jean-gsc",
             pull_id="pull_gsc_qp",
+            site_url=_SITE_URL,
         )
 
     assert route.called
@@ -470,7 +470,7 @@ def test_pull_query_page_daily_uses_query_page_dimensions(connector, tmp_path, m
 def test_pull_query_page_daily_requires_site_url(connector, monkeypatch):
     """Shim raises a clear ValueError when neither arg nor GSC_SITE_URL env is set."""
     monkeypatch.delenv("GSC_SITE_URL", raising=False)
-    with pytest.raises(ValueError, match="GSC_SITE_URL"):
+    with pytest.raises(ValueError, match="site selection is required"):
         connector.pull_query_page_daily(
             connection_id="conn_test",
             date_from="2026-07-01",
@@ -623,7 +623,6 @@ def test_pull_discover_daily_shim(connector, tmp_path, monkeypatch):
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     db_path = str(tmp_path / "gsc_disc.duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", db_path)
-    monkeypatch.setenv("GSC_SITE_URL", _SITE_URL)
 
     discover_response = {
         "rows": [
@@ -645,6 +644,7 @@ def test_pull_discover_daily_shim(connector, tmp_path, monkeypatch):
             date_to="2026-07-03",
             project_id="jean-gsc",
             pull_id="pull_gsc_disc",
+            site_url=_SITE_URL,
         )
 
     body = json.loads(route.calls.last.request.read())
@@ -763,7 +763,6 @@ def test_pull_search_appearance_daily_per_day_loop(connector, tmp_path, monkeypa
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     db_path = str(tmp_path / "gsc_sa.duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", db_path)
-    monkeypatch.setenv("GSC_SITE_URL", _SITE_URL)
 
     bodies: list[dict] = []
 
@@ -793,6 +792,7 @@ def test_pull_search_appearance_daily_per_day_loop(connector, tmp_path, monkeypa
             date_to="2026-07-02",
             project_id="jean-gsc",
             pull_id="pull_gsc_sa",
+            site_url=_SITE_URL,
         )
 
     # One API call per day, searchAppearance alone, single-day window.
@@ -833,7 +833,6 @@ def test_daily_profile_shims_pin_date_grain(
     """
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / f"gsc_{shim_name}.duckdb"))
-    monkeypatch.setenv("GSC_SITE_URL", _SITE_URL)
 
     route = respx.post(_GSC_API_URL).mock(return_value=httpx.Response(200, json={"rows": []}))
 
@@ -844,6 +843,11 @@ def test_daily_profile_shims_pin_date_grain(
             date_to="2026-07-03",
             project_id="jean-gsc",
             pull_id=f"pull_{shim_name}",
+            # Le site vient de la SELECTION de l'operateur, transmise par le
+            # worker. Ce test posait `GSC_SITE_URL` : il prouvait alors que le
+            # repli d'environnement marchait, pas que le contrat de dispatch
+            # marche.
+            site_url=_SITE_URL,
         )
 
     body = json.loads(route.calls.last.request.read())

@@ -20,10 +20,9 @@ INVARIANTS (adversarially enforced, mirroring connector_installation.py):
     ``deactivated_at``) carries no secret and no cross-tenant infrastructure
     detail. It is identical whether returned by REST or MCP.
 
-  * ACTIVATION REQUIRES READY (AC1). ``activate`` calls
-    ``connector_installation_api.refuse_activation_unless_ready`` BEFORE any SQL.
-    A non-READY connector raises ``ConnectorNotReady``; the caller maps this to a
-    nondisclosing failure response (never a 403, always a fail-closed 422/409).
+  * ACTIVATION REQUIRES READY (AC1). A new activation operation checks the
+    installation inside its mutation; an idempotent replay returns stored
+    evidence without re-evaluating later installation drift.
 
   * DEACTIVATION PRESERVES DATA (AC3). ``deactivate`` issues an UPDATE to flip
     ``state`` to ``DEACTIVATED`` and set ``deactivated_at``. It NEVER issues a
@@ -34,9 +33,9 @@ INVARIANTS (adversarially enforced, mirroring connector_installation.py):
     inside the mutation closure. Two identical activations with the same
     Idempotency-Key replay cleanly.
 
-  * ROWCOUNT CHECKED (review H2). ``INSERT ... ON CONFLICT DO NOTHING`` rowcount
-    is verified; on a lost race the call reconciles to the persisted row. The safe
-    read-model is derived from ``op_result.result``, not a hard-coded target.
+  * ROWCOUNT CHECKED (review H2). Activation and deactivation writes must
+    affect exactly one row. Missing or inconsistent operation results are
+    rejected instead of being replaced with a hard-coded target state.
 
   * TENANT ISOLATION (AC4). ``get_activation`` is scoped to ``org_id``.
     Callers from a different org receive no data (the REST layer maps None to a
@@ -53,7 +52,20 @@ from typing import Any
 
 from ulid import ULID
 
+from core.audit import declare_action
 from core.operations import MutationResult, OperationSpec, execute_operation
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12) : declarees ICI, a cote du code qui les ecrit, et non
+# dans `core/audit.py`. Ce fichier etait un carrefour -- 43 editions de 29
+# sujets depuis juin, dont 34 n'ajoutaient qu'une constante -- et 45 % des
+# actions reellement ecrites en production n'y etaient meme pas declarees,
+# parce que la liste etait trop loin pour valoir le detour. `write_audit_row`
+# refuse desormais une action que personne n'a declaree.
+ACTION_CONNECTOR_ACTIVATION_ACTIVATED = declare_action("connector.activation.activated")
+ACTION_CONNECTOR_ACTIVATION_DEACTIVATED = declare_action("connector.activation.deactivated")
+
 
 # ---------------------------------------------------------------------------
 # Activation states.
@@ -61,6 +73,7 @@ from core.operations import MutationResult, OperationSpec, execute_operation
 
 #: All valid activation states for ``app.connector_activations``.
 ACTIVATION_STATES: frozenset[str] = frozenset({"ACTIVE", "DEACTIVATED"})
+_MAX_IDEMPOTENCY_KEY_LENGTH = 255
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +155,7 @@ def activate(
 ) -> dict[str, Any]:
     """Activate a READY connector for an organisation (AC1, AC5, Task 2).
 
-    Preconditions (fail-closed before any SQL):
+    Preconditions (fail-closed before durable mutation):
       - ``org_id``, ``connector_name``, ``environment``, ``actor`` must be
         non-empty strings.
       - The platform connector installation MUST be in READY state; otherwise
@@ -154,7 +167,7 @@ def activate(
         via ``execute_operation`` (atomic audit + outbox).
       - On replay (same Idempotency-Key + payload): returns the existing row
         read-model cleanly.
-      - On concurrent race: reconciles to the persisted row; no phantom result.
+      - A DEACTIVATED row is reactivated in place; no duplicate is created.
       - On conflicting payload for the same Idempotency-Key: raises
         ``OperationIdempotencyConflict`` (caller maps to 409).
 
@@ -176,26 +189,18 @@ def activate(
         raise ConnectorActivationValidationError("actor is required")
     if not isinstance(idempotency_key, str) or not idempotency_key.strip():
         raise ConnectorActivationValidationError("idempotency_key is required")
+    if len(idempotency_key.strip()) > _MAX_IDEMPOTENCY_KEY_LENGTH:
+        raise ConnectorActivationValidationError("idempotency_key is too long")
 
     org_id = org_id.strip()
     connector_name = connector_name.strip()
     environment = environment.strip()
     actor = actor.strip()
-    activated_by = (activated_by or actor).strip() or actor
-
-    # ------------------------------------------------------------------
-    # READY gate (AC1): refuse activation unless the connector is READY.
-    # This is the authoritative enforcement point; the REST layer ALSO
-    # enforces it so the domain never sees a non-READY attempt from the
-    # API surface.
-    # ------------------------------------------------------------------
-    from core.connector_installation_api import (  # noqa: PLC0415
-        refuse_activation_unless_ready,
-    )
-
-    refuse_activation_unless_ready(
-        conn, connector_name=connector_name, environment=environment
-    )
+    idempotency_key = idempotency_key.strip()
+    # Immutable provenance belongs to the authenticated operation actor. The
+    # legacy parameter remains for call compatibility but is never trusted.
+    _ = activated_by
+    activated_by = actor
 
     # ------------------------------------------------------------------
     # Build the OperationSpec.
@@ -203,7 +208,7 @@ def activate(
     # The new row id is generated at write time INSIDE the mutation closure.
     # ------------------------------------------------------------------
     spec = OperationSpec(
-        command_type="connector.activation.activated",
+        command_type=ACTION_CONNECTOR_ACTIVATION_ACTIVATED,
         actor=actor,
         effective_org_id=org_id,
         resource_path=(
@@ -223,7 +228,6 @@ def activate(
             "org_id": org_id,
             "connector_name": connector_name,
             "environment": environment,
-            "activated_by": activated_by,
             "target_state": "ACTIVE",
         },
         provider_references={},
@@ -276,16 +280,28 @@ def activate(
         )
 
     def mutation(operation_conn, operation_id: str) -> MutationResult:
-        # Generate row id at write time (review H1: not hashed).
-        activation_id = f"cac_{ULID()}"
+        # The READY check belongs behind execute_operation's replay boundary.
+        # A replay returns stored evidence without re-evaluating later drift.
+        from core.connector_installation_api import (  # noqa: PLC0415
+            refuse_activation_unless_ready,
+        )
 
+        refuse_activation_unless_ready(
+            operation_conn,
+            connector_name=connector_name,
+            environment=environment,
+        )
+
+        activation_id = f"cac_{ULID()}"
         with operation_conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO app.connector_activations "
                 "(id, org_id, connector_name, environment, state, "
                 "activated_by, operation_id) "
                 "VALUES (%s, %s, %s, %s, 'ACTIVE', %s, %s) "
-                "ON CONFLICT (org_id, connector_name, environment) DO NOTHING",
+                "ON CONFLICT (org_id, connector_name, environment) DO UPDATE "
+                "SET state = 'ACTIVE', deactivated_at = NULL, "
+                "    operation_id = EXCLUDED.operation_id, updated_at = NOW()",
                 (
                     activation_id,
                     org_id,
@@ -295,46 +311,45 @@ def activate(
                     operation_id,
                 ),
             )
-            if cur.rowcount == 1:
-                # Inserted: read back the DB-authoritative timestamps.
-                cur.execute(
-                    "SELECT state, activated_at, deactivated_at "
-                    "FROM app.connector_activations WHERE id = %s",
-                    (activation_id,),
-                )
-                ts_row = cur.fetchone()
-                row_state = ts_row[0] if ts_row else "ACTIVE"
-                row_activated_at = ts_row[1] if ts_row else None
-                row_deactivated_at = ts_row[2] if ts_row else None
-                return _mk_result(
-                    activation_id, row_state, row_activated_at, row_deactivated_at
+            if cur.rowcount != 1:
+                raise ConnectorActivationConflict(
+                    "activation write did not affect exactly one row"
                 )
 
-            # ON CONFLICT DO NOTHING: a concurrent insert won the race (review H2).
-            # Reconcile to the persisted row.
+        with operation_conn.cursor() as cur:
             cur.execute(
                 "SELECT id, state, activated_at, deactivated_at "
                 "FROM app.connector_activations "
                 "WHERE org_id = %s AND connector_name = %s AND environment = %s",
                 (org_id, connector_name, environment),
             )
-            race_row = cur.fetchone()
-            if race_row is None:  # pragma: no cover -- row vanished
-                raise ConnectorActivationConflict(
-                    "activation race lost and row not found"
-                )
-            r_id, r_state, r_activated_at, r_deactivated_at = race_row
-            return _mk_result(r_id, r_state, r_activated_at, r_deactivated_at)
+            row = cur.fetchone()
+        if row is None:
+            raise ConnectorActivationConflict(
+                "activation write completed without a readable row"
+            )
+        row_id, row_state, row_activated_at, row_deactivated_at = row
+        if row_state != "ACTIVE" or row_deactivated_at is not None:
+            raise ConnectorActivationConflict(
+                "activation write returned inconsistent state"
+            )
+        return _mk_result(
+            row_id, row_state, row_activated_at, row_deactivated_at
+        )
 
     op_result = execute_operation(conn, spec, mutation=mutation)
     data = op_result.result or {}
+    if data.get("state") != "ACTIVE" or data.get("deactivated_at") is not None:
+        raise ConnectorActivationConflict(
+            "activation operation returned inconsistent state"
+        )
     return _safe_read_model(
         org_id=org_id,
         connector_name=connector_name,
         environment=environment,
-        state=data.get("state", "ACTIVE"),
+        state="ACTIVE",
         activated_at=data.get("activated_at"),
-        deactivated_at=data.get("deactivated_at"),
+        deactivated_at=None,
     )
 
 
@@ -373,31 +388,19 @@ def deactivate(
         raise ConnectorActivationValidationError("environment is required")
     if not isinstance(actor, str) or not actor.strip():
         raise ConnectorActivationValidationError("actor is required")
+    if not isinstance(idempotency_key, str) or not idempotency_key.strip():
+        raise ConnectorActivationValidationError("idempotency_key is required")
+    if len(idempotency_key.strip()) > _MAX_IDEMPOTENCY_KEY_LENGTH:
+        raise ConnectorActivationValidationError("idempotency_key is too long")
 
     org_id = org_id.strip()
     connector_name = connector_name.strip()
     environment = environment.strip()
     actor = actor.strip()
-
-    # Load the current row (before the operation lock, read-only).
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT id, state, activated_at "
-            "FROM app.connector_activations "
-            "WHERE org_id = %s AND connector_name = %s AND environment = %s",
-            (org_id, connector_name, environment),
-        )
-        row = cur.fetchone()
-
-    if row is None:
-        raise ConnectorActivationUnavailable(
-            "no activation record found for this org and connector"
-        )
-
-    activation_id, current_state, activated_at = row
+    idempotency_key = idempotency_key.strip()
 
     spec = OperationSpec(
-        command_type="connector.activation.deactivated",
+        command_type=ACTION_CONNECTOR_ACTIVATION_DEACTIVATED,
         actor=actor,
         effective_org_id=org_id,
         resource_path=(
@@ -412,19 +415,16 @@ def deactivate(
             "catalog": "connector-activation-v1",
             "tool": "rest-v1",
         },
-        # Deterministic over business inputs (review H1). No random id here.
         request_payload={
-            "activation_id": activation_id,
             "org_id": org_id,
             "connector_name": connector_name,
             "environment": environment,
-            "from_state": current_state,
             "target_state": "DEACTIVATED",
         },
         provider_references={},
         confirmation_mode="server",
         confirmation_reference=(
-            f"connector-activation:{activation_id}:deactivated"
+            f"connector-activation:{org_id}:{connector_name}:{environment}:deactivated"
         ),
         trace_id=trace_id,
     )
@@ -432,33 +432,54 @@ def deactivate(
     def mutation(operation_conn, operation_id: str) -> MutationResult:
         from core.operations import _canonical_hash  # noqa: PLC0415
 
-        # UPDATE (never DELETE) -- data-preservation invariant (AC3).
         with operation_conn.cursor() as cur:
             cur.execute(
-                "UPDATE app.connector_activations "
-                "SET state = 'DEACTIVATED', deactivated_at = NOW(), "
-                "    operation_id = %s, updated_at = NOW() "
-                "WHERE id = %s",
-                (operation_id, activation_id),
+                "SELECT id, state, activated_at, deactivated_at "
+                "FROM app.connector_activations "
+                "WHERE org_id = %s AND connector_name = %s AND environment = %s "
+                "FOR UPDATE",
+                (org_id, connector_name, environment),
             )
-            rc = cur.rowcount
-            # Re-read the final state (including DB-authoritative deactivated_at).
+            row = cur.fetchone()
+        if row is None:
+            raise ConnectorActivationUnavailable(
+                "activation record is unavailable"
+            )
+
+        activation_id, current_state, activated_at, prior_deactivated_at = row
+        if current_state not in ACTIVATION_STATES:
+            raise ConnectorActivationConflict("activation state is invalid")
+
+        if current_state == "ACTIVE":
+            with operation_conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE app.connector_activations "
+                    "SET state = 'DEACTIVATED', deactivated_at = NOW(), "
+                    "    operation_id = %s, updated_at = NOW() "
+                    "WHERE id = %s AND state = 'ACTIVE'",
+                    (operation_id, activation_id),
+                )
+                if cur.rowcount != 1:
+                    raise ConnectorActivationConflict(
+                        "deactivation write did not affect exactly one row"
+                    )
+
+        with operation_conn.cursor() as cur:
             cur.execute(
                 "SELECT state, activated_at, deactivated_at "
                 "FROM app.connector_activations WHERE id = %s",
                 (activation_id,),
             )
-            ts_row = cur.fetchone()
-
-        # Reconcile to the DB-authoritative row whether we won the UPDATE (rc==1)
-        # or a concurrent deactivation did (rc==0) -- both leave the row DEACTIVATED
-        # and the re-SELECT is the source of truth; never fabricate (review F2/H2).
-        # NB: re-deactivating with a FRESH idempotency key intentionally refreshes
-        # deactivated_at; reusing the same key replays cleanly via the operation spine.
-        _ = rc
-        row_state = ts_row[0] if ts_row else "DEACTIVATED"
-        row_activated_at = ts_row[1] if ts_row else activated_at
-        row_deactivated_at = ts_row[2] if ts_row else None
+            final_row = cur.fetchone()
+        if final_row is None:
+            raise ConnectorActivationConflict(
+                "deactivation write completed without a readable row"
+            )
+        row_state, row_activated_at, row_deactivated_at = final_row
+        if row_state != "DEACTIVATED" or row_deactivated_at is None:
+            raise ConnectorActivationConflict(
+                "deactivation write returned inconsistent state"
+            )
 
         result = {
             "activation_id": activation_id,
@@ -474,12 +495,21 @@ def deactivate(
             "deactivated_at": (
                 row_deactivated_at.isoformat()
                 if hasattr(row_deactivated_at, "isoformat")
-                else str(row_deactivated_at) if row_deactivated_at else None
+                else str(row_deactivated_at)
             ),
         }
         return MutationResult(
             outcome="succeeded",
-            before_hash=_canonical_hash({"state": current_state}),
+            before_hash=_canonical_hash(
+                {
+                    "state": current_state,
+                    "deactivated_at": (
+                        prior_deactivated_at.isoformat()
+                        if hasattr(prior_deactivated_at, "isoformat")
+                        else prior_deactivated_at
+                    ),
+                }
+            ),
             after_hash=_canonical_hash(result),
             result=result,
             outbox_payload={
@@ -492,13 +522,17 @@ def deactivate(
 
     op_result = execute_operation(conn, spec, mutation=mutation)
     data = op_result.result or {}
+    if data.get("state") != "DEACTIVATED" or not data.get("deactivated_at"):
+        raise ConnectorActivationConflict(
+            "deactivation operation returned inconsistent state"
+        )
     return _safe_read_model(
         org_id=org_id,
         connector_name=connector_name,
         environment=environment,
-        state=data.get("state", "DEACTIVATED"),
+        state="DEACTIVATED",
         activated_at=data.get("activated_at"),
-        deactivated_at=data.get("deactivated_at"),
+        deactivated_at=data["deactivated_at"],
     )
 
 

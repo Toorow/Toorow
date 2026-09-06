@@ -15,7 +15,8 @@ from __future__ import annotations
 import os
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
@@ -75,6 +76,12 @@ def _make_db_mock(rows, cols=_CONN_COLS):
     return _fake_get_connection
 
 
+# The decision object `resolve_strict_resource_access` returns. A `return_value`
+# MagicMock would have a truthy `.allowed` whatever the intent, so a denial test
+# written that way would pass while proving nothing.
+_ACCESS_OK = lambda *_args, **_kwargs: SimpleNamespace(allowed=True, org_id="org_a")  # noqa: E731
+
+
 def _build_client():
     from core.main import build_asgi_app
     from starlette.testclient import TestClient
@@ -92,7 +99,8 @@ class TestListConnectionsActiveDatastreamCount:
 
         with (
             patch("core.db.get_connection", new=fake_db),
-            patch("core.project_access.identity_can_access_project_in_org", return_value=True),
+            patch("core.admin_api._check_auth", new=AsyncMock(return_value=(True, "person_a"))),
+            patch("core.project_access.resolve_strict_resource_access", _ACCESS_OK),
         ):
             client = _build_client()
             response = client.get("/api/connections?project_id=proj_a")
@@ -113,7 +121,8 @@ class TestListConnectionsActiveDatastreamCount:
 
         with (
             patch("core.db.get_connection", new=fake_db),
-            patch("core.project_access.identity_can_access_project_in_org", return_value=True),
+            patch("core.admin_api._check_auth", new=AsyncMock(return_value=(True, "person_a"))),
+            patch("core.project_access.resolve_strict_resource_access", _ACCESS_OK),
         ):
             client = _build_client()
             response = client.get("/api/connections?project_id=proj_a")
@@ -132,7 +141,8 @@ class TestListConnectionsActiveDatastreamCount:
 
         with (
             patch("core.db.get_connection", new=fake_db),
-            patch("core.project_access.identity_can_access_project_in_org", return_value=True),
+            patch("core.admin_api._check_auth", new=AsyncMock(return_value=(True, "person_a"))),
+            patch("core.project_access.resolve_strict_resource_access", _ACCESS_OK),
         ):
             client = _build_client()
             response = client.get("/api/connections?project_id=proj_a")
@@ -148,14 +158,18 @@ class TestSourcesProjectScope:
         fake_db = _make_db_mock(_make_conn_rows(active_count=1))
         with (
             patch("core.db.get_connection", new=fake_db),
-            patch("core.project_access.identity_can_access_project_in_org", return_value=True),
+            patch("core.admin_api._check_auth", new=AsyncMock(return_value=(True, "person_a"))),
+            patch("core.project_access.resolve_strict_resource_access", _ACCESS_OK),
         ):
             response = _build_client().get("/api/connections?project_id=proj_a")
 
         assert response.status_code == 200
         sql, params = fake_db.cursor.execute.call_args.args
         assert "ds.project_id = %s" in sql
-        assert params == ("proj_a", "anonymous", "proj_a")
+        # The identity in the parameters is the authenticated caller. It used to
+        # read "anonymous" because the fixture never authenticated one, which the
+        # strict path refuses outright.
+        assert params == ("proj_a", "person_a", "proj_a")
     def test_project_id_is_required(self):
         client = _build_client()
         response = client.get("/api/connections")
@@ -173,7 +187,8 @@ class TestSourcesProjectScope:
 
         with (
             patch("core.db.get_connection", new=fake_db),
-            patch("core.project_access.identity_can_access_project_in_org", return_value=True),
+            patch("core.admin_api._check_auth", new=AsyncMock(return_value=(True, "person_a"))),
+            patch("core.project_access.resolve_strict_resource_access", _ACCESS_OK),
         ):
             response = _build_client().get("/api/connections?project_id=proj_viewer")
 
@@ -191,8 +206,9 @@ class TestSourcesProjectScope:
 
         with (
             patch("core.db.get_connection", new=unavailable_db),
-            patch("core.project_access.identity_can_access_project_in_org", return_value=True),
-            patch("core.admin_api.nango_client._list_connections_async") as nango_list,
+            patch("core.admin_api._check_auth", new=AsyncMock(return_value=(True, "person_a"))),
+            patch("core.project_access.resolve_strict_resource_access", _ACCESS_OK),
+            patch("core.connections_api.nango_client._list_connections_async") as nango_list,
         ):
             response = _build_client().get("/api/connections?project_id=proj_a")
 

@@ -14,6 +14,11 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+
+# Import au niveau module (et non paresseux comme les appels a `core` dans les
+# fonctions) : les classes d'exception ci-dessous en HERITENT, donc il doit etre
+# resolu au moment ou le fichier est lu.
+from core import pull_errors
 from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
@@ -36,12 +41,123 @@ _REPORT_TYPES = {
 }
 
 
-class Cm360OnboardingError(RuntimeError):
-    """Typed, actionable failure during profile/advertiser selection."""
+class Cm360OnboardingError(pull_errors.PermissionDeniedError):
+    """Typed, actionable failure during profile/advertiser selection.
+
+    `permission_denied` : le credential est authentifie et n'atteint rien. L'action
+    juste est de se reconnecter avec les bons droits, et c'est `permission_denied`
+    qui la fait remonter a l'ecran (`user_action="reconnect"`).
+
+    Avant le 2026-08-01 cette classe heritait d'un `RuntimeError` nu : le worker la
+    voyait `unclassified`, la rejouait jusqu'au `dead_letter` contre un credential
+    qui ne marchera jamais, et n'affichait aucune action.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message)
 
 
-class Cm360CompatibilityError(ValueError):
-    """An explicit field selection is invalid for the selected report type."""
+class Cm360NotConfiguredError(Cm360OnboardingError):
+    """Le credential va bien -- c'est la requete qui ne peut pas etre formee.
+
+    Derive de l'erreur d'onboarding pour qu'un `except Cm360OnboardingError` existant continue de
+    l'attraper, mais porte `invalid_request` : dire << reconnecte-toi >> enverrait
+    l'operateur au mauvais ecran, puisque le compte se choisit dans l'assistant
+    Datastream et pas sur la connexion.
+    """
+
+    error_class = pull_errors.INVALID_REQUEST
+    user_action = pull_errors.SELECT_SOURCE_ACCOUNT
+
+
+class Cm360CompatibilityError(pull_errors.InvalidRequestError, ValueError):
+    """An explicit field selection is invalid for the selected report type.
+
+    `invalid_request` : rejouer la meme requete redonne la meme reponse, et c'est
+    aussi le signal `pull_invalid_request_drift` -- une forme devenue illegale est
+    une derive du catalogue. `ValueError` reste dans les bases, des
+    appelants et des tests l'attrapent sous ce nom.
+    """
+
+    #: -> `Mapping` : le plan demande ce que la source ne rend plus
+    #: (datastream-workbench-and-wizard.md:107). L'operateur a un endroit
+    #: ou aller, contrairement a une derive de version d'API.
+    user_action = pull_errors.REVIEW_MAPPING
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message)
+
+
+# ---------------------------------------------------------------------------
+# The operator's selected account, and how it travels.
+#
+# CM360 needs TWO identifiers to make one call: the advertiser (the selection
+# level) and the CM360 *user profile*, which is in the URL PATH
+# (/userprofiles/{profileId}/reportData/query). The core scope stores ONE opaque
+# string per connection (app.connection_account_scope.account_id), so the two
+# travel together inside it -- the composite opaque id google-ads ratified in
+# story 26.2 as '<cid>@<login_cid>'. Core never interprets it (AD-2); this
+# module mints it in discover_accounts and reads it back here.
+#
+# The research says the same thing in words (cm360-catalog-research.md §3):
+# "Persist an opaque selection containing profileId, account/subaccount context
+# and advertiser id."
+# ---------------------------------------------------------------------------
+
+ACCOUNT_ID_SEPARATOR = "@"
+
+_SELECTION_HINT = (
+    "The operator picks an advertiser in the Datastream wizard: discover_accounts "
+    "lists what the Google consent can reach, and the worker passes the chosen id "
+    "back as the `advertiser_id` argument declared in manifest.json under "
+    "account_topology.pull_parameter."
+)
+
+
+def split_account_id(account_id: str) -> tuple[str, str]:
+    """Parse the opaque account id ``'<advertiser_id>@<profile_id>'``.
+
+    A BARE advertiser id is refused, and that refusal is the point. Without the
+    CM360 user profile there is no URL to build -- the path is
+    ``/userprofiles/{profileId}/...``. Guessing one (say, the first profile the
+    token reaches) would silently report through whichever account/subaccount
+    that profile happens to sit in, which is a different advertiser's data on a
+    good day and nothing on a bad one.
+    """
+    raw = str(account_id)
+    advertiser_id, separator, profile_id = raw.partition(ACCOUNT_ID_SEPARATOR)
+    if not separator or not advertiser_id or not profile_id:
+        raise Cm360NotConfiguredError(
+            f"CM360 account selection {raw!r} carries no user profile. The reporting "
+            f"call is routed by profileId (/userprofiles/{{profileId}}/reportData/query), "
+            f"so the advertiser alone cannot address it. discover_accounts emits the "
+            f"pair as '<advertiser_id>{ACCOUNT_ID_SEPARATOR}<profile_id>' -- re-run "
+            f"account discovery and selection for this connection rather than passing "
+            f"a bare advertiser id."
+        )
+    return advertiser_id, profile_id
+
+
+def _resolve_selected_account(advertiser_id: str | None) -> tuple[str, str]:
+    """Resolve (advertiser_id, profile_id) from the operator's selection ONLY.
+
+    There is no environment fallback here, by design: ``core/account_topology.py``
+    declares the ``*_ACCOUNT_ID`` pattern deprecated, and six such variables were
+    removed on 2026-07-31. An env var is single-valued for the whole deployment,
+    so every Datastream of every project would have pulled the same advertiser --
+    and none at all where the variable was unset.
+
+    There is no ``selection`` fallback either. The selection the PLAN produces is
+    described in ``core/schemas/datastream-intent.schema.json`` ($defs.selection):
+    selection_mode / metrics / dimensions / grain / filters, and nothing else
+    (``additionalProperties: false``). An account key in it cannot come from the
+    plan, and ``core/queue.py`` never fills ``job["selection"]`` at all.
+    """
+    if not advertiser_id:
+        raise Cm360NotConfiguredError(
+            "CM360 pull has no selected account: `advertiser_id` is empty. " + _SELECTION_HINT
+        )
+    return split_account_id(advertiser_id)
 
 
 def _manifest() -> dict:
@@ -120,14 +236,22 @@ def discover_accounts(connection_id: str, *, _client=None, _token: str | None = 
             or []
         )
         for advertiser in advertisers:
+            advertiser_id = str(advertiser["id"])
             selections.append(
                 {
-                    "id": f"cm360_selection_{len(selections) + 1}",
+                    # The id core stores and hands back at pull time. It was a loop
+                    # counter ('cm360_selection_3'): unstable between two discoveries
+                    # and carrying neither identifier, so nothing it reached could act
+                    # on it.
+                    "id": f"{advertiser_id}{ACCOUNT_ID_SEPARATOR}{profile_id}",
+                    # core._label_for_account reads `label`; `display_name` was
+                    # invisible to it, so every account was offered unlabeled.
+                    "label": advertiser.get("name") or advertiser_id,
                     "profile_id": profile_id,
                     "account_id": str(profile.get("accountId") or ""),
                     "subaccount_id": str(profile.get("subAccountId") or ""),
-                    "advertiser_id": str(advertiser["id"]),
-                    "display_name": advertiser.get("name") or str(advertiser["id"]),
+                    "advertiser_id": advertiser_id,
+                    "display_name": advertiser.get("name") or advertiser_id,
                 }
             )
     if not selections:
@@ -313,14 +437,20 @@ def _normalize_saved_report_rows(payload: Any, request: dict) -> list[dict]:
 
 
 def check_account_access(
-    connection_id: str, selection: dict, *, _client=None, _token: str | None = None
+    connection_id: str, account_id: str, *, _client=None, _token: str | None = None
 ) -> dict:
+    """Access-check the SELECTED account, addressed by its opaque id.
+
+    Takes the same one opaque string the scope stores and the pull receives --
+    as google-ads, microsoft-ads, amazon-ads and pinterest-ads already do. It
+    used to take a dict, which meant the verified thing and the pulled thing
+    were addressed differently and could drift apart without a test noticing.
+    """
     from core import nango_client  # noqa: PLC0415
 
+    advertiser_id, profile_id = split_account_id(account_id)
     token = _token or nango_client.get_fresh_token(connection_id, provider="cm360")
     client = _client or httpx.Client()
-    profile_id = str(selection["profile_id"])
-    advertiser_id = str(selection["advertiser_id"])
     advertiser = _request(
         client,
         "GET",
@@ -337,9 +467,22 @@ def check_account_access(
         "STANDARD", ["impressions"], ["date"], _access_start, _access_end, advertiser_id
     )
     query_report_data(client, token, profile_id, minimal)
-    return {"accessible": True, "advertiser_id": str(advertiser["id"]), "profile_id": profile_id}
+    return {
+        "accessible": True,
+        "account_id": account_id,
+        "advertiser_id": str(advertiser["id"]),
+        "profile_id": profile_id,
+    }
 
 
+# NOTE on account_id / subaccount_id. Those two columns are CM360 *account* and
+# *subaccount* provenance, read off the user-profile record by discover_accounts.
+# The core scope stores one opaque string, and this module spends it on the two
+# identifiers the reporting call cannot be made without (advertiser + profileId),
+# so account_id/subaccount_id now land empty on a worker-driven pull. They are
+# recoverable -- GET /userprofiles/{profileId} returns accountId and subAccountId
+# -- at the cost of one extra request per pull. Left empty rather than guessed,
+# and named here so the gap is inventory rather than silence.
 _RAW_DDL = """
 CREATE TABLE IF NOT EXISTS raw_cm360_daily (
     report_profile VARCHAR, profile_id VARCHAR, account_id VARCHAR,
@@ -351,11 +494,19 @@ CREATE TABLE IF NOT EXISTS raw_cm360_daily (
 )
 """
 
+_RAW_INSERT_SQL = """
+INSERT INTO raw_cm360_daily
+    (report_profile, profile_id, account_id, subaccount_id, advertiser_id, date, campaign_id,
+    placement_id, creative_id, floodlight_activity_id, dimensions_json, metric, value,
+    provider_value, non_additive, pull_id, loaded_at, project_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+
 
 def _land(rows: list[dict], context: dict) -> int:
-    if os.environ.get("TOOROW_DB_MODE", "duckdb") != "duckdb":
-        raise ValueError("cm360 local landing currently requires duckdb")
-    import duckdb  # noqa: PLC0415
+    if os.environ.get("TOOROW_DB_MODE", "duckdb") not in ("duckdb", "bigquery"):
+        raise ValueError("cm360 landing supports duckdb and bigquery")
+    from core import warehouse_write  # noqa: PLC0415
 
     path = os.environ.get(
         "TOOROW_DUCKDB_PATH", str(Path(__file__).parent / "seeds" / "local.duckdb")
@@ -393,12 +544,11 @@ def _land(rows: list[dict], context: dict) -> int:
                     context["project_id"],
                 )
             )
-    connection = duckdb.connect(path)
+    connection = warehouse_write.open_raw_writer(path, project_id=context["project_id"])
     connection.execute(_RAW_DDL)
     if values:
         connection.executemany(
-            "INSERT INTO raw_cm360_daily VALUES "
-            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            _RAW_INSERT_SQL,
             values,
         )
     connection.close()
@@ -419,27 +569,32 @@ def _pull_profile(
     project_id: str,
     pull_id: str,
     profile_id: str,
-    selection: dict,
+    advertiser_id: str | None = None,
+    selection: dict | None = None,
     *,
     _client=None,
     _token: str | None = None,
 ) -> dict:
+    """Run one report profile against the SELECTED account.
+
+    ``advertiser_id`` is the opaque account id the worker passes (declared in
+    manifest.json as ``account_topology.pull_parameter``). ``selection`` keeps
+    its legitimate cargo -- here, ``saved_report_id``, which designates a report
+    ALREADY DEFINED in the CM360 UI and is a reporting choice, not an account.
+    """
     from core import nango_client  # noqa: PLC0415
 
-    if not selection:
-        raise Cm360OnboardingError("CM360 profile and advertiser selection is required")
+    advertiser, cm360_profile_id = _resolve_selected_account(advertiser_id)
     report_type, metrics, dimensions = _profile_contract(profile_id)
-    request = build_query_request(
-        report_type, metrics, dimensions, date_from, date_to, str(selection["advertiser_id"])
-    )
+    request = build_query_request(report_type, metrics, dimensions, date_from, date_to, advertiser)
     token = _token or nango_client.get_fresh_token(connection_id, provider="cm360")
     client = _client or httpx.Client()
-    saved_report_id = selection.get("saved_report_id")
+    saved_report_id = (selection or {}).get("saved_report_id")
     if saved_report_id:
         outcome = run_saved_report(
             client,
             token,
-            str(selection["profile_id"]),
+            cm360_profile_id,
             str(saved_report_id),
             request,
             connection_id,
@@ -455,11 +610,14 @@ def _pull_profile(
             )
         rows = _normalize_saved_report_rows(outcome["rows"], request)
     else:
-        rows = query_report_data(
-            client, token, str(selection["profile_id"]), request, project_id=project_id
-        )
+        rows = query_report_data(client, token, cm360_profile_id, request, project_id=project_id)
+    # Built explicitly, never spread from `selection`: the account provenance of a
+    # landed row must come from the verified scope, not from whatever a caller put
+    # in a dict. account_id / subaccount_id land empty -- see the module docstring
+    # note above _RAW_DDL.
     context = {
-        **selection,
+        "profile_id": cm360_profile_id,
+        "advertiser_id": advertiser,
         "report_profile": profile_id,
         "pull_id": pull_id,
         "project_id": project_id,
@@ -477,10 +635,30 @@ def pull(
     date_to: str,
     project_id: str,
     pull_id: str,
+    advertiser_id: str | None = None,
     selection: dict | None = None,
+    *,
+    _client=None,
+    _token: str | None = None,
 ) -> dict:
+    """Default pull() = the standard_daily grain.
+
+    ``advertiser_id`` is OPTIONAL on purpose. The worker passes the account only
+    when a selection exists (core/queue.py::_account_kwargs); a required
+    positional would raise a bare ``TypeError`` -- outside every taxonomy -- for
+    any Datastream whose account has not been chosen yet.
+    """
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "standard_daily", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "standard_daily",
+        advertiser_id,
+        selection,
+        _client=_client,
+        _token=_token,
     )
 
 
@@ -490,10 +668,23 @@ def pull_standard_daily(
     date_to: str,
     project_id: str,
     pull_id: str,
+    advertiser_id: str | None = None,
     selection: dict | None = None,
+    *,
+    _client=None,
+    _token: str | None = None,
 ) -> dict:
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "standard_daily", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "standard_daily",
+        advertiser_id,
+        selection,
+        _client=_client,
+        _token=_token,
     )
 
 
@@ -503,10 +694,23 @@ def pull_floodlight_daily(
     date_to: str,
     project_id: str,
     pull_id: str,
+    advertiser_id: str | None = None,
     selection: dict | None = None,
+    *,
+    _client=None,
+    _token: str | None = None,
 ) -> dict:
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "floodlight_daily", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "floodlight_daily",
+        advertiser_id,
+        selection,
+        _client=_client,
+        _token=_token,
     )
 
 
@@ -516,9 +720,24 @@ def pull_reach(
     date_to: str,
     project_id: str,
     pull_id: str,
+    advertiser_id: str | None = None,
     selection: dict | None = None,
+    *,
+    _client=None,
+    _token: str | None = None,
 ) -> dict:
-    return _pull_profile(connection_id, date_from, date_to, project_id, pull_id, "reach", selection)
+    return _pull_profile(
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "reach",
+        advertiser_id,
+        selection,
+        _client=_client,
+        _token=_token,
+    )
 
 
 def transform(raw_rows: list[dict]) -> list[dict]:

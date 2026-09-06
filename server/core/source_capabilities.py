@@ -7,12 +7,15 @@ Source vocabulary lives in manifests; core only enforces the versioned contract.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import jsonschema
 from referencing import Registry, Resource
+
+logger = logging.getLogger(__name__)
 
 _SCHEMA_PATH = Path(__file__).parent / "schemas" / "source-capabilities.schema.json"
 _SCHEMA_ID = "https://toorow.dev/schemas/source-capabilities.schema.json"
@@ -281,6 +284,58 @@ def validate_manifest_capabilities(manifest: dict[str, Any]) -> list[CapabilityI
                         suggested_repair=f"Move the field to the {field['kind']} collection.",
                     )
 
+        # THE ENTITY IDENTIFIER IS DECLARED, OR IT DOES NOT EXIST -- and a
+        # declaration that cannot be honoured is refused here rather than dropped
+        # in silence, which is how `entity_field` would otherwise have become a
+        # key a manifest carries and nothing reads.
+        declared_entity = str(report.get("entity_field") or "").strip()
+        declared_kind = str(report.get("entity_kind") or "").strip()
+        if declared_entity or declared_kind:
+            entity_field = field_by_id.get(declared_entity)
+            if str(report.get("landing") or "") != _EVENT_LANDING:
+                _add_issue(
+                    issues,
+                    path=f"{report_path}.entity_field",
+                    code="entity_identifier_without_event_landing",
+                    message=(
+                        f"Report {report_id!r} names an entity identifier but does not land "
+                        "events, where an entity key is carried."
+                    ),
+                    suggested_repair=(
+                        f"Declare landing='{_EVENT_LANDING}', or drop entity_field and "
+                        "entity_kind."
+                    ),
+                )
+            elif not declared_entity or not declared_kind:
+                _add_issue(
+                    issues,
+                    path=report_path,
+                    code="incomplete_entity_identifier",
+                    message=(
+                        f"Report {report_id!r} declares one half of its entity identifier; "
+                        "the key and what it identifies travel together."
+                    ),
+                    suggested_repair="Declare both entity_field and entity_kind, or neither.",
+                )
+            elif entity_field is None:
+                _add_issue(
+                    issues,
+                    path=f"{report_path}.entity_field",
+                    code="unknown_report_field",
+                    message=(
+                        f"Report names unknown entity identifier {declared_entity!r}."
+                    ),
+                    suggested_repair="Declare the field or remove the entity identifier.",
+                )
+            elif entity_field["kind"] != "dimension":
+                _add_issue(
+                    issues,
+                    path=f"{report_path}.entity_field",
+                    code="field_kind_mismatch",
+                    message=f"Entity identifier {declared_entity!r} is not a dimension.",
+                    suggested_repair="Name a dimension field as the entity identifier.",
+                )
+
         for grain_index, grain in enumerate(report["supported_grains"]):
             for field_index, field_id in enumerate(grain):
                 field = field_by_id.get(field_id)
@@ -500,6 +555,8 @@ def validate_manifest_capabilities(manifest: dict[str, Any]) -> list[CapabilityI
                 suggested_repair="Remove dispatch until the follow-up story proves the behavior.",
             )
 
+    issues.extend(_tracked_entity_issues(descriptor, field_by_id, report_by_id))
+
     discovery = descriptor["field_discovery"]
     if discovery["mode"] == "runtime" and not discovery["allowed_targets"]:
         _add_issue(
@@ -566,6 +623,198 @@ def validate_manifest_capabilities(manifest: dict[str, Any]) -> list[CapabilityI
     return sorted(issues)
 
 
+# ---------------------------------------------------------------------------
+# Tracked entities (Story 48.5). A source that can see own brands, competitors
+# or reference entities says so, names the exact report and the exact fields,
+# and those must resolve inside the same descriptor.
+#
+# The whole point of the block is what it forbids. Core must never conclude that
+# a connector supports tracked entities because of its name, because it has a
+# field spelled `brand`, `advertiser`, `domain` or `keyword`, or because someone
+# added it to a list here. Absence is `not_applicable` with a reason.
+# ---------------------------------------------------------------------------
+
+# The field roles a declaration may point at. Kept as data so the checks below
+# stay one loop rather than four near-identical blocks.
+_TRACKED_ENTITY_FIELD_ROLES = ("identity_field_id", "label_field_id", "own_marker_field_id")
+
+
+def _tracked_entity_issues(
+    descriptor: dict[str, Any],
+    field_by_id: dict[str, dict[str, Any]],
+    report_by_id: dict[str, dict[str, Any]],
+) -> list[CapabilityIssue]:
+    declaration = descriptor.get("tracked_entity")
+    if not isinstance(declaration, dict):
+        return []
+
+    issues: list[CapabilityIssue] = []
+    seen: set[str] = set()
+    for index, entry in enumerate(declaration.get("reports", [])):
+        path = f"$.source_capabilities.tracked_entity.reports.{index}"
+        report_id = entry["report_id"]
+        if report_id in seen:
+            _add_issue(
+                issues,
+                path=f"{path}.report_id",
+                code="duplicate_tracked_entity_report",
+                message=f"Report {report_id!r} is declared more than once for tracked entities.",
+                suggested_repair="Declare each report once; one report has one direction.",
+            )
+        seen.add(report_id)
+
+        report = report_by_id.get(report_id)
+        if report is None:
+            _add_issue(
+                issues,
+                path=f"{path}.report_id",
+                code="tracked_entity_unknown_report",
+                message=f"Report {report_id!r} is not declared by this descriptor.",
+                suggested_repair="Name a report this descriptor already declares.",
+            )
+            continue
+
+        selected = set(report["metrics"]) | set(report["dimensions"])
+        named: list[tuple[str, str]] = [
+            (f"{path}.candidate_field_ids.{position}", field_id)
+            for position, field_id in enumerate(entry["candidate_field_ids"])
+        ]
+        named.extend(
+            (f"{path}.{role}", entry[role])
+            for role in _TRACKED_ENTITY_FIELD_ROLES
+            if isinstance(entry.get(role), str)
+        )
+        for field_path, field_id in named:
+            if field_id not in field_by_id:
+                _add_issue(
+                    issues,
+                    path=field_path,
+                    code="tracked_entity_unknown_field",
+                    message=f"Field {field_id!r} is not declared by this descriptor.",
+                    suggested_repair="Name a field this descriptor already declares.",
+                )
+            elif field_id not in selected:
+                _add_issue(
+                    issues,
+                    path=field_path,
+                    code="tracked_entity_field_not_in_report",
+                    message=(
+                        f"Report {report_id!r} does not return field {field_id!r}, "
+                        "so it can never observe it."
+                    ),
+                    suggested_repair=(
+                        "Point at a field the named report selects, or name another report."
+                    ),
+                )
+
+        driver = entry.get("query_driver")
+        if entry["direction"] == "collect":
+            if not entry.get("identity_field_id") or not isinstance(driver, dict):
+                _add_issue(
+                    issues,
+                    path=path,
+                    code="tracked_entity_collect_incomplete",
+                    message=(
+                        f"Report {report_id!r} collects by identity but declares no "
+                        "identity field and query driver pair."
+                    ),
+                    suggested_repair=(
+                        "Declare identity_field_id and query_driver, or use "
+                        "direction='observe'."
+                    ),
+                )
+        elif isinstance(driver, dict):
+            _add_issue(
+                issues,
+                path=f"{path}.query_driver",
+                code="tracked_entity_observe_declares_driver",
+                message=(
+                    f"Report {report_id!r} only observes, so nothing is requested by identity."
+                ),
+                suggested_repair="Remove query_driver, or declare direction='collect'.",
+            )
+
+        if isinstance(driver, dict):
+            own_parameter = driver.get("own_marker_parameter")
+            if own_parameter and own_parameter == driver["parameter"]:
+                _add_issue(
+                    issues,
+                    path=f"{path}.query_driver.own_marker_parameter",
+                    code="tracked_entity_driver_parameter_collision",
+                    message=(
+                        "The identity parameter and the own-marker parameter are the "
+                        "same keyword argument."
+                    ),
+                    suggested_repair="Give the own-marker subset its own parameter name.",
+                )
+
+    return issues
+
+
+def _normalize_tracked_entity_report(entry: dict[str, Any]) -> dict[str, Any]:
+    """One declared report, with every optional key present and null when unset.
+
+    A caller reading this reads one shape. The alternative -- omitting the keys a
+    connector did not fill -- makes every consumer write the same four `.get()`
+    calls and makes "declared nothing" indistinguishable from "declared null".
+    """
+    driver = entry.get("query_driver")
+    normalized_driver = None
+    if isinstance(driver, dict):
+        normalized_driver = {
+            "parameter": driver["parameter"],
+            "value_source": driver["value_source"],
+            "cardinality": driver["cardinality"],
+            "own_marker_parameter": driver.get("own_marker_parameter"),
+            "max_values_per_request": driver.get("max_values_per_request"),
+        }
+    population = entry["population"]
+    return {
+        "report_id": entry["report_id"],
+        "direction": entry["direction"],
+        "entity_kinds": sorted(entry["entity_kinds"]),
+        "candidate_field_ids": sorted(entry["candidate_field_ids"]),
+        "identity_field_id": entry.get("identity_field_id"),
+        "label_field_id": entry.get("label_field_id"),
+        "own_marker_field_id": entry.get("own_marker_field_id"),
+        "population": {
+            "completeness": population["completeness"],
+            "note": population.get("note"),
+        },
+        "query_driver": normalized_driver,
+    }
+
+
+def normalize_tracked_entity(descriptor: dict[str, Any]) -> dict[str, Any]:
+    """Project the tracked-entity declaration, or say `not_applicable` and why."""
+
+    declaration = descriptor.get("tracked_entity")
+    if not isinstance(declaration, dict):
+        return {
+            "support": "not_applicable",
+            "reason": (
+                "This Connector declares no tracked-entity contract, so the platform "
+                "makes no claim about whether it can observe or collect entities."
+            ),
+            "declaration_version": None,
+            "directions": [],
+            "entity_kinds": [],
+            "reports": [],
+        }
+    reports = [_normalize_tracked_entity_report(entry) for entry in declaration["reports"]]
+    reports.sort(key=lambda item: item["report_id"])
+    return {
+        "support": "declared",
+        "reason": (
+            f"This Connector declares {len(reports)} tracked-entity report contract(s)."
+        ),
+        "declaration_version": declaration["declaration_version"],
+        "directions": sorted({report["direction"] for report in reports}),
+        "entity_kinds": sorted({kind for report in reports for kind in report["entity_kinds"]}),
+        "reports": reports,
+    }
+
+
 def _normalize_field(field: dict[str, Any]) -> dict[str, Any]:
     return {
         "field_id": field["field_id"],
@@ -624,9 +873,52 @@ def _normalize_constraint(constraint: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _normalize_report(report: dict[str, Any]) -> dict[str, Any]:
+#: Where an event bundle's rows land, and therefore the only landing on which an
+#: entity identifier means anything: `app.context_events`, whose `entity_key` and
+#: `entity_kind` the pull fills (`data.md`, "An event now names its entity").
+_EVENT_LANDING = "context_events"
+
+
+def event_bundle_entity(report: dict[str, Any]) -> tuple[str, str] | None:
+    """``(field_id, entity_kind)`` an event bundle declares, or ``None``.
+
+    WHAT EACH ROW OF THE BUNDLE IS ABOUT. A report that lands events carries one
+    marker per day per THING -- a video, a product, a campaign -- and the pull
+    already writes that thing's key to `app.context_events.entity_key`. Nothing
+    declared it, so `_report_field_ids` filtered it out of the field universe and
+    the identifier never reached a mapping: on the reference project the flow
+    *video publications* mapped `date` and nothing else, `video` had one carrier
+    where the project has two, and the key `video x date` could not be declared
+    (measured 2026-09-04 through `/mdm/common-keys/proposals`).
+
+    Read a DECLARATION, never a provider: no connector id, no report id and no
+    entity kind is named here. A report that declares nothing gains nothing.
+    """
+    if str(report.get("landing") or "") != _EVENT_LANDING:
+        return None
+    field_id = str(report.get("entity_field") or "").strip()
+    entity_kind = str(report.get("entity_kind") or "").strip()
+    if not field_id or not entity_kind:
+        return None
+    return field_id, entity_kind
+
+
+def _normalize_report(
+    report: dict[str, Any], profiles: dict[str, dict[str, Any]] | None = None
+) -> dict[str, Any]:
+    """One capability report, with the NAME the connector gave it.
+
+    The catalog carried only the id, so the console invented a table of twelve
+    Search Console identifiers to make them readable and fell back to
+    de-underscoring everything else -- `sp_campaigns_daily` became
+    "Sp campaigns" for the other thirty-six connectors. The manifest has the
+    answer in `report_profiles[].display_name`; it just never travelled.
+    """
+    profile = (profiles or {}).get(report["id"], {})
     normalized: dict[str, Any] = {
         "id": report["id"],
+        "display_name": profile.get("display_name") or None,
+        "description": profile.get("description") or None,
         "selection_mode": report["selection_mode"],
         "availability": {
             key: report["availability"][key]
@@ -634,7 +926,15 @@ def _normalize_report(report: dict[str, Any]) -> dict[str, Any]:
             if key in report["availability"]
         },
         "metrics": list(report["metrics"]),
-        "dimensions": list(report["dimensions"]),
+        # THE BUNDLE'S ENTITY IDENTIFIER IS ONE OF ITS DIMENSIONS, and this is the
+        # one seam that says so: every consumer of the governed catalogue reads
+        # `dimensions`, so declaring it here makes it mappable in the wizard's
+        # field universe (`datastream_preconfiguration._report_field_ids`) AND
+        # allowed in a selection (`datastream_intents._validate_connector`, whose
+        # `exact_bundle_required` compares against this very list) in one move.
+        # Adding it to either consumer alone would have offered a column the other
+        # then refused -- amendment 2026-09-06 of `datastream-workbench-and-wizard.md`.
+        "dimensions": _report_dimensions(report),
         "supported_grains": sorted(
             [list(grain) for grain in report["supported_grains"]], key=lambda item: tuple(item)
         ),
@@ -668,7 +968,22 @@ def _normalize_report(report: dict[str, Any]) -> dict[str, Any]:
     }
     if "dispatch" in report:
         normalized["dispatch"] = {"callable": report["dispatch"]["callable"]}
+    entity = event_bundle_entity(report)
+    if entity is not None:
+        # Carried, not merely folded into `dimensions`: a reader that needs to know
+        # WHICH dimension identifies the entity -- and under which kind the rows
+        # landed -- must not have to guess it back out of the list.
+        normalized["entity_field"], normalized["entity_kind"] = entity
     return normalized
+
+
+def _report_dimensions(report: dict[str, Any]) -> list[str]:
+    """The report's dimensions, plus the entity identifier its event bundle names."""
+    dimensions = list(report["dimensions"])
+    entity = event_bundle_entity(report)
+    if entity is not None and entity[0] not in dimensions:
+        dimensions.append(entity[0])
+    return dimensions
 
 
 def normalize_capabilities(
@@ -698,7 +1013,17 @@ def normalize_capabilities(
             key=lambda field: field["field_id"],
         ),
         "reports": sorted(
-            [_normalize_report(report) for report in descriptor["reports"]],
+            [
+                _normalize_report(
+                    report,
+                    {
+                        str(profile.get("id")): profile
+                        for profile in manifest.get("report_profiles", [])
+                        if isinstance(profile, dict) and profile.get("id")
+                    },
+                )
+                for report in descriptor["reports"]
+            ],
             key=lambda report: report["id"],
         ),
     }
@@ -708,6 +1033,10 @@ def normalize_capabilities(
     time_context = descriptor.get("time_context")
     if time_context is not None:
         response["time_context"] = time_context
+    # Story 48.5: ALWAYS present, unlike time_context above. A caller asking
+    # "can this source see competitors?" must read a reason, and the absence of
+    # a key is not a reason.
+    response["tracked_entity"] = normalize_tracked_entity(descriptor)
     public_issues = validate_public_response(response)
     if public_issues:
         raise CapabilityValidationError(public_issues)
@@ -722,12 +1051,93 @@ class SourceCapabilitiesUnavailable(RuntimeError):
     """Raised when capability scope or metadata cannot be proven safely."""
 
 
-def get_project_connection_state(
-    *, project_id: str, connection_ref_id: str, identity: str, conn: Any
-) -> tuple[Any, Any, Any, Any] | None:
-    """Resolve one exact provider account through the canonical grant authority."""
+def apply_installation_readiness(
+    catalog: dict[str, Any],
+    *,
+    conn: Any,
+    connector_name: str,
+    environment: str | None = None,
+) -> dict[str, Any]:
+    """Attach the tenant-safe installation gate to a visible connector catalog."""
+    import os  # noqa: PLC0415
 
-    from core.project_access import resolve_provider_account_access  # noqa: PLC0415
+    from core.connector_installation import get_installation_state  # noqa: PLC0415
+
+    resolved_environment = (
+        environment
+        or os.environ.get("TOOROW_ENVIRONMENT", "production")
+    ).strip() or "production"
+    try:
+        installation = get_installation_state(
+            conn,
+            environment=resolved_environment,
+            connector_name=connector_name,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise SourceCapabilitiesUnavailable(
+            "installation readiness is unavailable"
+        ) from exc
+
+    ready = installation is not None and installation.get("state") == "READY"
+    catalog["installation"] = {
+        "catalog_availability": "selectable" if ready else "unavailable",
+        "catalog_status": "ready" if ready else "setup_pending",
+        "safe_next_action": (
+            "no action required" if ready else "contact platform support"
+        ),
+    }
+    if not ready:
+        for report in catalog.get("reports", []):
+            report["availability"] = {
+                "status": "unavailable",
+                "reason_code": "connector_setup_pending",
+                "follow_up": "contact platform support",
+            }
+
+    public_issues = validate_public_response(catalog)
+    if public_issues:
+        raise CapabilityValidationError(public_issues)
+    return catalog
+
+
+def get_project_connection_state(
+    *,
+    project_id: str,
+    connection_ref_id: str,
+    identity: str,
+    conn: Any,
+    external_account_id: str | None = None,
+) -> tuple[Any, Any, Any, Any] | None:
+    """Resolve one exact provider account through the canonical grant authority.
+
+    NOT EVERY CONNECTOR HAS AN ACCOUNT TO SELECT
+    Nine of the thirty-seven modules declare no ``account_topology`` at all: the
+    credential IS the entity, there is nothing to pick. The scope row this used to
+    INNER JOIN can only be written by selecting an account, and that route answers
+    409 for exactly those connectors -- so their catalog was unreachable by
+    construction, and the wizard dead-ended on step 3 with an empty list and no
+    explanation. (Naming them here was itself the rule this file enforces on
+    everyone else: core carries no provider vocabulary. The set is derivable --
+    ``jq 'select(.account_topology == null) | .name' server/modules/*/manifest.json``.)
+
+    The join is therefore LEFT, and the account-level authority is consulted only
+    when an account was actually selected. Without one, the credential-level
+    decision governs -- the same authority, one rung up, never an open door.
+
+    WHICH ACCOUNT. Pass ``external_account_id`` when the caller knows it -- a
+    Datastream always does, via ``app.datastreams.source_account_id``. Since
+    migration 211 an authorization can hold several verified accounts, and this
+    query used to take whichever one the planner returned first: the catalog was
+    then governed against an account the caller was not asking about. Without
+    the argument it takes the most recently verified one, which is exactly the
+    old answer for the one-account credentials that were the only legal case
+    before 211.
+    """
+
+    from core.project_access import (  # noqa: PLC0415
+        resolve_provider_account_access,
+        resolve_strict_resource_access,
+    )
 
     with conn.cursor() as cur:
         cur.execute(
@@ -736,25 +1146,36 @@ def get_project_connection_state(
                    s.account_id, p.org_id
             FROM app.connection_ref r
             JOIN app.projects p ON p.id = %s AND p.status = 'active'
-            JOIN app.connection_account_scope s
-              ON s.connection_ref_id = r.id AND s.state = 'ready'
+            LEFT JOIN LATERAL (
+                SELECT sc.account_id
+                FROM app.connection_account_scope sc
+                WHERE sc.connection_ref_id = r.id AND sc.state = 'ready'
+                  AND (%s::text IS NULL OR sc.account_id = %s)
+                ORDER BY sc.verified_at DESC NULLS LAST
+                LIMIT 1
+            ) s ON TRUE
             LEFT JOIN app.connection_health h ON h.connection_ref_id = r.id
             WHERE r.id = %s
             """,
-            (project_id, connection_ref_id),
+            (project_id, external_account_id, external_account_id, connection_ref_id),
         )
         row = cur.fetchone()
     if not isinstance(row, (tuple, list)) or len(row) < 6:
         return None
     provider, status, enabled, health, external_account_id, beneficiary_org_id = row[:6]
-    decision = resolve_provider_account_access(
-        identity,
-        conn,
-        credential_id=connection_ref_id,
-        external_account_id=str(external_account_id),
-        beneficiary_org_id=str(beneficiary_org_id),
-        project_id=project_id,
-    )
+    if external_account_id:
+        decision = resolve_provider_account_access(
+            identity,
+            conn,
+            credential_id=connection_ref_id,
+            external_account_id=str(external_account_id),
+            beneficiary_org_id=str(beneficiary_org_id),
+            project_id=project_id,
+        )
+    else:
+        decision = resolve_strict_resource_access(
+            identity, conn, project_id=project_id, minimum_capability="view"
+        )
     if not decision.allowed:
         return None
     return provider, status, enabled, health
@@ -766,12 +1187,21 @@ def get_scoped_source_capabilities(
     identity: str,
     loaded_modules: list[Any],
     conn: Any,
+    module_name: str | None = None,
+    external_account_id: str | None = None,
 ) -> dict[str, Any]:
     """Return one governed capability catalog for a project-owned connection.
 
     Scope checks are deliberately fail-closed. Unknown, cross-project, inactive,
     disabled, and provider-mismatched resources share the same not-found result;
     infrastructure or contract failures are surfaced as unavailable.
+
+    `module_name` names WHICH tool of the authorization to read, and matters only
+    where one authorization opens several: Google direct OAuth grants seven scopes
+    from one consent screen. It is validated against that authorization's own tool
+    set by `connection_tools.resolve_connection_connector` -- a connector name arriving in a
+    query string is a request, never a grant. Left None for the single-tool case,
+    which is every Nango connection.
     """
 
     project_id = project_id.strip()
@@ -785,11 +1215,11 @@ def get_scoped_source_capabilities(
     )
     from core.project_access import (  # noqa: PLC0415
         ProjectAccessUnavailable,
-        identity_has_project_access,
+        identity_can_read_project,
     )
 
     try:
-        if not identity_has_project_access(project_id, identity, conn, fail_closed=True):
+        if not identity_can_read_project(project_id, identity, conn, fail_closed=True):
             raise SourceCapabilitiesNotFound
 
         row = get_project_connection_state(
@@ -797,19 +1227,61 @@ def get_scoped_source_capabilities(
             connection_ref_id=connection_ref_id,
             identity=identity,
             conn=conn,
+            external_account_id=external_account_id,
         )
     except SourceCapabilitiesNotFound:
         raise
     except (ProjectAccessUnavailable, ModuleEnablementUnavailable) as exc:
+        # THE ANSWER STAYS OPAQUE; THE RECORD MUST NOT. "Capability catalog is
+        # unavailable" is the right answer to a caller and useless to anyone
+        # repairing it: the cause is chained on `__cause__` and reaches no log.
+        # The same silence cost a full diagnosis pass on the Semantic Model 503
+        # and another on the warehouse read.
+        logger.warning(
+            "source_capabilities: capability scope unavailable: %s: %s",
+            type(exc).__name__,
+            exc,
+        )
         raise SourceCapabilitiesUnavailable("capability scope is unavailable") from exc
     except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "source_capabilities: connection scope unavailable: %s: %s",
+            type(exc).__name__,
+            exc,
+            exc_info=True,
+        )
         raise SourceCapabilitiesUnavailable("connection scope is unavailable") from exc
 
     if row is None:
         raise SourceCapabilitiesNotFound
-    module_name, connection_status, connection_enabled = row[:3]
+    _provider, connection_status, connection_enabled = row[:3]
     if connection_status != "active" or not bool(connection_enabled):
         raise SourceCapabilitiesNotFound
+
+    # WHICH tool of this authorization. For a Nango connection the answer is the
+    # provider itself and this resolves to what `_provider` already said; for a
+    # Google-direct one the provider is 'google', which is not a module at all,
+    # and only the granted scopes can say. Resolving through one authority keeps
+    # a caller from reaching a catalog its authorization does not open.
+    from core.connection_tools import (  # noqa: PLC0415
+        ConnectionConnectorsNotFound,
+        ConnectionConnectorsUnavailable,
+        resolve_connection_connector,
+    )
+
+    try:
+        module_name = resolve_connection_connector(
+            project_id=project_id,
+            connection_ref_id=connection_ref_id,
+            identity=identity,
+            loaded_modules=loaded_modules,
+            conn=conn,
+            requested_connector=module_name,
+        )
+    except ConnectionConnectorsNotFound as exc:
+        raise SourceCapabilitiesNotFound from exc
+    except ConnectionConnectorsUnavailable as exc:
+        raise SourceCapabilitiesUnavailable("connector scope is unavailable") from exc
 
     loaded = next(
         (candidate for candidate in loaded_modules if candidate.name == module_name),
@@ -828,10 +1300,15 @@ def get_scoped_source_capabilities(
         raise SourceCapabilitiesNotFound
 
     try:
-        return normalize_capabilities(
+        catalog = normalize_capabilities(
             loaded.manifest,
             project_id=project_id,
             connection_ref_id=connection_ref_id,
+        )
+        return apply_installation_readiness(
+            catalog,
+            conn=conn,
+            connector_name=str(module_name),
         )
     except CapabilityValidationError as exc:
         raise SourceCapabilitiesUnavailable("capability metadata is invalid") from exc

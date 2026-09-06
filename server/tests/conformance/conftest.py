@@ -1,8 +1,21 @@
 """Conformance suite configuration — Story 1.8 (T1.1, T1.2).
 
-Provides the ``module_path`` and ``manifest`` session-scoped fixtures
-consumed by all four conformance layers.  The ``--module-path`` CLI option
-is the only coupling point between the suite and a specific module.
+Provides the ``module_path`` and ``manifest`` fixtures consumed by every
+conformance layer.
+
+**Every connector is swept by default.** ``module_path`` is parametrized over
+``server/modules/*/`` (every folder carrying a ``manifest.json``), so a
+non-conformant connector reddens the repository suite without anyone typing its
+name. Each test id carries the module name, so a failure names the connector
+immediately::
+
+    tests/conformance/test_golden_pull.py::test_golden_pull[meta-ads]
+
+``--module-path modules/<name>`` is a FILTER, not a prerequisite: it restricts
+the parametrization to a single module for debugging. Before this change the
+option was mandatory and six layers skipped outright without it — 37 connectors
+of 38 were therefore never swept, which is how a ``pull()`` signature breach
+reached the first real call with the contract already written.
 """
 
 from __future__ import annotations
@@ -22,7 +35,59 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--module-path",
         action="store",
         default=None,
-        help="Path to the module folder to validate (e.g. server/modules/google-analytics/)",
+        help=(
+            "Optional FILTER: restrict the conformance sweep to a single module "
+            "folder (e.g. --module-path modules/gsc). Omit it to sweep every "
+            "connector in server/modules/."
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Module discovery + parametrization
+# ---------------------------------------------------------------------------
+
+#: server/tests/conformance/conftest.py -> server/ -> server/modules/
+_MODULES_DIR = Path(__file__).resolve().parents[2] / "modules"
+
+
+def _all_module_dirs() -> list[Path]:
+    """Every connector folder: a directory under server/modules/ with a manifest."""
+    if not _MODULES_DIR.is_dir():  # pragma: no cover - repository layout guard
+        raise pytest.UsageError(f"connector root not found: {_MODULES_DIR}")
+    return sorted(
+        (d for d in _MODULES_DIR.iterdir() if d.is_dir() and (d / "manifest.json").is_file()),
+        key=lambda d: d.name,
+    )
+
+
+def _selected_module_dirs(config: pytest.Config) -> list[Path]:
+    """Modules to sweep: all of them, or the single one --module-path names."""
+    raw = config.getoption("--module-path")
+    if raw is None:
+        return _all_module_dirs()
+    p = Path(raw).resolve()
+    if not p.is_dir():
+        raise pytest.UsageError(f"--module-path does not exist: {p}")
+    return [p]
+
+
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
+    """Parametrize every module-aware test over the selected connectors.
+
+    ``module_path`` is parametrized indirectly, so any test reaching it through
+    the closure (``manifest``, ``_layer1_status``, …) is swept too, without those
+    tests declaring anything. The id is the module folder name.
+    """
+    if "module_path" not in metafunc.fixturenames:
+        return
+    selected = _selected_module_dirs(metafunc.config)
+    metafunc.parametrize(
+        "module_path",
+        selected,
+        ids=[d.name for d in selected],
+        indirect=True,
+        scope="session",
     )
 
 
@@ -40,15 +105,37 @@ _LAYER_ORDER = [
 ]
 
 
+def _parametrized_module_name(item: pytest.Item) -> str:
+    """Connector name this item was parametrized on ('' when module-agnostic)."""
+    callspec = getattr(item, "callspec", None)
+    if callspec is None:
+        return ""
+    value = callspec.params.get("module_path")
+    if value is None:
+        return ""
+    return Path(value).name
+
+
 def pytest_collection_modifyitems(items: list) -> None:  # type: ignore[type-arg]
-    """Sort conformance layer tests so layer 1 always runs before layers 2–4."""
-    def _layer_key(item: pytest.Item) -> tuple[int, str]:
+    """Group conformance items per connector, layer 1 first inside each group.
+
+    Two invariants ride on this order:
+      * layer 1 (manifest) runs before layers 2–6 **of the same module**, so the
+        fail-fast flag is set before the layers that consult it;
+      * all layers of one connector are contiguous, so the session-scoped
+        ``module_path``/``manifest`` fixtures are built once per connector
+        instead of thrashing on every parameter switch.
+
+    Module-agnostic conformance tests (no ``module_path`` in their closure) keep
+    the historical layer-then-nodeid order and run first.
+    """
+    def _layer_key(item: pytest.Item) -> tuple[str, int, str]:
         module_name = item.module.__name__.split(".")[-1] if hasattr(item, "module") else ""
         try:
             idx = _LAYER_ORDER.index(module_name)
         except ValueError:
             idx = len(_LAYER_ORDER)
-        return (idx, item.nodeid)
+        return (_parametrized_module_name(item), idx, item.nodeid)
 
     conformance_items = [i for i in items if "conformance" in i.nodeid]
     other_items = [i for i in items if "conformance" not in i.nodeid]
@@ -64,13 +151,21 @@ def pytest_collection_modifyitems(items: list) -> None:  # type: ignore[type-arg
 
 @pytest.fixture(scope="session")
 def module_path(request: pytest.FixtureRequest) -> Path:
-    """Resolved path to the module folder under test."""
-    raw = request.config.getoption("--module-path")
-    if raw is None:
-        pytest.skip("No --module-path provided; skipping conformance suite")
-    p = Path(raw).resolve()
+    """Resolved path to the connector folder under test.
+
+    Always parametrized by ``pytest_generate_tests`` above — one value per
+    connector swept. There is no un-parametrized path any more: a test that
+    reaches this fixture is a test that runs on every connector.
+    """
+    param = getattr(request, "param", None)
+    if param is None:  # pragma: no cover - defensive: parametrization is unconditional
+        pytest.fail(
+            "module_path was requested without parametrization — "
+            "pytest_generate_tests in tests/conformance/conftest.py must run"
+        )
+    p = Path(param).resolve()
     if not p.is_dir():
-        pytest.fail(f"--module-path does not exist: {p}")
+        pytest.fail(f"module folder does not exist: {p}")
     return p
 
 
@@ -84,16 +179,52 @@ def manifest(module_path: Path) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Layer-1 pass/fail flag — shared across layers via a mutable container
+# Layer-1 pass/fail flag — PER CONNECTOR
 # ---------------------------------------------------------------------------
-# We use a list[bool] (mutable singleton) so test_manifest.py can flip the
-# flag inside the session-scoped fixture without needing monkeypatching.
+# test_manifest.py flips ``_layer1_status[0] = False`` so the later layers of the
+# SAME connector skip instead of cascading noise. Once the suite sweeps 38
+# connectors, a single shared list[bool] would silence layers 2–6 of every other
+# connector as soon as one manifest is broken. The flag is therefore stored in a
+# session-level dict keyed by connector name, and handed to the test through a
+# tiny proxy that keeps the historical ``status[0]`` read/write shape.
+#
+# The proxy (rather than a parametrized list fixture) also survives pytest
+# re-instantiating session-scoped fixtures when the parameter cycles: the truth
+# lives in the dict, which is created once for the whole session.
 
 
 @pytest.fixture(scope="session")
-def _layer1_status() -> list[bool]:
-    """Mutable container: [True] = layer 1 passed, [False] = layer 1 failed."""
-    return [True]  # optimistic default; test_manifest.py flips to False on failure
+def _layer1_failed_modules() -> set[str]:
+    """Names of connectors whose layer 1 (manifest) failed during this session."""
+    return set()
+
+
+class _Layer1Status:
+    """``status[0]`` reads/writes the layer-1 verdict of ONE connector."""
+
+    __slots__ = ("_failed", "_module")
+
+    def __init__(self, failed: set[str], module: str) -> None:
+        self._failed = failed
+        self._module = module
+
+    def __getitem__(self, index: int) -> bool:
+        return self._module not in self._failed
+
+    def __setitem__(self, index: int, value: bool) -> None:
+        if value:
+            self._failed.discard(self._module)
+        else:
+            self._failed.add(self._module)
+
+    def __repr__(self) -> str:  # pragma: no cover - diagnostics only
+        return f"<layer1 {self._module}: {'passed' if self[0] else 'FAILED'}>"
+
+
+@pytest.fixture
+def _layer1_status(module_path: Path, _layer1_failed_modules: set[str]) -> _Layer1Status:
+    """Per-connector layer-1 verdict; [True] = passed, [False] = failed."""
+    return _Layer1Status(_layer1_failed_modules, module_path.name)
 
 
 # ---------------------------------------------------------------------------
@@ -118,22 +249,15 @@ def _extend_golden_duckdb_for_gsc(
 ) -> None:
     """Patch _build_golden_duckdb to add semantic view + GA4 rows for gsc module.
 
-    Runs for every test in the conformance suite but only applies the patch
-    when --module-path points at the gsc module (safe no-op otherwise).
+    Runs for every test in the conformance suite but only applies the patch to
+    the gsc parameter of the sweep (safe no-op for the 37 other connectors).
     """
-    if request.node.path.name in {
-        "test_all_module_capabilities.py",
-        "test_public_connector_registry.py",
-        "test_api_catalog.py",
-    }:
-        return
-
-    # Being autouse, requesting module_path below forces EVERY test in this
-    # directory through the fixture's "no --module-path -> skip" branch, even
-    # tests that need no module at all (Story 37.7's country-vocabulary data
-    # tests). Those then never run in a normal suite pass, so they gate nothing.
-    # With no --module-path there is also nothing to patch: return first.
-    if not request.config.getoption("--module-path"):
+    # Module-agnostic tests (Story 37.7's country-vocabulary data tests, the
+    # registry/capability gates, ...) never reach a connector: asking for
+    # module_path there would raise, and there is nothing to patch anyway.
+    # Testing the CLOSURE rather than a hard-coded file list keeps this correct
+    # when a new module-agnostic file lands in the directory.
+    if "module_path" not in request.fixturenames:
         return
 
     module_path = request.getfixturevalue("module_path")

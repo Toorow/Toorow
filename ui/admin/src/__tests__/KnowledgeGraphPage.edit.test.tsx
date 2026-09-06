@@ -171,6 +171,13 @@ function stubFetch(handler: (url: string, init?: RequestInit) => Response | Prom
   return calls;
 }
 
+/** The scope rides the QUERY on the create call, as on every other context
+ *  route. `POST /graph/edges` used to read it from the body alone, so the
+ *  server ignored the query, made the edge PLATFORM-scoped, and the
+ *  deny-by-default platform gate answered 404 on a project the caller owns
+ *  (live finding F3). The body still repeats it — pinned below. */
+const EDGE_CREATE_URL = "/api/context/graph/edges?project_id=p1";
+
 const defaultHandler = (url: string) => {
   if (url.startsWith("/api/context/graph?")) return resp(200, BUNDLE);
   if (url.startsWith("/api/context/graph/edges/")) {
@@ -184,7 +191,26 @@ const defaultHandler = (url: string) => {
   if (url.startsWith("/api/context/procedures/proc_1")) {
     return resp(200, { id: "proc_1", body_md: "Step 1.", updated_at: null });
   }
+  // AI-158 : le tiroir lit la file des remarques du noeud selectionne. Vide par
+  // defaut -- les tests qui en veulent une la posent eux-memes.
+  if (url.startsWith("/api/context/review-requests")) {
+    return resp(200, { requests: [], can_resolve: true });
+  }
   return resp(500, { code: "unexpected", message: `unexpected call: ${url}` });
+};
+
+/** Une remarque en file, telle que `GET /api/context/review-requests` la rend. */
+const REMARK = {
+  id: "crr_1",
+  node_id: "top_1",
+  node_type: "topic" as const,
+  node_version: 1,
+  note: "This constraint no longer exists, it should be removed.",
+  requested_by: "ann@example.com",
+  origin: "human" as const,
+  status: "open" as const,
+  created_at: "2026-08-04T10:00:00+00:00",
+  proposed_change: null,
 };
 
 afterEach(() => {
@@ -239,7 +265,7 @@ describe("KnowledgeGraphPage — edge-create pure logic", () => {
 describe("KnowledgeGraphPage — edge creation", () => {
   it("onConnect opens the edge_type modal, and a suggestion + Create link POSTs the pinned body, updating the count with no phantom edge before the response", async () => {
     const calls = stubFetch((url) => {
-      if (url === "/api/context/graph/edges") {
+      if (url === EDGE_CREATE_URL) {
         return resp(201, {
           id: "edge_new",
           from_id: "top_1",
@@ -273,7 +299,7 @@ describe("KnowledgeGraphPage — edge creation", () => {
 
     // No POST fired yet, and the count is unchanged: opening the modal alone
     // must never touch the network or the rendered edge set.
-    expect(calls.filter((c) => c.url === "/api/context/graph/edges")).toHaveLength(0);
+    expect(calls.filter((c) => c.url === EDGE_CREATE_URL)).toHaveLength(0);
     expect(screen.getByTestId("kg-count")).toHaveTextContent("2/2 nodes · 1 links");
 
     await user.click(screen.getByTestId("kg-edge-suggestion-depends_on"));
@@ -283,7 +309,7 @@ describe("KnowledgeGraphPage — edge creation", () => {
       expect(screen.queryByText("Link these two nodes")).not.toBeInTheDocument();
     });
 
-    const edgeCall = calls.find((c) => c.url === "/api/context/graph/edges");
+    const edgeCall = calls.find((c) => c.url === EDGE_CREATE_URL);
     expect(edgeCall).toBeDefined();
     expect(JSON.parse(String(edgeCall!.init!.body))).toEqual({
       project_id: "p1",
@@ -303,7 +329,7 @@ describe("KnowledgeGraphPage — edge creation", () => {
 
   it("keeps no phantom edge when the server rejects the link (422/404)", async () => {
     stubFetch((url) => {
-      if (url === "/api/context/graph/edges") {
+      if (url === EDGE_CREATE_URL) {
         return resp(404, { code: "not_found", message: "Projet introuvable" });
       }
       return defaultHandler(url);
@@ -656,11 +682,13 @@ describe("KnowledgeGraphPage — owner editing (Story 44.11)", () => {
   }, TEST_TIMEOUT);
 });
 
-describe("KnowledgeGraphPage — Request review (Story 44.11)", () => {
-  it("POSTs node_type + note and shows the honest confirmation copy", async () => {
+const REVIEW_URL = "/api/context/nodes/top_1/request-review?project_id=p1";
+
+describe("KnowledgeGraphPage — Request review (Story 44.11 + AI-157)", () => {
+  it("POSTs node_type + note WITH the project scope, and shows the honest copy", async () => {
     const calls = stubFetch((url, init) => {
-      if (url === "/api/context/nodes/top_1/request-review" && init?.method === "POST") {
-        return resp(201, { status: "requested" });
+      if (url === REVIEW_URL && init?.method === "POST") {
+        return resp(201, { status: "requested", request: { id: "crr_1", node_version: 3 } });
       }
       return defaultHandler(url);
     });
@@ -676,15 +704,15 @@ describe("KnowledgeGraphPage — Request review (Story 44.11)", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("kg-review-modal-success")).toHaveTextContent(
-        "Review requested — the owner will see it in the audit trail.",
+        /queued against this node/i,
       );
     });
     // Never implies a message/notification was sent to anyone.
     expect(screen.getByTestId("kg-review-modal-success")).not.toHaveTextContent(/notif|email sent/i);
 
-    const postCall = calls.find(
-      (c) => c.url === "/api/context/nodes/top_1/request-review" && c.init?.method === "POST",
-    );
+    // AI-157 : `project_id` est la SEULE source de l'organisation que la file
+    // exige. Sans lui la route rend 422, et la remarque ne part nulle part.
+    const postCall = calls.find((c) => c.url === REVIEW_URL && c.init?.method === "POST");
     expect(postCall).toBeDefined();
     expect(JSON.parse(String(postCall!.init!.body))).toEqual({
       node_type: "topic",
@@ -692,9 +720,25 @@ describe("KnowledgeGraphPage — Request review (Story 44.11)", () => {
     });
   }, TEST_TIMEOUT);
 
+  it("refuses to send an empty note rather than letting the server 422", async () => {
+    const calls = stubFetch((url) => defaultHandler(url));
+    const user = userEvent.setup();
+    render(<KnowledgeGraphPage projectId="p1" />);
+
+    fireEvent.click(await screen.findByTestId("kg-node-top_1"));
+    await user.click(await screen.findByTestId("kg-drawer-request-review"));
+
+    // La file refuse une note vide (`length(btrim(note)) >= 1`) : une remarque
+    // muette ne peut ni se verifier ni se clore.
+    expect(await screen.findByTestId("kg-review-modal-submit")).toBeDisabled();
+    expect(calls.some((c) => c.url.startsWith("/api/context/nodes/top_1/request-review"))).toBe(
+      false,
+    );
+  }, TEST_TIMEOUT);
+
   it("shows the server's exact error and keeps the modal open on failure", async () => {
     stubFetch((url, init) => {
-      if (url === "/api/context/nodes/top_1/request-review" && init?.method === "POST") {
+      if (url === REVIEW_URL && init?.method === "POST") {
         return resp(500, { code: "db_error", message: "Erreur lors de la demande de revue" });
       }
       return defaultHandler(url);
@@ -704,13 +748,146 @@ describe("KnowledgeGraphPage — Request review (Story 44.11)", () => {
 
     fireEvent.click(await screen.findByTestId("kg-node-top_1"));
     await user.click(await screen.findByTestId("kg-drawer-request-review"));
-    await user.click(await screen.findByTestId("kg-review-modal-submit"));
+    await user.type(await screen.findByTestId("kg-review-modal-note"), "look at this");
+    await user.click(screen.getByTestId("kg-review-modal-submit"));
 
     await waitFor(() => {
       expect(screen.getByTestId("kg-review-modal-error")).toHaveTextContent(
         "Erreur lors de la demande de revue",
       );
     });
+  }, TEST_TIMEOUT);
+});
+
+// ---------------------------------------------------------------------------
+// AI-158 — la file se VOIT, la ou on la remplit
+// ---------------------------------------------------------------------------
+
+describe("KnowledgeGraphPage — open remarks on a node (AI-158)", () => {
+  it("lists the node's open remarks with the version each one speaks of", async () => {
+    const calls = stubFetch((url) => {
+      if (url.startsWith("/api/context/review-requests")) {
+        return resp(200, { requests: [REMARK], can_resolve: true });
+      }
+      return defaultHandler(url);
+    });
+    render(<KnowledgeGraphPage projectId="p1" />);
+
+    fireEvent.click(await screen.findByTestId("kg-node-top_1"));
+
+    expect(await screen.findByTestId("kg-review-request-crr_1")).toHaveTextContent(
+      "This constraint no longer exists",
+    );
+    expect(screen.getByTestId("kg-review-queue")).toHaveTextContent("Open remarks (1)");
+    // Scoped to the node AND the project -- the queue of one node, not the org's.
+    expect(
+      calls.some(
+        (c) =>
+          c.url.includes("/api/context/review-requests") &&
+          c.url.includes("project_id=p1") &&
+          c.url.includes("node_id=top_1"),
+      ),
+    ).toBe(true);
+  }, TEST_TIMEOUT);
+
+  it("flags a remark that speaks of an older version than the node's current one", async () => {
+    stubFetch((url) => {
+      if (url.startsWith("/api/context/review-requests")) {
+        // TOPIC is v2 in the bundle; the remark was raised against v1.
+        return resp(200, { requests: [{ ...REMARK, node_version: 1 }], can_resolve: true });
+      }
+      return defaultHandler(url);
+    });
+    render(<KnowledgeGraphPage projectId="p1" />);
+
+    fireEvent.click(await screen.findByTestId("kg-node-top_1"));
+
+    // « Cette contrainte n'existe plus » ne veut rien dire si on ignore de
+    // quelle version on parle -- et si le noeud a avance depuis, ça se voit.
+    expect(await screen.findByTestId("kg-review-stale-crr_1")).toBeInTheDocument();
+  }, TEST_TIMEOUT);
+
+  it("closes a remark and re-reads the queue rather than guessing the result", async () => {
+    let resolved = false;
+    const calls = stubFetch((url, init) => {
+      if (url.startsWith("/api/context/review-requests/crr_1/resolve") && init?.method === "POST") {
+        resolved = true;
+        return resp(200, { ...REMARK, status: "accepted", resolved_by: "me" });
+      }
+      if (url.startsWith("/api/context/review-requests")) {
+        return resp(200, { requests: resolved ? [] : [REMARK], can_resolve: true });
+      }
+      return defaultHandler(url);
+    });
+    const user = userEvent.setup();
+    render(<KnowledgeGraphPage projectId="p1" />);
+
+    fireEvent.click(await screen.findByTestId("kg-node-top_1"));
+    await user.click(await screen.findByTestId("kg-review-accept-crr_1"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("kg-review-queue-empty")).toBeInTheDocument();
+    });
+    const body = JSON.parse(
+      String(
+        calls.find((c) => c.url.includes("/resolve") && c.init?.method === "POST")!.init!.body,
+      ),
+    );
+    expect(body).toEqual({ status: "accepted" });
+    // Une acceptation peut POSER un lien en base : la vue RELIT plutot que de
+    // deviner ce que le serveur a fait.
+    expect(
+      calls.filter((c) => c.url.includes("/api/context/review-requests?")).length,
+    ).toBeGreaterThan(1);
+  }, TEST_TIMEOUT);
+
+  it("offers no Accept/Decline when the server says the caller cannot resolve", async () => {
+    stubFetch((url) => {
+      if (url.startsWith("/api/context/review-requests")) {
+        return resp(200, { requests: [REMARK], can_resolve: false });
+      }
+      return defaultHandler(url);
+    });
+    render(<KnowledgeGraphPage projectId="p1" />);
+
+    fireEvent.click(await screen.findByTestId("kg-node-top_1"));
+
+    // Deposer une remarque est un droit de lecteur ; la trancher est un acte
+    // d'ecriture. La vue n'invente pas ce droit -- le serveur le dit.
+    expect(await screen.findByTestId("kg-review-readonly-crr_1")).toBeInTheDocument();
+    expect(screen.queryByTestId("kg-review-accept-crr_1")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("kg-review-decline-crr_1")).not.toBeInTheDocument();
+  }, TEST_TIMEOUT);
+
+  it("does not turn the non-disclosing 404 into a wrong reason", async () => {
+    stubFetch((url, init) => {
+      if (url.startsWith("/api/context/review-requests/crr_1/resolve") && init?.method === "POST") {
+        return resp(404, { code: "not_found", message: "Review request not found" });
+      }
+      if (url.startsWith("/api/context/review-requests")) {
+        return resp(200, { requests: [REMARK], can_resolve: true });
+      }
+      return defaultHandler(url);
+    });
+    const user = userEvent.setup();
+    render(<KnowledgeGraphPage projectId="p1" />);
+
+    fireEvent.click(await screen.findByTestId("kg-node-top_1"));
+    await user.click(await screen.findByTestId("kg-review-accept-crr_1"));
+
+    // Le refus est NOMME, et la remarque reste visible : une action qui echoue
+    // en silence laisse croire qu'elle a porte.
+    await waitFor(() => {
+      expect(screen.getByTestId("kg-review-resolve-error")).toBeInTheDocument();
+    });
+    const message = screen.getByTestId("kg-review-resolve-error").textContent ?? "";
+    // Le serveur rend le MEME 404 pour « pas a vous », « inconnue » et « deja
+    // close » -- et ne les distingue pas exprès. La vue ne doit donc en affirmer
+    // aucune : elle nomme l'incertitude au lieu de la trancher a tort.
+    expect(message).toMatch(/already be closed/i);
+    expect(message).toMatch(/not yours/i);
+    expect(message).not.toMatch(/^Not permitted\./);
+    expect(screen.getByTestId("kg-review-request-crr_1")).toBeInTheDocument();
   }, TEST_TIMEOUT);
 });
 
@@ -796,5 +973,51 @@ describe("KnowledgeGraphPage — new topic from the canvas", () => {
     expect(
       calls.some((c) => c.url === "/api/context/topics" && c.init?.method === "POST"),
     ).toBe(true);
+  }, TEST_TIMEOUT);
+});
+
+// ---------------------------------------------------------------------------
+// A remark read in the mindmap is ANSWERED on the node's own workbench
+//
+// The drawer offered Accept and Decline and nothing else, so the queue could be
+// emptied here without a word of the corpus changing. `context-hub.md` refuses
+// both halves of the easy fix: the queue must be actionable, and "one does not
+// work a Skill inside a mindmap" — so the mindmap hands the reader over to the
+// surface that owns the write instead of growing a second editor.
+// ---------------------------------------------------------------------------
+
+describe("KnowledgeGraphPage — a remark can be acted on, not only closed", () => {
+  it("hands the node over to its own workbench, naming the kind the remark speaks of", async () => {
+    const onAdjustNode = vi.fn();
+    stubFetch((url) => {
+      if (url.startsWith("/api/context/review-requests")) {
+        return resp(200, { requests: [REMARK], can_resolve: true });
+      }
+      return defaultHandler(url);
+    });
+    render(<KnowledgeGraphPage projectId="p1" onAdjustNode={onAdjustNode} />);
+
+    fireEvent.click(await screen.findByTestId("kg-node-top_1"));
+    fireEvent.click(await screen.findByTestId("kg-review-adjust-crr_1"));
+
+    // The REMARK carries the node it speaks of, so the hand-over never guesses
+    // which node the drawer had selected.
+    expect(onAdjustNode).toHaveBeenCalledWith("topic", "top_1");
+  }, TEST_TIMEOUT);
+
+  it("renders no adjust button when no host owns the editor", async () => {
+    // A button that goes nowhere is worse than no button: it reads as a gesture
+    // the product offers and then swallows.
+    stubFetch((url) => {
+      if (url.startsWith("/api/context/review-requests")) {
+        return resp(200, { requests: [REMARK], can_resolve: true });
+      }
+      return defaultHandler(url);
+    });
+    render(<KnowledgeGraphPage projectId="p1" />);
+
+    fireEvent.click(await screen.findByTestId("kg-node-top_1"));
+    expect(await screen.findByTestId("kg-review-request-crr_1")).toBeInTheDocument();
+    expect(screen.queryByTestId("kg-review-adjust-crr_1")).not.toBeInTheDocument();
   }, TEST_TIMEOUT);
 });

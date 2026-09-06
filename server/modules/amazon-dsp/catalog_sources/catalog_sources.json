@@ -2620,5 +2620,10 @@
         "columns_ref": "report_type_columns.json"
       }
     }
+  },
+  "probe": {
+    "request_style": "async_report_columns",
+    "batch_size": 25,
+    "structural_note": "Amazon DSP reporting uses Amazon Ads Reporting API v3 (POST /reporting/reports with timeUnit DAILY, minimal groupBy, and configuration.columns = batch). A 400 or failed execution is bisected to capture the exact offending column."
   }
 }

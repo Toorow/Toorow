@@ -1,7 +1,8 @@
 """Amazon Ads connector -- Story 26.5 (Reporting v3 async, 3 regions, 740 columns).
 
-Exposes a ``mcp_app: FastMCP`` instance that the core loader mounts under the
-``amazon-ads`` namespace (AD-2). Built to the epic-25 industrial standard:
+Exposes a ``mcp_app: FastMCP`` instance as the conformance surface (AD-1
+envelope); since AD-42 the core no longer mounts it — execution uses the
+Datastream-parameterized core tools. Built to the epic-25 industrial standard:
 generated api_catalog.json (740 official dictionary columns, ZERO planned;
 DSP families excluded dsp-seat-gated), status-only error_map applied module
 side, region -> profile topology, and the 26.1 async-report socle
@@ -55,7 +56,9 @@ from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-# Module-level FastMCP instance -- the public surface the loader mounts.
+# Module-level FastMCP instance, kept as the conformance surface (AD-1 envelope,
+# validated by server/tests/conformance/test_envelope.py). Since AD-42 the core
+# no longer mounts it: execution uses the Datastream-parameterized core tools.
 mcp_app = FastMCP("amazon-ads")
 
 # ---------------------------------------------------------------------------
@@ -166,12 +169,21 @@ def _field_compat_rules() -> dict:
 # Provider error handling (story 26.5, dossier section 1.8).
 #
 # Amazon reporting errors carry NO stable numeric provider sub-codes: the body
-# is {"code": ..., "details": "<free text>"}. DECISION (closes the dossier's
-# open point for core/pull_errors.py): the manifest error_map uses HTTP-STATUS-
-# ONLY keys ("401", "425", ...) and THIS MODULE applies them itself, with
-# details-substring refinements first and core's pure-HTTP classify_http_error
-# as the final fallback. Core's '<status>:<provider_code>' contract is
-# untouched (no wildcard was added to core).
+# is {"code": ..., "details": "<free text>"} where "code" merely restates the
+# HTTP status.
+#
+# AI-114 (2026-08-01) -- THE TAXONOMY HAS ONE IMPLEMENTATION. The manifest
+# `error_map` has exactly ONE reader, core.pull_errors.classify_http_error, and
+# ONE key grammar, "<status>:<provider_code>". This module used to read that
+# same manifest key itself with a SECOND grammar (a bare "<status>" lookup),
+# which is the duplication AI-114 names: one declaration, two readers, two
+# grammars, and a guard that could only ever judge one of them.
+#
+# A judgment keyed on the HTTP STATUS ALONE is not a provider refinement, so it
+# has no expressible form in `error_map`. It lives HERE instead, in code, live
+# and greppable -- next to the details-substring refinements that were always
+# module logic. Order at the raise site: details substring, then status
+# override, then core's pure-HTTP classify_http_error.
 # ---------------------------------------------------------------------------
 
 # Details-substring refinements (dossier 1.8 + Airbyte cross-check), applied
@@ -183,17 +195,38 @@ _DETAILS_REFINEMENTS: tuple[tuple[str, str], ...] = (
     ("Report date is too far in the past", "invalid_request"),
 )
 
+# Status-level judgments core's pure-HTTP table does not make (it leaves every
+# status outside 400/401/403/5xx as retryable `unclassified`). These are the
+# three former status-only `error_map` keys, moved out of the manifest by
+# AI-114 -- same verdicts, one reader.
+#   404 the report/resource does not exist    -> a malformed request, not retryable
+#   405 method not allowed                    -> a malformed request, not retryable
+#   425 duplicate in-flight report            -> retry later (the SUBMIT callable
+#       normally dedups on the claim/request hash; a residual 425 reaching here
+#       is transient, never a blind resubmission)
+_STATUS_OVERRIDES: dict[int, str] = {
+    404: "invalid_request",
+}
 
-def _canonical_error_classes() -> dict:
-    from core import pull_errors  # noqa: PLC0415
+# The manifest error_map (AD-2: provider codes live ONLY in manifests). Amazon
+# declares it EMPTY today and the manifest _error_map_note says why -- the one
+# vocabulary that would refine anything is the Login-with-Amazon OAuth error
+# set, which this module never sees because Nango owns the token exchange.
+# The map is still LOADED AND HANDED OVER on every raise: passing it costs
+# nothing, and the day a live capture (AI-13) yields a real "<status>:<code>",
+# the refinement works without anyone having to remember this file. Cached,
+# meta-ads pattern.
+_ERROR_MAP: dict[str, str] | None = None
 
-    return {
-        pull_errors.AUTH_EXPIRED: pull_errors.AuthExpiredError,
-        pull_errors.AUTH_REVOKED: pull_errors.AuthRevokedError,
-        pull_errors.PERMISSION_DENIED: pull_errors.PermissionDeniedError,
-        pull_errors.INVALID_REQUEST: pull_errors.InvalidRequestError,
-        pull_errors.PROVIDER_TRANSIENT: pull_errors.ProviderTransientError,
-    }
+
+def _load_error_map() -> dict[str, str]:
+    """Return the manifest's ``error_map`` (status:code -> canonical class), cached."""
+    global _ERROR_MAP
+    if _ERROR_MAP is None:
+        manifest_path = Path(__file__).parent / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        _ERROR_MAP = manifest.get("error_map") or {}
+    return _ERROR_MAP
 
 
 def _extract_details(body) -> str:
@@ -211,13 +244,14 @@ def _raise_provider_error(status_code: int, resp: httpx.Response | None = None,
 
     429 -> core.quota.RateLimitError (breaker path, Retry-After honored --
     Amazon's throttling is dynamic with regional report-queue tiers).
-    Everything else: details-substring refinement, then the manifest's
-    STATUS-ONLY error_map ('<status>' keys, module-side decision), then
-    core's pure-HTTP classify_http_error. Provider payload preserved.
+    Everything else: details-substring refinement, then _STATUS_OVERRIDES
+    (AI-114: status-level judgments live in code, not in the manifest map that
+    core alone reads), then core's pure-HTTP classify_http_error. Provider
+    payload preserved.
 
     NOTE: 425 (duplicate in-flight report) must be handled by the SUBMIT
     callable (dedup, not an error); if it reaches here it maps to
-    provider_transient per the manifest map.
+    provider_transient per _STATUS_OVERRIDES.
     """
     if body is None and resp is not None:
         try:
@@ -238,18 +272,18 @@ def _raise_provider_error(status_code: int, resp: httpx.Response | None = None,
 
     from core import pull_errors  # noqa: PLC0415
 
-    classes = _canonical_error_classes()
     details = _extract_details(body)
     for substring, canonical in _DETAILS_REFINEMENTS:
         if substring in details:
-            raise classes[canonical](provider_status=status_code, provider_payload=body)
+            raise pull_errors.error_for_class(canonical, status_code, body)
 
-    refined = (_load_manifest().get("error_map") or {}).get(str(status_code))
-    exc_cls = classes.get(refined)
-    if exc_cls is not None:
-        raise exc_cls(provider_status=status_code, provider_payload=body)
+    override = pull_errors.error_for_class(
+        _STATUS_OVERRIDES.get(status_code), status_code, body
+    )
+    if override is not None:
+        raise override
 
-    raise pull_errors.classify_http_error(status_code, body)
+    raise pull_errors.classify_http_error(status_code, body, _load_error_map())
 
 
 # ---------------------------------------------------------------------------
@@ -329,7 +363,9 @@ def _resolve_profile_selection(
 
         resolved = token_service.resolve_connection_by_nango_id(connection_id)
         if resolved is not None:
-            selected = account_topology.resolve_selected_account(resolved.id)
+            selected = account_topology.resolve_selected_account(
+                resolved.id, connector="amazon-ads"
+            )
     except Exception as exc:  # noqa: BLE001 -- fail closed with a clear message
         logger.warning("amazon_ads_account_resolution_failed: %s", type(exc).__name__)
 
@@ -726,6 +762,21 @@ def _build_flow(
 _DROP_FIELDS: set[str] = set()
 
 
+def _adapt_languages(raw_row: dict, canonical_row: dict, manifest: dict) -> None:
+    """Resolve this row's language dimensions through the SHARED adapter.
+
+    Story 27.8: `language`/`languageCode`-style pairs are two ENCODINGS of one
+    dimension. The generic rename map above is a dict, so without this call the
+    last field of manifest.json silently won and a display name such as 'English'
+    could be published as a canonical value. core.language_dimensions owns the
+    rule (governance.md, "an encoding is not a dimension"); core -> module is the
+    direction AD-2 allows.
+    """
+    from core.language_dimensions import adapt_manifest_row_languages  # noqa: PLC0415
+
+    adapt_manifest_row_languages(raw_row, canonical_row, manifest)
+
+
 def transform(raw_rows: list[dict]) -> list[dict]:
     """Map report columns to canonical names using the manifest mappings.
 
@@ -751,6 +802,7 @@ def transform(raw_rows: list[dict]) -> list[dict]:
             if key in _DROP_FIELDS:
                 continue
             canonical[rename_map.get(key, key)] = value
+        _adapt_languages(row, canonical, manifest)
         result.append(canonical)
     return result
 
@@ -799,45 +851,51 @@ def _numeric_field_ids(field_ids: list[str]) -> list[str]:
 # grain x metric (QUALIFY, AD-7).
 # ---------------------------------------------------------------------------
 
-_RAW_CREATE_DDL = """
-CREATE TABLE IF NOT EXISTS raw_amazon_ads_daily (
-    date                  VARCHAR,
-    data_level            VARCHAR,
-    ad_product            VARCHAR,
-    region                VARCHAR,
-    profile_id            VARCHAR,
-    campaign_id           VARCHAR,
-    campaign_name         VARCHAR,
-    ad_group_id           VARCHAR,
-    ad_group_name         VARCHAR,
-    ad_id                 VARCHAR,
-    keyword_id            VARCHAR,
-    search_term           VARCHAR,
-    advertised_asin       VARCHAR,
-    purchased_asin        VARCHAR,
-    segments_json         VARCHAR,
-    attributes_json       VARCHAR,
-    metric                VARCHAR,
-    value_num             DOUBLE,
-    cost_source_currency  VARCHAR,
-    pull_id               VARCHAR,
-    loaded_at             VARCHAR,
-    project_id            VARCHAR
-)
-"""
+_RAW_TABLE = "raw_amazon_ads_daily"
 
+# THE RAW TABLE, DECLARED ONCE. `core.raw_landing` renders the DuckDB DDL and
+# INSERT from this list, and the BigQuery landing is handed the same list.
+#
+# The two used to be written separately and had drifted: the BigQuery branch
+# transcribed NINETEEN names -- including a `target_id` this table has never had
+# -- for the twenty-two-value tuple built below, so `ad_product`, `region`,
+# `advertised_asin` and `purchased_asin` never landed at all and everything from
+# index 8 shifted into the wrong column. It also renamed the metric triple to
+# `metric_name` / `metric_value` / `currency`, which is not what the DDL or
+# `stg_amazon_ads_daily.sql` read. Production runs `TOOROW_DB_MODE=bigquery`, so
+# the drifted copy was the live one.
+#
 # Story 26.6 Part A: attributes_json holds entity STATE/TYPE mutable attributes
 # (campaignStatus/adStatus/...). It is landed latest-wins and is NEVER part of
 # the dbt supersede grain (stg PARTITION BY excludes it) -- a status flip on a
 # re-pulled day must NOT mint a second grain key (F-2 double-count).
-_RAW_INSERT_SQL = """
-INSERT INTO raw_amazon_ads_daily
-    (date, data_level, ad_product, region, profile_id, campaign_id,
-     campaign_name, ad_group_id, ad_group_name, ad_id, keyword_id, search_term,
-     advertised_asin, purchased_asin, segments_json, attributes_json, metric,
-     value_num, cost_source_currency, pull_id, loaded_at, project_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-"""
+#
+# `tests/conformance/test_raw_table_has_one_declaration.py` compares this
+# declaration, the landing and the staging model on every run.
+_RAW_COLUMNS = [
+    ("date", "STRING"),
+    ("data_level", "STRING"),
+    ("ad_product", "STRING"),
+    ("region", "STRING"),
+    ("profile_id", "STRING"),
+    ("campaign_id", "STRING"),
+    ("campaign_name", "STRING"),
+    ("ad_group_id", "STRING"),
+    ("ad_group_name", "STRING"),
+    ("ad_id", "STRING"),
+    ("keyword_id", "STRING"),
+    ("search_term", "STRING"),
+    ("advertised_asin", "STRING"),
+    ("purchased_asin", "STRING"),
+    ("segments_json", "STRING"),
+    ("attributes_json", "STRING"),
+    ("metric", "STRING"),
+    ("value_num", "FLOAT"),
+    ("cost_source_currency", "STRING"),
+    ("pull_id", "STRING"),
+    ("loaded_at", "STRING"),
+    ("project_id", "STRING"),
+]
 
 # (landed column, post-transform candidate keys -- canonical first, official
 # dictionary id as fallback for catalog selections outside the manifest map).
@@ -894,7 +952,7 @@ def _insert_raw_rows(
     SEPARATE attributes_json column (latest-wins) and are kept OUT of the dbt
     supersede grain so a status flip on a re-pulled day does not double-count.
     """
-    if db_mode != "duckdb":
+    if db_mode not in ("duckdb", "bigquery"):
         raise ValueError(
             f"_insert_raw_rows: unsupported db_mode {db_mode!r} at P-dev "
             "(BigQuery path not yet implemented)"
@@ -971,12 +1029,24 @@ def _insert_raw_rows(
                 )
             )
 
-    con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
-    con.execute(_RAW_CREATE_DDL)
-    if values:
-        con.executemany(_RAW_INSERT_SQL, values)
-    con.close()
-    return len(values)
+    from core import raw_landing  # noqa: PLC0415 -- AD-2
+
+    if db_mode == "bigquery":
+        raw_landing.land_raw_rows(
+            _RAW_TABLE,
+            [raw_landing.row_from_values(_RAW_COLUMNS, v) for v in values],
+            columns=_RAW_COLUMNS,
+            project_id=project_id,
+            backend="bigquery",
+        )
+        return len(values)
+    else:
+        con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
+        con.execute(raw_landing.duckdb_ddl(_RAW_TABLE, _RAW_COLUMNS))
+        if values:
+            con.executemany(raw_landing.duckdb_insert(_RAW_TABLE, _RAW_COLUMNS), values)
+        con.close()
+        return len(values)
 
 
 def _coerce_str(value) -> str:
@@ -1646,11 +1716,11 @@ def _query_bigquery(sql: str, params: dict) -> list[dict]:
     return [dict(zip(cols, row)) for row in result]
 
 
-def _get_mart_table(db_mode: str) -> str:
+def _get_mart_table(db_mode: str, project_id: str | None) -> str:
     if db_mode == "duckdb":
         from core import warehouse_tenancy  # noqa: PLC0415
 
-        return f"{warehouse_tenancy.mart_prefix(None)}fact_daily_kpi"
+        return f"{warehouse_tenancy.mart_prefix(project_id)}fact_daily_kpi"
     dataset = os.environ.get("BQ_MARTS_DATASET", "marts")
     gcp_project = os.environ.get("GCP_PROJECT", "")
     prefix = f"{gcp_project}.{dataset}" if gcp_project else dataset
@@ -1677,7 +1747,7 @@ _MART_QUERY = """
 def _query_mart(date_from: str, date_to: str, project_id: str = "default") -> list[dict]:
     # AD-12: MCP server reads marts only -- never raw_* tables or CSV.
     db_mode = _get_db_mode()
-    table = _get_mart_table(db_mode)
+    table = _get_mart_table(db_mode, project_id)
 
     if db_mode == "duckdb":
         sql = _MART_QUERY.format(table=table, p_project="?", p_from="?", p_to="?")

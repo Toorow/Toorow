@@ -376,7 +376,7 @@ class TestUsertypesBuilder:
 
     def _user_type_rows(self):
         # user_type present -> the resolver applies the FR label map
-        # (new->Nouveaux, returning->Fidèles, unknown->Indéterminés).
+        # (new->Nouveaux, returning->Returning, unknown->Undetermined).
         return [
             _row("active_users", "user_type", "returning", 600.0, connector="google-analytics"),
             _row("active_users", "user_type", "new", 350.0, connector="google-analytics"),
@@ -395,7 +395,7 @@ class TestUsertypesBuilder:
 
     def test_cites_dominant_user_type_segment_with_fr_label(self):
         """Story 10.2: when user_type rows are present, line 1 cites the dominant
-        user_type segment with its FR label (Fidèles), not the device segment —
+        user_type segment with its FR label (Returning), not the device segment —
         proves the donut_user_type -> comment wiring end to end (review 10.2 F-1)."""
         rows = self._user_type_rows() + self._rows()
         bd = self._block_data(rows)
@@ -403,8 +403,8 @@ class TestUsertypesBuilder:
         comment = narrative_module.build_usertypes_comment(
             block_data=bd, rollup=roll, context_events=[_EVT], pull_ids=["pull_abc"]
         )
-        # returning (600 / 1000 = 60%) dominates -> FR label "Fidèles" leads line 1.
-        assert "Fidèles" in comment
+        # returning (600 / 1000 = 60%) dominates -> FR label "Returning" leads line 1.
+        assert "Returning" in comment
         assert "Type dominant" in comment
         assert len(comment.splitlines()) <= 3
 
@@ -592,7 +592,7 @@ def _has_causal_language(text: str) -> bool:
 class TestAD9PerBuilder:
     """AD-9: per-builder negative test suite."""
 
-    def test_no_context_events_emits_contexte_manquant(self, builder_fn, block_data, rollup):
+    def test_no_context_events_emits_contexte_missing(self, builder_fn, block_data, rollup):
         """With context_events=[], the comment must contain 'Contexte manquant'."""
         comment = builder_fn(
             block_data=block_data,
@@ -1035,7 +1035,7 @@ def test_connectors_builder_direct_call_still_works():
         connector_count=2,
     )
     assert "google-analytics" in comment
-    assert "configurés" in comment  # accented plural (UI-review F-2/F-7)
+    assert "configuré" in comment  # accented plural (UI-review F-2/F-7)
 
 
 def test_get_card_kpi_still_uses_generic_build_narrative():

@@ -10,7 +10,7 @@ sources:
       journaliers sont calcules par pagination du Search API (filtre BETWEEN sur
       createdate/closedate). Metriques CRM PURES (AD-4, Story 15.5) : jamais
       sommees avec les conversions regies ni le revenue Shopify/Stripe.
-    schema: main  # DuckDB default schema ; BigQuery: override via profiles.yml dataset
+    schema: "{{ var('raw_schema', 'main') }}"  # 24.4 AC2: org_<wslug>_raw injected by orchestrator, 'main' without var (bit-identique)
     tables:
       - name: raw_hubspot_contacts_daily
         description: >

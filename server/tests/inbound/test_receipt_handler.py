@@ -13,6 +13,7 @@ contract. No secret appears in any response body.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import hmac
 import time
@@ -23,7 +24,9 @@ from starlette.testclient import TestClient
 
 _SIGNING_SECRET = "test-signing-key-DO-NOT-USE-IN-PROD"
 _DOMAIN = "ingest.toorow.com"
-_GOOD_RECIPIENT = f"ds_abc123@{_DOMAIN}"
+_EMAIL_CAPABILITY = "email_capability_0123456789abcdef0123456789"
+_WEBHOOK_CAPABILITY = "webhook_capability_0123456789abcdef012345"
+_GOOD_RECIPIENT = f"ds_{_EMAIL_CAPABILITY}@{_DOMAIN}"
 _EMAIL_PATH = "/v1/webhooks/inbound-email"
 _FILE_PATH = "/v1/webhooks/inbound-file"
 
@@ -32,12 +35,69 @@ _FORBIDDEN_BODY = {"code": "forbidden", "message": "forbidden"}
 
 
 @pytest.fixture(autouse=True)
-def _mailgun_env(monkeypatch):
+def _mailgun_env(monkeypatch, tmp_path):
     monkeypatch.setenv("INBOUND_PROVIDER", "mailgun")
     monkeypatch.setenv("INBOUND_SIGNING_SECRET", _SIGNING_SECRET)
     monkeypatch.setenv("INBOUND_MAX_BODY_BYTES", "26214400")
     monkeypatch.setenv("INBOUND_MAX_HEADER_BYTES", "16384")
     monkeypatch.setenv("INBOUND_MAX_ATTACHMENTS", "20")
+    monkeypatch.setenv("INBOUND_QUARANTINE_LOCAL_ROOT", str(tmp_path / "quarantine"))
+
+    class _Conn:
+        commits = 0
+
+        def commit(self):
+            self.commits += 1
+
+        def rollback(self):
+            pass
+
+    conn = _Conn()
+    monkeypatch.setattr(
+        "core.db.get_connection", lambda: contextlib.nullcontext(conn)
+    )
+    monkeypatch.setattr(
+        "core.inbound_credentials.resolve_for_delivery",
+        lambda _conn, *, raw_token: {
+            "allowed": True,
+            "scope": {
+                "datastream_id": "ds-public-test",
+                "credential_id": "dic_public_test",
+                "channel": (
+                    "webhook" if raw_token == _WEBHOOK_CAPABILITY else "email"
+                ),
+            },
+        },
+    )
+    monkeypatch.setattr(
+        "core.inbound_receipts.assert_provider_event_fingerprint",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "core.inbound_receipts.get_receipt_by_provider_event",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "core.inbound_receipts.record_receipt",
+        lambda _conn, **kwargs: {
+            "receipt_id": "inbrx_01JZAAABBBCCCDDDEEEFFF00999",
+            "created_at": "2026-08-01T10:00:00+00:00",
+            "operation_outcome": "succeeded",
+            "receipt_fingerprint": kwargs["receipt_fingerprint"],
+        },
+    )
+    monkeypatch.setattr(
+        "inbound.receipt._resolve_org_id",
+        lambda _conn, *, datastream_id: "org-public-test",
+    )
+    monkeypatch.setattr(
+        "core.inbound_raw_imports.record_raw_import",
+        lambda _conn, **kwargs: {
+            "raw_import_id": f"inbraw_{kwargs['ordinal']}",
+            "state": "RECEIVED",
+            "deduplicated": False,
+        },
+    )
 
 
 def _client() -> TestClient:
@@ -75,15 +135,18 @@ def _mailgun_form(
 
 
 class TestMailgunAccept:
-    def test_valid_signed_email_returns_202_with_correlation_id(self):
+    def test_valid_signed_email_returns_202_with_durable_receipt_id(self):
         resp = _client().post(_EMAIL_PATH, data=_mailgun_form())
         assert resp.status_code == 202
         body = resp.json()
         assert body["status"] == "accepted"
-        assert body["correlation_id"].startswith("inbrx_")
+        assert body["receipt_id"].startswith("inbrx_")
+        assert body["outcome"] == "succeeded"
 
     def test_valid_signed_file_route_also_202(self):
-        resp = _client().post(_FILE_PATH, data=_mailgun_form())
+        resp = _client().post(
+            _FILE_PATH, data=_mailgun_form(recipient=_WEBHOOK_CAPABILITY)
+        )
         assert resp.status_code == 202
 
     def test_202_response_contains_no_secret(self):
@@ -251,7 +314,7 @@ class TestCloudflareWorkerAdapter:
             },
         )
         assert resp.status_code == 202
-        assert resp.json()["correlation_id"].startswith("inbrx_")
+        assert resp.json()["receipt_id"].startswith("inbrx_")
 
     def test_wrong_shared_secret_is_constant_shape_403(self, monkeypatch):
         self._cf_env(monkeypatch)
@@ -283,6 +346,82 @@ class TestCloudflareWorkerAdapter:
 # ---------------------------------------------------------------------------
 # Operator misconfiguration — 500, but never leaks the configured provider name
 # ---------------------------------------------------------------------------
+
+
+class TestDurablePublicSeam:
+    def test_denial_happens_before_any_quarantine_write(self, monkeypatch):
+        from inbound import receipt as receipt_module
+
+        monkeypatch.setattr(
+            "core.inbound_credentials.resolve_for_delivery",
+            lambda *args, **kwargs: {"allowed": False, "scope": None},
+        )
+        monkeypatch.setattr(
+            receipt_module,
+            "_stage_quarantine",
+            lambda **kwargs: pytest.fail("unauthorized bytes reached quarantine"),
+        )
+        response = _client().post(_EMAIL_PATH, data=_mailgun_form())
+        assert response.status_code == 403
+        assert response.json() == _FORBIDDEN_BODY
+
+    def test_database_commit_precedes_manifest_and_202(self, monkeypatch):
+        from inbound import receipt as receipt_module
+
+        events = []
+
+        class _Conn:
+            def commit(self):
+                events.append("commit")
+
+            def rollback(self):
+                events.append("rollback")
+
+        monkeypatch.setattr(
+            "core.db.get_connection", lambda: contextlib.nullcontext(_Conn())
+        )
+        monkeypatch.setattr(
+            receipt_module,
+            "_publish_manifest",
+            lambda **kwargs: (events.append("manifest") or None),
+        )
+        monkeypatch.setattr(
+            "core.inbound_raw_imports.record_raw_import",
+            lambda _conn, **kwargs: (
+                events.append(f"raw:{kwargs['ordinal']}")
+                or {"raw_import_id": "inbraw_0", "state": "RECEIVED"}
+            ),
+        )
+        response = _client().post(
+            _EMAIL_PATH, data=_mailgun_form(),
+            files=[("attachment-1", ("data.csv", b"a,b\n1,2\n", "text/csv"))],
+        )
+        assert response.status_code == 202
+        assert events == ["raw:0", "commit", "manifest"]
+        assert response.json() == {
+            "status": "accepted",
+            "receipt_id": "inbrx_01JZAAABBBCCCDDDEEEFFF00999",
+            "outcome": "succeeded",
+        }
+
+    def test_fingerprint_mismatch_writes_no_new_object(self, monkeypatch):
+        from core.inbound_receipts import InboundReceiptFingerprintMismatch
+        from inbound import receipt as receipt_module
+
+        monkeypatch.setattr(
+            "core.inbound_receipts.assert_provider_event_fingerprint",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                InboundReceiptFingerprintMismatch("mismatch")
+            ),
+        )
+        monkeypatch.setattr(
+            receipt_module,
+            "_stage_quarantine",
+            lambda **kwargs: pytest.fail("mismatched replay reached quarantine"),
+        )
+        response = _client().post(_EMAIL_PATH, data=_mailgun_form())
+        assert response.status_code == 403
+        assert response.json() == _FORBIDDEN_BODY
 
 
 def test_misconfigured_provider_returns_500_without_leaking_name(monkeypatch):

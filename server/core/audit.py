@@ -54,153 +54,113 @@ except ImportError:  # pragma: no cover
 PLATFORM_DB_URL_ENV = "PLATFORM_DB_URL"
 
 # ---------------------------------------------------------------------------
-# Action code constants (public API -- treat as stable once rows exist).
+# AN ACTION IS DECLARED WHERE IT IS WRITTEN -- AD-42, 2026-08-12.
+#
+# WHAT THIS REPLACES AND WHY. This file held 96 `ACTION_` constants, and every
+# feature that ever audited anything had to open it to append one: 43 edits from
+# 29 distinct subjects since June, **34 of them adding nothing but a constant**.
+# That is a crossroads -- a file on everybody's path -- and the cost is not only
+# the conflicts. Measured on the live `app.audit_log` the day this changed:
+#
+#     96   constants declared here
+#     64   action values actually written in production
+#     29   of those 64 -- 45 % -- declared NOWHERE: the module types the string
+#          in by hand, because the list was too far away to bother with
+#     61   of the 96 declared and never written once
+#
+# So the central list had already failed at the one thing it was for. It was not
+# a vocabulary; it was a list that 45 % of writers bypassed, with no check able
+# to see the difference between an action and a typo.
+#
+# THE INVERSION. `declare_action` is called by the module that WRITES the action,
+# beside the code that writes it. Nothing has to open this file to add one.
+# `write_audit_row` then refuses an action nobody declared -- which is the
+# guarantee the list was supposed to give and never did.
+#
+#     # in core/datastreams.py, next to the write
+#     ACTION_DATASTREAM_CREATED = declare_action("datastream.created")
+#
+# WHAT STAYS DECLARED HERE. Only the actions written by more than one module --
+# a shared vocabulary has no single owner, and putting it in one of the writers
+# would make the other import from a module it has no other reason to know.
+# ---------------------------------------------------------------------------
+
+#: Every action any module has declared, in declaration order. Populated at
+#: import time by the owners, never written by hand.
+_DECLARED_ACTIONS: dict[str, str] = {}
+
+
+class UndeclaredAuditAction(ValueError):
+    """An action nobody declared. Names the gesture, not the constant."""
+
+    def __init__(self, action: str) -> None:
+        super().__init__(
+            f"{action!r} is not a declared audit action. Declare it beside the "
+            "code that writes it: `ACTION_X = declare_action(\"" + action + "\")`."
+        )
+        self.action = action
+
+
+def declare_action(code: str) -> str:
+    """Declare an audit action, and return it so the caller can name it.
+
+    Called at IMPORT time by the module that writes it, which is why the check in
+    `write_audit_row` is sound: a module that writes an action has been imported,
+    so its declaration has run.
+
+    Re-declaring the SAME code from the SAME module is allowed (a module reloaded
+    under a test harness); re-declaring it from a different one is refused, which
+    is the collision the central list could never catch by eye.
+    """
+    import inspect  # noqa: PLC0415 -- only on the declaration path, never on write
+
+    frame = inspect.currentframe()
+    owner = "?"
+    if frame is not None and frame.f_back is not None:
+        owner = frame.f_back.f_globals.get("__name__", "?")
+    previous = _DECLARED_ACTIONS.get(code)
+    if previous is not None and previous != owner:
+        raise ValueError(
+            f"audit action {code!r} is declared by {previous} and by {owner}. "
+            "One action, one owner -- or declare it in `core.audit` if two "
+            "modules genuinely write it."
+        )
+    _DECLARED_ACTIONS[code] = owner
+    return code
+
+
+def declared_actions() -> dict[str, str]:
+    """Every declared action and the module that owns it. A reading, not a store."""
+    return dict(_DECLARED_ACTIONS)
+
+
+# ---------------------------------------------------------------------------
+# Actions written by MORE THAN ONE module -- they stay here, and only they.
 # Renaming any of these requires a DB migration. Add new ones; never rename.
 # ---------------------------------------------------------------------------
 
-ACTION_CONNECTION_CREATED = "connection.created"
-ACTION_CONNECTION_REVOKED = "connection.revoked"
-ACTION_PULL_TRIGGERED = "pull.triggered"
-ACTION_PULL_COMPLETED = "pull.completed"
-ACTION_PULL_FAILED = "pull.failed"
-ACTION_CONTEXT_EVENT_CREATED = "context_event.created"
-# Story 5.3 (AC5, T5.6) -- business threshold alert definition lifecycle
-ACTION_ALERT_DEF_CREATED = "alert_def.created"
-ACTION_ALERT_DEF_UPDATED = "alert_def.updated"
-ACTION_ALERT_DEF_DELETED = "alert_def.deleted"
-# Story 5.5 (AC3) -- user feedback submitted via submit_feedback tool
-ACTION_FEEDBACK_SUBMITTED = "feedback.submitted"
-# Story 6.5 (AC3, AC4) -- notebook lifecycle
-ACTION_NOTEBOOK_CREATED = "notebook_created"
-ACTION_NOTEBOOK_RUN = "notebook_run"
-ACTION_NOTEBOOK_DELETED = "notebook_deleted"
-# Story 21.1 (AC4) -- organization lifecycle (Epic 21, FR37/CAP-25)
-ACTION_ORG_CREATED = "org_created"
-ACTION_ORG_UPDATED = "org_updated"
-ACTION_ORG_MEMBER_ADDED = "org_member_added"
-# Story 21.5 follow-up -- org membership management (remove / change role|status)
-ACTION_ORG_MEMBER_REMOVED = "org_member_removed"
-ACTION_ORG_MEMBER_UPDATED = "org_member_updated"
-# Story 21.3 -- cross-org credential account sharing (per-account grants)
-ACTION_ACCOUNT_EXPOSED = "credential_account_exposed"
-ACTION_ACCOUNT_GRANT_REVOKED = "credential_account_grant_revoked"
-# Story 24.5 -- dataset marts access grants (BigQuery IAM, per-org)
-ACTION_DATASET_ACCESS_GRANTED = "dataset_access.granted"
-ACTION_DATASET_ACCESS_REVOKED = "dataset_access.revoked"
-# Story 21.4 -- flux (app.datastreams) linked to / unlinked from a project (M:N)
-ACTION_FLUX_LINKED = "flux_linked_to_project"
-ACTION_FLUX_UNLINKED = "flux_unlinked_from_project"
-# Story 7.1 (AC3, AC4) -- project lifecycle
-ACTION_PROJECT_CREATED = "project_created"
-ACTION_PROJECT_ARCHIVED = "project_archived"
-ACTION_PROJECT_GEOGRAPHIC_POSTURE_UPDATED = "project.geographic_posture.updated"
-ACTION_PROJECT_GEOGRAPHIC_CHANGE_CONFIRMED = "project.geographic_change.confirmed"
-ACTION_CONNECTION_REVOKED_ON_ARCHIVE = "connection_revoked_on_archive"
-# Story 7.3 (AC3, AC4, AC5, AC6) -- per-tenant key lifecycle + connection revocation
-ACTION_CONNECTION_REVOKED = "connection.revoked"
-ACTION_KEY_CREATED = "key_created"
-ACTION_KEY_ROTATED = "key_rotated"
-ACTION_KEY_DELETED = "key_deleted"
+ACTION_CONNECTION_CREATED = declare_action("connection.created")
+ACTION_CONNECTION_REVOKED = declare_action("connection.revoked")
+ACTION_PULL_TRIGGERED = declare_action("pull.triggered")
+ACTION_CONTEXT_EVENT_CREATED = declare_action("context_event.created")
 # Story 7.4 (AC4, AC7) -- a caller attempted to reach a resource outside its
 # resolved project scope. Written on every rejected cross-scope access so that
 # refused access is observable (FR12, AD-5, AD-8). The attempt is rejected with
 # 404 (existence not disclosed) or 403; the audit row records what was refused.
-ACTION_CROSS_SCOPE_ATTEMPT = "access_denied"
+ACTION_CROSS_SCOPE_ATTEMPT = declare_action("access_denied")
 # Story 8.2 (AC5, AC6) -- datastream lifecycle (create / update / delete / run).
-ACTION_DATASTREAM_CREATED = "datastream.created"
-ACTION_DATASTREAM_UPDATED = "datastream.updated"
-ACTION_DATASTREAM_DELETED = "datastream.deleted"
-ACTION_DATASTREAM_RUN = "datastream.run"
-ACTION_DATASTREAM_INTENT_VERSIONED = "datastream.intent.versioned"
-ACTION_DATASTREAM_MAPPING_VERSIONED = "datastream.mapping.versioned"
+ACTION_DATASTREAM_CREATED = declare_action("datastream.created")
+ACTION_DATASTREAM_UPDATED = declare_action("datastream.updated")
+ACTION_DATASTREAM_RUN = declare_action("datastream.run")
 # Story 12.5 -- atomic candidate publication (candidate registry + pointer swap).
-ACTION_DATASTREAM_PUBLISHED = "datastream.published"
-ACTION_DATASTREAM_PUBLICATION_FAILED = "datastream.publication.failed"
-ACTION_DATASTREAM_EXECUTION_STATE_CHANGED = "datastream.execution.state_changed"
-# Story 12.7 -- register an existing BigQuery object read-only (no ownership).
-# The observation of an external object + the virtual pull commit it mints.
-ACTION_EXTERNAL_BQ_OBSERVED = "datastream.external_bq.observed"
-ACTION_EXTERNAL_BQ_OBSERVATION_FAILED = "datastream.external_bq.observation.failed"
-# Story 11.1 -- context topic and procedure lifecycle
-ACTION_CONTEXT_TOPIC_CREATED = "context_topic.created"
-ACTION_CONTEXT_TOPIC_UPDATED = "context_topic.updated"
-ACTION_CONTEXT_TOPIC_ARCHIVED = "context_topic.archived"
-ACTION_PROCEDURE_CREATED = "procedure.created"
-ACTION_PROCEDURE_UPDATED = "procedure.updated"
-ACTION_PROCEDURE_ARCHIVED = "procedure.archived"
-# Story 11.4 -- context graph edge lifecycle
-ACTION_GRAPH_EDGE_CREATED = "context_graph.edge.created"
-ACTION_GRAPH_EDGE_DELETED = "context_graph.edge.deleted"
-# Story 44.1 -- one-shot knowledge_entries -> context_topics data migration
-# (infra/nango/migrations/108_knowledge_entries_to_context_topics.sql). The SQL
-# migration hard-codes this string literal (it cannot import this module); keep
-# both in sync if this ever changes.
-ACTION_CONTEXT_TOPIC_MIGRATED = "context_topic.migrated"
-# Story 44.11 -- "Request review" intent capture (no notification delivery;
-# surfacing these requests is explicitly out of scope for this story).
-ACTION_CONTEXT_REVIEW_REQUESTED = "context.review_requested"
+ACTION_DATASTREAM_PUBLISHED = declare_action("datastream.published")
+ACTION_DATASTREAM_PUBLICATION_FAILED = declare_action("datastream.publication.failed")
 
-# Story 22.1: media plans (FR38 / CAP-26).
-ACTION_MEDIA_PLAN_CREATED = "media_plan.created"
-ACTION_MEDIA_PLAN_VERSION_CREATED = "media_plan.version.created"
-ACTION_MEDIA_PLAN_VERSION_PUBLISHED = "media_plan.version.published"
-# Story 22.3: N:M line<->campaign mapping, splits & orphan status (FR38 / CAP-26).
-ACTION_MEDIA_PLAN_MAPPING_SET = "media_plan.mapping.set"
-ACTION_MEDIA_PLAN_MAPPING_ORPHANED = "media_plan.mapping.orphaned"
-# Story 22.3 review F-1/F-2: après un orphelinage/réactivation, la répartition des
-# mappings actifs restants d'une campagne est recalculée en équiréparti (défaut
-# ajustable) pour préserver SUM(split_weight)=1.0. Écrit une ligne d'audit par
-# (plan, connector, campaign_ref) rééquilibrée pour rendre le changement traçable (AD-9).
-ACTION_MEDIA_PLAN_MAPPING_REBALANCED = "media_plan.mapping.rebalanced"
-# Story 22.2: Excel multi-sheet versioned import (FR38 / CAP-26).
-ACTION_MEDIA_PLAN_IMPORT_CONTRACT_SET = "media_plan.import_contract.set"
-ACTION_MEDIA_PLAN_IMPORTED = "media_plan.imported"
-# Story 24.2 (AC5, T7) -- org data-plane warehouse schema lifecycle (Epic 24 RGPD).
-ACTION_ORG_SCHEMAS_PROVISIONED = "org_schemas_provisioned"
-ACTION_ORG_SCHEMAS_DROPPED = "org_schemas_dropped"
-ACTION_ORG_DELETED = "org_deleted"
-# RGPD account erasure (DELETE /api/me). The erased identity is kept in the audit
-# row on purpose: the ledger is the durable proof that the erasure happened, and
-# without the subject it proves nothing. This is the ONE trace that survives the
-# account -- the endpoint says so explicitly in its `retained` payload.
-ACTION_ACCOUNT_ERASED = "account_erased"
+# AD-43 : deux ecrivains depuis que l effacement d organisation a quitte
+# `admin_api` -- la porte de partage de dataset, et `org_lifecycle`.
+ACTION_DATASET_ACCESS_REVOKED = declare_action("dataset_access.revoked")
+ACTION_ORG_SCHEMAS_DROPPED = declare_action("org_schemas_dropped")
 # Story 13.5 volet (b) -- partage tokenise des snapshots rendus (O1, AD-20 ratifie).
-ACTION_SNAPSHOT_SHARED = "render_snapshot.shared"
-ACTION_SNAPSHOT_SHARE_REVOKED = "render_snapshot.share_revoked"
-ACTION_SNAPSHOT_SHARE_ACCESSED = "render_snapshot.share_accessed"
-# Story 12.9 -- CSV/Excel governed import (FR27, FR30, FR31, FR32, FR35).
-ACTION_MANAGED_FEED_IMPORT_STARTED = "managed_feed.import.started"
-ACTION_MANAGED_FEED_IMPORT_COMPLETED = "managed_feed.import.completed"
-ACTION_MANAGED_FEED_IMPORT_FAILED = "managed_feed.import.failed"
-ACTION_MANAGED_FEED_IMPORT_BLOCKED = "managed_feed.import.blocked"
-ACTION_CSV_EXCEL_CONTRACT_VERSIONED = "managed_feed.import_contract.versioned"
-# Story 38.2 (AC1) -- connector installation lifecycle (platform-level).
-# Convention: "<domain>.<noun>.<verb>" lower-snake.
-ACTION_CONNECTOR_INSTALL_APPLIED = "connector.install.applied"
-ACTION_CONNECTOR_STATE_CHANGED = "connector.state.changed"
-ACTION_CONNECTOR_INSTALL_DENIED = "connector.install.denied"
-# Story 38.3 (AC1) -- connector domain and adapter-route configuration (platform-level).
-ACTION_CONNECTOR_DOMAIN_CONFIGURED = "connector.domain.configured"
-ACTION_CONNECTOR_DOMAIN_CONFIG_DENIED = "connector.domain.config.denied"
-# Story 38.4 (AC1, AC5) -- connector verification runs and synthetic delivery (platform-level).
-# Convention: "<domain>.<noun>.<verb>" lower-snake. No provider vocabulary (AD-2).
-ACTION_CONNECTOR_VERIFICATION_RAN = "connector.verification.ran"
-ACTION_CONNECTOR_VERIFICATION_DENIED = "connector.verification.denied"
-# Story 38.5 (AC1, AC2) -- connector activation/deactivation lifecycle (org-scoped).
-# Convention: "<domain>.<noun>.<verb>" lower-snake. No provider vocabulary (AD-2).
-ACTION_CONNECTOR_ACTIVATION_ACTIVATED = "connector.activation.activated"
-ACTION_CONNECTOR_ACTIVATION_DEACTIVATED = "connector.activation.deactivated"
-ACTION_CONNECTOR_ACTIVATION_DENIED = "connector.activation.denied"
-# Story 38.6 (AC1, AC5) -- inbound managed-feed Datastream creation from template.
-# Convention: "<domain>.<noun>.<verb>" lower-snake. No provider vocabulary (AD-2).
-ACTION_INBOUND_DATASTREAM_CREATED = "inbound.datastream.created"
-# Story 38.7 (AC1, AC2) -- inbound delivery credential lifecycle (issue/rotate/revoke).
-# Convention: "<domain>.<noun>.<verb>" lower-snake. No provider vocabulary (AD-2).
-# Note: the raw token is NEVER in any audit payload (E38-NFR03, show-once invariant).
-ACTION_INBOUND_CREDENTIAL_ISSUED = "inbound.credential.issued"
-ACTION_INBOUND_CREDENTIAL_ROTATED = "inbound.credential.rotated"
-ACTION_INBOUND_CREDENTIAL_REVOKED = "inbound.credential.revoked"
-ACTION_INBOUND_CREDENTIAL_DENIED = "inbound.credential.denied"
 
 
 # ---------------------------------------------------------------------------
@@ -248,10 +208,28 @@ def insert_audit_row(
     Transactional domain mutations use this seam so their state change and audit
     evidence either commit together or roll back together. The legacy public
     wrapper below remains best-effort for callers that do not own a transaction.
+
+    AN UNDECLARED ACTION IS REFUSED HERE (AD-42). Sound because the module that
+    writes an action is the module that declares it, and it has been imported by
+    the time it writes. This is the check the 96-constant list never provided:
+    45 % of the values in the live journal were declared nowhere, and nothing
+    could tell an action from a typo. `logger.warning` rather than a raise would
+    be a guard nobody reads -- but neither may an audit break the write it
+    records, so the caller-facing wrapper below still swallows it.
     """
+    if action not in _DECLARED_ACTIONS:
+        raise UndeclaredAuditAction(action)
 
     row_id = _mint_audit_id()
-    metadata_json = json.dumps(metadata) if metadata is not None else None
+    # `default=str` : un metadata qui porte un `datetime` faisait lever
+    # `TypeError: Object of type datetime is not JSON serializable` ICI --
+    # apres que l'ecriture metier soit passee. L'appelant recevait
+    # `db_error / Context Hub is temporarily unavailable`, reessayait, et
+    # dupliquait. Mesure du 2026-08-03 en creant un Business Domain par l'API.
+    # Un audit ne doit jamais faire echouer ce qu'il enregistre.
+    metadata_json = (
+        json.dumps(metadata, default=str) if metadata is not None else None
+    )
     connection_ref_value = connection_ref if connection_ref else None
     with conn.cursor() as cur:
         cur.execute(
@@ -322,6 +300,7 @@ def write_audit_row(
 
 
 def query_audit_log(
+    project_id: str,
     start: str | None = None,
     end: str | None = None,
     action: str | None = None,
@@ -331,6 +310,8 @@ def query_audit_log(
     """Query app.audit_log with optional filters. Returns newest-first, max `limit`.
 
     Args:
+        project_id:    Required exact project scope. Legacy rows without this
+                       persisted scope are deliberately excluded.
         start:          ISO-8601 date/datetime string (inclusive lower bound on
                         created_at). None = no lower bound.
         end:            ISO-8601 date/datetime string (inclusive upper bound on
@@ -341,7 +322,7 @@ def query_audit_log(
 
     Returns:
         List of dicts with keys: id, identity, action, provider_account,
-        connection_ref, metadata, created_at (ISO-8601 string).
+        connection_ref, outcome, trace_id, resource, created_at.
 
     Raises:
         Exception: propagates DB errors to the API layer (unlike write_audit_row).
@@ -350,8 +331,13 @@ def query_audit_log(
     # what the caller passes (protects the endpoint from limit=10**9).
     limit = max(1, min(int(limit), 500))
 
-    clauses: list[str] = []
-    params: list[Any] = []
+    if not project_id:
+        raise ValueError("project_id is required")
+
+    # Project scope is mandatory and deliberately the first predicate. Rows
+    # written before project-scoped audit metadata existed are excluded.
+    clauses: list[str] = ["metadata->>'project_id' = %s"]
+    params: list[Any] = [project_id]
 
     if start is not None:
         clauses.append("created_at >= %s::timestamptz")
@@ -374,7 +360,10 @@ def query_audit_log(
 
     sql = f"""
         SELECT id, identity, action, provider_account, connection_ref,
-               metadata, created_at
+               metadata->>'outcome' AS outcome,
+               metadata->>'trace_id' AS trace_id,
+               COALESCE(metadata->'resource_path', metadata->'resource') AS resource,
+               created_at
         FROM app.audit_log
         {where_clause}
         ORDER BY created_at DESC
@@ -391,9 +380,10 @@ def query_audit_log(
                 for col, val in zip(cols, row):
                     if col == "created_at" and val is not None:
                         record[col] = val.isoformat()
-                    elif col == "metadata" and val is not None:
-                        # psycopg3 returns JSONB as dict already; normalise
-                        record[col] = val if isinstance(val, dict) else json.loads(val)
+                    elif col == "resource" and val is not None:
+                        record[col] = (
+                            val if isinstance(val, (dict, list)) else json.loads(val)
+                        )
                     else:
                         record[col] = val
                 rows.append(record)
@@ -411,7 +401,9 @@ AUDIT_CSV_COLUMNS = [
     "action",
     "provider_account",
     "connection_ref",
-    "metadata",
+    "outcome",
+    "trace_id",
+    "resource",
     "created_at",
 ]
 
@@ -448,7 +440,7 @@ def rows_to_csv(rows: list[dict[str, Any]]) -> str:
 
     Uses Python's stdlib csv.writer -- no third-party CSV library.
     Columns in canonical order: id, identity, action, provider_account,
-    connection_ref, metadata, created_at. Cell values are formula-injection
+    connection_ref, outcome, trace_id, resource, created_at. Cell values are formula-injection
     neutralised via _csv_safe.
     """
     buf = io.StringIO()
@@ -462,9 +454,11 @@ def rows_to_csv(rows: list[dict[str, Any]]) -> str:
                 _csv_safe(row.get("action", "")),
                 _csv_safe(row.get("provider_account", "")),
                 _csv_safe(row.get("connection_ref", "")),
+                _csv_safe(row.get("outcome", "")),
+                _csv_safe(row.get("trace_id", "")),
                 _csv_safe(
-                    json.dumps(_sanitize_metadata(row["metadata"]))
-                    if row.get("metadata") is not None
+                    json.dumps(_sanitize_metadata(row["resource"]))
+                    if row.get("resource") is not None
                     else ""
                 ),
                 row.get("created_at", ""),

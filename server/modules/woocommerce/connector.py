@@ -1,8 +1,9 @@
 """WooCommerce connector -- epic-25 (self-hosted commerce, sales source of record).
 
 Store-scoped e-commerce sales source, the self-hosted sibling of shopify. Exposes
-a module-level ``mcp_app: FastMCP`` the core loader mounts under the ``woocommerce``
-namespace (AD-2): same "drop-a-folder" pattern as shopify/meta-ads/gsc, one additive
+a module-level ``mcp_app: FastMCP`` as the conformance surface (AD-1 envelope).
+Since AD-42 the core no longer mounts it (execution uses the Datastream-parameterized
+core tools): same "drop-a-folder" pattern as shopify/meta-ads/gsc, one additive
 UNION block in the mart.
 
 # AD-12: the MCP server reads ONLY the fact_daily_kpi mart -- no raw_*, no CSV.
@@ -46,7 +47,9 @@ from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-# Module-level FastMCP instance -- the public surface the loader mounts.
+# Module-level FastMCP instance, kept as the conformance surface (AD-1 envelope,
+# validated by server/tests/conformance/test_envelope.py). Since AD-42 the core
+# no longer mounts it: execution uses the Datastream-parameterized core tools.
 mcp_app = FastMCP("woocommerce")
 
 WC_API_PATH = "/wp-json/wc/v3"
@@ -121,11 +124,11 @@ def _query_bigquery(sql: str, params: dict) -> list[dict]:
     return [dict(zip(cols, row)) for row in result]
 
 
-def _get_mart_table(db_mode: str) -> str:
+def _get_mart_table(db_mode: str, project_id: str | None) -> str:
     if db_mode == "duckdb":
         from core import warehouse_tenancy  # noqa: PLC0415
 
-        return f"{warehouse_tenancy.mart_prefix(None)}fact_daily_kpi"
+        return f"{warehouse_tenancy.mart_prefix(project_id)}fact_daily_kpi"
     dataset = os.environ.get("BQ_MARTS_DATASET", "marts")
     gcp_project = os.environ.get("GCP_PROJECT", "")
     prefix = f"{gcp_project}.{dataset}" if gcp_project else dataset
@@ -152,7 +155,7 @@ _MART_QUERY = """
 def _query_mart(date_from: str, date_to: str, project_id: str = "default") -> list[dict]:
     """Query fact_daily_kpi mart -- DuckDB or BigQuery (AD-12: marts only)."""
     db_mode = _get_db_mode()
-    table = _get_mart_table(db_mode)
+    table = _get_mart_table(db_mode, project_id)
 
     if db_mode == "duckdb":
         sql = _MART_QUERY.format(table=table, p_project="?", p_from="?", p_to="?")
@@ -358,18 +361,18 @@ def _insert_raw_rows(
     db_mode: str,
     duckdb_path: str,
 ) -> int:
-    """Insert canonical rows into raw_woocommerce_orders (DuckDB at P-dev).
+    """Insert canonical rows into raw_woocommerce_orders.
 
     # refund_amount is stored in its OWN positive column. It is NEVER subtracted
     # from revenue here (decision REFERENCE shopify 15.4 / stripe 15.7).
     """
-    if db_mode != "duckdb":
-        raise ValueError(
-            f"_insert_raw_rows: unsupported db_mode {db_mode!r} at P-dev "
-            "(BigQuery path not yet implemented)"
-        )
+    if db_mode not in ("duckdb", "bigquery"):
+        raise ValueError(f"_insert_raw_rows: unsupported db_mode {db_mode!r}")
     from core import warehouse_write  # noqa: PLC0415
 
+    # BOTH BACKENDS, ONE PATH. `open_raw_writer` resolves DuckDB or BigQuery
+    # from TOOROW_DB_MODE itself, so the same executemany/close lands on either
+    # (reference: shopify _insert_raw_rows).
     con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
     con.execute(_RAW_CREATE_DDL)
     values = [
@@ -777,7 +780,7 @@ def _insert_catalog_rows(
 
     # AD-22: raw_woocommerce_orders (the legacy pull() table) is never touched here.
     """
-    if db_mode != "duckdb":
+    if db_mode not in ("duckdb", "bigquery"):
         raise ValueError(f"_insert_catalog_rows: unsupported db_mode {db_mode!r}")
     from core import warehouse_write  # noqa: PLC0415
 
@@ -796,6 +799,7 @@ def _insert_catalog_rows(
             values.append(
                 (date_str, order_id, field_id, row_type, str_value, pull_id, loaded_at, project_id)
             )
+    # BOTH BACKENDS, ONE PATH: `open_raw_writer` routes DuckDB/BigQuery itself.
     if values:
         con.executemany(_CATALOG_RAW_INSERT_SQL, values)
     con.close()

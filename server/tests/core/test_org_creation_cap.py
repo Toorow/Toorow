@@ -20,7 +20,11 @@ import json
 import os
 from unittest.mock import patch
 
-from core import admin_api
+from core import (
+    admin_api,
+    org_lifecycle,  # AD-43 : le handler vit chez son sujet
+    organizations_api,  # AD-43 : le handler vit chez son sujet
+)
 
 
 class _FakeCursor:
@@ -70,11 +74,11 @@ def _patch_db(count: int | None):
 def test_count_is_none_when_the_database_cannot_answer():
     """None n'est PAS zéro : un compte invérifiable ne doit pas ouvrir la porte."""
     with _patch_db(None):
-        assert admin_api._count_active_memberships({"ada@example.com"}) is None
+        assert org_lifecycle._count_active_memberships({"ada@example.com"}) is None
 
 
 def test_count_returns_zero_without_any_usable_key():
-    assert admin_api._count_active_memberships({"", "   "}) == 0
+    assert org_lifecycle._count_active_memberships({"", "   "}) == 0
 
 
 def test_count_matches_on_both_identity_keys():
@@ -99,7 +103,7 @@ def test_count_matches_on_both_identity_keys():
     import core.db
 
     with patch.object(core.db, "get_connection", lambda: _CapturingConn(1)):
-        admin_api._count_active_memberships({"sub-123", "Ada@Example.com"})
+        org_lifecycle._count_active_memberships({"sub-123", "Ada@Example.com"})
 
     assert "LOWER(identity) = ANY" in seen["sql"]
     assert "status = 'active'" in seen["sql"]
@@ -112,10 +116,10 @@ def test_count_matches_on_both_identity_keys():
 
 
 class _Req:
-    """Requête minimale : le plafond s'exécute avant toute lecture du corps.
+    """Query minimale : le plafond s'exécute avant toute lecture du corps.
 
     `valid_body=False` envoie un corps illisible EXPRÈS. Quand le plafond laisse
-    passer, le handler enchaîne sur la création réelle, et la boucle de collision
+    passer, le handler enchaîne sur la création actualle, et la boucle de collision
     de slug tourne sans fin contre une base simulée qui répond toujours une ligne
     (le premier jet de ce test s'y est bloqué jusqu'au timeout). Un corps invalide
     fait s'arrêter le handler juste APRÈS le plafond : c'est précisément ce qu'on
@@ -143,7 +147,7 @@ def _create(count: int | None, *, identity="sub-123", email="ada@example.com",
             patch.object(admin_api, "_check_auth", _auth), \
             patch.object(admin_api, "_check_invitation_identity", _invite_identity), \
             _patch_db(count):
-        return asyncio.run(admin_api._create_org(_Req(valid_body)))
+        return asyncio.run(organizations_api._create_org(_Req(valid_body)))
 
 
 def _payload(response):

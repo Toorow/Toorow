@@ -2,7 +2,7 @@
   "name": "@toorow/card-connectors",
   "private": true,
   "version": "0.1.0",
-  "description": "Connectors card (Epic 9, Story 9.8) — connector inventory with health/freshness + flows. Single-file build (AD-11).",
+  "description": "Connectors card (Epic 9, Story 9.8) \u2014 connector inventory with health/freshness + flows. Single-file build (AD-11).",
   "type": "module",
   "scripts": {
     "build": "vite build",
@@ -13,9 +13,6 @@
   "dependencies": {
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "@mui/material": "^9.0.0",
-    "@emotion/react": "^11.13.0",
-    "@emotion/styled": "^11.13.0",
     "@toorow/shell": "workspace:*",
     "@toorow/card-shell": "workspace:*"
   },

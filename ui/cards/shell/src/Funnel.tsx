@@ -4,14 +4,22 @@
  * Exemples : sessions → conversions, entrée → checkout → paiement.
  * Chaque étape : libellé, valeur, taux de passage depuis l'étape précédente.
  * Drop-off : shading visuel entre étapes (la perte est visible).
+ *
+ * THE CHANGE READS IN ONE GO (story 76-8). The inter-step row used to print
+ * « ▲ 3 % (−260 223 , −97 %) »: an arrow pointing UP above a 97 % collapse, one
+ * percentage that was the passage rate and a second, in a parenthesis, that was
+ * the drop — three numbers for one fact, and the arrow said the opposite of it.
+ * The convention is now the cards' own: ARROW + SIGNED PERCENT + the words that
+ * say what it is compared against, with the passage rate greyed behind it. The
+ * legend that says what the arrows and the colours mean is printed ONCE, by the
+ * card footer (arbitrage 5), never under each block.
  * Aucune dépendance graphique externe (AD-11). Light+dark via theme.
  * État vide designé quand steps est vide.
  */
 
-import { useTheme, alpha } from "@mui/material/styles";
-import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
-
+import { changeMark, verdictColor, verdictTone } from "./verdictTone";
+import { NO_VALUE, formatMeasure, formatPercent } from "./viz/theme/formatters";
+import { Box, Typography, alpha, useTheme } from "@toorow/shell";
 export interface FunnelStep {
   label: string;
   value: number;
@@ -70,6 +78,19 @@ export default function Funnel({
 
   const maxVal = Math.max(...steps.map((s) => s.value), 1);
 
+  /**
+   * The passage rate's verdict, through the ONE function every primitive shares.
+   * A rate at the threshold has met it, hence `zeroIsFavourable`.
+   */
+  function passageColor(throughRate: number | null): string {
+    const verdict = verdictTone(
+      throughRate === null ? null : throughRate - successThreshold,
+      "up_good",
+      { zeroIsFavourable: true },
+    );
+    return verdictColor(theme, verdict, theme.palette.text.secondary);
+  }
+
   return (
     <Box
       data-testid="funnel"
@@ -92,16 +113,17 @@ export default function Funnel({
         const throughRate = rawThroughRate;
         // Drop-off visuel : espace entre les barres
         const dropOff = prev ? prev.value - step.value : 0;
-        // For anomaly (step > prev), dropOff is negative — show 0% drop in that case.
-        const dropPct = prev && prev.value > 0 && !isAnomaly
-          ? 100 - Math.min(100, (throughRate ?? 100))
-          : 0;
+        // THE CHANGE, signed, against the previous step: a 3 % passage rate is
+        // a 97 % loss, and that is the fact the arrow announces.
+        const variationPct = throughRate !== null ? throughRate - 100 : null;
+        const variationArrow = changeMark(variationPct) ?? "=";
 
         return (
           <Box key={step.label} sx={{ display: "flex", flexDirection: "column", gap: 0 }}>
             {/* Indicateur de passage inter-étapes */}
             {i > 0 && (
               <Box
+                data-testid={`funnel-through-rate-${i}`}
                 sx={{
                   display: "flex",
                   alignItems: "center",
@@ -112,34 +134,34 @@ export default function Funnel({
                 }}
               >
                 <Typography
+                  component="span"
                   variant="caption"
-                  color={
-                    isAnomaly
-                      ? "warning.main"
-                      : throughRate !== null && throughRate >= successThreshold
-                        ? "success.main"
-                        : "error.main"
-                  }
-                  sx={{ fontVariantNumeric: "lining-nums tabular-nums", lineHeight: 1 }}
-                  data-testid={`funnel-through-rate-${i}`}
+                  sx={{
+                    color: isAnomaly ? "warning.main" : passageColor(throughRate),
+                    fontVariantNumeric: "lining-nums tabular-nums",
+                    lineHeight: 1,
+                    fontWeight: 600,
+                  }}
+                  data-testid={`funnel-step-variation-${i}`}
                 >
-                  {isAnomaly ? "⚠" : "▲"}{" "}
-                  {throughRate !== null ? `${throughRate} %` : "—"}
-                  {isAnomaly && (
-                    <Typography component="span" variant="caption" color="text.disabled" sx={{ ml: 0.5 }}>
-                      (anomalie données)
-                    </Typography>
-                  )}
+                  {isAnomaly ? "⚠" : variationArrow}{" "}
+                  {variationPct !== null
+                    ? `${formatPercent(variationPct, { signed: true })} vs previous step`
+                    : NO_VALUE}
                 </Typography>
-                {dropOff > 0 && (
-                  <Typography
-                    variant="caption"
-                    color="text.disabled"
-                    sx={{ fontVariantNumeric: "lining-nums tabular-nums", lineHeight: 1 }}
-                  >
-                    (−{dropOff.toLocaleString("fr-FR")} {unit ?? ""}, −{dropPct} %)
-                  </Typography>
-                )}
+                <Typography
+                  component="span"
+                  variant="caption"
+                  color="text.disabled"
+                  sx={{ fontVariantNumeric: "lining-nums tabular-nums", lineHeight: 1 }}
+                  data-testid={`funnel-passage-rate-${i}`}
+                >
+                  {throughRate !== null
+                    ? `${formatPercent(throughRate, { digits: 0 })} passed`
+                    : NO_VALUE}
+                  {dropOff > 0 ? ` · ${formatMeasure(-dropOff, unit)}` : ""}
+                  {isAnomaly ? " · data anomaly" : ""}
+                </Typography>
               </Box>
             )}
 
@@ -171,8 +193,7 @@ export default function Funnel({
                       lineHeight: 1,
                     }}
                   >
-                    {step.value.toLocaleString("fr-FR")}
-                    {unit ? ` ${unit}` : ""}
+                    {formatMeasure(step.value, unit)}
                   </Typography>
                 </Box>
               </Box>

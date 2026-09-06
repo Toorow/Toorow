@@ -4,27 +4,81 @@
   "title": "toorow Datastream intent",
   "type": "object",
   "additionalProperties": false,
-  "required": ["contract_version", "source", "destination", "historical", "schedule"],
+  "required": [
+    "contract_version",
+    "source",
+    "destination",
+    "historical",
+    "schedule"
+  ],
   "properties": {
-    "contract_version": {"const": "1"},
-    "source": {"$ref": "#/$defs/source"},
-    "destination": {"$ref": "#/$defs/destination"},
-    "historical": {"$ref": "#/$defs/historical"},
-    "schedule": {"$ref": "#/$defs/schedule"},
-    "geographic": {"$ref": "#/$defs/geographic"}
+    "contract_version": {
+      "const": "1"
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "destination": {
+      "$ref": "#/$defs/destination"
+    },
+    "historical": {
+      "$ref": "#/$defs/historical"
+    },
+    "schedule": {
+      "$ref": "#/$defs/schedule"
+    },
+    "geographic": {
+      "$ref": "#/$defs/geographic"
+    }
   },
   "allOf": [
     {
-      "if": {"properties": {"source": {"properties": {"kind": {"const": "external_bq"}}}}},
-      "then": {"properties": {"destination": {"properties": {"policy": {"const": "external_read_only"}}}}},
-      "else": {"properties": {"destination": {"properties": {"policy": {"const": "managed_raw"}}}}}
+      "if": {
+        "properties": {
+          "source": {
+            "properties": {
+              "kind": {
+                "const": "external_bq"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "destination": {
+            "properties": {
+              "policy": {
+                "const": "external_read_only"
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "destination": {
+            "properties": {
+              "policy": {
+                "const": "managed_raw"
+              }
+            }
+          }
+        }
+      }
     }
   ],
   "$defs": {
-    "identifier": {"type": "string", "minLength": 1, "maxLength": 255},
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
     "string_list": {
       "type": "array",
-      "items": {"$ref": "#/$defs/identifier"},
+      "items": {
+        "$ref": "#/$defs/identifier"
+      },
       "uniqueItems": true,
       "maxItems": 500
     },
@@ -40,10 +94,18 @@
         "impact"
       ],
       "properties": {
-        "mode": {"enum": ["global", "local_markets"]},
+        "mode": {
+          "enum": [
+            "global",
+            "local_markets"
+          ]
+        },
         "country_codes": {
           "type": "array",
-          "items": {"type": "string", "pattern": "^[A-Z]{2}$"},
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z]{2}$"
+          },
           "uniqueItems": true
         },
         "markets": {
@@ -51,20 +113,37 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["id", "label", "country_codes"],
+            "required": [
+              "id",
+              "label",
+              "country_codes"
+            ],
             "properties": {
-              "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"},
-              "label": {"type": "string", "minLength": 1, "maxLength": 120},
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
               "country_codes": {
                 "type": "array",
                 "minItems": 1,
-                "items": {"type": "string", "pattern": "^[A-Z]{2}$"},
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Z]{2}$"
+                },
                 "uniqueItems": true
               }
             }
           }
         },
-        "posture_fingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "posture_fingerprint": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
         "compilation_status": {
           "enum": [
             "consolidated",
@@ -73,7 +152,12 @@
             "blocked"
           ]
         },
-        "effective_country_field": {"type": ["string", "null"]},
+        "effective_country_field": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "impact": {
           "type": "object",
           "additionalProperties": false,
@@ -86,14 +170,34 @@
             "cardinality_estimate"
           ],
           "properties": {
-            "grain_before": {"$ref": "#/$defs/string_list"},
-            "grain_after": {"$ref": "#/$defs/string_list"},
-            "added_dimensions": {"$ref": "#/$defs/string_list"},
-            "tracked_country_count": {"type": "integer", "minimum": 0},
-            "tracked_market_count": {"type": "integer", "minimum": 0},
-            "quota_cost": {"type": ["object", "null"]},
+            "grain_before": {
+              "$ref": "#/$defs/string_list"
+            },
+            "grain_after": {
+              "$ref": "#/$defs/string_list"
+            },
+            "added_dimensions": {
+              "$ref": "#/$defs/string_list"
+            },
+            "tracked_country_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tracked_market_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "quota_cost": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
             "cardinality_estimate": {
-              "enum": ["unchanged", "provider_country_cardinality"]
+              "enum": [
+                "unchanged",
+                "provider_country_cardinality"
+              ]
             }
           }
         }
@@ -102,26 +206,79 @@
     "selection": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["selection_mode", "metrics", "dimensions", "grain", "filters"],
+      "required": [
+        "selection_mode",
+        "metrics",
+        "dimensions",
+        "grain",
+        "filters"
+      ],
       "properties": {
-        "selection_mode": {"enum": ["exact_bundle", "subset"]},
-        "metrics": {"$ref": "#/$defs/string_list"},
-        "dimensions": {"$ref": "#/$defs/string_list"},
-        "grain": {"$ref": "#/$defs/string_list"},
+        "selection_mode": {
+          "enum": [
+            "exact_bundle",
+            "subset"
+          ]
+        },
+        "metrics": {
+          "$ref": "#/$defs/string_list"
+        },
+        "dimensions": {
+          "$ref": "#/$defs/string_list"
+        },
+        "grain": {
+          "$ref": "#/$defs/string_list"
+        },
         "filters": {
           "type": "array",
           "maxItems": 100,
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["field_id", "operator", "value"],
+            "required": [
+              "field_id",
+              "operator",
+              "value"
+            ],
             "properties": {
-              "field_id": {"$ref": "#/$defs/identifier"},
-              "operator": {"enum": ["eq", "neq", "in", "not_in", "gt", "gte", "lt", "lte", "contains"]},
+              "field_id": {
+                "$ref": "#/$defs/identifier"
+              },
+              "operator": {
+                "enum": [
+                  "eq",
+                  "neq",
+                  "in",
+                  "not_in",
+                  "gt",
+                  "gte",
+                  "lt",
+                  "lte",
+                  "contains"
+                ]
+              },
               "value": {
                 "oneOf": [
-                  {"type": ["string", "number", "boolean", "null"]},
-                  {"type": "array", "items": {"type": ["string", "number", "boolean", "null"]}, "maxItems": 500}
+                  {
+                    "type": [
+                      "string",
+                      "number",
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": [
+                        "string",
+                        "number",
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "maxItems": 500
+                  }
                 ]
               }
             }
@@ -132,59 +289,270 @@
     "external_object": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["project", "dataset", "object", "writer_identity"],
+      "required": [
+        "project",
+        "dataset",
+        "object",
+        "writer_identity"
+      ],
       "properties": {
-        "project": {"$ref": "#/$defs/identifier"},
-        "dataset": {"$ref": "#/$defs/identifier"},
-        "object": {"$ref": "#/$defs/identifier"},
-        "writer_identity": {"$ref": "#/$defs/identifier"}
+        "project": {
+          "$ref": "#/$defs/identifier"
+        },
+        "dataset": {
+          "$ref": "#/$defs/identifier"
+        },
+        "object": {
+          "$ref": "#/$defs/identifier"
+        },
+        "writer_identity": {
+          "$ref": "#/$defs/identifier"
+        }
       }
     },
     "managed_feed": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["format"],
+      "required": [
+        "format"
+      ],
       "properties": {
-        "format": {"enum": ["csv", "excel", "google_sheets"]},
-        "source_ref": {"$ref": "#/$defs/identifier"}
+        "format": {
+          "enum": [
+            "csv",
+            "excel",
+            "google_sheets"
+          ]
+        },
+        "source_ref": {
+          "$ref": "#/$defs/identifier",
+          "description": "The input this plan pinned for the channel -- the staged asset, the sheet, or the channel itself. NOT the governed contract to replay: see template_ref (AI-91, 2026-07-31)."
+        },
+        "channel": {
+          "description": "The managed-feed channel under its own name (story 57.3). It was readable only by inference before, since source_ref falls back to the channel string when no asset and no sheet were pinned. Materialization needs it plainly: it decides whether app.datastreams.config.channels is written, and therefore whether an inbound address can ever be issued for this Datastream.",
+          "anyOf": [
+            {
+              "enum": [
+                "file_upload",
+                "google_sheets",
+                "inbound_email",
+                "webhook"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "template_ref": {
+          "description": "The file-source Template (fst_) whose contract is replayed on every arrival, or null when this feed has none. Its own key since AI-91: it used to ride fourth in an `or` chain behind staged_asset_ref, so a draft that previewed a file AND chose a Template lost the Template at activation. The two answer different questions and are not alternatives.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "staged_asset_ref": {
+          "description": "The preview artifact the operator staged, kept beside source_ref rather than collapsed into it, so neither is lost when both exist.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "channel_contract": {
+          "description": "What an inbound channel PROMISES, declared by the operator at step 1 (story 57.3): how often a delivery is expected, and which senders are allowed. A declaration, never an observation -- an email address and a webhook token have no provider to interrogate. Null for a channel that declares none; an absent expected_interval_minutes leaves the arrival monitor UNARMED rather than defaulting to a daily cadence nobody promised.",
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "expected_interval_minutes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 525600
+                },
+                "allowed_senders": {
+                  "type": "array",
+                  "maxItems": 50,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 320
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
       }
     },
     "source": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "writer_kind", "selection"],
+      "required": [
+        "kind",
+        "writer_kind",
+        "selection"
+      ],
       "properties": {
-        "kind": {"enum": ["connector_pull", "external_bq", "managed_feed"]},
-        "writer_kind": {"enum": ["toorow", "external"]},
-        "connection_ref_id": {"$ref": "#/$defs/identifier"},
-        "report_id": {"$ref": "#/$defs/identifier"},
-        "external_object": {"$ref": "#/$defs/external_object"},
-        "managed_feed": {"$ref": "#/$defs/managed_feed"},
-        "selection": {"$ref": "#/$defs/selection"}
+        "kind": {
+          "enum": [
+            "connector_pull",
+            "external_bq",
+            "managed_feed"
+          ]
+        },
+        "writer_kind": {
+          "enum": [
+            "toorow",
+            "external"
+          ]
+        },
+        "connection_ref_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "module": {
+          "$ref": "#/$defs/identifier"
+        },
+        "report_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "external_object": {
+          "$ref": "#/$defs/external_object"
+        },
+        "managed_feed": {
+          "$ref": "#/$defs/managed_feed"
+        },
+        "selection": {
+          "$ref": "#/$defs/selection"
+        },
+        "selected_account_ref": {
+          "$ref": "#/$defs/identifier"
+        }
       },
       "allOf": [
         {
-          "if": {"properties": {"kind": {"const": "connector_pull"}}, "required": ["kind"]},
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "connector_pull"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
           "then": {
-            "properties": {"writer_kind": {"const": "toorow"}},
-            "required": ["connection_ref_id", "report_id"],
-            "not": {"anyOf": [{"required": ["external_object"]}, {"required": ["managed_feed"]}]}
+            "properties": {
+              "writer_kind": {
+                "const": "toorow"
+              }
+            },
+            "required": [
+              "connection_ref_id",
+              "report_id"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "external_object"
+                  ]
+                },
+                {
+                  "required": [
+                    "managed_feed"
+                  ]
+                }
+              ]
+            }
           }
         },
         {
-          "if": {"properties": {"kind": {"const": "external_bq"}}, "required": ["kind"]},
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "external_bq"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
           "then": {
-            "properties": {"writer_kind": {"const": "external"}},
-            "required": ["external_object"],
-            "not": {"anyOf": [{"required": ["connection_ref_id"]}, {"required": ["report_id"]}, {"required": ["managed_feed"]}]}
+            "properties": {
+              "writer_kind": {
+                "const": "external"
+              }
+            },
+            "required": [
+              "external_object"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "connection_ref_id"
+                  ]
+                },
+                {
+                  "required": [
+                    "report_id"
+                  ]
+                },
+                {
+                  "required": [
+                    "managed_feed"
+                  ]
+                }
+              ]
+            }
           }
         },
         {
-          "if": {"properties": {"kind": {"const": "managed_feed"}}, "required": ["kind"]},
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "managed_feed"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
           "then": {
-            "properties": {"writer_kind": {"const": "toorow"}},
-            "required": ["managed_feed"],
-            "not": {"anyOf": [{"required": ["external_object"]}, {"required": ["report_id"]}]}
+            "properties": {
+              "writer_kind": {
+                "const": "toorow"
+              }
+            },
+            "required": [
+              "managed_feed"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "external_object"
+                  ]
+                },
+                {
+                  "required": [
+                    "report_id"
+                  ]
+                }
+              ]
+            }
           }
         }
       ]
@@ -192,78 +560,266 @@
     "destination": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["policy"],
-      "properties": {"policy": {"enum": ["managed_raw", "external_read_only"]}}
+      "required": [
+        "policy"
+      ],
+      "properties": {
+        "policy": {
+          "enum": [
+            "managed_raw",
+            "external_read_only"
+          ]
+        }
+      }
     },
-    "nullable_datetime": {"type": ["string", "null"], "format": "date-time"},
+    "nullable_datetime": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
     "historical": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["start", "end_exclusive"],
+      "required": [
+        "start",
+        "end_exclusive"
+      ],
       "properties": {
-        "start": {"$ref": "#/$defs/nullable_datetime"},
-        "end_exclusive": {"$ref": "#/$defs/nullable_datetime"}
+        "start": {
+          "$ref": "#/$defs/nullable_datetime"
+        },
+        "end_exclusive": {
+          "$ref": "#/$defs/nullable_datetime"
+        }
       }
     },
     "watermark": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "delay_minutes"],
+      "required": [
+        "kind",
+        "delay_minutes"
+      ],
       "properties": {
-        "kind": {"enum": ["none", "date_window", "source_timestamp"]},
-        "delay_minutes": {"type": "integer", "minimum": 0, "maximum": 525600}
+        "kind": {
+          "enum": [
+            "none",
+            "date_window",
+            "source_timestamp"
+          ]
+        },
+        "delay_minutes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 525600
+        }
       }
     },
     "late_arrival": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["lookback_minutes"],
-      "properties": {"lookback_minutes": {"type": "integer", "minimum": 0, "maximum": 525600}}
+      "required": [
+        "lookback_minutes"
+      ],
+      "properties": {
+        "lookback_minutes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 525600
+        }
+      }
     },
     "retry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["max_attempts", "initial_backoff_seconds", "max_backoff_seconds"],
+      "required": [
+        "max_attempts",
+        "initial_backoff_seconds",
+        "max_backoff_seconds"
+      ],
       "properties": {
-        "max_attempts": {"type": "integer", "minimum": 1, "maximum": 20},
-        "initial_backoff_seconds": {"type": "integer", "minimum": 1, "maximum": 86400},
-        "max_backoff_seconds": {"type": "integer", "minimum": 1, "maximum": 604800}
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "initial_backoff_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        },
+        "max_backoff_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 604800
+        }
       }
     },
     "missed_run": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["mode", "max_catchup_windows"],
+      "required": [
+        "mode",
+        "max_catchup_windows"
+      ],
       "properties": {
-        "mode": {"enum": ["skip", "coalesce"]},
-        "max_catchup_windows": {"type": "integer", "minimum": 1, "maximum": 365}
+        "mode": {
+          "enum": [
+            "skip",
+            "coalesce"
+          ]
+        },
+        "max_catchup_windows": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365
+        }
       }
     },
     "schedule": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["mode", "interval_minutes", "timezone", "watermark", "late_arrival", "retry", "missed_run"],
+      "required": [
+        "mode",
+        "interval_minutes",
+        "timezone",
+        "watermark",
+        "late_arrival",
+        "retry",
+        "missed_run"
+      ],
       "properties": {
-        "mode": {"enum": ["manual", "daily", "hourly"]},
-        "interval_minutes": {"type": ["integer", "null"]},
-        "timezone": {"type": "string", "minLength": 1, "maxLength": 255},
-        "watermark": {"$ref": "#/$defs/watermark"},
-        "late_arrival": {"$ref": "#/$defs/late_arrival"},
-        "retry": {"$ref": "#/$defs/retry"},
-        "missed_run": {"$ref": "#/$defs/missed_run"}
+        "mode": {
+          "description": "AI-217. `weekly` is legal on the stable row since migration 204, is offered by the Workbench, the MCP tool and the wizard, and is dispatched by `scheduler._dispatch_nightly_datastreams`. It was missing from this enum, so a weekly plan died at normalization with a structural error -- one door accepting what the next refuses.",
+          "enum": [
+            "manual",
+            "daily",
+            "weekly",
+            "hourly"
+          ]
+        },
+        "interval_minutes": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "timezone_origin": {
+          "description": "Story 48.3. Where the schedule clock came from. 'project_configuration' means the Project confirmed a reporting timezone and the job runs on it. 'scheduling_default_unconfirmed' means no reporting timezone has been confirmed and the job runs on UTC for want of anything else -- a scheduling fact, never a statement about this Project's reporting day boundary. Optional so every plan version already stored stays valid.",
+          "type": "string",
+          "enum": [
+            "project_configuration",
+            "scheduling_default_unconfirmed"
+          ]
+        },
+        "run_at_hour": {
+          "description": "Hour of day (0-23, in `timezone`) the collection should run. Optional: absent means the scheduler places it.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 23
+        },
+        "watermark": {
+          "$ref": "#/$defs/watermark"
+        },
+        "late_arrival": {
+          "$ref": "#/$defs/late_arrival"
+        },
+        "retry": {
+          "$ref": "#/$defs/retry"
+        },
+        "missed_run": {
+          "$ref": "#/$defs/missed_run"
+        }
       },
       "allOf": [
         {
-          "if": {"properties": {"mode": {"const": "manual"}}, "required": ["mode"]},
-          "then": {"properties": {"interval_minutes": {"type": "null"}}}
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "manual"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "interval_minutes": {
+                "type": "null"
+              }
+            }
+          }
         },
         {
-          "if": {"properties": {"mode": {"const": "daily"}}, "required": ["mode"]},
-          "then": {"properties": {"interval_minutes": {"const": 1440}}}
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "daily"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "interval_minutes": {
+                "const": 1440
+              }
+            }
+          }
         },
         {
-          "if": {"properties": {"mode": {"const": "hourly"}}, "required": ["mode"]},
-          "then": {"properties": {"interval_minutes": {"type": "integer", "minimum": 60, "multipleOf": 60, "maximum": 1440}}}
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "weekly"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "interval_minutes": {
+                "const": 10080
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "hourly"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "interval_minutes": {
+                "type": "integer",
+                "minimum": 60,
+                "multipleOf": 60,
+                "maximum": 1440
+              }
+            }
+          }
         }
       ]
     }

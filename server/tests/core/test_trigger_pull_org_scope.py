@@ -71,9 +71,12 @@ def credential_in_org():
                     (f"omem_{uuid.uuid4().hex[:12]}", org, identity),
                 )
             cur.execute(
+                # `currency` and `timezone` were dropped from app.projects by
+                # migration 131 -- a Project preference lives in its confirmed
+                # configuration version, never in a stored default column.
                 "INSERT INTO app.projects "
-                "(id, name, slug, status, currency, timezone, created_by, org_id) "
-                "VALUES (%s, 'Pull scope', %s, 'active', 'EUR', 'Europe/Paris', %s, %s)",
+                "(id, name, slug, status, created_by, org_id) "
+                "VALUES (%s, 'Pull scope', %s, 'active', %s, %s)",
                 (project, f"pull-scope-{suffix}", OWNER, org),
             )
             cur.execute(
@@ -86,13 +89,13 @@ def credential_in_org():
     try:
         yield cred
     finally:
+        # The whole tree by the production plan, not a hand list: `project_capabilities`
+        # (migration 243) and `mdm_business_domains` both hold the Project and the org
+        # by ON DELETE RESTRICT, and the next governed table will do the same.
+        from tests.conftest import purge_fixture_org  # noqa: PLC0415
+
         with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM app.connection_ref WHERE id = %s", (cred,))
-                cur.execute("DELETE FROM app.tenant_key_audit WHERE project_id = %s", (project,))
-                cur.execute("DELETE FROM app.projects WHERE id = %s", (project,))
-                cur.execute("DELETE FROM app.org_members WHERE org_id = %s", (org,))
-                cur.execute("DELETE FROM app.organizations WHERE id = %s", (org,))
+            purge_fixture_org(conn, org)
             conn.commit()
 
 
@@ -107,7 +110,7 @@ def _pull_request(cred_id: str) -> MagicMock:
 @pytest.mark.anyio
 async def test_colleague_of_the_org_may_trigger_the_sync(credential_in_org):
     """Le propre de owner_org_id : un autre membre lance la sync."""
-    from core.admin_api import _trigger_pull
+    from core.connections_api import _trigger_pull  # noqa: PLC0415
 
     with (
         patch("core.admin_api._check_auth", return_value=(True, COLLEAGUE)),
@@ -125,7 +128,7 @@ async def test_colleague_of_the_org_may_trigger_the_sync(credential_in_org):
 @pytest.mark.anyio
 async def test_outsider_may_not_trigger_the_sync(credential_in_org):
     """404 et non 403 : l'existence du credential d'autrui ne se divulgue pas."""
-    from core.admin_api import _trigger_pull
+    from core.connections_api import _trigger_pull  # noqa: PLC0415
 
     enqueue = MagicMock()
     with (

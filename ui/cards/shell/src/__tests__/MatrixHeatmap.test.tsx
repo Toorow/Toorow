@@ -2,14 +2,16 @@
  * MatrixHeatmap tests (Story 23.2).
  *
  * Conventions : vitest + @testing-library/react + ThemeProvider avec createTheme() nu.
- * Chaque test est isolé ; les fills SVG sont des rgba() calculés par alpha() de MUI.
+ * Chaque test est isolé ; les fills SVG sont des rgba() calculés par alpha()
+ * (`@toorow/shell` — portage fidèle de celui de MUI, AD-35).
  */
 
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ThemeProvider, createTheme } from "@mui/material/styles";
+
 import MatrixHeatmap from "../MatrixHeatmap";
 import type { MatrixHeatmapProps } from "../MatrixHeatmap";
+import { ThemeProvider, createTheme } from "@toorow/shell";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -252,7 +254,7 @@ describe("MatrixHeatmap — fill dérivé de theme.palette.primary.main", () => 
   it("le fill des cellules contient les composantes RGB de primary.main (rgba calculé)", () => {
     /**
      * On monte un thème custom avec primary.main = rgb(255, 0, 128) (rose vif).
-     * Les fills alpha() de MUI produisent rgba(255, 0, 128, α).
+     * Les fills alpha() produisent rgba(255, 0, 128, α).
      * On vérifie qu'au moins un fill contient "255, 0, 128" (les 3 composantes RGB).
      */
     const customPrimary = "rgb(255, 0, 128)";
@@ -262,14 +264,14 @@ describe("MatrixHeatmap — fill dérivé de theme.palette.primary.main", () => 
     );
     const cell = screen.getByTestId("matrix-heatmap-cell");
     const fill = cell.getAttribute("fill") ?? "";
-    // MUI alpha() produit rgba(R, G, B, a) — on vérifie les 3 composantes.
+    // alpha() produit rgba(R, G, B, a) — on vérifie les 3 composantes.
     expect(fill).toMatch(/255/);
     expect(fill).toMatch(/0/);
     expect(fill).toMatch(/128/);
   });
 
   it("le fill du thème custom diffère du thème par défaut (branding réel)", () => {
-    // Thème par défaut MUI (primary.main ≈ #1976d2).
+    // Thème par défaut toorow (primary.main = #FF99C8, jetons du design system).
     const { container: defaultContainer } = renderWithTheme(
       { rows: ["A"], cols: ["X"], values: [[50]] },
     );

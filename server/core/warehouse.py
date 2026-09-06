@@ -13,6 +13,7 @@ import logging
 import os
 import threading
 import time as _time_module
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
@@ -596,9 +597,159 @@ def _read_from_cache(build_fn, cache_path: str) -> list[dict]:
         con.close()
 
 
-def _query_bigquery(sql: str, params: list) -> list[dict]:
+# ---------------------------------------------------------------------------
+# Story 66.3 (AC 9) -- what a warehouse job COST, beside the rows it returned.
+#
+# The job count was already provable. The two other figures the acceptance names
+# -- billed bytes and elapsed time -- were not, and for BigQuery they could not
+# be: `client.query(...).result()` DROPPED the QueryJob, and `total_bytes_billed`
+# lives on the job, never on the RowIterator.
+#
+# `WarehouseJobCost` is emitted for BOTH engines, and it never lets one engine's
+# silence read as another's zero. `billed_bytes_state`:
+#   `exact`          -- the engine billed, and this is the figure it reported;
+#   `not_applicable` -- the engine does not bill bytes (DuckDB reads a local
+#                       file: 0 would be a measurement, and there is none);
+#   `unavailable`    -- the engine bills, and this job did not report it (a
+#                       dry run, a cache hit on some paths, a script job).
+# Elapsed is always `exact`: it is measured HERE, on the wall clock, and every
+# engine has one.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class WarehouseJobCost:
+    """What one warehouse job cost. Never a bare number."""
+
+    engine: str
+    elapsed_ms: int
+    billed_bytes: int | None = None
+    billed_bytes_state: str = "not_applicable"
+    cache_hit: bool | None = None
+
+    def as_dict(self) -> dict:
+        return {
+            "engine": self.engine,
+            "elapsed_ms": self.elapsed_ms,
+            "billed_bytes": self.billed_bytes,
+            "billed_bytes_state": self.billed_bytes_state,
+            "cache_hit": self.cache_hit,
+        }
+
+
+@dataclass(frozen=True)
+class WarehouseScanEstimate:
+    """Ce qu'une requete VA scanner, demande avant de la lancer. Story 66.10, AR8.
+
+    AR8 exige que les estimations de cout/scan soient calculees cote serveur
+    AVANT l'execution. La moitie << limites de securite >> etait livree (le
+    plafond de lignes, le budget en octets, le preflight de pivotabilite) ; la
+    moitie ESTIMATION ne l'etait pas, et la story la nommait absente en disant
+    << aucune API de cout n'est consultee dans cet epic >>. C'etait vrai a
+    l'ecriture et ne l'est plus depuis 66.3 : `query_bigquery_measured` lit
+    `total_bytes_billed`. Ce qui manquait vraiment est l'estimation AVANT, et
+    BigQuery la donne gratuitement -- un `dry_run` ne lance rien et ne facture
+    rien.
+
+    JAMAIS UN NOMBRE NU, la meme regle que `WarehouseJobCost`. Un `0` de DuckDB
+    serait une MESURE (<< cette requete ne scanne rien >>) alors que la verite
+    est qu'une lecture de fichier local ne facture pas d'octets : `not_applicable`.
+    Un estimateur injoignable rend `unavailable`, jamais 0 -- et n'empeche pas
+    l'execution : ne pas savoir ce qu'une requete coutera n'est pas une raison de
+    refuser de repondre.
+    """
+
+    engine: str
+    scanned_bytes: int | None = None
+    scanned_bytes_state: str = "not_applicable"
+    unavailable_reason: str | None = None
+
+    def as_dict(self) -> dict:
+        return {
+            "engine": self.engine,
+            "scanned_bytes": self.scanned_bytes,
+            "scanned_bytes_state": self.scanned_bytes_state,
+            "unavailable_reason": self.unavailable_reason,
+        }
+
+
+def estimate_scan_duckdb(sql: str, params: list) -> WarehouseScanEstimate:
+    """DuckDB ne facture pas un scan : `not_applicable`, jamais 0."""
+    del sql, params
+    return WarehouseScanEstimate(engine="duckdb", scanned_bytes_state="not_applicable")
+
+
+def estimate_scan_bigquery(sql: str, params: list) -> WarehouseScanEstimate:
+    """Ce que BigQuery scannerait, par `dry_run` : rien n'est lance, rien n'est facture.
+
+    `use_query_cache=False` est deliberatement pose : avec le cache, un dry run
+    peut rendre 0 octet parce que la MEME question a deja ete posee -- ce qui
+    dit ce que ce rejeu couterait, pas ce que la requete coute. L'estimation
+    doit valoir pour la requete, pas pour sa chance.
+    """
     from google.cloud import bigquery  # noqa: PLC0415
 
+    client = bigquery.Client(project=_gcp_project() or None)
+    job_config = bigquery.QueryJobConfig(
+        dry_run=True,
+        use_query_cache=False,
+        query_parameters=[
+            bigquery.ScalarQueryParameter(f"p{i}", "STRING", v) for i, v in enumerate(params)
+        ],
+    )
+    job = client.query(sql, job_config=job_config)
+    scanned = getattr(job, "total_bytes_processed", None)
+    if scanned is None:
+        return WarehouseScanEstimate(
+            engine="bigquery",
+            scanned_bytes_state="unavailable",
+            unavailable_reason="the dry run returned no byte count",
+        )
+    return WarehouseScanEstimate(
+        engine="bigquery",
+        scanned_bytes=int(scanned),
+        scanned_bytes_state="exact",
+    )
+
+
+def estimate_scan(sql: str, params: list) -> WarehouseScanEstimate:
+    """L'estimation, sur le moteur configure, et qui NE LEVE JAMAIS.
+
+    Un estimateur qui casserait ferait echouer une execution parfaitement
+    valide pour n'avoir pas su dire ce qu'elle allait couter. Il rend
+    `unavailable` en nommant la panne, et l'appelant continue.
+    """
+    engine = "bigquery" if _db_mode() == "bigquery" else "duckdb"
+    try:
+        if engine == "bigquery":
+            return estimate_scan_bigquery(sql, params)
+        return estimate_scan_duckdb(sql, params)
+    except Exception as exc:  # noqa: BLE001 -- l'estimateur, jamais la requete
+        logger.warning("warehouse: scan_estimate_unavailable: %s: %s", type(exc).__name__, exc)
+        return WarehouseScanEstimate(
+            engine=engine,
+            scanned_bytes_state="unavailable",
+            unavailable_reason=f"{type(exc).__name__}: {exc}",
+        )
+
+
+def query_duckdb_measured(sql: str, params: list) -> tuple[list[dict], WarehouseJobCost]:
+    """`_query_duckdb`, plus what the job cost. One execution, not two."""
+    started = _time_module.perf_counter()
+    rows = _query_duckdb(sql, params)
+    return rows, WarehouseJobCost(
+        engine="duckdb",
+        elapsed_ms=int((_time_module.perf_counter() - started) * 1000),
+        billed_bytes=None,
+        billed_bytes_state="not_applicable",
+    )
+
+
+def query_bigquery_measured(sql: str, params: list) -> tuple[list[dict], WarehouseJobCost]:
+    """`_query_bigquery`, keeping the QueryJob instead of throwing it away."""
+    from google.cloud import bigquery  # noqa: PLC0415
+
+    started = _time_module.perf_counter()
     project = _gcp_project()
     client = bigquery.Client(project=project or None)
     job_config = bigquery.QueryJobConfig(
@@ -606,9 +757,43 @@ def _query_bigquery(sql: str, params: list) -> list[dict]:
             bigquery.ScalarQueryParameter(f"p{i}", "STRING", v) for i, v in enumerate(params)
         ]
     )
-    result = client.query(sql, job_config=job_config).result()
+    job = client.query(sql, job_config=job_config)
+    result = job.result()
     cols = [f.name for f in result.schema]
-    return [dict(zip(cols, row)) for row in result]
+    rows = [dict(zip(cols, row)) for row in result]
+
+    billed = getattr(job, "total_bytes_billed", None)
+    cached = bool(getattr(job, "cache_hit", False))
+    # A CACHE HIT REPORTS, AND WHAT IT REPORTS IS `0`. The first version of this
+    # function assumed the opposite -- "a cache hit bills nothing and REPORTS
+    # nothing" -- and it was wrong on the second half: `QueryJob.total_bytes_billed`
+    # is `int(statistics.query.totalBytesBilled)` and returns `None` only when the
+    # field is ABSENT, which after `.result()` means a job that never completed.
+    # BigQuery answers a cache hit with `cacheHit: true` AND `totalBytesBilled: "0"`.
+    #
+    # So the branch below used to put a free job and an unmeasured job on the same
+    # row -- the exact confusion its own comment forbade. `cache_hit` was captured,
+    # stored and read by nothing: the figure sat beside the decision it should have
+    # made. It makes it now.
+    #
+    # `0` from a cache hit is `unavailable`, not `exact`: this query was answered
+    # without touching a byte of the tables, so it says nothing about what the same
+    # question costs. Re-profiling an edge inside the 120 s receipt window is
+    # precisely the cache-hit path, so this is the second click, not an edge case.
+    measured = billed is not None and not cached
+    return rows, WarehouseJobCost(
+        engine="bigquery",
+        elapsed_ms=int((_time_module.perf_counter() - started) * 1000),
+        billed_bytes=int(billed) if measured else None,
+        billed_bytes_state="exact" if measured else "unavailable",
+        cache_hit=getattr(job, "cache_hit", None),
+    )
+
+
+def _query_bigquery(sql: str, params: list) -> list[dict]:
+    """The rows alone. Every existing caller wants exactly this."""
+    rows, _cost = query_bigquery_measured(sql, params)
+    return rows
 
 
 def _check_bigquery_mart(project_id: str) -> bool:
@@ -637,6 +822,46 @@ def _check_bigquery_mart(project_id: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
+#: The one written form of `loaded_at`, and the reason a string comparison is
+#: sound at all. Every writer emits `YYYY-MM-DDTHH:MM:SS.ffffffZ` -- measured on
+#: production 2026-08-23 (`raw_youtube_daily`: 27 characters, six fractional
+#: digits, trailing `Z`) and produced by the loaders' own
+#: `datetime.now(UTC).isoformat().replace("+00:00", "Z")`. FIXED WIDTH is what
+#: makes lexicographic order equal chronological order; a bound value in any
+#: other shape silently compares wrong at the boundary rather than failing.
+_LOADED_AT_FORMAT = "%Y-%m-%dT%H:%M:%S.%f"
+
+
+def canonical_as_of_bound(as_of_ts: str) -> str:
+    """The as-of instant in the exact written form of `loaded_at`.
+
+    WHY THIS IS NOT COSMETIC (AI-312, 2026-08-23). `loaded_at` is a STRING, so
+    `loaded_at <= @as_of` is a lexicographic comparison, and two spellings of the
+    same instant do not compare equal. `get_daily_report` normalises its `as_of`
+    with `datetime.isoformat()`, which writes `+00:00`; `'…59Z' <= '…59+00:00'`
+    is FALSE because `Z` sorts after `+`. Measured: the boundary day of every
+    as-of question disappeared from the answer -- 30 days returned for a 31-day
+    window, and the sum was short by exactly that day.
+
+    A bare date means the END of that day, the same rule
+    `query_execution.as_of_instant` already states: "reported as of the 5th"
+    means everything that had landed by the close of the 5th.
+
+    An unparseable value is returned untouched -- validating `as_of` belongs to
+    the tool that accepted it, and swallowing the shape here would hide it.
+    """
+    text = str(as_of_ts)
+    if len(text) == 10:
+        return f"{text}T23:59:59.999999Z"
+    try:
+        moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return text
+    if moment.tzinfo is not None:
+        moment = moment.astimezone(timezone.utc).replace(tzinfo=None)
+    return f"{moment.strftime(_LOADED_AT_FORMAT)}Z"
+
+
 def _build_asof_query(
     schema_prefix: str,
     project_id: str,
@@ -657,6 +882,24 @@ def _build_asof_query(
     (HG-3: SQL injection safety; parameterized binding means injection strings are
     passed as literal data, not executable SQL).
 
+    NO CAST ON THE BOUND VALUE, and that is the fix of 2026-08-23 (AI-312).
+    The predicate read ``loaded_at <= CAST(? AS TIMESTAMP)`` while ``loaded_at``
+    is a STRING in both engines — VARCHAR in the DuckDB mart, and STRING in the
+    production raw tables this mart derives from (measured on
+    ``raw_youtube_daily``). DuckDB refuses the comparison outright (*Cannot
+    compare values of type VARCHAR and type TIMESTAMP*), which took the WHOLE
+    ``as_of`` surface of the eval corpus down — 7 questions of 50, every one of
+    them a `warehouse_query_error`, and nothing had ever run this path far enough
+    to see it.
+
+    Comparing ISO-8601 UTC strings is the invariant the loaders already document
+    (*"lexicographic sort == chronological"*, F-06) and the one the ``ORDER BY
+    loaded_at DESC`` two lines below has always relied on. It is also what the
+    sibling as-of builder in ``core.query_execution`` does — ``WHERE loaded_at
+    <= ?``, no cast — so this call site was the outlier, not the rule. And a
+    predicate with no function on the column keeps BigQuery's partition pruning,
+    which a ``CAST(loaded_at AS TIMESTAMP)`` would have cost.
+
     # Revision comparison: call get_daily_report_asof twice with different as_of values;
     # compare pull_ids. If pull_id A != pull_id B, the value was revised.
     # Pull comparison endpoint deferred to Story 6.x.
@@ -667,7 +910,7 @@ def _build_asof_query(
         return f"@p{i}" if placeholder != "?" else "?"
 
     # as_of_ts first (index 0), then project_id (1), start_date (2), end_date (3)
-    params = [as_of_ts, project_id, start_date, end_date]
+    params = [canonical_as_of_bound(as_of_ts), project_id, start_date, end_date]
 
     connector_clause = ""
     if connectors:
@@ -684,7 +927,7 @@ def _build_asof_query(
                    ORDER BY loaded_at DESC
                ) AS _rn
         FROM {schema_prefix}fact_daily_kpi_all_pulls
-        WHERE loaded_at <= CAST({ph(0)} AS TIMESTAMP)
+        WHERE loaded_at <= {ph(0)}
           AND project_id = {ph(1)}
           AND date BETWEEN {ph(2)} AND {ph(3)}
 {connector_clause}    )
@@ -1210,6 +1453,53 @@ def _json_safe_row(row: dict) -> dict:
     return out
 
 
+def _money_micros_sql(value_col: str, *, placeholder: str) -> str:
+    """`value_col` as EXACT integer micros, per row, in the caller's dialect.
+
+    The Python twin of `dbt/macros/fee_tax_to_micros.sql`, and deliberately its
+    copy rather than a second idea. Both sides of the product must turn the same
+    display decimal into the same integer, and the macro's own contract is the
+    reason this exists at all: NORMALISE PER SOURCE ROW, THEN SUM EXACT BIGINTS.
+    `ROUND(SUM(value) * 1e6)` puts the single rounding boundary AFTER the float
+    drift instead of before it -- which is what `SUM(CAST(value AS DOUBLE))` did
+    here, on `metric = 'cost'`, over every campaign-day of a pacing window.
+
+    The dialect branch is the macro's, for the macro's reason and not a
+    defensive one: DuckDB needs an explicitly parameterised `DECIMAL(p,s)` to
+    stay in exact decimal arithmetic (an unqualified numeric expression silently
+    promotes to DOUBLE and exactness is lost with no error), and BigQuery does
+    not accept a parameterised DECIMAL inside CAST at all, offering bare NUMERIC
+    fixed at (38,9).
+
+    The dialect is read from the placeholder the caller already switches on --
+    `?` is DuckDB, `@pN` is BigQuery -- so there is no second way to be wrong
+    about which backend this statement is built for.
+    """
+    if placeholder != "?":
+        return f"CAST(ROUND(CAST({value_col} AS NUMERIC) * 1000000) AS INT64)"
+    return f"CAST(ROUND(CAST({value_col} AS DECIMAL(28,6)) * 1000000) AS BIGINT)"
+
+
+def _with_display_spend(rows: list[dict]) -> list[dict]:
+    """Add the display `spend` beside the exact `spend_micros` it is derived from.
+
+    ONE division, at the very end, from an integer that is already exact. The
+    callers of these two readers compare a window total against a media plan and
+    have always read `spend`; they keep reading it, and the number they read no
+    longer carries the drift of summing thousands of doubles. `spend_micros` is
+    the authority -- anything that must be compared or reconciled reads that.
+    """
+    from core.money import MICROS_PER_UNIT  # noqa: PLC0415
+
+    out: list[dict] = []
+    for row in rows:
+        micros = row.get("spend_micros")
+        row = dict(row)
+        row["spend"] = None if micros is None else int(micros) / MICROS_PER_UNIT
+        out.append(row)
+    return out
+
+
 def _widen_to_prior(start_date: str, end_date: str) -> str:
     """Return the widened start date that covers one prior period of the same length.
 
@@ -1444,10 +1734,129 @@ def query_transaction_reconciliation_daily(
         raise ValueError(f"Unknown TOOROW_DB_MODE: {mode!r}")
 
 
+#: AI-260 -- the campaign-spend readers resolve the project's cleanup rules by
+#: default. `None` disables (a raw read, e.g. an effect count measuring what a
+#: rule WOULD remove); a resolved `CleanupRuleApplication` is used as-is, which
+#: is how callers that surface the named states (plan-versus-actual matrix,
+#: [Unmapped Actuals]) avoid a second resolution AND carry the states in their
+#: own contract.
+_CLEANUP_RESOLVE = object()
+
+#: The exact fact partition both campaign-spend readers hard-code below. A
+#: cleanup rule governs these reads if and only if it names this exact field --
+#: string equality, the same exact-match rule the value-table bridge applies
+#: (`plan_actual_alignment.ACTUAL_SOURCE_FIELD`, same value on purpose).
+_CAMPAIGN_CLEANUP_FIELD = "campaign_id"
+
+
+def _campaign_cleanup(project_id: str, cleanup) -> "object | None":
+    """The `CleanupRuleApplication` this read applies, or None for a bare read.
+
+    Fail-soft, NAMED, never a refusal: an unreadable governance store serves the
+    read UNCLEANED and logs the outage -- refusing every spend read over a
+    control-plane outage would take down the honest majority of reads no rule
+    touches. Callers that must NAME the state in their contract resolve on their
+    own connection and pass the application in.
+    """
+    if cleanup is None:
+        return None
+    if cleanup is not _CLEANUP_RESOLVE:
+        return cleanup if getattr(cleanup, "applies", False) else None
+    try:
+        from core.cleanup_rule_application import resolve_cleanup_rules  # noqa: PLC0415
+        from core.db import get_connection  # noqa: PLC0415
+
+        with get_connection() as conn:
+            application = resolve_cleanup_rules(
+                conn, project_id=project_id, source_field=_CAMPAIGN_CLEANUP_FIELD
+            )
+    except Exception as exc:  # noqa: BLE001 -- the read proceeds uncleaned, named in the log
+        logger.warning(
+            "campaign spend cleanup rules unresolved (read served uncleaned): %s: %s",
+            type(exc).__name__,
+            exc,
+        )
+        return None
+    if application.state == "unavailable":
+        logger.warning(
+            "campaign spend cleanup rules unavailable (read served uncleaned): %s",
+            application.reason,
+        )
+    return application if application.applies else None
+
+
+def _campaign_spend_sql(
+    schema_prefix: str,
+    placeholder: str,
+    *,
+    project_id: str,
+    start_date: str,
+    end_date: str,
+    daily: bool,
+    application,
+) -> tuple[str, list]:
+    """The ONE statement both campaign-spend readers run, cleanup rules woven in.
+
+    AI-260: the applied cleanup rules are compiled INTO this statement by
+    `core.cleanup_rule_application` in the dialect this statement is built for
+    (the 60.3 obligation -- the fixture chain is DuckDB, production is BigQuery,
+    and a rule compiled to only one of the two would work locally and fail in
+    production or the reverse). Row rules guard the WHERE clause on the RAW
+    collected value; strip rules rewrite the SERVED ``campaign_ref``, and the
+    GROUP BY groups on the alias so stripped identities merge -- which is the
+    point of a strip rule at read.
+
+    Parameter order is appearance order, because DuckDB counts its placeholders:
+    projection parameters (SELECT list) come FIRST, then the base three, then
+    the WHERE-guard parameters. BigQuery numbers the same list continuously.
+    """
+    dialect = "bigquery" if placeholder != "?" else "duckdb"
+    if application is not None:
+        from core.cleanup_rule_application import (  # noqa: PLC0415
+            compile_predicates,
+            compile_projection,
+        )
+
+        projection, proj_params = compile_projection(
+            application, dialect=dialect, first_param=0
+        )
+        predicate, pred_params = compile_predicates(
+            application, dialect=dialect, first_param=len(proj_params) + 3
+        )
+    else:
+        projection, proj_params, predicate, pred_params = None, [], None, []
+
+    base = len(proj_params)
+
+    def ph(i: int) -> str:
+        return f"@p{base + i}" if placeholder != "?" else "?"
+
+    campaign_expr = projection or "breakdown_value"
+    day_select = "date AS day,\n            " if daily else ""
+    day_group = ", day" if daily else ""
+    guard = f"\n          AND {predicate}" if predicate else ""
+    sql = f"""
+        SELECT
+            connector,
+            {campaign_expr} AS campaign_ref,
+            {day_select}SUM({_money_micros_sql("value", placeholder=placeholder)}) AS spend_micros
+        FROM {schema_prefix}fact_daily_kpi
+        WHERE project_id = {ph(0)}
+          AND date BETWEEN {ph(1)} AND {ph(2)}
+          AND metric = 'cost'
+          AND breakdown_dimension = 'campaign_id'{guard}
+        GROUP BY connector, campaign_ref{day_group}
+        ORDER BY connector, campaign_ref{day_group}
+        """  # noqa: S608 -- table name is a hard-coded constant; all values are bound params
+    params: list = [*proj_params, project_id, start_date, end_date, *pred_params]
+    return sql, params
+
+
 def query_campaign_spend(
     project_id: str,
     start_date: str,
     end_date: str,
+    cleanup=_CLEANUP_RESOLVE,
 ) -> list[dict]:
     """Query per-campaign total spend over a window (Story 22.3, FR38/CAP-26).
 
@@ -1457,6 +1866,15 @@ def query_campaign_spend(
     column -- see dbt/models/marts/fact_daily_kpi.sql: meta-ads / tiktok-ads /
     linkedin-ads / klaviyo all emit breakdown_dimension='campaign_id'). Spend is
     summed over the FULL window per (connector, campaign_ref).
+
+    AI-260: the project's ENABLED cleanup rules on the exact field
+    ``campaign_id`` are applied IN the statement (see `_campaign_spend_sql`).
+    ``cleanup`` defaults to resolving them from the control plane; pass a
+    resolved `CleanupRuleApplication` to reuse one resolution and surface its
+    named states, or ``None`` for a deliberately raw read. A Datastream-scoped
+    rule applies through the `datastreams_dim` bridge only when every live
+    Datastream of its connector carries it -- anything less is a NAMED gap,
+    never a pick, and the gap travels on the resolving caller's contract.
 
     Returns a list of dicts with keys:
       connector, campaign_ref (= breakdown_value), spend (float total over window).
@@ -1471,26 +1889,18 @@ def query_campaign_spend(
     other query_* functions, which is an honest "no spend", not a hidden failure.)
     """
     mode = _db_mode()
+    application = _campaign_cleanup(project_id, cleanup)
 
     def _sql(schema_prefix: str, placeholder: str = "?") -> tuple[str, list]:
-        def ph(i: int) -> str:
-            return f"@p{i}" if placeholder != "?" else "?"
-
-        params: list = [project_id, start_date, end_date]
-        sql = f"""
-        SELECT
-            connector,
-            breakdown_value AS campaign_ref,
-            SUM(CAST(value AS DOUBLE)) AS spend
-        FROM {schema_prefix}fact_daily_kpi
-        WHERE project_id = {ph(0)}
-          AND date BETWEEN {ph(1)} AND {ph(2)}
-          AND metric = 'cost'
-          AND breakdown_dimension = 'campaign_id'
-        GROUP BY connector, breakdown_value
-        ORDER BY connector, breakdown_value
-        """  # noqa: S608 -- table name is a hard-coded constant; all values are bound params
-        return sql, params
+        return _campaign_spend_sql(
+            schema_prefix,
+            placeholder,
+            project_id=project_id,
+            start_date=start_date,
+            end_date=end_date,
+            daily=False,
+            application=application,
+        )
 
     if mode == "duckdb":
         # Story 22.3 review F-4: the [Unmapped Actuals] perimeter MUST NOT degrade to
@@ -1506,14 +1916,14 @@ def query_campaign_spend(
                 path,
             )
             raise WarehouseUnavailable(
-                "Entrepôt indisponible : la base analytique locale est introuvable."
+                "Warehouse unavailable: the local analytics database is missing."
             )
         if not _duckdb_relation_exists(path, "fact_daily_kpi"):
             logger.warning(
                 "query_campaign_spend: relation fact_daily_kpi absente de %r", path
             )
             raise WarehouseUnavailable(
-                "Entrepôt indisponible : la table des dépenses réelles est absente."
+                "Warehouse unavailable: the actual-spend table is absent."
             )
 
         # Story 19.2: route through the read-through cache (same _sql builder).
@@ -1533,9 +1943,9 @@ def query_campaign_spend(
                 "query_campaign_spend failed: %s: %s", type(exc).__name__, exc
             )
             raise WarehouseUnavailable(
-                "Entrepôt indisponible : impossible de lire les dépenses réelles."
+                "Warehouse unavailable: cannot read the actual spend."
             ) from exc
-        return [_json_safe_row(r) for r in rows]
+        return _with_display_spend([_json_safe_row(r) for r in rows])
 
     elif mode == "bigquery":
         if not _check_bigquery_mart(project_id):
@@ -1549,7 +1959,7 @@ def query_campaign_spend(
             )
             # Mart absent is an honest "not ready" -> propagate, never a fake [].
             raise WarehouseUnavailable(
-                "Entrepôt indisponible : les marts ne sont pas encore peuplés."
+                "Warehouse unavailable: the marts are not populated yet."
             )
         sql_str, params = _sql("", placeholder="@")
         try:
@@ -1559,9 +1969,9 @@ def query_campaign_spend(
                 "query_campaign_spend failed: %s: %s", type(exc).__name__, exc
             )
             raise WarehouseUnavailable(
-                "Entrepôt indisponible : impossible de lire les dépenses réelles."
+                "Warehouse unavailable: cannot read the actual spend."
             ) from exc
-        return [_json_safe_row(r) for r in rows]
+        return _with_display_spend([_json_safe_row(r) for r in rows])
 
     else:
         raise ValueError(f"Unknown TOOROW_DB_MODE: {mode!r}")
@@ -1571,6 +1981,7 @@ def query_campaign_spend_daily(
     project_id: str,
     start_date: str,
     end_date: str,
+    cleanup=_CLEANUP_RESOLVE,
 ) -> list[dict]:
     """Query per-campaign, per-DAY spend over a window (Story 22.8 E1-F-1).
 
@@ -1585,9 +1996,12 @@ def query_campaign_spend_daily(
 
     Reads the SAME fact_daily_kpi rows as query_campaign_spend (metric = 'cost',
     breakdown_dimension = 'campaign_id'); the campaign identity is breakdown_value.
-    Sums per (connector, breakdown_value, date) -- GROUP BY includes f.date so a
+    Sums per (connector, breakdown_value, date) -- GROUP BY includes the day so a
     campaign that pulled multiple 'cost' rows on the same day is summed, not
-    duplicated.
+    duplicated. AI-260: the same cleanup rules as the window-total reader, woven
+    by the SAME builder (`_campaign_spend_sql`) -- a rule applied on one grain
+    and not the other would make the two readers disagree about which campaigns
+    exist, and the pacing screen shows them side by side.
 
     Returns a list of dicts with keys:
       connector, campaign_ref (= breakdown_value), day (ISO date), spend (float).
@@ -1599,27 +2013,18 @@ def query_campaign_spend_daily(
     returns [] with a structured warning (an honest "no spend").
     """
     mode = _db_mode()
+    application = _campaign_cleanup(project_id, cleanup)
 
     def _sql(schema_prefix: str, placeholder: str = "?") -> tuple[str, list]:
-        def ph(i: int) -> str:
-            return f"@p{i}" if placeholder != "?" else "?"
-
-        params: list = [project_id, start_date, end_date]
-        sql = f"""
-        SELECT
-            connector,
-            breakdown_value AS campaign_ref,
-            date AS day,
-            SUM(CAST(value AS DOUBLE)) AS spend
-        FROM {schema_prefix}fact_daily_kpi
-        WHERE project_id = {ph(0)}
-          AND date BETWEEN {ph(1)} AND {ph(2)}
-          AND metric = 'cost'
-          AND breakdown_dimension = 'campaign_id'
-        GROUP BY connector, breakdown_value, date
-        ORDER BY connector, breakdown_value, date
-        """  # noqa: S608 -- table name is a hard-coded constant; all values are bound params
-        return sql, params
+        return _campaign_spend_sql(
+            schema_prefix,
+            placeholder,
+            project_id=project_id,
+            start_date=start_date,
+            end_date=end_date,
+            daily=True,
+            application=application,
+        )
 
     if mode == "duckdb":
         # Same guard as query_campaign_spend: the [Unmapped Actuals] perimeter MUST
@@ -1633,14 +2038,14 @@ def query_campaign_spend_daily(
                 path,
             )
             raise WarehouseUnavailable(
-                "Entrepôt indisponible : la base analytique locale est introuvable."
+                "Warehouse unavailable: the local analytics database is missing."
             )
         if not _duckdb_relation_exists(path, "fact_daily_kpi"):
             logger.warning(
                 "query_campaign_spend_daily: relation fact_daily_kpi absente de %r", path
             )
             raise WarehouseUnavailable(
-                "Entrepôt indisponible : la table des dépenses réelles est absente."
+                "Warehouse unavailable: the actual-spend table is absent."
             )
 
         try:
@@ -1656,9 +2061,9 @@ def query_campaign_spend_daily(
                 "query_campaign_spend_daily failed: %s: %s", type(exc).__name__, exc
             )
             raise WarehouseUnavailable(
-                "Entrepôt indisponible : impossible de lire les dépenses réelles."
+                "Warehouse unavailable: cannot read the actual spend."
             ) from exc
-        return [_json_safe_row(r) for r in rows]
+        return _with_display_spend([_json_safe_row(r) for r in rows])
 
     elif mode == "bigquery":
         if not _check_bigquery_mart(project_id):
@@ -1671,7 +2076,7 @@ def query_campaign_spend_daily(
                 )
             )
             raise WarehouseUnavailable(
-                "Entrepôt indisponible : les marts ne sont pas encore peuplés."
+                "Warehouse unavailable: the marts are not populated yet."
             )
         sql_str, params = _sql("", placeholder="@")
         try:
@@ -1681,9 +2086,9 @@ def query_campaign_spend_daily(
                 "query_campaign_spend_daily failed: %s: %s", type(exc).__name__, exc
             )
             raise WarehouseUnavailable(
-                "Entrepôt indisponible : impossible de lire les dépenses réelles."
+                "Warehouse unavailable: cannot read the actual spend."
             ) from exc
-        return [_json_safe_row(r) for r in rows]
+        return _with_display_spend([_json_safe_row(r) for r in rows])
 
     else:
         raise ValueError(f"Unknown TOOROW_DB_MODE: {mode!r}")
@@ -1778,7 +2183,7 @@ def query_plan_vs_actual(
                 "query_plan_vs_actual: duckdb file absent (%r) -- marts not seeded", path
             )
             raise WarehouseUnavailable(
-                "Entrepôt indisponible : la base analytique locale est introuvable."
+                "Warehouse unavailable: the local analytics database is missing."
             )
         for relation in _PLAN_PACING_RELATIONS:
             if not _duckdb_relation_exists(path, relation):
@@ -1786,7 +2191,7 @@ def query_plan_vs_actual(
                     "query_plan_vs_actual: relation %s absente de %r", relation, path
                 )
                 raise WarehouseUnavailable(
-                    "Entrepôt indisponible : les vues de pacing sont absentes."
+                    "Warehouse unavailable: the pacing views are absent."
                 )
 
         out: dict[str, list[dict]] = {}
@@ -1806,7 +2211,7 @@ def query_plan_vs_actual(
                 "query_plan_vs_actual failed: %s: %s", type(exc).__name__, exc
             )
             raise WarehouseUnavailable(
-                "Entrepôt indisponible : impossible de lire le pacing du plan."
+                "Warehouse unavailable: cannot read the plan pacing."
             ) from exc
         return out
 
@@ -1821,7 +2226,7 @@ def query_plan_vs_actual(
                 )
             )
             raise WarehouseUnavailable(
-                "Entrepôt indisponible : les marts ne sont pas encore peuplés."
+                "Warehouse unavailable: the marts are not populated yet."
             )
         out = {}
         try:
@@ -1839,12 +2244,315 @@ def query_plan_vs_actual(
                 "query_plan_vs_actual failed: %s: %s", type(exc).__name__, exc
             )
             raise WarehouseUnavailable(
-                "Entrepôt indisponible : impossible de lire le pacing du plan."
+                "Warehouse unavailable: cannot read the plan pacing."
             ) from exc
         return out
 
     else:
         raise ValueError(f"Unknown TOOROW_DB_MODE: {mode!r}")
+
+
+# ---------------------------------------------------------------------------
+# Story 41.6 (E41-FR06) -- the Tax & Fees composition read.
+#
+# Reads the four READ-ONLY Tax marts delivered by Stories 41.2-41.5 for ONE
+# project and ONE window. Same discipline as the pacing read above: the relation
+# names are hard-coded constants, every caller value is a bound parameter (HG-3),
+# and the ORDER BY comes from a per-relation map -- never from caller input.
+#
+# Degrade contract (AD-9, E41-NFR02): a missing DuckDB file or a missing relation
+# raises WarehouseUnavailable, which the API surfaces as an opaque 503. A
+# fabricated empty ladder would read as "your invoice equals your net media",
+# which is precisely the lie E41-NFR02 forbids. A relation that is PRESENT and
+# EMPTY returns empty lists -- an honest empty, and a different answer.
+#
+# MEASURED, and true of every environment that exists today: fee_tax_ladder_daily
+# has never executed (fact_daily_kpi predates fx_rate and 21 staging models lack
+# raw seeds -- commit 1c78a532, independent of that diff), so these reads raise
+# WarehouseUnavailable everywhere right now. That is the honest behaviour and the
+# seam test asserts the 503 rather than a fabricated 200.
+# ---------------------------------------------------------------------------
+
+# The Tax & Fees relations this read touches (documented allowlist -- NEVER
+# interpolated from caller input; these are hard-coded constants).
+_FEE_TAX_BRIDGE_RELATIONS = (
+    "fee_tax_ladder_rollup",
+    "fee_tax_ladder_daily",
+    "fee_tax_verification_allocation",
+    "fee_tax_revenue_alignment_daily",
+)
+
+# Deterministic ordering per relation, hard-coded beside the allowlist so a caller
+# can never choose a sort expression.
+_FEE_TAX_ORDER_BY = {
+    "fee_tax_ladder_rollup": "date, rollup_kind, rollup_key",
+    "fee_tax_ladder_daily": "date, connector, breakdown_dimension, breakdown_value",
+    "fee_tax_verification_allocation": "row_kind, date, connector, breakdown_value",
+    "fee_tax_revenue_alignment_daily": "date, tax_basis",
+}
+
+# Relations whose grain carries rows with a NULL date ON PURPOSE.
+# fee_tax_verification_allocation's `rule_without_base` reason rows have no date
+# because "it priced nothing on any day, so it has no day" -- a plain BETWEEN
+# would drop exactly the disclosure the overlay exists to make.
+_FEE_TAX_NULL_DATE_RELATIONS = frozenset({"fee_tax_verification_allocation"})
+
+# Only the rollup relation carries a (rollup_kind, rollup_key) selector. Applying
+# it to any other relation would be a SQL error, i.e. a caller mistake surfaced as
+# an opaque 503.
+_FEE_TAX_ROLLUP_SELECTOR_RELATIONS = frozenset({"fee_tax_ladder_rollup"})
+
+
+def _build_fee_tax_query(
+    schema_prefix: str,
+    relation: str,
+    project_id: str,
+    date_from: str,
+    date_to: str,
+    *,
+    rollup_kind: str | None = None,
+    rollup_key: str | None = None,
+    placeholder: str = "?",
+) -> tuple[str, list]:
+    """Build a parameterized SELECT * over one Tax & Fees relation.
+
+    ``relation`` MUST be one of :data:`_FEE_TAX_BRIDGE_RELATIONS` (hard-coded
+    constants, never attacker-controlled). project_id, the window bounds and the
+    rollup selector are BOUND parameters (HG-3 injection safety).
+    """
+    if relation not in _FEE_TAX_BRIDGE_RELATIONS:
+        # Defensive: only the four known Tax relations may be queried.
+        raise ValueError(f"Unknown fee/tax relation: {relation!r}")
+
+    params: list = [project_id, date_from, date_to]
+
+    def ph(i: int) -> str:
+        return f"@p{i}" if placeholder != "?" else "?"
+
+    if relation in _FEE_TAX_NULL_DATE_RELATIONS:
+        date_clause = (
+            f"AND (date IS NULL OR (date >= {ph(1)} AND date <= {ph(2)}))"
+        )
+    else:
+        date_clause = f"AND date >= {ph(1)} AND date <= {ph(2)}"
+
+    selector = ""
+    if relation in _FEE_TAX_ROLLUP_SELECTOR_RELATIONS:
+        if rollup_kind:
+            params.append(rollup_kind)
+            selector += f"\n      AND rollup_kind = {ph(len(params) - 1)}"
+        if rollup_key:
+            params.append(rollup_key)
+            selector += f"\n      AND rollup_key = {ph(len(params) - 1)}"
+
+    order_by = _FEE_TAX_ORDER_BY[relation]
+    sql = f"""
+    SELECT *
+    FROM {schema_prefix}{relation}
+    WHERE project_id = {ph(0)}
+      {date_clause}{selector}
+    ORDER BY {order_by}
+    """  # noqa: S608 -- relation + ORDER BY are hard-coded constants; values are bound params
+    return sql, params
+
+
+def _query_fee_tax_relations(
+    project_id: str,
+    date_from: str,
+    date_to: str,
+    pairs: tuple[tuple[str, str], ...],
+    *,
+    rollup_kind: str | None = None,
+    rollup_key: str | None = None,
+    what: str = "the Tax & Fees composition",
+) -> dict[str, list[dict]]:
+    """Read one or more allowlisted Tax relations, both adapter arms.
+
+    Returns ``{key: rows}`` for every ``(key, relation)`` in *pairs*. Raises
+    :class:`WarehouseUnavailable` when the file, the dataset or ANY of the named
+    relations is absent, and on any query failure -- never a silent ``[]``.
+    """
+    mode = _db_mode()
+    out: dict[str, list[dict]] = {}
+
+    if mode == "duckdb":
+        path = _duckdb_path()
+        if not path or not os.path.exists(path):
+            logger.warning(
+                "query_fee_tax: duckdb file absent (%r) -- Tax marts not seeded", path
+            )
+            raise WarehouseUnavailable(
+                "Warehouse unavailable: the local analytics database is missing."
+            )
+        for _key, relation in pairs:
+            if not _duckdb_relation_exists(path, relation):
+                logger.warning(
+                    "query_fee_tax: relation %s absent from %r", relation, path
+                )
+                raise WarehouseUnavailable(
+                    "Warehouse unavailable: the Tax & Fees views are absent."
+                )
+        try:
+            for key, relation in pairs:
+                sql, params = _build_fee_tax_query(
+                    _duckdb_mart_prefix(project_id),
+                    relation,
+                    project_id,
+                    date_from,
+                    date_to,
+                    rollup_kind=rollup_kind,
+                    rollup_key=rollup_key,
+                )
+                out[key] = [_json_safe_row(r) for r in _query_duckdb(sql, params)]
+        except Exception as exc:  # noqa: BLE001
+            # NEVER swallow silently -- a broken mart must be observable AND propagate.
+            logger.warning(
+                "query_fee_tax failed (%s): %s: %s", what, type(exc).__name__, exc
+            )
+            raise WarehouseUnavailable(
+                "Warehouse unavailable: cannot read the Tax & Fees composition."
+            ) from exc
+        return out
+
+    if mode == "bigquery":
+        if not _check_bigquery_mart(project_id):
+            logger.warning(
+                json.dumps(
+                    {
+                        "event": "warehouse_not_ready",
+                        "message": "marts not populated -- run the dbt build first",
+                    }
+                )
+            )
+            raise WarehouseUnavailable(
+                "Warehouse unavailable: the marts are not populated yet."
+            )
+        try:
+            for key, relation in pairs:
+                sql, params = _build_fee_tax_query(
+                    "",
+                    relation,
+                    project_id,
+                    date_from,
+                    date_to,
+                    rollup_kind=rollup_kind,
+                    rollup_key=rollup_key,
+                    placeholder="@",
+                )
+                out[key] = [_json_safe_row(r) for r in _query_bigquery(sql, params)]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "query_fee_tax failed (%s): %s: %s", what, type(exc).__name__, exc
+            )
+            raise WarehouseUnavailable(
+                "Warehouse unavailable: cannot read the Tax & Fees composition."
+            ) from exc
+        return out
+
+    raise ValueError(f"Unknown TOOROW_DB_MODE: {mode!r}")
+
+
+def query_fee_tax_bridge(
+    project_id: str,
+    date_from: str,
+    date_to: str,
+    *,
+    rollup_kind: str | None = None,
+    rollup_key: str | None = None,
+) -> dict[str, list[dict]]:
+    """Read the composed ladder + the verification overlay (Story 41.6, E41-FR06).
+
+    Returns ``{"ladder": [...], "verification": [...]}``.
+
+    The two relations are read TOGETHER and returned SEPARATELY on purpose: the
+    verification allocation carries ``keep_separate = TRUE`` on every row and must
+    never be merged into a ladder total (E41-AD4, Epic 27 invariant 4).
+    """
+    return _query_fee_tax_relations(
+        project_id,
+        date_from,
+        date_to,
+        (
+            ("ladder", "fee_tax_ladder_rollup"),
+            ("verification", "fee_tax_verification_allocation"),
+        ),
+        rollup_kind=rollup_kind,
+        rollup_key=rollup_key,
+        what="bridge",
+    )
+
+
+#: The six components a deep-dive may be requested for. `verification` reads the
+#: overlay relation; the other five read the per-row ladder.
+FEE_TAX_COMPONENTS = (
+    "platform_fee",
+    "regulatory_tax",
+    "wht_gross_up",
+    "agency_fee",
+    "sales_tax",
+    "verification",
+)
+
+
+def query_fee_tax_components(
+    project_id: str,
+    date_from: str,
+    date_to: str,
+    *,
+    component: str,
+) -> list[dict]:
+    """Read the contributing rows behind ONE component, at their own grain."""
+    if component not in FEE_TAX_COMPONENTS:
+        raise ValueError(f"Unknown fee/tax component: {component!r}")
+    relation = (
+        "fee_tax_verification_allocation"
+        if component == "verification"
+        else "fee_tax_ladder_daily"
+    )
+    result = _query_fee_tax_relations(
+        project_id,
+        date_from,
+        date_to,
+        (("rows", relation),),
+        what=f"component {component}",
+    )
+    return result.get("rows", [])
+
+
+def query_fee_tax_ladder_daily(
+    project_id: str, date_from: str, date_to: str
+) -> list[dict]:
+    """Read the per-row composed ladder over a window (Story 58.6).
+
+    THE DAILY RELATION, NOT THE ROLLUP. The Datastream `Cost` tab reads one
+    connector's slice, and `fee_tax_ladder_rollup` is grained on
+    (rollup_kind, rollup_key) with no connector to select on. Calling
+    `query_fee_tax_components` for the same rows would name a component the
+    caller is not deep-diving, so the reading would be labelled as something it
+    is not.
+    """
+    result = _query_fee_tax_relations(
+        project_id,
+        date_from,
+        date_to,
+        (("rows", "fee_tax_ladder_daily"),),
+        what="ladder daily",
+    )
+    return result.get("rows", [])
+
+
+def query_fee_tax_alignment(
+    project_id: str, date_from: str, date_to: str
+) -> list[dict]:
+    """Read the HT/TTC revenue alignment rows, unchanged (Story 41.5, E41-FR07)."""
+    result = _query_fee_tax_relations(
+        project_id,
+        date_from,
+        date_to,
+        (("rows", "fee_tax_revenue_alignment_daily"),),
+        what="alignment",
+    )
+    return result.get("rows", [])
 
 
 def query_daily_report(
@@ -1948,14 +2656,36 @@ def query_breakdown_values(
     dimension: str,
     start_date: str,
     end_date: str,
+    *,
+    strict: bool = False,
 ) -> list[dict]:
     """Return the distinct values observed on one breakdown partition, with counts.
 
-    Rows look like ``{"connector", "breakdown_value", "row_count"}``. Never raises
-    when the mart is absent -- returns ``[]`` with the same structured warning as
-    the other read paths (AD-12: marts only, never raw_*).
+    Rows look like ``{"connector", "breakdown_value", "row_count"}``.
+
+    TWO DEGRADE CONTRACTS, AND THE CALLER PICKS THE ONE ITS SCREEN CAN SURVIVE.
+    By default this returns ``[]`` on an unreachable mart, with a structured
+    warning (AD-12: marts only, never raw_*) -- the geography monitor of
+    ``dq_monitors`` is written around that and treats "no observation" as a
+    signal it may skip.
+
+    ``strict=True`` raises ``WarehouseUnavailable`` instead, and story 61.1 is why
+    it exists: on the ``Placements`` tab, ``[]`` is the exact shape of "this
+    connector emitted no placement", so a swallowed failure would render an
+    unreadable mart as a measured absence and offer an empty list of candidates
+    to attach. "There is nothing" and "we could not look" are two reports, and a
+    reader must not be handed one for the other.
     """
     mode = _db_mode()
+
+    def _degrade(event: str, detail: str) -> list[dict]:
+        logger.warning(json.dumps({"event": event, "error": detail}))
+        if strict:
+            raise WarehouseUnavailable(
+                "Warehouse unavailable: cannot read the observed breakdown values."
+            )
+        return []
+
     if mode == "duckdb":
         sql, params = _build_breakdown_value_query(
             _duckdb_mart_prefix(project_id), project_id, dimension, start_date, end_date
@@ -1963,29 +2693,17 @@ def query_breakdown_values(
         try:
             return _query_duckdb(sql, params)
         except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                json.dumps({"event": "warehouse_breakdown_read_failed", "error": str(exc)})
-            )
-            return []
+            return _degrade("warehouse_breakdown_read_failed", str(exc))
     if mode == "bigquery":
         if not _check_bigquery_mart(project_id):
-            logger.warning(
-                json.dumps(
-                    {
-                        "event": "warehouse_not_ready",
-                        "message": "marts not populated — run Story 1.4 seed first",
-                    }
-                )
+            return _degrade(
+                "warehouse_not_ready", "marts not populated — run Story 1.4 seed first"
             )
-            return []
         sql, params = _build_breakdown_value_query(
             "", project_id, dimension, start_date, end_date, placeholder="@"
         )
         try:
             return _query_bigquery(sql, params)
         except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                json.dumps({"event": "warehouse_breakdown_read_failed", "error": str(exc)})
-            )
-            return []
+            return _degrade("warehouse_breakdown_read_failed", str(exc))
     raise ValueError(f"Unknown TOOROW_DB_MODE: {mode!r}")

@@ -208,9 +208,9 @@ def test_resend_supersedes_old_and_returns_only_new_handoff_once(monkeypatch):
 
 
 def test_migration_064_preserves_accepted_and_constrains_lifecycle():
-    from pathlib import Path
+    from tests.conftest import REPO_ROOT
 
-    sql = Path("infra/nango/migrations/064_invitation_lifecycle.sql").read_text()
+    sql = (REPO_ROOT / "infra/nango/migrations/064_invitation_lifecycle.sql").read_text()
     assert "accepted invitation is immutable" in sql
     assert "pending', 'delivered', 'delivery_failed" in sql
     assert "superseded_by" in sql

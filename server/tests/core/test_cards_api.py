@@ -10,6 +10,7 @@ Two layers:
 
 from __future__ import annotations
 
+import contextlib
 import os
 from unittest.mock import AsyncMock, patch
 
@@ -21,6 +22,19 @@ import pytest  # noqa: E402
 from core.cards_api import CARDS_ROUTES  # noqa: E402
 from starlette.routing import Router  # noqa: E402
 from starlette.testclient import TestClient  # noqa: E402
+
+
+@contextlib.contextmanager
+def _reachable_db():
+    """A Postgres connection that opens.
+
+    These tests used to stub ``core.db.get_connection`` with ``RuntimeError`` and
+    still expect 200, which only passed because the AD-5 scope check swallowed the
+    error and continued -- the very fail-open removed from ``cards_api``. A test
+    that needs "the identity is allowed" must now say so through a REACHABLE
+    connection plus an allowing decision, not through an unreachable one.
+    """
+    yield object()
 
 
 def _rows():
@@ -131,7 +145,7 @@ def test_templates_per_project_usability(client):
 
     with (
         patch("core.db.get_connection", return_value=ctx),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.project_access.identity_can_read_project", return_value=True),
     ):
         resp = client.get("/api/cards/templates?project_id=projA")
     assert resp.status_code == 200
@@ -198,7 +212,7 @@ def test_templates_dimension_not_satisfied_by_like_named_metric(client):
 
     with (
         patch("core.db.get_connection", return_value=ctx),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.project_access.identity_can_read_project", return_value=True),
         patch("core.cards_api._loaded_modules", return_value=[_FakeMod()]),
     ):
         resp = client.get("/api/cards/templates?project_id=projK")
@@ -219,7 +233,7 @@ def test_templates_per_project_access_denied_404(client):
     ctx.__exit__ = MagicMock(return_value=False)
     with (
         patch("core.db.get_connection", return_value=ctx),
-        patch("core.project_access.identity_has_project_access", return_value=False),
+        patch("core.project_access.identity_can_read_project", return_value=False),
     ):
         resp = client.get("/api/cards/templates?project_id=projB")
     assert resp.status_code == 404
@@ -233,17 +247,18 @@ def test_templates_unauthorized():
 
 
 def test_get_card_connectors_via_rest_needs_no_metrics(client):
-    """Story 9.8: a context card is reachable over REST with only project_id+template."""
-    from unittest.mock import MagicMock
+    """Story 9.8: a context card is reachable over REST with only project_id+template.
 
-    ctx = MagicMock()
-    ctx.__enter__ = MagicMock(return_value=MagicMock())
-    ctx.__exit__ = MagicMock(return_value=False)
+    The connection OPENS (so the AD-5 decision is verifiable and the request is not
+    refused) but yields no usable cursor, so the card resolver's own query fails and
+    degrades to its designed empty state -- still 200. Previously this test stubbed
+    the connection as unreachable and relied on the scope check swallowing that,
+    which conflated "the card has no data" with "nobody checked who was asking".
+    """
     with (
-        patch("core.project_access.identity_has_project_access", return_value=True),
-        patch("core.db.get_connection", side_effect=RuntimeError("db down")),
+        patch("core.project_access.identity_can_read_project", return_value=True),
+        patch("core.db.get_connection", _reachable_db),
     ):
-        # DB down inside the card resolver -> designed empty (still 200).
         resp = client.get("/api/cards?project_id=default&template=connectors")
     assert resp.status_code == 200
     assert resp.json()["widget_uri"] == "ui://core/card-connectors"
@@ -267,8 +282,8 @@ def test_get_card_requires_metrics_or_report_ref(client):
 def test_get_card_returns_envelope(client):
     with (
         patch("core.warehouse.query_daily_report", return_value=_rows()),
-        patch("core.project_access.identity_has_project_access", return_value=True),
-        patch("core.db.get_connection", side_effect=RuntimeError("offline")),
+        patch("core.project_access.identity_can_read_project", return_value=True),
+        patch("core.db.get_connection", _reachable_db),
         patch("core.cards._fetch_r6_adhoc", return_value=(None, None)),
         patch("core.cards._fetch_card_config", return_value={}),
     ):
@@ -284,11 +299,56 @@ def test_get_card_returns_envelope(client):
 def test_get_card_unknown_template_404(client):
     with (
         patch("core.warehouse.query_daily_report", return_value=_rows()),
-        patch("core.project_access.identity_has_project_access", return_value=True),
-        patch("core.db.get_connection", side_effect=RuntimeError("offline")),
+        patch("core.project_access.identity_can_read_project", return_value=True),
+        patch("core.db.get_connection", _reachable_db),
     ):
         resp = client.get("/api/cards?project_id=default&metrics=sessions&template=nope")
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# AD-5 fail-closed: an unverifiable scope decision refuses, and refuses with the
+# SAME non-disclosing shape as a denial (README.md:121 invariant 6, :123
+# invariant 8).
+# ---------------------------------------------------------------------------
+
+
+def test_get_card_refuses_when_scope_check_is_unverifiable(client):
+    """A Postgres outage must not serve warehouse data on an unverified identity.
+
+    The access graph is in Postgres; the facts are in the warehouse. Before the
+    fix, an unreachable Postgres skipped the check and the warehouse read still
+    ran -- so the body was one project's data returned to an identity nobody
+    could confirm. `query_daily_report` is asserted NOT CALLED: refusing after
+    reading would leak through timing and cost even with a 404 body.
+    """
+    warehouse_read = patch("core.warehouse.query_daily_report", return_value=_rows())
+    with (
+        warehouse_read as spy,
+        patch("core.project_access.identity_can_read_project", return_value=True),
+        patch("core.db.get_connection", side_effect=RuntimeError("postgres down")),
+    ):
+        resp = client.get("/api/cards?project_id=default&metrics=sessions")
+    assert resp.status_code == 404
+    assert resp.json()["code"] == "forbidden"
+    assert spy.call_count == 0
+
+
+def test_get_card_denied_and_unverifiable_are_indistinguishable(client):
+    """Denied and unverifiable return the same status and the same body."""
+    with (
+        patch("core.warehouse.query_daily_report", return_value=_rows()),
+        patch("core.project_access.identity_can_read_project", return_value=False),
+        patch("core.db.get_connection", _reachable_db),
+    ):
+        denied = client.get("/api/cards?project_id=default&metrics=sessions")
+    with (
+        patch("core.warehouse.query_daily_report", return_value=_rows()),
+        patch("core.db.get_connection", side_effect=RuntimeError("postgres down")),
+    ):
+        unverifiable = client.get("/api/cards?project_id=default&metrics=sessions")
+    assert denied.status_code == unverifiable.status_code == 404
+    assert denied.json() == unverifiable.json()
 
 
 # ---------------------------------------------------------------------------
@@ -431,3 +491,32 @@ def test_synonym_colliding_with_dimension_excluded_from_metric_pool():
     assert "country" not in metrics  # dimension synonym kept OUT of the metric pool
     assert "country" in dimensions  # stays a pure dimension
     assert "CA" in metrics  # a genuine (non-colliding) synonym still enriches metrics
+
+
+# ---------------------------------------------------------------------------
+# CAV-02: the card path actually CONSULTS the reconciliation gate.
+#
+# The gate is only worth building if something asks it. `resolve_route` shipped
+# with "no existing consumer (rollup.py, cards.py, the dbt marts) is touched" and
+# stayed unasked; a test that only proves `compute_rollup` can refuse would leave
+# exactly that gap open.
+# ---------------------------------------------------------------------------
+
+
+def test_card_path_binds_a_route_resolver_to_the_project():
+    from core.cards import _route_resolver_for
+
+    with patch("core.metric_reconciliation.resolve_route") as m_route:
+        m_route.return_value = type("D", (), {"status": "UNRULED_OVERLAP"})()
+        resolver = _route_resolver_for("proj_1")
+        assert resolver is not None
+        assert resolver("conversions") == "UNRULED_OVERLAP"
+
+    assert m_route.call_args.args == ("proj_1", "conversions")
+
+
+def test_no_project_means_no_resolver_rather_than_a_permissive_stub():
+    """A stub returning "allowed" would read as "checked", which is the lie."""
+    from core.cards import _route_resolver_for
+
+    assert _route_resolver_for("") is None

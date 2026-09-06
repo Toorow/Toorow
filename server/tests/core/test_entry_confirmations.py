@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -16,6 +15,8 @@ from core.entry_confirmations import (
     consume_entry_confirmation,
     issue_entry_confirmation,
 )
+
+from tests.conftest import REPO_ROOT
 
 
 def _payload(name: str = "Acme") -> dict:
@@ -220,8 +221,47 @@ def test_lost_issue_response_can_bind_a_new_confirmation_to_same_operation():
             conn, confirmation=confirmation, operation_id="op_original"
         )
 
-    migration = Path("infra/nango/migrations/116_entry_confirmations.sql").read_text(
+    migration = (REPO_ROOT / "infra/nango/migrations/116_entry_confirmations.sql").read_text(
         encoding="utf-8"
     )
     assert "operation_id             TEXT\n" in migration
     assert "operation_id             TEXT UNIQUE" not in migration
+
+
+def test_every_command_the_code_issues_is_in_the_database_vocabulary():
+    """A constant added at the write site, a CHECK left behind, a 503 that names nothing.
+
+    `entry_confirmations_command_type_check` carried four values from migration
+    131. Three commands were added to this module afterwards and none reached the
+    constraint, so each raised `CheckViolation` at issue time under a catch-all
+    503. Measured live 2026-08-07: `POST .../draft-confirmations` -> 503
+    `preconfiguration_unavailable`, and no Datastream setup confirmation could
+    EVER be issued, in any of the three modes.
+
+    The list lives in two places by necessity -- Python and a CHECK. This test is
+    what keeps them one list: it reads the constants and the migration text, so a
+    command added here without its migration fails in CI rather than in a log
+    nobody is reading.
+    """
+    import re
+    from pathlib import Path
+
+    from core import entry_confirmations
+
+    issued = {
+        value
+        for name, value in vars(entry_confirmations).items()
+        if name.endswith("_COMMAND") and isinstance(value, str)
+    }
+    migrations = Path(__file__).resolve().parents[3] / "infra" / "nango" / "migrations"
+    latest = max(
+        (path for path in migrations.glob("*.sql") if "entry_confirmations" in path.read_text(
+            encoding="utf-8"
+        ) and "command_type_check" in path.read_text(encoding="utf-8")),
+        key=lambda path: int(path.name.split("_", 1)[0]),
+    )
+    allowed = set(re.findall(r"'([a-z_]+(?:\.[a-z_]+)+)'", latest.read_text(encoding="utf-8")))
+    assert issued <= allowed, (
+        f"{sorted(issued - allowed)} would raise CheckViolation at issue time; "
+        f"add them to {latest.name}"
+    )

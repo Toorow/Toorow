@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
+from tests.conftest import REPO_ROOT
+
 
 def test_migration_persists_constrained_tasks_and_hashed_one_time_handoffs():
-    sql = Path("infra/nango/migrations/065_setup_responsibilities.sql").read_text()
+    sql = (REPO_ROOT / "infra/nango/migrations/065_setup_responsibilities.sql").read_text()
     for fragment in (
         "app.setup_journeys",
         "app.setup_tasks",
@@ -64,8 +65,8 @@ def test_initial_tasks_keep_actor_classes_distinct_and_complete_contract():
     assert all(required <= task.keys() for task in tasks)
     assert tasks[2]["state"] == "waiting"
     assert tasks[2]["safe_scope"] == {"project_id": "proj-1", "action": "authorize_source"}
-    assert tasks[0]["title"] == "Invitation acceptée"
-    assert tasks[1]["title"] == "Accès au projet confirmé"
+    assert tasks[0]["title"] == "Invitation accepted"
+    assert tasks[1]["title"] == "Project access confirmed"
 
 
 def test_org_only_invitation_derives_an_accessible_org_scoped_journey():
@@ -146,7 +147,7 @@ def test_safe_projection_is_recursive_secret_free_and_expiry_is_server_derived()
     dumped = json.dumps(projected)
     assert "bearer" not in dumped
     assert "token" not in dumped
-    assert projected["reminder"]["label"] == "Aucun rappel automatique"
+    assert projected["reminder"]["label"] == "No automatic reminder"
 
 
 def test_handoff_is_fragment_only_and_bearer_never_reaches_sql_or_outbox(monkeypatch):

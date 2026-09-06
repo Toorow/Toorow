@@ -37,7 +37,7 @@ def client():
     with patch(
         "core.datamodel_api._check_auth",
         new=AsyncMock(return_value=(True, "ann@toorow.com")),
-    ):
+    ), patch("core.datamodel_api._project_access_allowed", return_value=True):
         with TestClient(app, raise_server_exceptions=True) as c:
             yield c
 
@@ -72,9 +72,9 @@ def test_lookup_by_target_field_returns_the_feeding_streams(client):
     assert mappings[0]["project_id"] == "proj_A"
 
     sql = _last_sql(cur)
-    assert "dm.target_field = %s" in sql
-    assert "JOIN app.datastreams ds ON ds.id = dm.datastream_id" in sql
-    assert cur.execute.call_args.args[1] == ["clicks", "proj_A"]
+    assert "active_target_bindings" in sql
+    assert "app.datastream_mapping_versions" in sql
+    assert cur.execute.call_args.args[1] == ["proj_A", "proj_A", "clicks"]
 
 
 def test_lookup_by_target_field_without_project_id_is_refused(client):
@@ -97,8 +97,25 @@ def test_lookup_by_target_field_scopes_to_project_when_given(client):
     assert len(resp.json()["mappings"]) == 1
 
     sql = _last_sql(cur)
-    assert "ds.project_id = %s" in sql
-    assert cur.execute.call_args.args[1] == ["clicks", "proj_A"]
+    assert sql.count("ds.project_id = %s") == 2
+    assert cur.execute.call_args.args[1] == ["proj_A", "proj_A", "clicks"]
+
+
+def test_lookup_by_target_field_hides_projects_without_view_access():
+    app = Router(routes=DATAMODEL_ROUTES)
+    conn, _cur = _conn_returning(_FED_BY_ROWS, _FED_BY_COLS)
+    with patch(
+        "core.datamodel_api._check_auth",
+        new=AsyncMock(return_value=(True, "ann@toorow.com")),
+    ), patch("core.datamodel_api._project_access_allowed", return_value=False), patch(
+        "core.db.get_connection", return_value=conn
+    ), TestClient(app, raise_server_exceptions=True) as denied_client:
+        response = denied_client.get(
+            "/api/datamodel/mappings?target_field=clicks&project_id=proj_other"
+        )
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "not_found"
 
 
 def test_lookup_by_target_field_with_nothing_feeding_it_is_an_empty_list(client):
@@ -127,18 +144,58 @@ def test_both_parameters_together_are_refused(client):
     assert resp.json()["code"] == "invalid_param"
 
 
-def test_datastream_lookup_still_works_unchanged(client):
-    """Regression guard: the original ?datastream_id= shape must be untouched."""
+def test_datastream_lookup_carries_the_project_it_was_authorized_for(client):
+    """AI-219: the read that used to name the stream alone now names the pair.
+
+    The assertion this replaced was written as a regression guard on
+    `WHERE datastream_id = %s` -- it pinned the hole in place. The shape it
+    guarded was the bug: any authenticated caller naming any stream id.
+    """
     conn, cur = _conn_returning([("clicks", "clicks", False)], _STREAM_MAPPING_COLS)
 
-    with patch("core.db.get_connection", return_value=conn):
-        resp = client.get("/api/datamodel/mappings?datastream_id=ds_meta")
+    with patch("core.db.get_connection", return_value=conn), patch(
+        "core.datamodel_api._datastream_in_project", return_value=True
+    ):
+        resp = client.get("/api/datamodel/mappings?datastream_id=ds_meta&project_id=proj_A")
 
     assert resp.status_code == 200
     assert resp.json() == {
         "mappings": [{"source_field": "clicks", "target_field": "clicks", "is_key_column": False}]
     }
-    assert "WHERE datastream_id = %s" in _last_sql(cur)
+    sql = _last_sql(cur)
+    assert "m.datastream_id = %s AND d.project_id = %s" in sql
+    assert cur.execute.call_args.args[1] == ("ds_meta", "proj_A")
+
+
+def test_a_datastream_lookup_without_a_project_is_refused(client):
+    """No project named, no answer: the platform-wide read must not be reachable."""
+    resp = client.get("/api/datamodel/mappings?datastream_id=ds_meta")
+
+    assert resp.status_code == 400
+    assert resp.json()["code"] == "missing_field"
+
+
+def test_a_stream_outside_the_named_project_answers_like_an_absent_one(client):
+    """The 404 a foreign stream gets is the 404 an unknown project gets."""
+    conn, cur = _conn_returning([], _STREAM_MAPPING_COLS)
+
+    with patch("core.db.get_connection", return_value=conn), patch(
+        "core.datamodel_api._datastream_in_project", return_value=False
+    ):
+        foreign = client.get(
+            "/api/datamodel/mappings?datastream_id=ds_meta&project_id=proj_A"
+        )
+    with patch("core.db.get_connection", return_value=conn), patch(
+        "core.datamodel_api._project_access_allowed", return_value=False
+    ):
+        unauthorized = client.get(
+            "/api/datamodel/mappings?datastream_id=ds_meta&project_id=proj_A"
+        )
+
+    assert foreign.status_code == unauthorized.status_code == 404
+    assert foreign.json() == unauthorized.json()
+    # And nothing was read: a refusal that queries first answers by its latency.
+    assert cur.execute.call_count == 0
 
 
 def test_unauthenticated_is_401():

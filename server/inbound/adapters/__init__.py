@@ -41,11 +41,19 @@ class InboundDelivery:
         recipient: The delivery recipient address (``ds_<token>@<domain>`` shape).
         attachments_meta: Per-attachment metadata (name/size/content-type) — NO
             attachment bytes. Used to enforce the attachment-count bound.
+        sender: The envelope sender of a signed delivery, when the transport
+            carries one (a webhook does not). It is NEVER a capability and NEVER
+            an authorization -- the token in the recipient stays the only one --
+            and it is never written down raw: the handler hashes it before it
+            reaches the manifest, exactly as it already hashes the recipient. It
+            exists so a Datastream's DECLARED sender allowlist (story 57.3) can
+            be applied at processing rather than nowhere.
     """
 
     provider_event_id: str
     recipient: str
     attachments_meta: list[dict] = field(default_factory=list)
+    sender: str = ""
 
 
 @runtime_checkable

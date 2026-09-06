@@ -67,16 +67,18 @@ def _response(status: str) -> dict:
 def _render_staging(view_name: str, raw_table: str) -> str:
     """Render the committed staging model to runnable DuckDB SQL.
 
-    Strips the dbt jinja ({{ config(...) }}, {{ source(...) }}) and wraps the
-    SELECT in a CREATE VIEW so the test exercises the ACTUAL committed QUALIFY
-    partition -- not a hand-copied one that could drift.
+    Render only the model's raw CTE and expose it as a view. The downstream FX
+    joins require dbt's relation graph and are outside this supersede test; the
+    committed QUALIFY partition remains byte-read from the real model rather
+    than copied into the test.
     """
     sql = _STAGING_SQL.read_text(encoding="utf-8")
     sql = re.sub(r"\{\{\s*config\([^}]*\)\s*\}\}", "", sql)
     sql = re.sub(
         r"\{\{\s*source\([^}]*\)\s*\}\}", raw_table, sql
     )
-    return f"CREATE VIEW {view_name} AS\n{sql}"
+    raw_cte_end = sql.index("\n)\n\nSELECT") + 2
+    return f"CREATE VIEW {view_name} AS\n{sql[:raw_cte_end]}\nSELECT * FROM raw"
 
 
 # ---------------------------------------------------------------------------

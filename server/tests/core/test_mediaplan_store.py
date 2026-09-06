@@ -18,6 +18,8 @@ from decimal import Decimal
 
 import pytest
 
+from tests.conftest import purge_fixture_project
+
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
@@ -51,9 +53,8 @@ def _seed_project(conn) -> str:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO app.projects (id, name, slug, status, currency, timezone, created_by,
-                org_id)
-            VALUES (%s, %s, %s, 'active', 'EUR', 'Europe/Paris', 'system', 'org_test_fixture')
+            INSERT INTO app.projects (id, name, slug, status, created_by, org_id)
+            VALUES (%s, %s, %s, 'active', 'system', 'org_test_fixture')
             """,
             (project_id, "MP Test", project_id),
         )
@@ -62,49 +63,26 @@ def _seed_project(conn) -> str:
 
 
 def _drop_project(conn, project_id: str) -> None:
-    """Tear down a test plan tree.
-
-    Published versions/allocations are immutable by trigger; the migration owner
-    (the `connector` role that ran migration 040) may DISABLE TRIGGER on the
-    tables it owns for this maintenance path only, then re-enable them.
-    """
-    with conn.cursor() as cur:
-        cur.execute("ALTER TABLE app.plan_allocation_daily DISABLE TRIGGER USER")
-        cur.execute("ALTER TABLE app.media_plan_versions DISABLE TRIGGER USER")
-        try:
-            cur.execute(
-                """
-                DELETE FROM app.plan_allocation_daily WHERE version_id IN (
-                    SELECT v.id FROM app.media_plan_versions v
-                    JOIN app.media_plans p ON p.id = v.plan_id WHERE p.project_id = %s
-                )
-                """,
-                (project_id,),
-            )
-            cur.execute(
-                """
-                DELETE FROM app.media_plan_lines WHERE version_id IN (
-                    SELECT v.id FROM app.media_plan_versions v
-                    JOIN app.media_plans p ON p.id = v.plan_id WHERE p.project_id = %s
-                )
-                """,
-                (project_id,),
-            )
-            cur.execute(
-                """
-                DELETE FROM app.media_plan_versions WHERE plan_id IN (
-                    SELECT id FROM app.media_plans WHERE project_id = %s
-                )
-                """,
-                (project_id,),
-            )
-            cur.execute("DELETE FROM app.media_plans WHERE project_id = %s", (project_id,))
-            cur.execute("DELETE FROM app.audit_log WHERE identity = 'tester'")
-            cur.execute("DELETE FROM app.projects WHERE id = %s", (project_id,))
-        finally:
-            cur.execute("ALTER TABLE app.plan_allocation_daily ENABLE TRIGGER USER")
-            cur.execute("ALTER TABLE app.media_plan_versions ENABLE TRIGGER USER")
+    conn = _connect()
+    with conn.cursor():
+        # THE WHOLE TREE, THROUGH THE PRODUCTION GRAPH -- not a hand-written list.
+        #
+        # Three things were wrong here at once, and each is a class this harness
+        # already has an answer for:
+        #
+        #   * `ALTER TABLE ... DISABLE TRIGGER USER` requires OWNING the table,
+        #     and fixtures connect as a role that owns nothing. The erasure flag
+        #     `purge_fixture_project` sets is what the immutability triggers
+        #     yield to (migration 099, extended by 264), so nothing needs
+        #     disabling.
+        #   * `DELETE FROM app.audit_log` is refused, CORRECTLY: 099 excludes it
+        #     from the escape hatch on purpose -- the audit log is the durable
+        #     trace OF an erasure and must survive it. The fixture asked for
+        #     something the product forbids, and got a refusal it read as a bug.
+        #   * the per-table list loses the race to the next governed table.
+        purge_fixture_project(conn, project_id)
     conn.commit()
+
 
 
 _LINES = [
@@ -263,7 +241,10 @@ def test_pointer_flips_atomically_on_republish():
             )
             active = cur.fetchall()
         assert len(active) == 1
-        assert active[0][0] == v2["id"]
+        # `str()` because psycopg returns a UUID OBJECT for a uuid column while
+        # the store hands back its text form. Comparing the two raw is a false
+        # red about types, not about which version is active.
+        assert str(active[0][0]) == v2["id"]
 
         # v1 still readable & intact (immutable): its allocation still sums to 10000.
         with conn.cursor() as cur:
@@ -312,7 +293,9 @@ def test_two_overlapping_active_plans_coexist():
                 """,
                 (plan_a["id"], plan_b["id"]),
             )
-            active_plans = {r[0] for r in cur.fetchall()}
+            # `str()` for the same reason as above: a uuid column comes back as a
+            # UUID object, and a set of those never equals a set of strings.
+            active_plans = {str(r[0]) for r in cur.fetchall()}
         assert active_plans == {plan_a["id"], plan_b["id"]}
     finally:
         _drop_project(conn, project_id)
@@ -454,5 +437,157 @@ def test_concurrent_first_publish_leaves_exactly_one_active():
     finally:
         conn_a.close()
         conn_b.close()
+        _drop_project(conn, project_id)
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# The carrier Datastream (migration 303) -- ratified 2026-08-24.
+#
+# `file-source-ingestion.md`, amendment "a project carries one or several media
+# plans, each on its own carrier Datastream". These three tests are its three
+# `Incomplete if` clauses, taken one by one against the real schema -- the only
+# place a partial unique index can be proven to mean what its sentence says.
+# ---------------------------------------------------------------------------
+
+
+def _seed_carrier(conn, project_id: str, suffix: str) -> str:
+    """A file-source Datastream of this project, and nothing more.
+
+    `source_kind = 'managed_feed'` and `module_name` NULL, which is what
+    `create_datastream` writes for a pushed source: the row has to be the shape
+    the product writes, or the foreign key it proves is a foreign key to
+    something the product never makes.
+    """
+    datastream_id = f"ds-mp-{suffix}-{uuid.uuid4().hex[:8]}"
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO app.datastreams
+                (id, project_id, name, source_kind, created_by, org_id)
+            VALUES (%s, %s, %s, 'managed_feed', 'tester', 'org_test_fixture')
+            """,
+            (datastream_id, project_id, f"Plan file {suffix} {uuid.uuid4().hex[:6]}"),
+        )
+    conn.commit()
+    return datastream_id
+
+
+@pg_available
+def test_a_second_plan_lives_on_a_second_carrier_and_the_project_holds_both():
+    """« a second plan cannot exist in a project because the first one holds the
+    only carrier » -- the first `Incomplete if`, refuted against the index.
+
+    THE UNIQUENESS IS PER CARRIER AND NEVER PER PROJECT. A partial unique index
+    on `carrier_datastream_id` alone says "one live plan per Datastream"; an
+    index that also constrained the project would say something the decision
+    explicitly opens. Two plans, two carriers, one project: both stand.
+    """
+    from core.mediaplan_store import create_plan, get_carrier_plan, list_plans
+
+    conn = _connect()
+    project_id = _seed_project(conn)
+    try:
+        first_carrier = _seed_carrier(conn, project_id, "a")
+        second_carrier = _seed_carrier(conn, project_id, "b")
+
+        first = create_plan(
+            conn,
+            project_id=project_id,
+            name="Agency A Q1",
+            created_by="tester",
+            carrier_datastream_id=first_carrier,
+        )
+        second = create_plan(
+            conn,
+            project_id=project_id,
+            name="Agency B Q1",
+            created_by="tester",
+            carrier_datastream_id=second_carrier,
+        )
+        conn.commit()
+
+        assert first["carrier_datastream_id"] == first_carrier
+        assert second["carrier_datastream_id"] == second_carrier
+        # THE PROJECT HOLDS BOTH. This is the clause, stated as a count.
+        assert {plan["id"] for plan in list_plans(conn, project_id=project_id)} == {
+            first["id"],
+            second["id"],
+        }
+        # And each carrier answers with ITS plan, never with the other's.
+        assert get_carrier_plan(conn, datastream_id=first_carrier)["id"] == first["id"]
+        assert get_carrier_plan(conn, datastream_id=second_carrier)["id"] == second["id"]
+    finally:
+        _drop_project(conn, project_id)
+        conn.close()
+
+
+@pg_available
+def test_one_carrier_carries_one_plan_and_the_refusal_names_the_second_datastream():
+    """« two plans with different layouts are forced through one template » --
+    refused, and the refusal names the gesture rather than the constraint.
+
+    A carrier is created with the template profile of ITS plan. Letting a second
+    plan sit on the same Datastream would be exactly the two-agencies-one-template
+    case the decision forbids, so the store refuses -- and the sentence says what
+    to do instead, which a unique-violation traceback never would.
+    """
+    from core.mediaplan_store import MediaPlanCarrierTakenError, create_plan
+
+    conn = _connect()
+    project_id = _seed_project(conn)
+    try:
+        carrier = _seed_carrier(conn, project_id, "solo")
+        create_plan(
+            conn,
+            project_id=project_id,
+            name="Agency A Q1",
+            created_by="tester",
+            carrier_datastream_id=carrier,
+        )
+        conn.commit()
+
+        with pytest.raises(MediaPlanCarrierTakenError) as raised:
+            create_plan(
+                conn,
+                project_id=project_id,
+                name="Agency B Q1",
+                created_by="tester",
+                carrier_datastream_id=carrier,
+            )
+        conn.rollback()
+        message = str(raised.value)
+        # It names the plan already there, and the gesture that repairs.
+        assert "Agency A Q1" in message
+        assert "second file-source Datastream" in message
+        assert raised.value.code == "carrier_already_carries_a_plan"
+    finally:
+        _drop_project(conn, project_id)
+        conn.close()
+
+
+@pg_available
+def test_a_plan_created_without_a_carrier_stays_readable():
+    """Nothing is provisioned, and no plan written before the decision breaks.
+
+    `carrier_datastream_id` is NULLABLE on purpose: a plan that arrived by the
+    older import path has no carrier, and the console says so rather than
+    inventing a Datastream for it -- which is the auto-provisioning the same
+    decision forbids in the other direction.
+    """
+    from core.mediaplan_store import create_plan, get_carrier_plan
+
+    conn = _connect()
+    project_id = _seed_project(conn)
+    try:
+        plan = create_plan(
+            conn, project_id=project_id, name="Legacy plan", created_by="tester"
+        )
+        conn.commit()
+        assert plan["carrier_datastream_id"] is None
+        # A carrier nobody named answers with nothing, never with the first plan
+        # that happens to have none.
+        assert get_carrier_plan(conn, datastream_id="") is None
+    finally:
         _drop_project(conn, project_id)
         conn.close()

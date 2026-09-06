@@ -1,51 +1,54 @@
 {
-    "connector":  "taboola",
-    "api_version":  "backstage-1.0",
-    "generated_at":  "2026-07-22T00:00:00Z",
-    "sources":  [
-                    {
-                        "kind":  "official",
-                        "file":  "official_fields.json",
-                        "parser":  "official_fields_json",
-                        "url":  "https://developers.taboola.com/backstage-api/docs/reporting-overview",
-                        "fetched_at":  "2026-07-22"
-                    }
-                ],
-    "section_tier_map":  {
-                             "DIMENSION":  "core",
-                             "METRIC":  "core"
-                         },
-    "default_tier":  "standard",
-    "exposure_policy":  "catalog_driven",
-    "excluded_sections":  {
-
-                          },
-    "field_compatibility":  {
-                                "schema_version":  "1",
-                                "rules":  [
-                                              {
-                                                  "id":  "campaign_summary_dimensions",
-                                                  "kind":  "selectable_set",
-                                                  "scope":  {
-                                                                "report":  "campaign_summary"
-                                                            },
-                                                  "allowed_fields":  [
-                                                                         "campaign_id",
-                                                                         "site_id",
-                                                                         "country",
-                                                                         "platform"
-                                                                     ]
-                                              },
-                                              {
-                                                  "id":  "top_content_item",
-                                                  "kind":  "selectable_set",
-                                                  "scope":  {
-                                                                "report":  "top_campaign_content"
-                                                            },
-                                                  "allowed_fields":  [
-                                                                         "item_id"
-                                                                     ]
-                                              }
-                                          ]
-                            }
+  "connector": "taboola",
+  "api_version": "backstage-1.0",
+  "generated_at": "2026-07-22T00:00:00Z",
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://developers.taboola.com/backstage-api/docs/reporting-overview",
+      "fetched_at": "2026-07-22"
+    }
+  ],
+  "section_tier_map": {
+    "DIMENSION": "core",
+    "METRIC": "core"
+  },
+  "default_tier": "standard",
+  "exposure_policy": "catalog_driven",
+  "excluded_sections": {},
+  "field_compatibility": {
+    "schema_version": "1",
+    "rules": [
+      {
+        "id": "campaign_summary_dimensions",
+        "kind": "selectable_set",
+        "scope": {
+          "report": "campaign_summary"
+        },
+        "allowed_fields": [
+          "campaign_id",
+          "site_id",
+          "country",
+          "platform"
+        ]
+      },
+      {
+        "id": "top_content_item",
+        "kind": "selectable_set",
+        "scope": {
+          "report": "top_campaign_content"
+        },
+        "allowed_fields": [
+          "item_id"
+        ]
+      }
+    ]
+  },
+  "probe": {
+    "request_style": "metrics_dimensions",
+    "batch_size": 20,
+    "structural_note": "Taboola Backstage API GET /reports/campaign-summary/dimensions takes dimensions and metrics over a date range. 400 errors are bisected to isolate unsupported columns."
+  }
 }

@@ -4,7 +4,8 @@ Evaluates app.alert_definitions against fresh fact_daily_kpi / semantic views
 after the nightly dbt run. Writes firings to app.alert_firings.
 
 Never raises -- graceful degradation like infra_alerts.py.
-Guarded by BUSINESS_ALERTS_ENABLED (default false).
+Guarded by BUSINESS_ALERTS_ENABLED (default true -- an off-switch, not a thing
+to arm: with no threshold declared the evaluator returns []).
 
 Design decisions:
   - Semantic metrics (CPA, ROAS, CTR) are ratio metrics computed at view time
@@ -19,7 +20,7 @@ Design decisions:
     adds type='anomaly' rows to the same table (see Migration 011 decision note).
 
 Environment variables:
-  BUSINESS_ALERTS_ENABLED  default "false"  -- master switch (HG-5 equivalent)
+  BUSINESS_ALERTS_ENABLED  default "true"   -- off-switch; nothing declared, nothing fired
   ALERT_SEMANTIC_METRICS   default "cpa,roas,ctr"  -- comma-separated semantic metric names
 """
 
@@ -271,7 +272,7 @@ def evaluate_business_alerts(
 
     Never raises -- catches all exceptions and returns [] (graceful degradation).
     """
-    if os.environ.get("BUSINESS_ALERTS_ENABLED", "false").lower() != "true":
+    if os.environ.get("BUSINESS_ALERTS_ENABLED", "true").lower() != "true":
         logger.debug(
             "business_alerts: evaluate_business_alerts skipped"
             " -- BUSINESS_ALERTS_ENABLED not true"
@@ -388,8 +389,10 @@ def evaluate_business_alerts(
                             """
                             INSERT INTO app.alert_firings
                                 (id, definition_id, type, fired_at, observed_value,
-                                 threshold, pull_ids, window_date, severity)
-                            VALUES (%s, %s, 'business_threshold', %s, %s, %s, %s, %s, 'error')
+                                 threshold, pull_ids, window_date, severity,
+                                 project_id, metric)
+                            VALUES (%s, %s, 'business_threshold', %s, %s, %s, %s, %s, 'error',
+                                    %s, %s)
                             ON CONFLICT DO NOTHING  -- review-epic-5 F-2: one firing per night
                             """,
                             (
@@ -400,6 +403,23 @@ def evaluate_business_alerts(
                                 threshold,
                                 pull_ids,
                                 evaluation_date,
+                                # AI-306 CLASS: these two columns were OMITTED, so every
+                                # business firing took the column DEFAULTS -- `project_id
+                                # = 'default'` (013) and `metric = ''`. Both values are
+                                # known right here: `def_project_id` queried the metric
+                                # four lines up. What the omission cost is not visible in
+                                # `fetch_recent_alert_firings`, which reads the project
+                                # and the metric off the DEFINITION join and so never saw
+                                # the wrong ones; it cost the readers that trust the ROW:
+                                # `alert_destinations.deliver` joins
+                                # `d.project_id = f.project_id`, so a breach of project X
+                                # only ever routed to destinations declared on 'default'
+                                # -- a customer with an email destination on their own
+                                # project received none of their own business alerts --
+                                # and `firing_count_since(project)` answered 0 for a
+                                # project whose firings were all filed elsewhere.
+                                def_project_id,
+                                metric,
                             ),
                         )
                     pg_conn.commit()
@@ -510,7 +530,7 @@ def fetch_recent_alert_firings(
             obs_fmt = f"{obs:.2f}".replace(".", ",")
             thr_fmt = f"{thr:.2f}".replace(".", ",")
             message = (
-                f"{metric_upper} ({obs_fmt}) dépasse le seuil déclaré"
+                f"{metric_upper} ({obs_fmt}) exceeds the declared threshold"
                 f" ({thr_fmt})"
             )
             result.append({
@@ -544,8 +564,8 @@ def fetch_recent_meta_alerts(
     meta_alert rows have definition_id IS NULL and carry a ``message`` describing
     which nightly scheduler step failed. They are surfaced in the report tools'
     ``meta.alerts[]`` so the operator sees scheduler-health problems the next
-    morning. Project-scoped via the project_id column (meta_alert rows default to
-    'default'; all projects see scheduler health per the shared-scheduler design).
+    morning. A meta-alert carries NO Project -- `project_id IS NULL`, platform
+    scope -- and every Project reads it, per the shared-scheduler design.
 
     Returns [] on error (graceful degradation, same contract as
     fetch_recent_alert_firings).
@@ -557,7 +577,12 @@ def fetch_recent_meta_alerts(
                 SELECT id, metric, message, fired_at, severity
                 FROM app.alert_firings
                 WHERE type = 'meta_alert'
-                  AND (project_id = %s OR project_id = 'default')
+                  -- AI-306: NULL is PLATFORM SCOPE (migration 291) -- the health
+                  -- of one shared scheduler, read by every Project. The
+                  -- `'default'` sentinel stays for a base that still holds a row
+                  -- written under it; production never could, which is the whole
+                  -- defect this union now answers.
+                  AND (project_id = %s OR project_id IS NULL OR project_id = 'default')
                   AND fired_at >= NOW() - INTERVAL '%s hours'
                 ORDER BY fired_at DESC
                 """,

@@ -185,8 +185,16 @@ async def test_get_card_keywords_through_mcp_tool_layer_ad1_triple():
     assert envelope["meta"]["card_selection"]["chosen"] == "keywords"
     # (3) _meta.ui.resourceUri
     meta = _meta_from(result)
-    assert meta is not None
-    assert meta.get("ui", {}).get("resourceUri") == KEYWORDS_CARD_WIDGET_URI
+    # Story 50.6 -- INVERTED, and note the `is not None` that used to sit here is
+    # gone too: `_meta` is now built by the model-channel split, so it is absent
+    # when a card envelope had no dataset to route. Its presence was only ever
+    # guaranteed because it carried the widget advertisement this story removes.
+    # The retired binding was KEYWORDS_CARD_WIDGET_URI.
+    # `_meta` itself is still asserted present above, because it is now the
+    # channel the card dataset travels in.
+    assert (meta or {}).get("ui") is None, (
+        f"a data tool must not advertise a widget resource; got {meta!r}"
+    )
 
 
 @pytest.mark.anyio
@@ -209,7 +217,13 @@ async def test_get_card_connectors_through_mcp_tool_layer_context_exemption():
     envelope = result.structured_content or result.data
     assert envelope["data"]["card_type"] == "connectors"
     meta = _meta_from(result)
-    assert meta.get("ui", {}).get("resourceUri") == CONNECTORS_CARD_WIDGET_URI
+    # Story 50.6 -- INVERTED. A data tool no longer advertises a widget
+    # resource ("Tool split"); the retired binding was CONNECTORS_CARD_WIDGET_URI.
+    # `_meta` itself is still asserted present above, because it is now the
+    # channel the card dataset travels in.
+    assert (meta or {}).get("ui") is None, (
+        f"a data tool must not advertise a widget resource; got {meta!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -345,19 +359,27 @@ async def test_submit_feedback_visibility_travels_the_mcp_wire():
 
 
 @pytest.mark.anyio
-async def test_get_daily_report_declares_static_widget_binding():
-    """9.10 AC3: get_daily_report carries the declaration-level MCP Apps binding.
+async def test_get_daily_report_no_longer_declares_a_widget_binding():
+    """Story 50.6 -- INVERTED from 9.10 AC3, and the inversion is the deliverable.
 
-    Its widget is static, so AppConfig(resource_uri=DAILY_REPORT_WIDGET_URI) rides
-    the tool declaration (tools/list meta.ui.resourceUri). The result-level
-    _meta.ui binding is asserted separately (test_widget_resource.py) and KEPT --
-    it is the only channel for get_report/get_card's dynamic template selection.
+    `get_daily_report` used to carry the resource TWICE: the declaration-level
+    `AppConfig(resource_uri=DAILY_REPORT_WIDGET_URI)` this test asserted, and a
+    result-level `_meta.ui`. Both are removed. `visualization-and-rendering.md`
+    ("Tool split"): a data tool does not attach a widget resource; only the render
+    tool advertises one.
+
+    Kept as an INVERSION rather than a deletion so the removal leaves a trace and
+    a future reader cannot silently restore the binding. The catalog-wide proof --
+    that at most one tool in the whole registry advertises a widget, and that it
+    is the render tool -- lives in test_mcp_data_render_split.py.
     """
     tool = await mcp.get_tool("get_daily_report")
     assert tool is not None
     meta = tool.to_mcp_tool().meta
-    assert meta is not None
-    assert meta.get("ui", {}).get("resourceUri") == DAILY_REPORT_WIDGET_URI
+    assert (meta or {}).get("ui") is None, (
+        f"get_daily_report must not declare a widget binding; got {meta!r} "
+        f"(the retired binding was {DAILY_REPORT_WIDGET_URI})"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -457,13 +479,41 @@ async def test_get_card_attribution_through_mcp_tool_layer_seam():
 
     # (3) _meta.ui.resourceUri
     meta = _meta_from(result)
-    assert meta is not None
-    assert meta.get("ui", {}).get("resourceUri") == ATTRIBUTION_CARD_WIDGET_URI
+    # Story 50.6 -- INVERTED, and note the `is not None` that used to sit here is
+    # gone too: `_meta` is now built by the model-channel split, so it is absent
+    # when a card envelope had no dataset to route. Its presence was only ever
+    # guaranteed because it carried the widget advertisement this story removes.
+    # The retired binding was ATTRIBUTION_CARD_WIDGET_URI.
+    # `_meta` itself is still asserted present above, because it is now the
+    # channel the card dataset travels in.
+    assert (meta or {}).get("ui") is None, (
+        f"a data tool must not advertise a widget resource; got {meta!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
 # F-9 / F-10 (REST) — GET /api/cards through the REAL build_asgi_app() ASGI stack
 # ---------------------------------------------------------------------------
+
+
+class _ScopeCheckConnection:
+    """Enough of a connection for the AD-5 scope check to RUN.
+
+    WHY THESE THREE TESTS WERE RED AT HEAD, measured 2026-08-01. `cards_api`
+    refuses a scope check it cannot EVALUATE -- an unverifiable decision is a
+    refusal, and it takes the same non-disclosing 404 as a denial
+    (`cards_api.py:370-389`). Patching `identity_can_read_project` is not enough:
+    `get_connection()` raises first when no local Postgres is running, so the
+    route answered 404 before a card was ever built. The tests were therefore
+    Postgres-dependent while reading as offline ones. Patching the connection is
+    what makes them prove what their names claim.
+    """
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
 
 
 def _splice_card_routes_into_admin_router():
@@ -489,7 +539,9 @@ def test_get_card_rest_ad_hoc_wires_through_build_asgi_app():
 
     with patch("core.warehouse.query_daily_report", return_value=_sessions_rows()), patch(
         "core.cards_api._check_auth", new=AsyncMock(return_value=(True, "test@test"))
-    ), patch("core.project_access.identity_has_project_access", return_value=True):
+    ), patch("core.project_access.identity_can_read_project", return_value=True), patch(
+        "core.db.get_connection", _ScopeCheckConnection
+    ):
         with TestClient(app, raise_server_exceptions=True) as c:
             resp = c.get(
                 "/api/cards?project_id=default&metrics=sessions",
@@ -511,9 +563,14 @@ def test_get_card_connectors_rest_context_exemption_wires_through_build_asgi_app
     _splice_card_routes_into_admin_router()
     app = build_asgi_app()
 
+    # The premise changed under this test: `cards_api` now REFUSES a scope check
+    # it cannot evaluate (404, `cards_api.py:376-389`), so making `get_connection`
+    # raise stopped exercising "the card's own reads found nothing" and started
+    # exercising the refusal. A connection that opens and yields no rows is what
+    # "DB down" means for the card on this path.
     with patch("core.cards_api._check_auth", new=AsyncMock(return_value=(True, "test@test"))), \
-        patch("core.project_access.identity_has_project_access", return_value=True), \
-        patch("core.db.get_connection", side_effect=RuntimeError("db down")):
+        patch("core.project_access.identity_can_read_project", return_value=True), \
+        patch("core.db.get_connection", _ScopeCheckConnection):
         with TestClient(app, raise_server_exceptions=True) as c:
             resp = c.get(
                 "/api/cards?project_id=default&template=connectors",
@@ -563,7 +620,7 @@ def test_get_card_templates_rest_usability_wires_through_build_asgi_app():
 
     with patch("core.cards_api._check_auth", new=AsyncMock(return_value=(True, "test@test"))), \
         patch("core.db.get_connection", return_value=ctx), \
-        patch("core.project_access.identity_has_project_access", return_value=True):
+        patch("core.project_access.identity_can_read_project", return_value=True):
         with TestClient(app, raise_server_exceptions=True) as c:
             resp = c.get(
                 "/api/cards/templates?project_id=projA",
@@ -605,7 +662,8 @@ def test_cannibalisation_block_through_asgi_seam():
         patch("core.warehouse.query_composite_positions",
               return_value=_cannibalisation_position_rows()), \
         patch("core.cards_api._check_auth", new=AsyncMock(return_value=(True, "test@test"))), \
-        patch("core.project_access.identity_has_project_access", return_value=True):
+        patch("core.project_access.identity_can_read_project", return_value=True), \
+        patch("core.db.get_connection", _ScopeCheckConnection):
         with TestClient(app, raise_server_exceptions=True) as c:
             resp = c.get(
                 "/api/cards?project_id=default&template=keywords"
@@ -618,14 +676,19 @@ def test_cannibalisation_block_through_asgi_seam():
     assert body["envelope"]["data"]["card_id"] == "keywords"
 
     composition = body["envelope"]["data"]["composition"]
-    cannib_blocks = [b for b in composition if b.get("title") == "Cannibalisation"]
+    cannib_blocks = [b for b in composition if b.get("title") == "Cannibalization"]
     assert cannib_blocks, "cannibalisation block missing from the composition"
     data = cannib_blocks[0]["data"]
-    assert data["columns"] == ["Requête", "Page", "Part (%)", "Position moy."]
+    assert data["columns"] == [
+        {"key": "_dim", "label": "Query", "numeric": False},
+        {"key": "page", "label": "Page", "numeric": False},
+        {"key": "share_pct", "label": "Share (%)", "numeric": True},
+        {"key": "average_position", "label": "Avg. position", "numeric": True},
+    ]
     # VALUE assertion: the flagged query yields >= 1 row (both competing pages, in fact).
-    flagged_rows = [r for r in data["rows"] if r["Requête"] == "chaussures de sport"]
+    flagged_rows = [r for r in data["rows"] if r["_dim"] == "chaussures de sport"]
     assert len(flagged_rows) >= 1
-    pages = {r["Page"] for r in flagged_rows}
+    pages = {r["page"] for r in flagged_rows}
     assert pages == {"/sport/", "/running/"}
 
 
@@ -699,8 +762,28 @@ async def test_get_card_dedup_through_mcp_tool_layer_seam():
     assert envelope["data"]["card_id"] == "dedup"
     assert envelope["meta"]["card_selection"]["chosen"] == "dedup"
 
-    # Composition: 4 blocks (kpi_row + bar + table + comment)
-    composition = envelope["data"]["composition"]
+    # Composition: 4 blocks (kpi_row + bar + table + comment), in WHICHEVER channel
+    # carries them.
+    #
+    # This card sits within a few dozen bytes of the 4096-byte model-channel budget
+    # (measured: +29 before Story 52.3's knowledge fields, -33 after). When the
+    # envelope crosses it, `partition_envelope` moves the largest movable field --
+    # `composition` -- to the app channel and leaves a withheld marker in its place.
+    # Nothing is lost: the blocks arrive whole under `result.meta["toorow.app_payload"]`,
+    # and Story 50.6 states in as many words that the renderer's layout "is not a
+    # model's business". Asserting it in `structuredContent` was asserting which
+    # CHANNEL carries it, which is the budget's decision, not this seam's subject.
+    #
+    # What this seam owns -- that the blocks exist, are four, and carry the right
+    # numbers -- is asserted below, unchanged.
+    composition = envelope["data"].get("composition")
+    if isinstance(composition, dict) and composition.get("withheld"):
+        app_payload = (getattr(result, "meta", None) or {}).get("toorow.app_payload") or {}
+        composition = app_payload.get("composition")
+        assert composition is not None, (
+            "the composition left the model channel and did NOT arrive in the app "
+            "channel: that is a loss, not a routing"
+        )
     assert len(composition) == 4
 
     # kpi_row: rate = 480/300 = 1.6
@@ -726,5 +809,13 @@ async def test_get_card_dedup_through_mcp_tool_layer_seam():
 
     # (3) _meta.ui.resourceUri
     meta = _meta_from(result)
-    assert meta is not None
-    assert meta.get("ui", {}).get("resourceUri") == DEDUP_CARD_WIDGET_URI
+    # Story 50.6 -- INVERTED, and note the `is not None` that used to sit here is
+    # gone too: `_meta` is now built by the model-channel split, so it is absent
+    # when a card envelope had no dataset to route. Its presence was only ever
+    # guaranteed because it carried the widget advertisement this story removes.
+    # The retired binding was DEDUP_CARD_WIDGET_URI.
+    # `_meta` itself is still asserted present above, because it is now the
+    # channel the card dataset travels in.
+    assert (meta or {}).get("ui") is None, (
+        f"a data tool must not advertise a widget resource; got {meta!r}"
+    )

@@ -46,9 +46,9 @@ csr_leak AS (
     SELECT
         project_id,
         date,
-        CAST(NULL AS VARCHAR) AS connector,
-        CAST(NULL AS VARCHAR) AS metric,
-        CAST(NULL AS DOUBLE) AS drift,
+        CAST(NULL AS {{ toorow_string_type() }}) AS connector,
+        CAST(NULL AS {{ toorow_string_type() }}) AS metric,
+        CAST(NULL AS {{ toorow_float_type() }}) AS drift,
         'ISOLATION_FAIL: __epic39_* fixture project leaked into cross_source_revenue (CRITICAL)'
             AS failure_reason
     FROM {{ ref('cross_source_revenue') }}
@@ -63,7 +63,17 @@ mart_revenue AS (
       AND metric IN (SELECT canonical_metric FROM decimal_money)
 ),
 staging_revenue AS (
-    SELECT project_id, date, SUM(CAST(revenue AS DOUBLE)) AS staged_value
+    -- DECIMAL, not DOUBLE (repaired 2026-08-04). Story 48.3 made the mart side
+    -- exact -- `fx_convert_at_read` returns DECIMAL(38, 9) precisely because "a
+    -- binary float cannot hold a published rate or a money amount exactly, so the
+    -- mart total and the application total for the same rows disagreed in the low
+    -- digits". This side was still summing DOUBLE, so the comparison forced the
+    -- exact mart value back through a float and manufactured the very drift the
+    -- test forbids: 2.3e-13 on 41 days, measured. Summing DECIMAL on both sides
+    -- restores the bit-identity claim -- the threshold stays EXACTLY 0, which is
+    -- the point of the test. Widening the threshold instead would have hidden a
+    -- real drift the day one appeared.
+    SELECT project_id, date, SUM(CAST(revenue AS {{ toorow_decimal_type(38, 9) }})) AS staged_value
     FROM {{ ref('stg_shopify_orders_daily') }}
     GROUP BY project_id, date
 ),

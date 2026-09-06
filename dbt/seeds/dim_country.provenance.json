@@ -1,0 +1,12 @@
+{
+  "content_hash": "fed2b3a16c313a5b832bfff6943791e9e722f1d5c3f29230d4f2145a6248509c",
+  "effective_date": "2026-07-30",
+  "entry_count": 250,
+  "generated_from": "app.master_data_vocabulary_versions",
+  "note": "Generated projection. Governance owns the runtime vocabulary; editing this file by hand makes the warehouse disagree with the pinned version.",
+  "source_authority": "ISO 3166-1 alpha-2",
+  "source_reference": "https://www.iso.org/iso-3166-country-codes.html",
+  "source_version": "2026-07",
+  "vocabulary_key": "country",
+  "vocabulary_version_id": "mdvoc_01KYS4Z0W94TXNS0NPHM9MSHCN"
+}

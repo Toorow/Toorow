@@ -73,3 +73,29 @@ Fusion report (2026-07-21): `official_total=50`, `drift_ids=[]`, `exposure {expo
 ## Verification
 
 `public_catalog.verification.status = "blocked"` — no YouTube test account (2026-07-21). Ratify once a real channel connects: `channels.list(mine=true)` + a 1-day `reports.query` per profile; probe the monetary metrics only with the monetary scope granted.
+
+## Competitors outbound (2026-09-01)
+
+Two profiles driven by the tracked-entity bindings (`capabilities/competitors.md`,
+Strava `competitor_snapshot` as the reference shape; declaration in
+`source_capabilities.tracked_entity`, parameter `channel_ids`, own marker
+`own_channel_ids`, batched 50/request):
+
+- **`competitor_channel_snapshot`** — the same `channels.list(part=statistics)`
+  read as `channel_snapshot`, pointed at the bound PUBLIC channels. Stocks
+  (subscriber_count / lifetime_view_count / video_count), one row per reading
+  day, landing `raw_youtube_daily`. 1 quota unit per request.
+- **`channel_video_directory`** — the 50 most recent uploads of each bound
+  channel, NAMED: `channels.list(contentDetails,snippet)` → uploads playlist →
+  `playlistItems.list` (one page, the recent-window contract) →
+  `videos.list(snippet,statistics,contentDetails)`. Lands
+  `raw_youtube_video_directory` (title, published_at, duration_seconds, public
+  lifetime_views, is_own_channel), staging `stg_youtube_video_directory` —
+  deliberately NOT wired to `fact_daily_kpi` (a directory is a join key, not a
+  measure; reason written in `_MODELS_NOT_IN_FACT`). ~3 quota units per channel.
+  Run with the own channel bound, it also names the own catalogue — the standing
+  hole the archived "Reference & targets" datastream left open.
+
+Fixed in the same wave: `_METRIC_IDS` skipped every STOCK metric, so
+`pull_channel_snapshot` landed ZERO rows while reporting success (the AI-310
+class: the profile's pull must land what the profile declares).

@@ -32,9 +32,9 @@ toorow orchestrates two distinct agent paradigms that operate in tandem across t
 +-------------------------------------------------------------------------------+
 ```
 
-### Paradigm 1: Internal / Platform Agents (Scheduled In-Process)
-Internal platform agents are autonomous, thread-level evaluators that execute directly inside the backend server runtime when `SCHEDULER_ENABLED=true`:
-- **Nightly Ingestion & dbt Evaluator**: Triggers at 02:00 local time (`SCHEDULER_NIGHTLY_HOUR=2`) to fetch active connector datastreams and run dbt semantic models.
+### Paradigm 1: Internal / Platform Agents (Scheduled)
+toorow runs work when nobody is watching. In a managed deployment the clock is **Cloud Scheduler**, units of work are **Cloud Tasks**, and facts are broadcast on **Pub/Sub**; a self-hosted instance can instead run the same evaluators as in-process threads with `SCHEDULER_ENABLED=true`. Either way the same three evaluators run:
+- **Ingestion & dbt Evaluator**: Fetches active connector datastreams and runs dbt semantic models. **Each Datastream carries its own moment** — cadence, retrieval window and next run are edited on the Datastream itself, not fixed platform-wide. A Datastream that has never been given one falls back to the deployment default (`SCHEDULER_NIGHTLY_HOUR`, `SCHEDULER_TIMEZONE`).
 - **Anomaly Surveillance Thread**: Evaluates trailing rolling baselines (`anomalies_daily`) to detect performance spikes or drops exceeding z-score thresholds.
 - **Morning Briefing Synthesizer**: Compiles KPI deltas, anomaly flags, and active context events into structured briefing records.
 
@@ -111,6 +111,79 @@ toorow implements the FastMCP HTTP transport protocol:
 - **Endpoint**: `/mcp`
 - **Supported Methods**: `POST` (JSON-RPC 2.0 tool execution) and `GET` (SSE stream for real-time tool status).
 - **Host Header Enforcement**: Production containers enforce strict host validation (`HOST_HEADER_VALIDATION=strict`, `ALLOWED_HOST`).
+
+---
+
+## 4. Agent Onboarding in 10 Minutes: Read the Context Hub, Write a Product Sheet
+
+This is the shortest path for an external agent (CLI or custom) that must read
+toorow's governed context — Skills, Knowledge, business taxonomy — and publish
+back into it, e.g. a **product sheet** following the Skill *Write a toorow
+product sheet*.
+
+### Connect
+
+Any MCP client that speaks streamable HTTP works. A generic CLI config:
+
+```json
+{
+  "mcpServers": {
+    "toorow": {
+      "url": "http://localhost:8000/mcp",
+      "headers": { "Authorization": "Bearer <TOOROW_STATIC_TOKEN>" }
+    }
+  }
+}
+```
+
+- `TOOROW_AUTH_MODE=disabled` (local default): omit the header entirely.
+- `TOOROW_AUTH_MODE=static`: the header is exactly `Bearer <TOOROW_STATIC_TOKEN>`.
+- `TOOROW_AUTH_MODE=oauth`: the header carries a JWT (RS256, audience/issuer enforced).
+
+### Scope: the `project_id` is real, not optional
+
+`search_context` and `get_procedure` default `project_id` to `"default"`, which
+matches nothing useful on a real instance. Ask the platform for the project id
+(`GET /api/projects` with the same bearer, or the console URL
+`/org/<org>/project/<proj_...>/context-hub/...` — the id is the `proj_…` slug in
+the path). Under `oauth`, the identity must hold a project grant or every
+context read refuses.
+
+### Read efficiently — the canonical sequence
+
+1. `search_context(query, project_id)` — bounded LLM summary (≤ 30 lines) plus
+   ranked hits in `structuredContent` (title/description/graph-neighbor tiers,
+   160-char snippets).
+2. `get_procedure(name, project_id)` — the full Skill: parsed `steps[]`,
+   `body_md`, `mdm_references`, version. Same dual-channel shape.
+3. `get_knowledge(topic_id=…, project_id)` — the full Knowledge body.
+
+**Where the payload actually lives.** Any payload larger than 4 KiB is moved
+out of the model channel (Story 50.6): `structuredContent.data.<key>` then
+carries a descriptor `{"withheld": "moved_to_app_channel", "bytes": N}` and the
+full object is in **`_meta["toorow.app_payload"]`**. A client that only reads
+the text summary — or only `structuredContent` — never sees a Skill's steps.
+Read `_meta["toorow.app_payload"]` whenever a `withheld` descriptor appears.
+
+**Write tools answer with the id.** `add_knowledge` / `add_skill` return the
+created object's `id`, `title`/`name` and `version_number` in
+`structuredContent.data` — no need to parse the acknowledgement sentence.
+
+**Avoid for discovery**: `get_skills`, `get_knowledge` without a filter and
+`get_context_hub` return raw unbounded JSON, not the standard envelope with its `meta`/`data` split and its provenance. They are
+for when you already know what you want — reaching for them first is how an
+agent fills its context window with the whole Hub.
+
+### Publish a product sheet
+
+1. Read the governing Skill first: `search_context("product sheet")` then
+   `get_procedure("Write a toorow product sheet")` — its `steps[]` and
+   `acceptance` are the contract (seven mandatory sections, governed metrics
+   named by their field names, honest limits).
+2. Write the sheet: `add_knowledge(project_id, title, body_md, owner?)`.
+3. Link it to its surface's business key so the taxonomy walks to it:
+   `POST /api/context/business-links` with `relation_type: "explains"`
+   (REST — there is no MCP link tool yet).
 
 ---
 

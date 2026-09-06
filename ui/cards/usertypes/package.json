@@ -2,7 +2,7 @@
   "name": "@toorow/card-usertypes",
   "private": true,
   "version": "0.1.0",
-  "description": "User types card (Epic 9, Story 9.5) — new vs returning, device split, country bar + table. Single-file build (AD-11).",
+  "description": "User types card (Epic 9, Story 9.5) \u2014 new vs returning, device split, country bar + table. Single-file build (AD-11).",
   "type": "module",
   "scripts": {
     "build": "vite build",
@@ -13,9 +13,6 @@
   "dependencies": {
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "@mui/material": "^9.0.0",
-    "@emotion/react": "^11.13.0",
-    "@emotion/styled": "^11.13.0",
     "@toorow/shell": "workspace:*",
     "@toorow/card-shell": "workspace:*"
   },

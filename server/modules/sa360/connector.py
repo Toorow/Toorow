@@ -13,6 +13,11 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+
+# Import au niveau module (et non paresseux comme les appels a `core` dans les
+# fonctions) : les classes d'exception ci-dessous en HERITENT, donc il doit etre
+# resolu au moment ou le fichier est lu.
+from core import pull_errors
 from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
@@ -34,16 +39,82 @@ _minute_usage: dict[tuple[str, str], int] = {}
 _daily_usage: dict[tuple[str, str], int] = {}
 
 
-class Sa360OnboardingError(RuntimeError):
-    """Typed customer discovery or routing failure."""
+class Sa360OnboardingError(pull_errors.PermissionDeniedError):
+    """Typed customer discovery or routing failure.
+
+    `permission_denied` : le credential est authentifie et n'atteint rien. L'action
+    juste est de se reconnecter avec les bons droits, et c'est `permission_denied`
+    qui la fait remonter a l'ecran (`user_action="reconnect"`).
+
+    Avant le 2026-08-01 cette classe heritait d'un `RuntimeError` nu : le worker la
+    voyait `unclassified`, la rejouait jusqu'au `dead_letter` contre un credential
+    qui ne marchera jamais, et n'affichait aucune action.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message)
 
 
-class Sa360CompatibilityError(ValueError):
-    """An explicit field selection is incompatible with its SA360 resource."""
+class Sa360NotConfiguredError(Sa360OnboardingError):
+    """Le credential va bien -- c'est la requete qui ne peut pas etre formee.
+
+    Derive de l'erreur d'onboarding pour qu'un `except Sa360OnboardingError` existant continue de
+    l'attraper, mais porte `invalid_request` : dire << reconnecte-toi >> enverrait
+    l'operateur au mauvais ecran, puisque le compte se choisit dans l'assistant
+    Datastream et pas sur la connexion.
+    """
+
+    error_class = pull_errors.INVALID_REQUEST
+    user_action = pull_errors.SELECT_SOURCE_ACCOUNT
+
+
+class Sa360CompatibilityError(pull_errors.InvalidRequestError, ValueError):
+    """An explicit field selection is incompatible with its SA360 resource.
+
+    `invalid_request` : rejouer la meme requete redonne la meme reponse, et c'est
+    aussi le signal `pull_invalid_request_drift` -- une forme devenue illegale est
+    une derive du catalogue. `ValueError` reste dans les bases, des
+    appelants et des tests l'attrapent sous ce nom.
+    """
+
+    #: -> `Mapping` : le plan demande ce que la source ne rend plus
+    #: (datastream-workbench-and-wizard.md:107). L'operateur a un endroit
+    #: ou aller, contrairement a une derive de version d'API.
+    user_action = pull_errors.REVIEW_MAPPING
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message)
 
 
 class Sa360MessageTooLargeError(RuntimeError):
     """The provider rejected a response at its transport message boundary."""
+
+
+# ---------------------------------------------------------------------------
+# The operator's selected account, and how it travels.
+#
+# The reporting call addresses ONE customer -- it is in the URL path
+# (/customers/{id}/searchAds360:search). ``login-customer-id`` is not a second
+# account: it is the ROUTE, the header that says through which manager the
+# client is reached, and a directly accessible customer has none. The research
+# says it in those terms (sa360-catalog-research.md §2): "For manager-to-client
+# calls, send login-customer-id without hyphens and route the query to the
+# client customer id."
+#
+# The core scope stores ONE opaque string per connection, so the route rides
+# inside it when it exists: '<client_customer_id>@<login_customer_id>', the
+# composite opaque id google-ads ratified in story 26.2 as '<cid>@<login_cid>'.
+# A bare id means the direct route. Core never interprets it (AD-2).
+# ---------------------------------------------------------------------------
+
+ACCOUNT_ID_SEPARATOR = "@"
+
+_SELECTION_HINT = (
+    "The operator picks a customer in the Datastream wizard: discover_accounts "
+    "lists what customers:listAccessibleCustomers returns, and the worker passes the "
+    "chosen id back as the `client_customer_id` argument declared in manifest.json "
+    "under account_topology.pull_parameter."
+)
 
 
 def _manifest() -> dict:
@@ -131,8 +202,44 @@ def _request(client, method: str, path: str, token: str, login_customer_id=None,
 def normalize_customer_id(value: str) -> str:
     normalized = re.sub(r"\D", "", str(value))
     if not normalized:
-        raise Sa360OnboardingError("SA360 customer id must contain digits")
+        raise Sa360NotConfiguredError("SA360 customer id must contain digits")
     return normalized
+
+
+def split_account_id(account_id: str) -> tuple[str, str | None]:
+    """Parse ``'<client_customer_id>'`` or ``'<client_customer_id>@<login_customer_id>'``.
+
+    Returns ``(client_customer_id, login_customer_id)`` with ``None`` for the
+    route when the id carries none: that is the DIRECT route, which is a fact
+    about the selection, not a missing piece. Inventing a manager here would
+    send a ``login-customer-id`` header the operator never chose, and SA360
+    answers such a call with someone else's data or a 403 -- never with a
+    diagnosis.
+    """
+    raw = str(account_id)
+    customer, separator, login = raw.partition(ACCOUNT_ID_SEPARATOR)
+    return (
+        normalize_customer_id(customer),
+        normalize_customer_id(login) if separator and login else None,
+    )
+
+
+def _resolve_selected_account(client_customer_id: str | None) -> tuple[str, str | None]:
+    """Resolve (client_customer_id, login_customer_id) from the selection ONLY.
+
+    No environment fallback -- ``core/account_topology.py`` declares the
+    ``*_ACCOUNT_ID`` pattern deprecated, and one deployment-wide variable would
+    pull the same customer for every project. No ``selection`` fallback either:
+    the selection the PLAN produces carries only selection_mode / metrics /
+    dimensions / grain / filters (``datastream-intent.schema.json``,
+    ``additionalProperties: false``), and ``core/queue.py`` never fills
+    ``job["selection"]`` at all.
+    """
+    if not client_customer_id:
+        raise Sa360NotConfiguredError(
+            "SA360 pull has no selected account: `client_customer_id` is empty. " + _SELECTION_HINT
+        )
+    return split_account_id(client_customer_id)
 
 
 def discover_accounts(connection_id: str, *, _client=None, _token: str | None = None) -> list[dict]:
@@ -148,20 +255,44 @@ def discover_accounts(connection_id: str, *, _client=None, _token: str | None = 
         )
     return [
         {
-            "id": f"sa360_selection_{index}",
+            # The id core stores and hands back at pull time. It was a loop counter
+            # ('sa360_selection_3'): unstable between two discoveries and carrying
+            # no customer, so nothing it reached could act on it.
+            # listAccessibleCustomers returns DIRECTLY accessible customers, so the
+            # id is bare -- no manager route to encode.
+            "id": normalize_customer_id(name),
+            # core._label_for_account reads `label`; `display_name` was invisible
+            # to it, so every account was offered unlabeled.
+            "label": name,
             "customer_id": normalize_customer_id(name),
             "login_customer_id": None,
             "routing_mode": "direct",
             "display_name": name,
         }
-        for index, name in enumerate(names, start=1)
+        for name in names
     ]
 
 
-def with_manager_route(selection: dict, login_customer_id: str) -> dict:
+def with_manager_route(account: dict, login_customer_id: str) -> dict:
+    """Re-route a discovered ACCOUNT node through a manager, id included.
+
+    The parameter is named ``account``, not ``selection``, and the rename is the
+    whole point of this task rather than cosmetics: two different objects were
+    called `selection` in this codebase -- the report selection the plan
+    produces (selection_mode / metrics / dimensions / grain / filters) and an
+    account object the plan cannot produce. This one is a node emitted by
+    ``discover_accounts``. Calling it `selection` is how the confusion started.
+
+    The ``id`` is rewritten too, not only the ``login_customer_id`` field: the id
+    is the ONLY thing the core scope keeps and the only thing the pull receives.
+    Leaving it bare produced an account that looked routed and pulled direct.
+    """
+    login = normalize_customer_id(login_customer_id)
+    customer = normalize_customer_id(account["customer_id"])
     return {
-        **selection,
-        "login_customer_id": normalize_customer_id(login_customer_id),
+        **account,
+        "id": f"{customer}{ACCOUNT_ID_SEPARATOR}{login}",
+        "login_customer_id": login,
         "routing_mode": "manager_client",
     }
 
@@ -292,24 +423,42 @@ def search_stream(
     return rows, request_id[:64] if request_id else None
 
 
-def check_account_access(connection_id: str, selection: dict, *, _client=None, _token=None):
+def check_account_access(connection_id: str, account_id: str, *, _client=None, _token=None):
+    """Access-check the SELECTED account, addressed by its opaque id.
+
+    Takes the same one opaque string the scope stores and the pull receives --
+    as google-ads, microsoft-ads, amazon-ads and pinterest-ads already do. It
+    used to take a dict, so the verified thing and the pulled thing were
+    addressed differently and could drift apart with nothing to notice.
+    """
     from core import nango_client  # noqa: PLC0415
 
+    customer_id, login_customer_id = _resolve_selected_account(account_id)
     token = _token or nango_client.get_fresh_token(connection_id, provider="sa360")
     client = _client or httpx.Client()
     query = "SELECT customer.id FROM customer LIMIT 1"
     rows, request_id = search(
         client,
         token,
-        selection["customer_id"],
+        customer_id,
         query,
         "onboarding",
         page_size=1,
-        login_customer_id=selection.get("login_customer_id"),
+        login_customer_id=login_customer_id,
     )
-    return {"accessible": True, "rows": len(rows), "request_id": request_id}
+    return {
+        "accessible": True,
+        "account_id": account_id,
+        "rows": len(rows),
+        "request_id": request_id,
+    }
 
 
+# NOTE on currency_code. That column is customer metadata; the one opaque string
+# the scope stores is spent on the customer and its route, so it lands empty on a
+# worker-driven pull. It is recoverable -- `SELECT customer.currency_code FROM
+# customer` -- at the cost of one extra query per pull. Left empty rather than
+# guessed, and named here so the gap is inventory rather than silence.
 _RAW_DDL = """
 CREATE TABLE IF NOT EXISTS raw_sa360_daily (
     report_profile VARCHAR, manager_customer_id VARCHAR, customer_id VARCHAR,
@@ -318,6 +467,14 @@ CREATE TABLE IF NOT EXISTS raw_sa360_daily (
     metric VARCHAR, value DOUBLE, provider_value VARCHAR, non_additive BOOLEAN,
     query_hash VARCHAR, request_id VARCHAR, pull_id VARCHAR, loaded_at VARCHAR, project_id VARCHAR
 )
+"""
+
+_RAW_INSERT_SQL = """
+INSERT INTO raw_sa360_daily
+    (report_profile, manager_customer_id, customer_id, resource_id, date, campaign_id,
+    ad_group_id, criterion_id, device, currency_code, dimensions_json, metric, value,
+    provider_value, non_additive, query_hash, request_id, pull_id, loaded_at, project_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 
@@ -336,9 +493,9 @@ def _extract_path(row: dict, path: str):
 
 
 def _land(rows: list[dict], fields: list[str], context: dict) -> int:
-    if os.environ.get("TOOROW_DB_MODE", "duckdb") != "duckdb":
-        raise ValueError("sa360 local landing currently requires duckdb")
-    import duckdb  # noqa: PLC0415
+    if os.environ.get("TOOROW_DB_MODE", "duckdb") not in ("duckdb", "bigquery"):
+        raise ValueError("sa360 landing supports duckdb and bigquery")
+    from core import warehouse_write  # noqa: PLC0415
 
     path = os.environ.get(
         "TOOROW_DUCKDB_PATH", str(Path(__file__).parent / "seeds" / "local.duckdb")
@@ -395,12 +552,10 @@ def _land(rows: list[dict], fields: list[str], context: dict) -> int:
                     context["project_id"],
                 )
             )
-    connection = duckdb.connect(path)
+    connection = warehouse_write.open_raw_writer(path, project_id=context["project_id"])
     connection.execute(_RAW_DDL)
     if values:
-        connection.executemany(
-            "INSERT INTO raw_sa360_daily VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", values
-        )
+        connection.executemany(_RAW_INSERT_SQL, values)
     connection.close()
     return len(values)
 
@@ -412,15 +567,22 @@ def _pull_profile(
     project_id: str,
     pull_id: str,
     profile_id: str,
-    selection: dict,
+    client_customer_id: str | None = None,
+    selection: dict | None = None,
     *,
     _client=None,
     _token=None,
 ):
+    """Run one report profile against the SELECTED account.
+
+    ``client_customer_id`` is the opaque account id the worker passes (declared
+    in manifest.json as ``account_topology.pull_parameter``). ``selection`` keeps
+    its legitimate cargo -- here, ``estimated_rows``, a size hint that picks
+    searchStream over search. See the note below: nothing fills it today.
+    """
     from core import nango_client  # noqa: PLC0415
 
-    if not selection:
-        raise Sa360OnboardingError("SA360 customer selection is required")
+    customer_id, login_customer_id = _resolve_selected_account(client_customer_id)
     profile = next(
         item for item in _manifest()["source_capabilities"]["reports"] if item["id"] == profile_id
     )
@@ -428,19 +590,29 @@ def _pull_profile(
     query = build_saql(profile_id, fields, date_from, date_to)
     token = _token or nango_client.get_fresh_token(connection_id, provider="sa360")
     client = _client or httpx.Client()
-    extractor = (
-        search_stream if int(selection.get("estimated_rows", 0)) > STREAM_THRESHOLD_ROWS else search
-    )
+    # KNOWN DEAD KNOB: `estimated_rows` has no producer. It is not part of the
+    # plan's selection ($defs.selection is additionalProperties:false), and
+    # queue.py never fills job["selection"], so a worker-driven pull always takes
+    # the paged `search` path and never searchStream. Kept -- it is a reporting
+    # choice, not an account, and direct callers use it -- but it is a switch
+    # nothing can currently flip. Named rather than deleted: an absence leaves
+    # almost no trace, and destroying the little it leaves erases the inventory.
+    estimated_rows = int((selection or {}).get("estimated_rows", 0) or 0)
+    extractor = search_stream if estimated_rows > STREAM_THRESHOLD_ROWS else search
     rows, request_id = extractor(
         client,
         token,
-        selection["customer_id"],
+        customer_id,
         query,
         project_id,
-        login_customer_id=selection.get("login_customer_id"),
+        login_customer_id=login_customer_id,
     )
+    # Built explicitly, never spread from `selection`: the account provenance of a
+    # landed row comes from the verified scope, not from whatever a caller put in
+    # a dict.
     context = {
-        **selection,
+        "customer_id": customer_id,
+        "login_customer_id": login_customer_id,
         "report_profile": profile_id,
         "query_hash": query_hash(query),
         "request_id": request_id,
@@ -458,33 +630,140 @@ def _pull_profile(
     return {"pull_id": pull_id, "row_count": row_count, "date_from": date_from, "date_to": date_to}
 
 
-def pull(connection_id, date_from, date_to, project_id, pull_id, selection=None):
+def pull(
+    connection_id,
+    date_from,
+    date_to,
+    project_id,
+    pull_id,
+    client_customer_id=None,
+    selection=None,
+    *,
+    _client=None,
+    _token=None,
+):
+    """Default pull() = the campaign_daily grain.
+
+    ``client_customer_id`` is OPTIONAL on purpose. The worker passes the account
+    only when a selection exists (core/queue.py::_account_kwargs); a required
+    positional would raise a bare ``TypeError`` -- outside every taxonomy -- for
+    any Datastream whose account has not been chosen yet.
+    """
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "campaign_daily", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "campaign_daily",
+        client_customer_id,
+        selection,
+        _client=_client,
+        _token=_token,
     )
 
 
-def pull_campaign_daily(connection_id, date_from, date_to, project_id, pull_id, selection=None):
+def pull_campaign_daily(
+    connection_id,
+    date_from,
+    date_to,
+    project_id,
+    pull_id,
+    client_customer_id=None,
+    selection=None,
+    *,
+    _client=None,
+    _token=None,
+):
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "campaign_daily", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "campaign_daily",
+        client_customer_id,
+        selection,
+        _client=_client,
+        _token=_token,
     )
 
 
-def pull_ad_group_daily(connection_id, date_from, date_to, project_id, pull_id, selection=None):
+def pull_ad_group_daily(
+    connection_id,
+    date_from,
+    date_to,
+    project_id,
+    pull_id,
+    client_customer_id=None,
+    selection=None,
+    *,
+    _client=None,
+    _token=None,
+):
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "ad_group_daily", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "ad_group_daily",
+        client_customer_id,
+        selection,
+        _client=_client,
+        _token=_token,
     )
 
 
-def pull_keyword_daily(connection_id, date_from, date_to, project_id, pull_id, selection=None):
+def pull_keyword_daily(
+    connection_id,
+    date_from,
+    date_to,
+    project_id,
+    pull_id,
+    client_customer_id=None,
+    selection=None,
+    *,
+    _client=None,
+    _token=None,
+):
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "keyword_daily", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "keyword_daily",
+        client_customer_id,
+        selection,
+        _client=_client,
+        _token=_token,
     )
 
 
-def pull_catalog_daily(connection_id, date_from, date_to, project_id, pull_id, selection=None):
+def pull_catalog_daily(
+    connection_id,
+    date_from,
+    date_to,
+    project_id,
+    pull_id,
+    client_customer_id=None,
+    selection=None,
+    *,
+    _client=None,
+    _token=None,
+):
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "catalog_daily", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "catalog_daily",
+        client_customer_id,
+        selection,
+        _client=_client,
+        _token=_token,
     )
 
 

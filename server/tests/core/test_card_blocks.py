@@ -13,6 +13,7 @@ Warehouse is not touched: resolvers operate on in-memory rows via a _BlockContex
 
 from __future__ import annotations
 
+import dataclasses
 import os
 
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
@@ -226,7 +227,12 @@ def test_gauge_cpa_ratio_sum_cost_over_sum_conversions():
     # (200 + 100) / (8 + 2) = 30.0
     assert data["value"] == 30.0
     assert data["direction"] == "down_good"
-    assert data["target_source"] == "default"  # no explicit target bound
+    # No objective bound and none configured for the project -> NO target, and so
+    # no verdict. This asserted `"default"` while the server applied a platform
+    # constant of 50.0 EUR that nobody in the project had chosen, and that
+    # `ui/cards/shell/src/types.ts:196` declares but no `.tsx` ever reads (CAV-08).
+    assert data["target_source"] == "unset"
+    assert data["target"] is None
 
 
 def test_gauge_zero_conversions_yields_null_value():
@@ -364,9 +370,9 @@ def test_opportunities_selects_high_impression_weak_position_queries():
     ]
     ctx = _ctx(rows, ["impressions", "average_position"])
     data = cards_module.resolve_block(_OPPORTUNITIES_BLOCK, ctx, "")["data"]
-    # Columns EXACTLY: Requête / Impressions / Position moyenne.
+    # Columns EXACTLY: Query / Impressions / Average position.
     assert [c["label"] for c in data["columns"]] == [
-        "Requête", "Impressions", "Position moyenne"
+        "Query", "Impressions", "Average position"
     ]
     labels = [r["_dim"] for r in data["rows"]]
     assert "brand" not in labels  # strong rank excluded
@@ -423,7 +429,7 @@ def test_opportunities_empty_is_designed_empty_table_never_absent():
     data = cards_module.resolve_block(_OPPORTUNITIES_BLOCK, ctx, "")["data"]
     assert data["rows"] == []
     assert [c["label"] for c in data["columns"]] == [
-        "Requête", "Impressions", "Position moyenne"
+        "Query", "Impressions", "Average position"
     ]
 
 
@@ -687,16 +693,16 @@ def test_usertypes_user_type_donut_present_labels_fr():
     assert data["total"] == 1000.0
     assert data["dimension"] == "user_type"
     labels = {s["label"] for s in data["slices"]}
-    assert labels == {"Nouveaux", "Fidèles", "Indéterminés"}, (
+    assert labels == {"Nouveaux", "Returning", "Undetermined"}, (
         f"Expected FR labels but got: {labels}"
     )
     pct_sum = sum(s["pct"] for s in data["slices"])
     assert abs(pct_sum - 100.0) < 0.5, f"pcts should sum to ~100 but got {pct_sum}"
     # Check individual slices match the seed split.
     by_label = {s["label"]: s for s in data["slices"]}
-    assert by_label["Fidèles"]["pct"] == 60.0
+    assert by_label["Returning"]["pct"] == 60.0
     assert by_label["Nouveaux"]["pct"] == 38.0
-    assert by_label["Indéterminés"]["pct"] == 2.0
+    assert by_label["Undetermined"]["pct"] == 2.0
 
 
 def test_usertypes_user_type_donut_unknown_raw_value_falls_back_to_string():
@@ -767,7 +773,7 @@ def test_device_donut_labels_unchanged_by_user_type_label_map():
     assert "new" in labels
     assert "returning" in labels
     assert "Nouveaux" not in labels
-    assert "Fidèles" not in labels
+    assert "Returning" not in labels
 
 
 def test_canonical_partition_tie_break_lex_min_after_day_coverage():
@@ -946,7 +952,7 @@ def _movers_ctx(current_rows, prior_rows, *, start="2026-07-01", end="2026-07-06
 
 _MOVERS_BLOCK = {
     "type": "bar",
-    "title": "Requêtes en mouvement (±pos.)",
+    "title": "Querys en mouvement (±pos.)",
     "binding": {
         "metrics": "average_position",
         "dimensions": ["query", "page"],
@@ -1170,14 +1176,14 @@ def test_bar_non_movers_binding_uses_generic_top_n_path():
 
 
 # ---------------------------------------------------------------------------
-# Cannibalisation table (keywords card, Story 10.5).
+# Cannibalization table (keywords card, Story 10.5).
 # Reads the JOINT query>page composite grain (breakdown_dimension='query>page',
 # breakdown_value='<query>>​<page>') -- NOT the marginal query/page rows.
 # ---------------------------------------------------------------------------
 
 _CANNIB_BLOCK = {
     "type": "table",
-    "title": "Cannibalisation",
+    "title": "Cannibalization",
     "binding": {
         "metrics": ["impressions", "average_position"],
         "dimensions": ["query", "page"],
@@ -1218,18 +1224,25 @@ def test_cannib_net_case():
         rows += _qp_rows("chaussures", "/sport/", 500, 4.5, date=d)
         rows += _qp_rows("chaussures", "/running/", 500, 8.5, date=d)
     data = cards_module.resolve_block(_CANNIB_BLOCK, _cannib_ctx(rows), "")["data"]
-    assert data["columns"] == ["Requête", "Page", "Part (%)", "Position moy."]
-    assert data["empty_label"] == "Aucune cannibalisation détectée"
-    queries = {r["Requête"] for r in data["rows"]}
+    # AI-59: the same {key,label,numeric} contract every other table block emits,
+    # with rows keyed by `key` -- `DataTable` reads no other shape.
+    assert data["columns"] == [
+        {"key": "_dim", "label": "Query", "numeric": False},
+        {"key": "page", "label": "Page", "numeric": False},
+        {"key": "share_pct", "label": "Share (%)", "numeric": True},
+        {"key": "average_position", "label": "Avg. position", "numeric": True},
+    ]
+    assert data["empty_label"] == "No cannibalization detected"
+    queries = {r["_dim"] for r in data["rows"]}
     assert "chaussures" in queries
-    pages = {r["Page"] for r in data["rows"]}
+    pages = {r["page"] for r in data["rows"]}
     assert pages == {"/sport/", "/running/"}
     # Shares ~50/50 (each 500/1000).
-    shares = {r["Page"]: r["Part (%)"] for r in data["rows"]}
+    shares = {r["page"]: r["share_pct"] for r in data["rows"]}
     assert shares["/sport/"] == 50.0
     assert shares["/running/"] == 50.0
     # Weighted position per page preserved (single value per page).
-    positions = {r["Page"]: r["Position moy."] for r in data["rows"]}
+    positions = {r["page"]: r["average_position"] for r in data["rows"]}
     assert positions["/sport/"] == 4.5
     assert positions["/running/"] == 8.5
 
@@ -1252,7 +1265,7 @@ def test_cannib_threshold_override():
         rows += _qp_rows("q", "/b/", 750, 9.0, date=d)   # 75% share
     # Default (0.20): /a/ 25% >= 20% -> both qualify -> flagged.
     data_default = cards_module.resolve_block(_CANNIB_BLOCK, _cannib_ctx(rows), "")["data"]
-    assert {r["Page"] for r in data_default["rows"]} == {"/a/", "/b/"}
+    assert {r["page"] for r in data_default["rows"]} == {"/a/", "/b/"}
     # Override 0.30: /a/ 25% < 30% -> only one qualifying page -> NOT flagged.
     ctx_over = _cannib_ctx(rows, config={"cannib_min_share_pct": 0.30})
     data_over = cards_module.resolve_block(_CANNIB_BLOCK, ctx_over, "")["data"]
@@ -1271,7 +1284,7 @@ def test_cannib_position_gap_threshold_override():
     # Lower the gap to 0.5 -> now flagged.
     ctx_over = _cannib_ctx(rows, config={"cannib_min_position_gap": 0.5})
     data_over = cards_module.resolve_block(_CANNIB_BLOCK, ctx_over, "")["data"]
-    assert {r["Page"] for r in data_over["rows"]} == {"/a/", "/b/"}
+    assert {r["page"] for r in data_over["rows"]} == {"/a/", "/b/"}
 
 
 def test_cannib_empty_state_no_query_rows():
@@ -1284,8 +1297,13 @@ def test_cannib_empty_state_no_query_rows():
     ctx = _cannib_ctx(rows)
     data = cards_module.resolve_block(_CANNIB_BLOCK, ctx, "")["data"]
     assert data["rows"] == []
-    assert data["empty_label"] == "Aucune cannibalisation détectée"
-    assert data["columns"] == ["Requête", "Page", "Part (%)", "Position moy."]
+    assert data["empty_label"] == "No cannibalization detected"
+    assert data["columns"] == [
+        {"key": "_dim", "label": "Query", "numeric": False},
+        {"key": "page", "label": "Page", "numeric": False},
+        {"key": "share_pct", "label": "Share (%)", "numeric": True},
+        {"key": "average_position", "label": "Avg. position", "numeric": True},
+    ]
 
 
 def test_cannib_reads_joint_grain_not_marginals():
@@ -1308,3 +1326,92 @@ def test_cannib_reads_joint_grain_not_marginals():
     ctx = _cannib_ctx(rows)
     flagged = cards_module._detect_cannibalisation(ctx)
     assert flagged == []  # no query>page composite -> nothing to detect
+
+
+# ---------------------------------------------------------------------------
+# CAV-08: no verdict against an objective nobody chose.
+#
+# `_DEFAULT_CPA_TARGET = 50.0` was applied whenever a block bound no target. The
+# comment claimed the payload documents it "so the UI can note it. Never a silent
+# magic number" -- but no `.tsx` reads `target_source`, so the gauge coloured a
+# verdict and printed "target: 50" against a currency-denominated objective that
+# is right for nobody in particular.
+# ---------------------------------------------------------------------------
+
+
+def _gauge_ctx(config=None):
+    """A _BlockContext with CPA-shaped rows and an optional project config."""
+    rows = [
+        _row("cost", "connector", "meta", 200, connector="meta-ads"),
+        _row("conversions", "connector", "meta", 8, connector="meta-ads"),
+    ]
+    ctx = _ctx(rows, ["cost", "conversions"])
+    if config is not None:
+        ctx = dataclasses.replace(ctx, config=config)
+    return ctx
+
+
+def test_an_unset_objective_yields_no_target_and_therefore_no_verdict():
+    from core.cards import _resolve_gauge
+
+    ctx = _gauge_ctx()
+    data = _resolve_gauge({"binding": {"numerator": "cost", "denominator": "conversions"}}, ctx)
+
+    assert data["target"] is None
+    assert data["target_source"] == "unset"
+    # The value itself is still served: this removes a verdict, not a figure.
+    assert data["value"] is not None
+
+
+def test_a_project_can_set_its_own_objective():
+    """Per-project preference, through the mechanism cannib_* already uses."""
+    from core.cards import _resolve_gauge
+
+    ctx = _gauge_ctx(config={"cpa_target": 12.5})
+    data = _resolve_gauge({"binding": {"numerator": "cost", "denominator": "conversions"}}, ctx)
+
+    assert data["target"] == 12.5
+    assert data["target_source"] == "project"
+
+
+def test_an_explicit_binding_still_outranks_the_project_preference():
+    from core.cards import _resolve_gauge
+
+    ctx = _gauge_ctx(config={"cpa_target": 12.5})
+    data = _resolve_gauge(
+        {"binding": {"numerator": "cost", "denominator": "conversions", "target": 40.0}}, ctx
+    )
+
+    assert data["target"] == 40.0
+    assert data["target_source"] == "binding"
+
+
+def test_an_unparsable_project_objective_is_unset_not_zero():
+    """A bad configuration value must not become a verdict of "target 0"."""
+    from core.cards import _resolve_gauge
+
+    ctx = _gauge_ctx(config={"cpa_target": "not a number"})
+    data = _resolve_gauge({"binding": {"numerator": "cost", "denominator": "conversions"}}, ctx)
+
+    assert data["target"] is None
+    assert data["target_source"] == "unset"
+
+
+def test_no_platform_cpa_objective_is_assigned_in_the_module():
+    """Structural guard: the hardcode must not come back.
+
+    Matches an ASSIGNMENT, not a mention -- the module deliberately names the old
+    constant in the comment explaining why it went away, and a guard that forbade
+    the words would forbid the explanation.
+    """
+    import inspect
+    import re
+
+    from core import cards
+
+    assignments = re.findall(
+        r"^_[A-Z_]*CPA[A-Z_]*TARGET[A-Z_]*\s*=\s*[0-9]",
+        inspect.getsource(cards),
+        re.M,
+    )
+    assert assignments == [], f"a platform CPA objective is back: {assignments}"

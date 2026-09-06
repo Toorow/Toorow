@@ -14,6 +14,11 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+
+# Import au niveau module (et non paresseux comme les appels a `core` dans les
+# fonctions) : les classes d'exception ci-dessous en HERITENT, donc il doit etre
+# resolu au moment ou le fichier est lu.
+from core import pull_errors
 from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
@@ -39,12 +44,115 @@ _bid_daily_usage: dict[tuple[str, str], int] = {}
 _bid_second_usage: dict[tuple[str, str], int] = {}
 
 
-class Dv360OnboardingError(RuntimeError):
-    """Typed failure for partner/advertiser discovery or selection."""
+class Dv360OnboardingError(pull_errors.PermissionDeniedError):
+    """Typed failure for partner/advertiser discovery or selection.
+
+    `permission_denied` : le credential est authentifie et n'atteint rien. L'action
+    juste est de se reconnecter avec les bons droits, et c'est `permission_denied`
+    qui la fait remonter a l'ecran (`user_action="reconnect"`).
+
+    Avant le 2026-08-01 cette classe heritait d'un `RuntimeError` nu : le worker la
+    voyait `unclassified`, la rejouait jusqu'au `dead_letter` contre un credential
+    qui ne marchera jamais, et n'affichait aucune action.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message)
 
 
-class Dv360CompatibilityError(ValueError):
-    """A requested report definition is not legal for its report family."""
+class Dv360NotConfiguredError(Dv360OnboardingError):
+    """Le credential va bien -- c'est la requete qui ne peut pas etre formee.
+
+    Derive de l'erreur d'onboarding pour qu'un `except Dv360OnboardingError` existant continue de
+    l'attraper, mais porte `invalid_request` : dire << reconnecte-toi >> enverrait
+    l'operateur au mauvais ecran, puisque le compte se choisit dans l'assistant
+    Datastream et pas sur la connexion.
+    """
+
+    error_class = pull_errors.INVALID_REQUEST
+    user_action = pull_errors.SELECT_SOURCE_ACCOUNT
+
+
+class Dv360CompatibilityError(pull_errors.InvalidRequestError, ValueError):
+    """A requested report definition is not legal for its report family.
+
+    `invalid_request` : rejouer la meme requete redonne la meme reponse, et c'est
+    aussi le signal `pull_invalid_request_drift` -- une forme devenue illegale est
+    une derive du catalogue. `ValueError` reste dans les bases, des
+    appelants et des tests l'attrapent sous ce nom.
+    """
+
+    #: -> `Mapping` : le plan demande ce que la source ne rend plus
+    #: (datastream-workbench-and-wizard.md:107). L'operateur a un endroit
+    #: ou aller, contrairement a une derive de version d'API.
+    user_action = pull_errors.REVIEW_MAPPING
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message)
+
+
+# ---------------------------------------------------------------------------
+# The operator's selected account, and how it travels.
+#
+# The Bid Manager query needs ONE identifier -- the advertiser
+# (filters: FILTER_ADVERTISER). The partner is not routing: it is a provenance
+# column of raw_dv360_daily, known to discovery and stored on every landed row.
+# The core scope holds one opaque string per connection, so the partner rides
+# along inside it as '<advertiser_id>@<partner_id>' (the composite opaque id
+# google-ads ratified in story 26.2 as '<cid>@<login_cid>'). Core never
+# interprets it (AD-2).
+#
+# Because the partner is not needed to CALL, a bare advertiser id is accepted
+# and lands an empty partner. Refusing it would be a severity this API does not
+# have; the research asks only to "persist an opaque partner/advertiser routing
+# selection" (dv360-catalog-research.md §2).
+# ---------------------------------------------------------------------------
+
+ACCOUNT_ID_SEPARATOR = "@"
+
+_SELECTION_HINT = (
+    "The operator picks an advertiser in the Datastream wizard: discover_accounts "
+    "lists the partners and advertisers the token can see, and the worker passes the "
+    "chosen id back as the `advertiser_id` argument declared in manifest.json under "
+    "account_topology.pull_parameter."
+)
+
+
+def split_account_id(account_id: str) -> tuple[str, str]:
+    """Parse the opaque account id ``'<advertiser_id>'`` or ``'<advertiser_id>@<partner_id>'``.
+
+    Returns ``(advertiser_id, partner_id)`` with an EMPTY partner when the id
+    carries none -- empty, never guessed. Picking "the first partner the token
+    sees" would stamp a provenance column with a partner the operator never
+    chose, and a wrong provenance is worse than an absent one: it reads as fact.
+    """
+    raw = str(account_id)
+    advertiser_id, _, partner_id = raw.partition(ACCOUNT_ID_SEPARATOR)
+    return advertiser_id, partner_id
+
+
+def _resolve_selected_account(advertiser_id: str | None) -> tuple[str, str]:
+    """Resolve (advertiser_id, partner_id) from the operator's selection ONLY.
+
+    No environment fallback -- ``core/account_topology.py`` declares the
+    ``*_ACCOUNT_ID`` pattern deprecated, and a single deployment-wide variable
+    would pull the same advertiser for every project. No ``selection`` fallback
+    either: the selection the PLAN produces carries only selection_mode /
+    metrics / dimensions / grain / filters (``datastream-intent.schema.json``,
+    ``additionalProperties: false``), and ``core/queue.py`` never fills
+    ``job["selection"]`` at all.
+    """
+    if not advertiser_id:
+        raise Dv360NotConfiguredError(
+            "DV360 pull has no selected account: `advertiser_id` is empty. " + _SELECTION_HINT
+        )
+    advertiser, partner = split_account_id(advertiser_id)
+    if not advertiser:
+        raise Dv360NotConfiguredError(
+            f"DV360 account selection {advertiser_id!r} carries no advertiser_id. "
+            + _SELECTION_HINT
+        )
+    return advertiser, partner
 
 
 def _manifest() -> dict:
@@ -179,13 +287,21 @@ def discover_accounts(connection_id: str, *, _client=None, _token: str | None = 
             params={"filter": f"partnerId={partner_id}"},
         )
         for advertiser in advertisers:
+            advertiser_id = str(advertiser["advertiserId"])
+            display_name = advertiser.get("displayName") or advertiser_id
             selections.append(
                 {
-                    "id": f"dv360_selection_{len(selections) + 1}",
+                    # The id core stores and hands back at pull time. It was a loop
+                    # counter ('dv360_selection_3'): unstable between two discoveries
+                    # and carrying neither identifier, so nothing it reached could act
+                    # on it.
+                    "id": f"{advertiser_id}{ACCOUNT_ID_SEPARATOR}{partner_id}",
+                    # core._label_for_account reads `label`; `display_name` was
+                    # invisible to it, so every account was offered unlabeled.
+                    "label": display_name,
                     "partner_id": partner_id,
-                    "advertiser_id": str(advertiser["advertiserId"]),
-                    "display_name": advertiser.get("displayName")
-                    or str(advertiser["advertiserId"]),
+                    "advertiser_id": advertiser_id,
+                    "display_name": display_name,
                     "partner_role": partner.get("entityStatus", "unknown"),
                     "advertiser_status": advertiser.get("entityStatus", "unknown"),
                     "currency": advertiser.get("generalConfig", {}).get("currencyCode", ""),
@@ -421,12 +537,19 @@ def _parse_artifact(payload: str, metrics: list[str], dimensions: list[str]) -> 
     return rows
 
 
-def check_account_access(connection_id: str, selection: dict, *, _client=None, _token=None) -> dict:
+def check_account_access(connection_id: str, account_id: str, *, _client=None, _token=None) -> dict:
+    """Access-check the SELECTED account, addressed by its opaque id.
+
+    Takes the same one opaque string the scope stores and the pull receives --
+    as google-ads, microsoft-ads, amazon-ads and pinterest-ads already do. It
+    used to take a dict, so the verified thing and the pulled thing were
+    addressed differently and could drift apart with nothing to notice.
+    """
     from core import nango_client  # noqa: PLC0415
 
+    advertiser_id, _partner_id = _resolve_selected_account(account_id)
     token = _token or nango_client.get_fresh_token(connection_id, provider=None)
     client = _client or httpx.Client()
-    advertiser_id = str(selection["advertiser_id"])
 
     # Probe DV360 v4 — confirms display-video scope and entity-level access.
     _charge_v4(connection_id, advertiser_id)
@@ -467,11 +590,19 @@ def check_account_access(connection_id: str, selection: dict, *, _client=None, _
 
     return {
         "accessible": True,
+        "account_id": account_id,
         "advertiser_id": str(advertiser["advertiserId"]),
         "query_hash": canonical_query_hash(definition),
     }
 
 
+# NOTE on timezone / currency. Both columns are advertiser metadata that
+# discover_accounts reads off generalConfig. The core scope stores ONE opaque
+# string, spent here on advertiser + partner, so those two land empty on a
+# worker-driven pull. They are recoverable -- GET /advertisers/{id} returns
+# generalConfig.timeZone and generalConfig.currencyCode -- at the cost of one
+# extra v4 request per pull. Left empty rather than guessed, and named here so
+# the gap is inventory rather than silence.
 _RAW_DDL = """
 CREATE TABLE IF NOT EXISTS raw_dv360_daily (
     report_profile VARCHAR, partner_id VARCHAR, advertiser_id VARCHAR,
@@ -484,6 +615,15 @@ CREATE TABLE IF NOT EXISTS raw_dv360_daily (
 )
 """
 
+_RAW_INSERT_SQL = """
+INSERT INTO raw_dv360_daily
+    (report_profile, partner_id, advertiser_id, date, campaign_id, insertion_order_id,
+    line_item_id, creative_id, conversion_type, country, youtube_ad_group_id, timezone,
+    currency, dimensions_json, metric, value, provider_value, non_additive, pull_id,
+    loaded_at, project_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+
 
 def _convert_metric(metric: str, provider_value: Any) -> float | None:
     try:
@@ -494,11 +634,11 @@ def _convert_metric(metric: str, provider_value: Any) -> float | None:
 
 
 def _land(rows: list[dict], context: dict) -> int:
-    if os.environ.get("TOOROW_DB_MODE", "duckdb") != "duckdb":
+    if os.environ.get("TOOROW_DB_MODE", "duckdb") not in ("duckdb", "bigquery"):
         from core.pull_errors import InvalidRequestError  # noqa: PLC0415
 
-        raise InvalidRequestError("dv360 local landing currently requires duckdb")
-    import duckdb  # noqa: PLC0415
+        raise InvalidRequestError("dv360 landing supports duckdb and bigquery")
+    from core import warehouse_write  # noqa: PLC0415
 
     path = os.environ.get(
         "TOOROW_DUCKDB_PATH", str(Path(__file__).parent / "seeds" / "local.duckdb")
@@ -512,7 +652,9 @@ def _land(rows: list[dict], context: dict) -> int:
             values.append(
                 (
                     context["report_profile"],
-                    context["partner_id"],
+                    # Empty when the opaque account id carried no partner: the API
+                    # never needed it, so a bare advertiser id is legal here.
+                    context.get("partner_id") or "",
                     context["advertiser_id"],
                     dimensions.get("date"),
                     dimensions.get("campaign_id"),
@@ -534,11 +676,11 @@ def _land(rows: list[dict], context: dict) -> int:
                     context["project_id"],
                 )
             )
-    connection = duckdb.connect(path)
+    connection = warehouse_write.open_raw_writer(path, project_id=context["project_id"])
     connection.execute(_RAW_DDL)
     if values:
         connection.executemany(
-            "INSERT INTO raw_dv360_daily VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            _RAW_INSERT_SQL,
             values,
         )
     connection.close()
@@ -552,16 +694,24 @@ def _pull_profile(
     project_id: str,
     pull_id: str,
     profile_id: str,
-    selection: dict,
+    advertiser_id: str | None = None,
+    selection: dict | None = None,
     *,
     _client=None,
     _token: str | None = None,
 ) -> dict:
+    """Run one report profile against the SELECTED account.
+
+    ``advertiser_id`` is the opaque account id the worker passes (declared in
+    manifest.json as ``account_topology.pull_parameter``). ``selection`` keeps
+    its legitimate cargo -- here, ``saved_query_id``, which designates a Bid
+    Manager query already created for this shape: a reporting choice, not an
+    account.
+    """
     from core import nango_client  # noqa: PLC0415
     from core.pull_errors import ProviderTransientError  # noqa: PLC0415
 
-    if not selection:
-        raise Dv360OnboardingError("DV360 partner and advertiser selection is required")
+    advertiser, partner = _resolve_selected_account(advertiser_id)
     profile = _profile(profile_id)
     definition = build_query_definition(
         profile_id,
@@ -569,12 +719,13 @@ def _pull_profile(
         profile["dimensions"],
         date_from,
         date_to,
-        str(selection["advertiser_id"]),
+        advertiser,
     )
     token = _token or nango_client.get_fresh_token(connection_id, provider=None)
     client = _client or httpx.Client()
     query_id = str(
-        selection.get("saved_query_id") or ensure_saved_query(client, token, definition, project_id)
+        (selection or {}).get("saved_query_id")
+        or ensure_saved_query(client, token, definition, project_id)
     )
     outcome = run_saved_query(client, token, query_id, definition, connection_id, project_id)
     if outcome["status"] != "completed":
@@ -582,9 +733,19 @@ def _pull_profile(
             message=f"DV360 report deferred for resumable reference {outcome.get('report_ref')}"
         )
     rows = _parse_artifact(outcome["rows"], profile["metrics"], profile["dimensions"])
+    # Built explicitly, never spread from `selection`: the account provenance of a
+    # landed row comes from the verified scope, not from whatever a caller put in
+    # a dict. `timezone` and `currency` are discovery metadata that the one opaque
+    # string does not carry -- they land empty (see the module note below).
     row_count = _land(
         rows,
-        {**selection, "report_profile": profile_id, "pull_id": pull_id, "project_id": project_id},
+        {
+            "report_profile": profile_id,
+            "partner_id": partner,
+            "advertiser_id": advertiser,
+            "pull_id": pull_id,
+            "project_id": project_id,
+        },
     )
     logger.info(
         "dv360_pull_completed: pull_id=%s profile=%s rows=%d", pull_id, profile_id, row_count
@@ -598,10 +759,30 @@ def pull(
     date_to: str,
     project_id: str,
     pull_id: str,
+    advertiser_id: str | None = None,
     selection: dict | None = None,
+    *,
+    _client=None,
+    _token: str | None = None,
 ) -> dict:
+    """Default pull() = the standard_daily grain.
+
+    ``advertiser_id`` is OPTIONAL on purpose. The worker passes the account only
+    when a selection exists (core/queue.py::_account_kwargs); a required
+    positional would raise a bare ``TypeError`` -- outside every taxonomy -- for
+    any Datastream whose account has not been chosen yet.
+    """
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "standard_daily", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "standard_daily",
+        advertiser_id,
+        selection,
+        _client=_client,
+        _token=_token,
     )
 
 
@@ -611,10 +792,23 @@ def pull_standard_daily(
     date_to: str,
     project_id: str,
     pull_id: str,
+    advertiser_id: str | None = None,
     selection: dict | None = None,
+    *,
+    _client=None,
+    _token: str | None = None,
 ) -> dict:
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "standard_daily", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "standard_daily",
+        advertiser_id,
+        selection,
+        _client=_client,
+        _token=_token,
     )
 
 
@@ -624,10 +818,23 @@ def pull_conversion_daily(
     date_to: str,
     project_id: str,
     pull_id: str,
+    advertiser_id: str | None = None,
     selection: dict | None = None,
+    *,
+    _client=None,
+    _token: str | None = None,
 ) -> dict:
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "conversion_daily", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "conversion_daily",
+        advertiser_id,
+        selection,
+        _client=_client,
+        _token=_token,
     )
 
 
@@ -637,9 +844,24 @@ def pull_reach(
     date_to: str,
     project_id: str,
     pull_id: str,
+    advertiser_id: str | None = None,
     selection: dict | None = None,
+    *,
+    _client=None,
+    _token: str | None = None,
 ) -> dict:
-    return _pull_profile(connection_id, date_from, date_to, project_id, pull_id, "reach", selection)
+    return _pull_profile(
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "reach",
+        advertiser_id,
+        selection,
+        _client=_client,
+        _token=_token,
+    )
 
 
 def pull_youtube_compatible(
@@ -648,10 +870,23 @@ def pull_youtube_compatible(
     date_to: str,
     project_id: str,
     pull_id: str,
+    advertiser_id: str | None = None,
     selection: dict | None = None,
+    *,
+    _client=None,
+    _token: str | None = None,
 ) -> dict:
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "youtube_compatible", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "youtube_compatible",
+        advertiser_id,
+        selection,
+        _client=_client,
+        _token=_token,
     )
 
 

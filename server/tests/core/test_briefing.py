@@ -52,7 +52,7 @@ def _make_rollup(
             "value": value,
             "delta": delta,
             "delta_pct": delta_pct,
-            "period": "sem. préc.",
+            "period": "prev. wk.",
             "source_system": connector,
             "source_field": metric,
             "pull_id": pull_id,
@@ -121,16 +121,20 @@ def test_build_briefing_top_3_only():
 # ---------------------------------------------------------------------------
 
 def test_build_briefing_french_headline_baisse():
-    """Metric with negative delta -> headline contains 'en baisse'."""
-    # observed < threshold implies negative delta (observed - threshold < 0)
-    firings = [
-        _make_firing("business_threshold", metric="clicks", observed=100.0, threshold=150.0)
-    ]
+    """A genuine period-over-period move -> headline contains 'en baisse'.
+
+    Story 53.8 (CAV-14). This case used to be built from a *business_threshold*
+    firing, which asserted a fall that never happened: `observed - threshold < 0`
+    is a breach, not a drop. The direction word belongs to a comparison between
+    two observations, so the fixture is now one — a rollup delta. The breach
+    grammar is asserted in `test_briefing_claim_grammar.py`.
+    """
+    rollup = _make_rollup(metric="clicks", value=100.0, delta=-50.0, delta_pct="-33%")
     result = build_briefing(
         project_id="proj_1",
         briefing_date="2026-07-12",
-        alert_firings=firings,
-        rollup={},
+        alert_firings=[],
+        rollup=rollup,
         context_events=[],
         nightly_run_id=None,
     )
@@ -148,16 +152,16 @@ def test_build_briefing_french_headline_baisse():
 # ---------------------------------------------------------------------------
 
 def test_build_briefing_french_headline_hausse():
-    """Positive delta -> headline contains 'en hausse'."""
-    # observed > threshold => delta > 0 => "en hausse"
-    firings = [
-        _make_firing("business_threshold", metric="sessions", observed=300.0, threshold=150.0)
-    ]
+    """A genuine period-over-period move -> headline contains 'en hausse'.
+
+    Same requalification as the 'baisse' case above (story 53.8, CAV-14).
+    """
+    rollup = _make_rollup(metric="sessions", value=300.0, delta=150.0, delta_pct="+100%")
     result = build_briefing(
         project_id="proj_1",
         briefing_date="2026-07-12",
-        alert_firings=firings,
-        rollup={},
+        alert_firings=[],
+        rollup=rollup,
         context_events=[],
         nightly_run_id=None,
     )
@@ -175,10 +179,17 @@ def test_build_briefing_french_headline_hausse():
 # ---------------------------------------------------------------------------
 
 def test_build_briefing_context_event_cited():
-    """Anomaly with matching context_event -> context_event_id in insight."""
+    """Anomaly with a context_event scoped to ITS OWN window -> cited on the insight.
+
+    Story 53.8 (CAV-15): this case used to pass with a firing carrying no
+    ``window_date`` at all, because the event was picked by proximity to the
+    BRIEFING date. The pairing key is now the claim's own date, so the fixture
+    states it — that is the whole point of the repair, not a weakening of it.
+    """
     firings = [
         _make_firing("anomaly", metric="average_position", id_="fire_anom")
     ]
+    firings[0]["window_date"] = "2026-07-12"
     context_events = [
         {
             "id": "evt_01JZZ",

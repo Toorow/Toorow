@@ -175,6 +175,113 @@ def test_429_uses_retry_after_breaker(connector):
     assert raised.value.retry_after == 9
 
 
+def _stub_report(connector, monkeypatch, captured):
+    """Stub the whole async report flow: capture the request, land nothing."""
+
+    def fake_run(connection_id, request, **kwargs):
+        captured.append(request)
+        return {"status": "completed", "rows": []}
+
+    monkeypatch.setattr(connector, "run_dsp_report", fake_run)
+    monkeypatch.setattr(connector, "_land", lambda rows, context: 0)
+
+
+def test_the_manifest_declares_the_parameter_that_carries_the_account():
+    """Le compte arrive par le nom que le manifeste declare, pas par `selection`.
+
+    `selection` est la selection de RAPPORT (datastream-intent.schema.json,
+    additionalProperties: false) : elle ne peut pas porter un advertiser.
+    """
+    manifest = json.loads((MODULE_DIR / "manifest.json").read_text())
+    assert manifest["account_topology"]["pull_parameter"] == "advertiser_id"
+
+
+def test_discovery_id_carries_the_full_routing(connector):
+    """L'`id` d'un compte decouvert est ce que le coeur stocke, et RIEN d'autre.
+
+    Le coeur persiste une seule chaine opaque (`app.connection_account_scope.
+    account_id`) et la rend telle quelle au pull. Un `id` synthetique indexe
+    (`amazon_dsp_selection_1`) ne permet ni de router la region, ni de poser
+    l'en-tete `Amazon-Ads-AccountId` -- et change de cible si la decouverte
+    reordonne. La recherche l'exige nommement : identifiant opaque portant
+    assez d'information de region pour router sans redecouvrir.
+    """
+    client = MagicMock()
+    client.request.return_value = Response(
+        payload={
+            "accounts": [
+                {
+                    "adsAccountId": "acct-1",
+                    "advertisers": [{"advertiserId": "adv-1", "name": "DSP advertiser"}],
+                }
+            ]
+        }
+    )
+    row = connector.discover_accounts(
+        "conn", regions=("EU",), _client=client, _token_value="t", _client_id_value="c"
+    )[0]
+    assert row["id"] == "EU:acct-1:adv-1"
+
+
+def test_pull_reads_the_account_from_its_declared_parameter(connector, monkeypatch):
+    captured: list[dict] = []
+    _stub_report(connector, monkeypatch, captured)
+    connector.pull(
+        "conn",
+        "2026-07-01",
+        "2026-07-02",
+        "proj_EXAMPLE",
+        "pull-1",
+        advertiser_id="EU:acct-1:adv-1",
+    )
+    assert captured[0]["routing"] == {
+        "region": "EU",
+        "adsAccountId": "acct-1",
+        "advertiserId": "adv-1",
+    }
+    assert captured[0]["configuration"]["filters"] == [
+        {"field": "advertiserId", "values": ["adv-1"]}
+    ]
+
+
+def test_pull_still_honours_a_report_selection_without_the_account(connector, monkeypatch):
+    """`selection` garde ses usages legitimes : la forme du rapport."""
+    captured: list[dict] = []
+    _stub_report(connector, monkeypatch, captured)
+    connector.pull_catalog_daily(
+        "conn",
+        "2026-07-01",
+        "2026-07-02",
+        "proj_EXAMPLE",
+        "pull-1",
+        selection={"columns": ["date", "impressions"], "group_by": "campaign"},
+        advertiser_id="NA:acct-9:adv-9",
+    )
+    assert captured[0]["configuration"]["columns"] == ["date", "impressions"]
+    assert captured[0]["routing"]["region"] == "NA"
+
+
+def test_a_missing_account_is_typed_and_names_the_selection(connector):
+    with pytest.raises(connector.AmazonDspOnboardingError, match="advertiser_id"):
+        connector.pull("conn", "2026-07-01", "2026-07-02", "proj_EXAMPLE", "pull-1")
+
+
+def test_an_unrouted_account_is_refused_before_any_call(connector):
+    """Un advertiser nu ne peut pas router : ni region, ni Amazon-Ads-AccountId."""
+    with pytest.raises(connector.AmazonDspOnboardingError, match="region"):
+        connector.pull(
+            "conn", "2026-07-01", "2026-07-02", "proj_EXAMPLE", "pull-1", advertiser_id="adv-1"
+        )
+
+
+def test_no_environment_fallback_for_the_account(connector, monkeypatch):
+    """Aucun repli d'environnement : une variable est unique pour tout le deploiement."""
+    for name in ("AMAZON_DSP_ADVERTISER_ID", "AMAZON_ADS_ACCOUNT_ID", "AMAZON_DSP_REGION"):
+        monkeypatch.setenv(name, "leak")
+    with pytest.raises(connector.AmazonDspOnboardingError):
+        connector.pull("conn", "2026-07-01", "2026-07-02", "proj_EXAMPLE", "pull-1")
+
+
 def test_refetch_and_non_additive_policy(connector):
     assert connector.REFETCH_DAYS == (3, 14, 45)
     catalog = json.loads((MODULE_DIR / "api_catalog.json").read_text())

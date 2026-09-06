@@ -67,8 +67,14 @@ def test_preflight_records_dated_capabilities_and_ui_support(monkeypatch):
     from core import host_preflight as hp
 
     # task row: id, journey_id, org_id, state, step_key, return_condition
-    task_row = ("task-h", "journey-1", "org-1", "waiting", "host_connection",
-                {"kind": "host_connected", "resource_id": "proj-1"})
+    task_row = (
+        "task-h",
+        "journey-1",
+        "org-1",
+        "waiting",
+        "host_connection",
+        {"kind": "host_connected", "resource_id": "proj-1"},
+    )
     lookup = _cur(task_row)
     insert = _cur()
     conn = _conn_with(lookup, insert)
@@ -161,9 +167,7 @@ def test_prepare_install_handoff_is_minimal_purpose_scoped(monkeypatch):
     handoff.audit_event_id = "audit-h"
     handoff.replayed = False
     prepare_handoff = MagicMock(return_value=handoff)
-    monkeypatch.setattr(
-        "core.setup_responsibilities.prepare_handoff", prepare_handoff
-    )
+    monkeypatch.setattr("core.setup_responsibilities.prepare_handoff", prepare_handoff)
 
     result = hp.prepare_host_install_handoff(
         conn,
@@ -185,8 +189,12 @@ def test_prepare_install_handoff_is_minimal_purpose_scoped(monkeypatch):
     _, kwargs = prepare_handoff.call_args
     assert kwargs["task_id"] == "task-h"
     assert set(kwargs) <= {
-        "task_id", "actor", "expires_in_hours", "idempotency_key",
-        "host_context", "trace_id",
+        "task_id",
+        "actor",
+        "expires_in_hours",
+        "idempotency_key",
+        "host_context",
+        "trace_id",
     }
     # The result surface carries no Toorow data / secret-looking keys.
     forbidden = {"report", "rows", "sample", "token", "secret", "credential", "data"}
@@ -201,7 +209,17 @@ def test_bind_writes_capability_context_with_versions(monkeypatch):
     from core import host_preflight as hp
 
     # preflight row: id, host_key, org_id, project_id, task_id, proof_required, state
-    pf_row = ("hostpf-1", "host_app_ui_v1", "org-1", "proj-1", "task-h", True, "handed_off")
+    pf_row = (
+        "hostpf-1",
+        "host_app_ui_v1",
+        "org-1",
+        "proj-1",
+        "task-h",
+        True,
+        "handed_off",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        None,
+    )
     lookup = _cur(pf_row)
     # mutation: INSERT context, UPDATE preflight (rowcount 1), then _reconcile_host_task
     mut = _cur()
@@ -257,7 +275,17 @@ def test_bind_fails_closed_without_workspace_proof(monkeypatch):
     """No verifiable proof -> high-risk profiles are dropped; only insights binds."""
     from core import host_preflight as hp
 
-    pf_row = ("hostpf-1", "host_app_ui_v1", "org-1", "proj-1", "task-h", True, "handed_off")
+    pf_row = (
+        "hostpf-1",
+        "host_app_ui_v1",
+        "org-1",
+        "proj-1",
+        "task-h",
+        True,
+        "handed_off",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        None,
+    )
     lookup = _cur(pf_row)
     mut = _cur()
     recon_lookup = _cur(("waiting", {"kind": "host_connected", "resource_id": "task-h"}))
@@ -297,8 +325,14 @@ def test_bind_fails_closed_without_workspace_proof(monkeypatch):
 def test_unsupported_app_ui_selects_standard_tool_fallback(monkeypatch):
     from core import host_preflight as hp
 
-    task_row = ("task-h", "journey-1", "org-1", "waiting", "host_connection",
-                {"kind": "host_connected", "resource_id": "proj-1"})
+    task_row = (
+        "task-h",
+        "journey-1",
+        "org-1",
+        "waiting",
+        "host_connection",
+        {"kind": "host_connected", "resource_id": "proj-1"},
+    )
     lookup = _cur(task_row)
     insert = _cur()
     conn = _conn_with(lookup, insert)
@@ -380,7 +414,17 @@ def test_invalidate_stale_preflight_and_bind_refuses_when_stale(monkeypatch):
 def test_bind_reconciles_server_state_not_client_callback(monkeypatch):
     from core import host_preflight as hp
 
-    pf_row = ("hostpf-1", "host_app_ui_v1", "org-1", "proj-1", "task-h", True, "handed_off")
+    pf_row = (
+        "hostpf-1",
+        "host_app_ui_v1",
+        "org-1",
+        "proj-1",
+        "task-h",
+        True,
+        "handed_off",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        None,
+    )
     lookup = _cur(pf_row)
     mut = _cur()
     # The reconcile reads the task and advances it from SERVER evidence.
@@ -395,6 +439,7 @@ def test_bind_reconciles_server_state_not_client_callback(monkeypatch):
     calls: list = []
     real = None
     from core import setup_responsibilities as sr
+
     real = sr.reconcile_task_state
 
     def spy(**kwargs):
@@ -426,3 +471,203 @@ def test_bind_reconciles_server_state_not_client_callback(monkeypatch):
     # Server evidence proves the host_connected condition; no client payload trusted.
     assert kwargs["server_evidence"] == {"host_connected": {"task-h": True}}
     assert "client_payload" not in kwargs or kwargs.get("client_payload") is None
+
+
+# ---------------------------------------------------------------------------
+# (f) 2026-09-04 -- the evidence these operations write must pass the REAL
+#     operation validator. Measured in production that day: every
+#     `POST /api/mcp-hosts/preflight` had answered 500 `operation_failed` since
+#     the route existed, because `request_payload` carried the key `host_key`
+#     and `operations._is_secret_key` reads `key` as secret material. The stub
+#     above never ran that validator, so the surface was green while no host
+#     could ever be bound (`app.host_preflights`: 0 rows in production).
+# ---------------------------------------------------------------------------
+def test_the_evidence_of_every_host_operation_passes_the_real_validator(monkeypatch):
+    from core import host_preflight as hp
+    from core.operations import _validate_json, prepare_operation
+
+    task_row = (
+        "task-h",
+        "journey-1",
+        "org-1",
+        "waiting",
+        "host_connection",
+        {"kind": "host_connected", "resource_id": "proj-1"},
+    )
+    conn = _conn_with(_cur(task_row), _cur())
+    capture: dict = {}
+    _stub_operation(monkeypatch, hp, capture=capture)
+    hp.preflight_host(
+        conn,
+        host_key="host_standard_tools_v1",
+        task_id="task-h",
+        org_id="org-1",
+        project_id=None,
+        actor="op@example.com",
+        idempotency_key="pf-validated",
+        host_context={"host": "rest", "workspace_id": "console"},
+        trace_id=None,
+    )
+    assert capture["specs"], "the preflight must have gone through the operation seam"
+    for spec in capture["specs"]:
+        prepare_operation(spec)  # OperationValidationError on `host_key` before 2026-09-04
+    for change in capture["changes"]:
+        _validate_json(change.result, name="result")
+        _validate_json(change.outbox_payload, name="outbox_payload")
+    payload_keys = set(capture["specs"][0].request_payload)
+    assert "host_key" not in payload_keys and "host_entry" in payload_keys
+
+
+def test_the_bind_evidence_passes_the_real_validator_too(monkeypatch):
+    from core import host_preflight as hp
+    from core.operations import _validate_json, prepare_operation
+
+    pf_row = (
+        "hostpf-1",
+        "host_standard_tools_v1",
+        "org-1",
+        None,
+        "task-h",
+        False,
+        "prepared",
+        None,
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    )
+    recon_lookup = _cur(("waiting", {"kind": "host_connected", "resource_id": "task-h"}))
+    conn = _conn_with(_cur(pf_row), _cur(), recon_lookup, _cur())
+    capture: dict = {}
+    _stub_operation(monkeypatch, hp, capture=capture)
+    monkeypatch.setattr("core.mcp_profiles.catalog_version", lambda cc: f"catver-{cc}")
+    hp.bind_host_connection(
+        conn,
+        preflight_id="hostpf-1",
+        endpoint_binding="989690374424-example.apps.googleusercontent.com",
+        enabled_profiles=["insights", "operations"],
+        workspace_evidence_hash=None,
+        interactive_presence_evidence_hash="b" * 64,
+        host="toorow-e2e-harness",
+        workspace_id="e2e",
+        workspace_type="harness",
+        client_id="117505563874619937900",
+        policy_version="2026-09-04",
+        actor="op@example.com",
+        idempotency_key="bind-validated",
+        host_context={"host": "rest"},
+        trace_id=None,
+    )
+    for spec in capture["specs"]:
+        prepare_operation(spec)
+    for change in capture["changes"]:
+        _validate_json(change.result, name="result")
+        _validate_json(change.outbox_payload, name="outbox_payload")
+
+
+# ---------------------------------------------------------------------------
+# (g) migration 343 -- a proof is the one the SERVER minted, or it is nothing.
+# ---------------------------------------------------------------------------
+def test_a_well_formed_proof_that_the_server_did_not_mint_binds_insights_only(monkeypatch):
+    """Before 2026-09-04 any sixty-four hexadecimal characters opened `operations`
+    on a proof-requiring entry -- and since nothing minted them, nobody could bind
+    one honestly. Equality with the preflight's minted value is what "verifiable"
+    means; a foreign hash of the right shape is refused, fail closed."""
+    from core import host_preflight as hp
+
+    minted = "c" * 64
+    pf_row = (
+        "hostpf-1",
+        "host_app_ui_v1",
+        "org-1",
+        "proj-1",
+        "task-h",
+        True,
+        "prepared",
+        minted,
+        "d" * 64,
+    )
+    recon_lookup = _cur(("waiting", {"kind": "host_connected", "resource_id": "task-h"}))
+    conn = _conn_with(_cur(pf_row), _cur(), recon_lookup, _cur())
+    _stub_operation(monkeypatch, hp)
+    monkeypatch.setattr("core.mcp_profiles.catalog_version", lambda cc: f"catver-{cc}")
+    result = hp.bind_host_connection(
+        conn,
+        preflight_id="hostpf-1",
+        endpoint_binding="aud",
+        enabled_profiles=["insights", "operations"],
+        workspace_evidence_hash="e" * 64,  # well-formed, NOT the minted one
+        interactive_presence_evidence_hash="f" * 64,  # idem
+        host="h",
+        workspace_id="w",
+        workspace_type="team",
+        client_id="sub",
+        policy_version="p",
+        actor="op@example.com",
+        idempotency_key="bind-foreign",
+        host_context={"host": "rest"},
+        trace_id=None,
+    )
+    assert result["enabled_profiles"] == ["insights"]
+
+
+def test_the_minted_proof_binds_operations_and_the_preflight_returns_it(monkeypatch):
+    from core import host_preflight as hp
+
+    task_row = (
+        "task-h",
+        "journey-1",
+        "org-1",
+        "waiting",
+        "host_connection",
+        {"kind": "host_connected", "resource_id": "proj-1"},
+    )
+    capture: dict = {}
+    _stub_operation(monkeypatch, hp, capture=capture)
+    prepared = hp.preflight_host(
+        _conn_with(_cur(task_row), _cur()),
+        host_key="host_app_ui_v1",
+        task_id="task-h",
+        org_id="org-1",
+        project_id=None,
+        actor="op@example.com",
+        idempotency_key="pf-minted",
+        host_context={"host": "rest"},
+        trace_id=None,
+    )
+    minted_ws = prepared["workspace_evidence_hash"]
+    minted_pr = prepared["interactive_presence_evidence_hash"]
+    assert len(minted_ws) == 64 and len(minted_pr) == 64 and minted_ws != minted_pr
+    # The row carries what the answer says (the INSERT's last two values).
+    insert_args = capture["changes"][0]
+    assert insert_args is not None
+
+    pf_row = (
+        "hostpf-1",
+        "host_app_ui_v1",
+        "org-1",
+        None,
+        "task-h",
+        True,
+        "prepared",
+        minted_ws,
+        minted_pr,
+    )
+    recon_lookup = _cur(("waiting", {"kind": "host_connected", "resource_id": "task-h"}))
+    conn = _conn_with(_cur(pf_row), _cur(), recon_lookup, _cur())
+    monkeypatch.setattr("core.mcp_profiles.catalog_version", lambda cc: f"catver-{cc}")
+    result = hp.bind_host_connection(
+        conn,
+        preflight_id="hostpf-1",
+        endpoint_binding="aud",
+        enabled_profiles=["insights", "operations"],
+        workspace_evidence_hash=minted_ws,
+        interactive_presence_evidence_hash=minted_pr,
+        host="h",
+        workspace_id="w",
+        workspace_type="team",
+        client_id="sub",
+        policy_version="p",
+        actor="op@example.com",
+        idempotency_key="bind-minted",
+        host_context={"host": "rest"},
+        trace_id=None,
+    )
+    assert "operations" in result["enabled_profiles"]

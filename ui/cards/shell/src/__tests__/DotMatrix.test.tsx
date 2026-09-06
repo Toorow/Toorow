@@ -1,15 +1,16 @@
 /**
  * Tests DotMatrix — Story 23.4.
  *
- * Convention : ThemeProvider avec createTheme() nu (MUI defaults, sans branding).
+ * Convention : ThemeProvider avec createTheme() nu (jetons toorow, sans branding).
  * Vitest + @testing-library/react. Strings françaises (UX-DR10).
  */
 
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { ThemeProvider, createTheme } from "@mui/material/styles";
+
 import DotMatrix from "../DotMatrix";
 import type { DotMatrixGroup } from "../DotMatrix";
+import { ThemeProvider, createTheme } from "@toorow/shell";
 
 const theme = createTheme();
 

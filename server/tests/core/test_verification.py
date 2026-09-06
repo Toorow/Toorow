@@ -236,6 +236,65 @@ class TestComputeExpectedRows:
         # GA4 standard_daily has verification_expected_rows_per_day=150
         assert result == 7 * 150
 
+    # -----------------------------------------------------------------------
+    # AI-55: the profile ACTUALLY pulled owns the expectation
+    # -----------------------------------------------------------------------
+
+    _REAL_GA4_PROFILES = {
+        "report_profiles": [
+            {"id": "standard_daily", "verification_expected_rows_per_day": 150},
+            {"id": "user_type_daily", "verification_expected_rows_per_day": 9},
+            {"id": "pages_daily_landing", "verification_expected_rows_per_day": 50},
+        ]
+    }
+
+    def test_the_profile_pulled_owns_its_expectation(self):
+        """A `user_type_daily` pull is measured against 9 rows/day, not 150.
+
+        Reading `profiles[0]` for every pull scored a complete 9-row day at
+        9/150 = 0.06 and filed `partial` -- a verdict of 'incomplete' about a
+        complete pull.
+        """
+        from core.verification import compute_expected_rows
+
+        result = compute_expected_rows(
+            self._REAL_GA4_PROFILES,
+            "2026-07-01",
+            "2026-07-07",
+            report_profile_id="user_type_daily",
+        )
+        assert result == 7 * 9
+
+    def test_every_declared_profile_gets_its_own_number(self):
+        from core.verification import compute_expected_rows
+
+        expected = {"standard_daily": 150, "user_type_daily": 9, "pages_daily_landing": 50}
+        for profile_id, rows_per_day in expected.items():
+            result = compute_expected_rows(
+                self._REAL_GA4_PROFILES, "2026-07-01", "2026-07-01", report_profile_id=profile_id
+            )
+            assert result == rows_per_day, profile_id
+
+    def test_an_unknown_profile_id_falls_back_to_days_not_to_a_foreign_number(self):
+        """Borrowing another profile's number would file a verdict about a pull
+        nobody described."""
+        from core.verification import compute_expected_rows
+
+        result = compute_expected_rows(
+            self._REAL_GA4_PROFILES,
+            "2026-07-01",
+            "2026-07-04",
+            report_profile_id="does_not_exist",
+        )
+        assert result == 4
+
+    def test_no_profile_id_keeps_the_previous_heuristic(self):
+        """Older call sites pass no id and must not change behaviour."""
+        from core.verification import compute_expected_rows
+
+        result = compute_expected_rows(self._REAL_GA4_PROFILES, "2026-07-01", "2026-07-07")
+        assert result == 7 * 150
+
 
 # ---------------------------------------------------------------------------
 # run_post_pull_verification verdict tests (AC4, T3.4)
@@ -284,6 +343,45 @@ class TestRunPostPullVerification:
             )
 
         return mock_cursor
+
+    def test_the_pulled_profile_reaches_the_filed_verdict(self):
+        """AI-55 end to end: the id given to the verifier reaches the expectation.
+
+        Nothing here patches `compute_expected_rows`: a `user_type_daily` pull
+        that lands all 63 of its rows over seven days must be filed `ok` with
+        expected_rows=63. Before the id was threaded, the same pull was measured
+        against `standard_daily` (150/day = 1050) and filed `partial`.
+        """
+        multi_profile_manifest = {
+            "report_profiles": [
+                {"id": "standard_daily", "verification_expected_rows_per_day": 150},
+                {"id": "user_type_daily", "verification_expected_rows_per_day": 9},
+            ]
+        }
+        fake_conn_mgr, _mock_conn, mock_cursor = _make_fake_pg_connection()
+
+        with (
+            patch("core.verification._count_raw_rows", return_value=63),
+            patch("core.db.get_connection", new=fake_conn_mgr),
+        ):
+            from core.verification import run_post_pull_verification
+
+            run_post_pull_verification(
+                pull_id="pull_user_type",
+                connection_ref_id="conn_user_type",
+                date_from="2026-07-01",
+                date_to="2026-07-07",
+                manifest=multi_profile_manifest,
+                report_profile_id="user_type_daily",
+            )
+
+        params = next(
+            call.args[1]
+            for call in mock_cursor.execute.call_args_list
+            if "pull_verifications" in str(call.args[0]) and "INSERT" in str(call.args[0])
+        )
+        expected_rows, actual_rows, ratio, verdict = params[3], params[4], params[5], params[6]
+        assert (expected_rows, actual_rows, ratio, verdict) == (63, 63, 1.0, "ok")
 
     def test_verdict_ok(self):
         """actual >= threshold * expected -> verdict 'ok'."""
@@ -346,7 +444,12 @@ class TestRunPostPullVerification:
         assert health_calls[0][1] == "empty"
 
     def test_verdict_partial(self):
-        """ratio < threshold -> verdict 'partial'."""
+        """ratio < threshold -> verdict 'partial', filed, and NO sticky red.
+
+        AI-101 (2026-08-17): the red is sticky and the enqueue gate reads it, so
+        raising it on a sparse window suspended every Datastream of the
+        authorization over a pull that had landed rows. Only `empty` raises.
+        """
         fake_conn_mgr, mock_conn, mock_cursor = _make_fake_pg_connection()
         health_calls: list = []
 
@@ -371,9 +474,10 @@ class TestRunPostPullVerification:
             )
 
         all_call_args = str(mock_cursor.execute.call_args_list)
-        assert "partial" in all_call_args
-        assert health_calls, "_set_connection_health_red must be called for partial verdict"
-        assert health_calls[0][1] == "partial"
+        assert "partial" in all_call_args, "the partial verdict must still be filed"
+        assert not health_calls, (
+            "a partial verdict must NOT raise the sticky red -- it landed rows"
+        )
 
     def test_zero_expected_rows_no_division_error(self):
         """expected_rows == 0 -> verdict 'ok', ratio 1.0, no exception."""

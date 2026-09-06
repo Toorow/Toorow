@@ -664,7 +664,10 @@ def test_list_snapshots_strict_bearer_without_grant_is_denied():
     with (
         patch.dict(os.environ, {"TOOROW_AUTH_MODE": "oauth"}),
         patch("core.db.get_connection", return_value=mock_conn_ctx),
-        patch("core.db.set_local_access_context") as set_access_context,
+        # Story 21.6: the floor is installed by the acquisition seam, so that is
+        # what this test observes. The property is the one it always asserted --
+        # the connection the denial is decided on is armed for THIS bearer.
+        patch("core.db.install_access_context") as set_access_context,
         patch(
             "core.project_access.resolve_strict_resource_access",
             return_value=MagicMock(allowed=False),
@@ -677,11 +680,7 @@ def test_list_snapshots_strict_bearer_without_grant_is_denied():
 
     assert resp.status_code == 404
     assert resp.json()["code"] == "not_found"
-    set_access_context.assert_called_once_with(
-        mock_conn,
-        "bearer_without_grant",
-        enforce_epic36=True,
-    )
+    set_access_context.assert_called_once_with(mock_conn, "bearer_without_grant")
     resolve_access.assert_called_once_with(
         "bearer_without_grant",
         mock_conn,

@@ -43,9 +43,9 @@ export const FIXTURE_ENVELOPE: CardEnvelope = {
   data: {
     card_id: "kpi",
     card_type: "kpi",
-    title: "Synthèse KPI",
+    title: "KPI Overview",
     answers_question:
-      "Comment évoluent mes indicateurs clés sur la période (valeurs, variations, tendance) ?",
+      "How are my key performance indicators evolving over the period (values, variations, trend)?",
     date_range: { start: "2026-06-14", end: "2026-07-13" },
     connectors: ["google-analytics"],
     metrics: {

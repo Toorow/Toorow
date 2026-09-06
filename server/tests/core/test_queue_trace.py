@@ -25,6 +25,18 @@ pytest.importorskip("opentelemetry.sdk")
 from core import queue, tracing  # noqa: E402
 
 
+def _insert_column_index(sql: str, column: str) -> int:
+    """Where *column* sits in an INSERT's parameter tuple, read from the SQL.
+
+    Reading the position out of the statement is what keeps this file honest when
+    a column is appended: the assertion then still points at the value it names.
+    """
+    columns = sql.split("(", 1)[1].split(")", 1)[0]
+    names = [name.strip() for name in columns.replace("\n", " ").split(",")]
+    assert column in names, f"{column!r} is not in the INSERT column list: {names}"
+    return names.index(column)
+
+
 @pytest.fixture
 def in_memory_tracer(monkeypatch):
     from opentelemetry.sdk.trace import TracerProvider
@@ -78,17 +90,18 @@ def test_enqueue_stores_trace_id_in_insert(in_memory_tracer):
             )
 
     # Find the INSERT ... pull_jobs call and assert trace_id is a 32-hex id.
-    # Story 8.2: INSERT now has 9 params (added datastream_id as last).
-    # Column order: id, pull_id, connection_ref_id, date_from, date_to,
-    #               state, requested_by, trace_id, datastream_id
-    # trace_id is params[-2] (second to last).
+    #
+    # The column is located BY NAME, never by a position counted from the end.
+    # A counted position is a promise that no column will ever be appended --
+    # story 8.2 appended `datastream_id`, story 63.1 appended `execution_id`, and
+    # each time the index silently pointed at the wrong value.
     insert_calls = [
         c for c in cur.execute.call_args_list if "INSERT INTO app.pull_jobs" in c.args[0]
     ]
     assert insert_calls, "expected an INSERT into app.pull_jobs"
     sql, params = insert_calls[0].args
     assert "trace_id" in sql
-    trace_id = params[-2]
+    trace_id = params[_insert_column_index(sql, "trace_id")]
     assert isinstance(trace_id, str) and len(trace_id) == 32
 
 
@@ -105,8 +118,7 @@ def test_enqueue_trace_id_null_when_disabled(monkeypatch):
     ]
     assert insert_calls
     _sql, params = insert_calls[0].args
-    # Story 8.2: datastream_id is last; trace_id is second-to-last (params[-2])
-    assert params[-2] is None  # trace_id NULL when tracing disabled
+    assert params[_insert_column_index(_sql, "trace_id")] is None  # NULL when disabled
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +154,7 @@ def test_execute_job_emits_worker_span(in_memory_tracer):
         patch("core.db.get_connection", fake_get),
         patch("core.queue._resolve_connection_ref", return_value=ref),
         patch("core.main.get_module_pull_fn", return_value=_fake_pull),
-        patch("core.queue._get_manifest_for_provider", return_value={"module_kind": "kpi"}),
+        patch("core.queue._get_manifest_for_module", return_value={"module_kind": "kpi"}),
         patch("core.audit.write_audit_row"),
         patch("core.quota.get_read_cost", return_value=0),
         patch("core.quota.pre_check", return_value=(True, None)),

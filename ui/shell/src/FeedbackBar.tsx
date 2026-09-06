@@ -49,10 +49,31 @@ export interface FeedbackBarProps {
   projectId: string;
   /** OTel trace_id from meta.trace_id. Null when TRACING_ENABLED=false. */
   traceId: string | null;
-  /** Report reference string, e.g. "get_daily_report:2026-07-11". */
+  /**
+   * Report reference string, e.g. "get_daily_report:2026-07-11".
+   *
+   * NO LONGER SENT ON THE WIRE since the 2026-08-30 amendment of
+   * `docs/product-architecture/mcp-tool-surface.md`. `submit_feedback` binds the
+   * recorded reference to the Result the server minted the handle over, and
+   * refuses (`result_handle_names_another_result`) any reference that disagrees
+   * with it. An empty `report_ref` is the "stronger direction" the tool
+   * documents: the grant names the subject, never the widget. The prop stays
+   * because the shells pass it and it labels the bar locally.
+   */
   reportRef: string;
-  /** Module name, e.g. "connector-module-name". */
+  /** Module name, e.g. "connector-module-name". Sent as the `connector` argument. */
   module: string;
+  /**
+   * The server-minted `result_handle`, read from the tool result `_meta`
+   * (`toorow.result.result_handle`) and forwarded verbatim.
+   *
+   * REQUIRED BY THE SERVER. A rating is an append, and `submit_feedback` refuses
+   * an append a caller can make on its own word (`core.app_observation_handle`).
+   * Without a handle the submission is refused with the gesture named — the
+   * deliberate state clause 19 describes until a producer mints a grant for the
+   * surface that mounts this bar.
+   */
+  handle?: string;
   /**
    * Story 8.8: compact mode — renders inline in the chrome footer bar.
    * When true: no top border/margin (the footer bar owns the divider).
@@ -150,8 +171,8 @@ function Chip({ active, onClick, tone, label, disabled = false, compact = false,
 export default function FeedbackBar({
   projectId,
   traceId,
-  reportRef,
   module,
+  handle,
   compact = false,
 }: FeedbackBarProps) {
   const [submitting, setSubmitting] = useState(false);
@@ -172,13 +193,21 @@ export default function FeedbackBar({
       // submission and shows the designed error state (F-11, now reachable).
       // Legacy path: fire-and-forget postMessage that resolves immediately —
       // the confirmation stays optimistic there, unchanged.
+      // THE ARGUMENT NAMES ARE THE TOOL'S SCHEMA, measured rather than assumed:
+      // `submit_feedback` declares
+      // {comment, connector, handle, project_id, rating, report_ref, trace_id}
+      // with `additionalProperties: false`. This bar was sending `module`, which
+      // the schema rejects — so every rating was refused at the boundary before
+      // the handle rule was ever reached.
       await callServerTool("submit_feedback", {
         project_id: projectId,
         rating: selectedRating,
         trace_id: traceId ?? null,
         comment: comment.trim() || "",
-        report_ref: reportRef,
-        module,
+        // Empty: the grant names the Result being rated (see `reportRef`).
+        report_ref: "",
+        connector: module,
+        handle: handle ?? "",
       });
       setSubmitted(true);
     } catch {
@@ -295,7 +324,7 @@ export default function FeedbackBar({
         data-testid="feedback-error"
       >
         <div style={errorTextStyle}>
-          <span>Erreur lors de l'envoi. Veuillez réessayer.</span>
+          <span>That did not send. Try again.</span>
           <button
             type="button"
             onClick={() => setSubmitError(false)}
@@ -353,7 +382,7 @@ export default function FeedbackBar({
     <div style={containerStyle} data-testid="feedback-bar">
       {/* Question + 👍/👎 chips */}
       <div style={rowStyle}>
-        <span style={questionStyle}>Ce rapport vous a-t-il été utile ?</span>
+        <span style={questionStyle}>Was this report useful?</span>
         <div style={chipsContainerStyle}>
           <Chip
             tone="up"

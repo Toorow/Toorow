@@ -46,11 +46,31 @@ Contains project-level preferences for cost and timezone normalization:
 
 ### `fx_rates.csv`
 Static FX rate seed for dev-time cost normalization (Story 4.2).
-Columns: `from_currency`, `to_currency`, `rate`, `rate_date`, `rate_policy`.
+Columns (all eight — this list said five until 2026-08-17 and omitted the two that
+SELECT the rate): `from_currency`, `to_currency`, `rate`, `rate_date`,
+`rate_policy`, `valid_from`, `valid_to`, `fx_method`.
+
+Two of them are read as a pair and are easy to swap, so the difference is stated
+here as well as in the staging models: `valid_from` / `valid_to` are the validity
+WINDOW and they CHOOSE the rate (the staging join is
+`raw.date BETWEEN valid_from AND valid_to`); `rate_date` is the day the rate was
+QUOTED and it is the date printed under an amount (`fx_as_of_date`).
+
+`fx_method` is the governed method of the row, carried unchanged into
+`fact_daily_kpi.fx_method` by every staging model that joins this seed. It exists
+because `dbt/macros/money_evidence.sql` used to MINT the label instead of carrying
+it, stamping `direct` — the word reserved for an observed quotation — on rates
+typed into this file by hand. The amendment of 2026-08-17 to
+`docs/product-architecture/alignment-register.md` makes a posed value a
+first-class method with its own name.
 
 Includes:
-- USD→EUR: 0.92 (2026-07-01, static_dev_rate)
-- EUR→EUR: 1.00 (2026-07-01, identity)
+- USD→EUR: 0.92 (quoted 2026-07-01, static_dev_rate, method `fixed`)
+- EUR→EUR: 1.00 (quoted 2026-07-01, identity, method `identity`)
 
 **Production FX feed (live ECB rates or similar) is deferred to Story 4.4 / Epic 6.**
+The governed alternative that IS armed is a rate a person posts:
+`core.fx_fixed_rates` / the `set_fixed_fx_rate` MCP tool, which writes
+`app.fx_rate_observations` under the same `fixed` method. Note that store is not
+yet mirrored to the warehouse, so the staging join still reads THIS file.
 This seed provides a static dev-time rate for testing normalization logic only.

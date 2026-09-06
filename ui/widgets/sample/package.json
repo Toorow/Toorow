@@ -2,7 +2,7 @@
   "name": "@toorow/widget-sample",
   "private": true,
   "version": "0.1.0",
-  "description": "Story 1.2 sample widget — MD3 themed via @toorow/shell and token pipeline (AD-11).",
+  "description": "Story 1.2 sample widget \u2014 MD3 themed via @toorow/shell and token pipeline (AD-11).",
   "type": "module",
   "scripts": {
     "build": "vite build",
@@ -12,9 +12,6 @@
   "dependencies": {
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "@mui/material": "^9.0.0",
-    "@emotion/react": "^11.13.0",
-    "@emotion/styled": "^11.13.0",
     "@toorow/shell": "workspace:*"
   },
   "devDependencies": {

@@ -93,6 +93,57 @@ def _capabilities(*, compatible: bool = True) -> dict:
     }
 
 
+def _country_evidence() -> dict:
+    return {
+        "registry_id": "mdr_country",
+        "hierarchy_version_id": "mdv_country_1",
+        "vocabulary_version_id": "mdvv_iso_1",
+        "evidence_hash": "c" * 64,
+        "assigned_market_count": 1,
+        "markets": [
+            {"id": "market_france", "label": "France", "country_codes": ["FR"]}
+        ],
+    }
+
+
+def test_country_capability_compiles_the_future_plan_from_governed_markets():
+    from core.country_activation import compile_country_plan
+
+    compiled = compile_country_plan(
+        _intent(),
+        evidence=_country_evidence(),
+        capabilities=_capabilities(),
+        enabled=True,
+    )
+
+    assert compiled["geographic"]["compilation_status"] == "country_complete"
+    assert compiled["geographic"]["markets"] == _country_evidence()["markets"]
+    assert compiled["source"]["selection"]["grain"] == [
+        "campaign_id",
+        "date",
+        "geo_country",
+    ]
+
+
+def test_country_capability_deactivation_removes_only_compiler_added_country():
+    from core.country_activation import compile_country_plan
+
+    active = compile_country_plan(
+        _intent(),
+        evidence=_country_evidence(),
+        capabilities=_capabilities(),
+        enabled=True,
+    )
+    disabled = compile_country_plan(
+        active,
+        evidence=_country_evidence(),
+        capabilities=_capabilities(),
+        enabled=False,
+    )
+
+    assert disabled["geographic"]["compilation_status"] == "consolidated"
+    assert disabled["source"]["selection"]["grain"] == ["campaign_id", "date"]
+
 def test_local_markets_adds_canonical_country_joint_grain_and_snapshot():
     from core.datastream_intents import compile_geographic_intent, validate_intent
 

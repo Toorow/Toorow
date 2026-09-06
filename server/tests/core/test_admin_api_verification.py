@@ -187,7 +187,11 @@ class TestGetJobVerificationEndpoint:
         """GET /api/jobs/{id}/verification returns 401 when auth required and no token."""
         from starlette.testclient import TestClient
 
-        with patch.dict(os.environ, {"TOOROW_AUTH_MODE": "static"}):
+        # Static mode without a token is a refused CONFIGURATION (auth_config),
+        # not a 401: the token is set so the request, not the setup, is judged.
+        with patch.dict(
+            os.environ, {"TOOROW_AUTH_MODE": "static", "TOOROW_STATIC_TOKEN": "test-token-abc"}
+        ):
             app = build_asgi_app()
             client = TestClient(app, raise_server_exceptions=False)
             resp = client.get("/api/jobs/job_ver_auth_test/verification")

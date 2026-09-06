@@ -13,8 +13,8 @@ All three are subdomains of `toorow.com`, so GA4 (`_ga`) and the consent cookie
 (`toorow_consent`, `Domain=.toorow.com`) are shared — one funnel, asked once.
 
 ## Scale to zero (no idle instances)
-Cloud Run defaults to `min-instances=0`, but `.github/workflows/deploy.yml` now sets
-it **explicitly** on both dev and prod, plus `--max-instances=4` as a cost guard:
+Cloud Run defaults to `min-instances=0`, but `infra/scripts/deploy.sh` sets it
+**explicitly**, plus `--max-instances=4` as a cost guard:
 
 ```
 gcloud run deploy mcp-server … --min-instances=0 --max-instances=4 …
@@ -55,8 +55,10 @@ domain. Pick the apex `toorow.com` as canonical and 301 `www` → apex (or vice-
 keep `PUBLIC_ANALYTICS_HOSTS` in `web/.env` aligned with the hostnames you serve.
 
 ## Deploy the app (Cloud Run)
-Unchanged: `.github/workflows/deploy.yml` builds the image, pushes to Artifact
-Registry, deploys to Cloud Run (dev → prod behind the GitHub `production` gate).
+`infra/scripts/deploy.sh`, run by hand, builds the image via Cloud Build, pushes
+to Artifact Registry and deploys to Cloud Run. There is ONE environment and one
+service (`mcp-server`) — no dev → prod promotion, and no GitHub gate: the deploy
+workflow was removed 2026-08-02 after it was found never to have run.
 
 ## Not decided yet
 - Whether `app.toorow.com` (the console UI) is a separate Firebase Hosting site or is

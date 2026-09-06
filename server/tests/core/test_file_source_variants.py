@@ -38,26 +38,26 @@ def _csv(rows):
 
 
 def test_fr_and_de_variants_map_to_same_canonical_fields():
-    fr_cols = ["Date", "Régie", "Coût net"]
+    fr_cols = ["Date", "Régie", "Cost net"]
     de_cols = ["Datum", "Vermarkter", "Bruttokosten Gesamt"]
     fr = recognize_columns(_TEMPLATE, fr_cols)
     de = recognize_columns(_TEMPLATE, de_cols)
 
     # Different column names, SAME canonical targets.
     assert set(fr["mapping"].values()) == set(de["mapping"].values())
-    assert fr["mapping"]["Coût net"] == "mdm_net_cost"
+    assert fr["mapping"]["Cost net"] == "mdm_net_cost"
     assert de["mapping"]["Bruttokosten Gesamt"] == "mdm_net_cost"
     assert fr["mapping"]["Date"] == "mdm_media_date"
     assert de["mapping"]["Datum"] == "mdm_media_date"
 
 
 def test_discriminator_value_lands_on_every_row_per_variant():
-    fr_data = _csv([["Date", "Régie", "Coût net"], ["2026-03-01", "Google", "100"]])
+    fr_data = _csv([["Date", "Régie", "Cost net"], ["2026-03-01", "Google", "100"]])
     de_data = _csv([["Datum", "Vermarkter", "Bruttokosten Gesamt"],
                     ["2026-03-01", "Google", "200"]])
 
     fr = stamp_placement(
-        produce(fr_data, _TEMPLATE, {"Régie": "mdm_channel", "Coût net": "mdm_net_cost",
+        produce(fr_data, _TEMPLATE, {"Régie": "mdm_channel", "Cost net": "mdm_net_cost",
                                      "Date": "mdm_media_date"}),
         _TEMPLATE, filename="plan_FR_2026.csv",
     )

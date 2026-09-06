@@ -1,6 +1,6 @@
 /**
  * Inline SVG icons for the KPI card (AD-11 — no Material Symbols font pulled in).
- * currentColor fill so icons inherit the MUI theme text/success/error colors.
+ * currentColor fill so icons inherit the theme text/success/error colors.
  */
 
 interface IconProps {

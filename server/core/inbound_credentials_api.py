@@ -46,6 +46,19 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
+from core.audit import declare_action
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12) : declarees ICI, a cote du code qui les ecrit, et non
+# dans `core/audit.py`. Ce fichier etait un carrefour -- 43 editions de 29
+# sujets depuis juin, dont 34 n'ajoutaient qu'une constante -- et 45 % des
+# actions reellement ecrites en production n'y etaient meme pas declarees,
+# parce que la liste etait trop loin pour valoir le detour. `write_audit_row`
+# refuse desormais une action que personne n'a declaree.
+ACTION_INBOUND_CREDENTIAL_DENIED = declare_action("inbound.credential.denied")
+
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -67,8 +80,27 @@ async def _check_auth(request: Request) -> tuple[bool, str]:
 
 
 def _idempotency_key(request: Request) -> str | None:
-    """Extract and return the Idempotency-Key header value, or None."""
-    return request.headers.get("Idempotency-Key") or None
+    """Extract a bounded Idempotency-Key or return None."""
+    value = (request.headers.get("Idempotency-Key") or "").strip()
+    return value if value and len(value) <= 255 else None
+
+
+def _json_object(body_bytes: bytes) -> dict:
+    if not body_bytes.strip():
+        return {}
+    value = json.loads(body_bytes)
+    if not isinstance(value, dict):
+        raise ValueError("JSON body must be an object")
+    return value
+
+
+def _optional_positive_int(body: dict, name: str, *, maximum: int) -> int | None:
+    value = body.get(name)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= maximum:
+        raise ValueError(f"{name} must be an integer between 1 and {maximum}")
+    return value
 
 
 def _trace_id(request: Request) -> str | None:
@@ -86,11 +118,13 @@ def _trace_id(request: Request) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+
 def _check_datastream_access(
     datastream_id: str,
     identity: str,
     *,
     minimum_capability: str = "edit",
+    conn=None,
 ) -> bool | None:
     """Return True if the identity may perform writes on this Datastream.
 
@@ -106,12 +140,22 @@ def _check_datastream_access(
         from core.db import get_connection  # noqa: PLC0415
         from core.project_access import resolve_strict_resource_access  # noqa: PLC0415
 
-        with get_connection() as conn:
+        if conn is not None:
             decision = resolve_strict_resource_access(
                 identity,
                 conn,
                 datastream_id=datastream_id,
                 minimum_capability=minimum_capability,
+                hold_access=True,
+            )
+            return decision.allowed
+        with get_connection() as owned_conn:
+            decision = resolve_strict_resource_access(
+                identity,
+                owned_conn,
+                datastream_id=datastream_id,
+                minimum_capability=minimum_capability,
+                hold_access=True,
             )
         return decision.allowed
     except Exception as exc:  # noqa: BLE001
@@ -123,95 +167,105 @@ def _check_datastream_access(
         return None  # DB error: fail-closed (caller maps to 404)
 
 
+def _audit_credential_404(
+    *,
+    identity: str,
+    datastream_id: str,
+    operation: str,
+    reason: str,
+    credential_id: str | None = None,
+) -> None:
+    """Leave evidence for every intentionally nondisclosing credential 404."""
+    from core.audit import write_audit_row  # noqa: PLC0415
+
+    metadata = {"datastream_id": datastream_id, "operation": operation, "reason": reason}
+    if credential_id:
+        metadata["credential_id"] = credential_id
+    write_audit_row(
+        identity=identity or "anonymous",
+        action=ACTION_INBOUND_CREDENTIAL_DENIED,
+        provider_account="",
+        connection_ref="",
+        metadata=metadata,
+    )
+
+
 # ---------------------------------------------------------------------------
 # POST .../credentials   -- issue a new credential.
 # ---------------------------------------------------------------------------
 
 
 async def _post_issue_credential(request: Request) -> Response:
-    """POST /api/connectors/{connector_name}/datastreams/{datastream_id}/credentials
-
-    Issues a new delivery credential. The full_secret is returned EXACTLY ONCE
-    in the response. It will NOT be retrievable via GET or MCP.
-
-    Body (optional JSON):
-      channel          : 'email' | 'webhook' (required)
-      overlap_seconds  : int (optional, for future rotation)
-      expires_seconds  : int (optional, for expiry)
-
-    Returns 200 with the safe read-model PLUS full_secret (once).
-    """
-    from core.audit import ACTION_INBOUND_CREDENTIAL_DENIED, write_audit_row  # noqa: PLC0415
-
+    """Issue one credential; reveal its secret only for the winning operation."""
     authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
             {"code": "unauthorized", "message": "Bearer token required"},
             status_code=401,
         )
-
     connector_name = (request.path_params.get("connector_name") or "").strip()
     datastream_id = (request.path_params.get("datastream_id") or "").strip()
-
     if not connector_name or not datastream_id:
         return JSONResponse(
             {"code": "missing_param", "message": "connector_name and datastream_id are required"},
             status_code=400,
         )
-
     idempotency_key = _idempotency_key(request)
     if not idempotency_key:
         return JSONResponse(
-            {"code": "missing_header", "message": "Idempotency-Key header is required"},
+            {
+                "code": "missing_header",
+                "message": "A non-empty Idempotency-Key up to 255 characters is required",
+            },
             status_code=422,
         )
-
     try:
-        body_bytes = await request.body()
-        body: dict = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
-            status_code=400,
+        body = _json_object(await request.body())
+        channel = body.get("channel")
+        if not isinstance(channel, str) or not channel.strip():
+            raise ValueError("channel is required ('email' or 'webhook')")
+        channel = channel.strip()
+        expires_seconds = _optional_positive_int(
+            body, "expires_seconds", maximum=365 * 24 * 60 * 60
         )
-
-    channel = (body.get("channel") or "").strip()
-    if not channel:
-        return JSONResponse(
-            {"code": "missing_param", "message": "channel is required ('email' or 'webhook')"},
-            status_code=400,
-        )
-
+    except (json.JSONDecodeError, ValueError) as exc:
+        return JSONResponse({"code": "invalid_body", "message": str(exc)}, status_code=400)
     trace = _trace_id(request)
-
-    # Datastream-role gate (nondisclosing 404).
-    access = _check_datastream_access(datastream_id, identity, minimum_capability="edit")
-    if access is None or not access:
-        write_audit_row(
-            identity=identity or "anonymous",
-            action=ACTION_INBOUND_CREDENTIAL_DENIED,
-            provider_account="",
-            connection_ref="",
-            metadata={
-                "datastream_id": datastream_id,
-                "operation": "issue",
-                "reason": "access_denied",
-            },
-        )
-        return JSONResponse(_NOT_FOUND, status_code=404)
-
     try:
-        from core.db import get_connection  # noqa: PLC0415
+        from core.db import request_connection  # noqa: PLC0415
         from core.inbound_credentials import (  # noqa: PLC0415
             InboundCredentialConflict,
             InboundCredentialDomainNotReady,
             InboundCredentialRateLimited,
+            InboundCredentialUnavailable,
             InboundCredentialValidationError,
+            datastream_matches_connector,
             issue,
         )
         from core.operations import OperationIdempotencyConflict  # noqa: PLC0415
 
-        with get_connection() as conn:
+        with request_connection(identity) as conn:
+            access = _check_datastream_access(
+                datastream_id, identity, minimum_capability="edit", conn=conn
+            )
+            if not access:
+                _audit_credential_404(
+                    identity=identity,
+                    datastream_id=datastream_id,
+                    operation="issue",
+                    reason="access_denied",
+                )
+                return JSONResponse(_NOT_FOUND, status_code=404)
+            if not datastream_matches_connector(
+                conn, datastream_id=datastream_id, connector_name=connector_name
+            ):
+                _audit_credential_404(
+                    identity=identity,
+                    datastream_id=datastream_id,
+                    operation="issue",
+                    reason="scope_mismatch",
+                )
+                return JSONResponse(_NOT_FOUND, status_code=404)
             result = issue(
                 conn,
                 datastream_id=datastream_id,
@@ -220,16 +274,20 @@ async def _post_issue_credential(request: Request) -> Response:
                 idempotency_key=idempotency_key,
                 host_context={},
                 trace_id=trace,
+                expires_seconds=expires_seconds,
             )
             conn.commit()
-
     except InboundCredentialValidationError as exc:
-        return JSONResponse(
-            {"code": "invalid_param", "message": str(exc)},
-            status_code=400,
+        return JSONResponse({"code": "invalid_param", "message": str(exc)}, status_code=400)
+    except InboundCredentialUnavailable:
+        _audit_credential_404(
+            identity=identity,
+            datastream_id=datastream_id,
+            operation="issue",
+            reason="resource_unavailable",
         )
+        return JSONResponse(_NOT_FOUND, status_code=404)
     except InboundCredentialDomainNotReady:
-        # Nondisclosing: do not reveal installation state.
         return JSONResponse(
             {
                 "code": "domain_not_ready",
@@ -269,9 +327,6 @@ async def _post_issue_credential(request: Request) -> Response:
             {"code": "server_error", "message": "Credential issuance failed"},
             status_code=500,
         )
-
-    # full_secret is included ONCE here. The caller (HTTP client / operator) must
-    # record it immediately; it will not be accessible via GET or MCP.
     return JSONResponse(result, status_code=200)
 
 
@@ -281,97 +336,94 @@ async def _post_issue_credential(request: Request) -> Response:
 
 
 async def _post_rotate_credential(request: Request) -> Response:
-    """POST .../credentials/{id}/rotate
-
-    Rotates the active delivery credential. Returns new full_secret ONCE.
-
-    Body (optional JSON):
-      overlap_seconds  : int (default 3600 = 1 hour)
-      immediate_revoke : bool (default false -- use overlap window)
-    """
-    from core.audit import ACTION_INBOUND_CREDENTIAL_DENIED, write_audit_row  # noqa: PLC0415
-
+    """Rotate one credential with strict JSON types and same-transaction guards."""
     authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
+            {"code": "unauthorized", "message": "Bearer token required"}, status_code=401
         )
-
     connector_name = (request.path_params.get("connector_name") or "").strip()
     datastream_id = (request.path_params.get("datastream_id") or "").strip()
     credential_id = (request.path_params.get("credential_id") or "").strip()
-
     if not connector_name or not datastream_id or not credential_id:
         return JSONResponse(
             {"code": "missing_param", "message": "required path params missing"},
             status_code=400,
         )
-
     idempotency_key = _idempotency_key(request)
     if not idempotency_key:
         return JSONResponse(
-            {"code": "missing_header", "message": "Idempotency-Key header is required"},
+            {
+                "code": "missing_header",
+                "message": "A non-empty Idempotency-Key up to 255 characters is required",
+            },
             status_code=422,
         )
-
     try:
-        body_bytes = await request.body()
-        body: dict = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
-            status_code=400,
-        )
-
-    overlap_seconds: int = int(body.get("overlap_seconds") or 3600)
-    immediate_revoke: bool = bool(body.get("immediate_revoke", False))
+        body = _json_object(await request.body())
+        parsed_overlap = _optional_positive_int(body, "overlap_seconds", maximum=7 * 24 * 60 * 60)
+        overlap_seconds = parsed_overlap if parsed_overlap is not None else 3600
+        immediate_revoke = body.get("immediate_revoke", False)
+        if not isinstance(immediate_revoke, bool):
+            raise ValueError("immediate_revoke must be a boolean")
+    except (json.JSONDecodeError, ValueError) as exc:
+        return JSONResponse({"code": "invalid_body", "message": str(exc)}, status_code=400)
     trace = _trace_id(request)
-
-    # Datastream-role gate (nondisclosing 404).
-    access = _check_datastream_access(datastream_id, identity, minimum_capability="edit")
-    if access is None or not access:
-        write_audit_row(
-            identity=identity or "anonymous",
-            action=ACTION_INBOUND_CREDENTIAL_DENIED,
-            provider_account="",
-            connection_ref="",
-            metadata={
-                "datastream_id": datastream_id,
-                "credential_id": credential_id,
-                "operation": "rotate",
-                "reason": "access_denied",
-            },
-        )
-        return JSONResponse(_NOT_FOUND, status_code=404)
-
     try:
-        from core.db import get_connection  # noqa: PLC0415
-
-        # We need the channel for the rotate call; read from the existing credential.
+        from core.db import request_connection  # noqa: PLC0415
         from core.inbound_credentials import (  # noqa: PLC0415
             InboundCredentialConflict,
+            InboundCredentialDomainNotReady,
             InboundCredentialRateLimited,
             InboundCredentialUnavailable,
             InboundCredentialValidationError,
-            get_credential_state,  # noqa: PLC0415
+            datastream_matches_connector,
+            get_credential_state,
             rotate,
         )
         from core.operations import OperationIdempotencyConflict  # noqa: PLC0415
 
-        with get_connection() as conn:
-            cred_state = get_credential_state(
+        with request_connection(identity) as conn:
+            access = _check_datastream_access(
+                datastream_id, identity, minimum_capability="edit", conn=conn
+            )
+            if not access:
+                _audit_credential_404(
+                    identity=identity,
+                    datastream_id=datastream_id,
+                    credential_id=credential_id,
+                    operation="rotate",
+                    reason="access_denied",
+                )
+                return JSONResponse(_NOT_FOUND, status_code=404)
+            if not datastream_matches_connector(
+                conn, datastream_id=datastream_id, connector_name=connector_name
+            ):
+                _audit_credential_404(
+                    identity=identity,
+                    datastream_id=datastream_id,
+                    credential_id=credential_id,
+                    operation="rotate",
+                    reason="scope_mismatch",
+                )
+                return JSONResponse(_NOT_FOUND, status_code=404)
+            current = get_credential_state(
                 conn, credential_id=credential_id, datastream_id=datastream_id
             )
-            if cred_state is None:
+            if current is None:
+                _audit_credential_404(
+                    identity=identity,
+                    datastream_id=datastream_id,
+                    credential_id=credential_id,
+                    operation="rotate",
+                    reason="credential_absent",
+                )
                 return JSONResponse(_NOT_FOUND, status_code=404)
-            channel = cred_state["channel"]
-
             result = rotate(
                 conn,
                 credential_id=credential_id,
                 datastream_id=datastream_id,
-                channel=channel,
+                channel=current["channel"],
                 actor=identity,
                 idempotency_key=idempotency_key,
                 host_context={},
@@ -380,19 +432,30 @@ async def _post_rotate_credential(request: Request) -> Response:
                 immediate_revoke=immediate_revoke,
             )
             conn.commit()
-
     except InboundCredentialValidationError as exc:
-        return JSONResponse(
-            {"code": "invalid_param", "message": str(exc)},
-            status_code=400,
-        )
+        return JSONResponse({"code": "invalid_param", "message": str(exc)}, status_code=400)
     except InboundCredentialUnavailable:
+        _audit_credential_404(
+            identity=identity,
+            datastream_id=datastream_id,
+            credential_id=credential_id,
+            operation="rotate",
+            reason="resource_unavailable",
+        )
         return JSONResponse(_NOT_FOUND, status_code=404)
+    except InboundCredentialDomainNotReady:
+        return JSONResponse(
+            {
+                "code": "domain_not_ready",
+                "message": "Connector domain is not verified; contact platform support.",
+            },
+            status_code=422,
+        )
     except InboundCredentialConflict:
         return JSONResponse(
             {
                 "code": "conflict",
-                "message": "Credential conflict; the credential may have already been rotated.",
+                "message": "Credential conflict; it may already have been rotated.",
             },
             status_code=409,
         )
@@ -420,8 +483,6 @@ async def _post_rotate_credential(request: Request) -> Response:
             {"code": "server_error", "message": "Credential rotation failed"},
             status_code=500,
         )
-
-    # full_secret returned ONCE (new credential secret).
     return JSONResponse(result, status_code=200)
 
 
@@ -431,66 +492,65 @@ async def _post_rotate_credential(request: Request) -> Response:
 
 
 async def _post_revoke_credential(request: Request) -> Response:
-    """POST .../credentials/{id}/revoke
-
-    Immediately revokes a delivery credential. No secret in the response.
-    """
-    from core.audit import ACTION_INBOUND_CREDENTIAL_DENIED, write_audit_row  # noqa: PLC0415
-
+    """Revoke one credential with same-transaction access and scope checks."""
     authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
+            {"code": "unauthorized", "message": "Bearer token required"}, status_code=401
         )
-
     connector_name = (request.path_params.get("connector_name") or "").strip()
     datastream_id = (request.path_params.get("datastream_id") or "").strip()
     credential_id = (request.path_params.get("credential_id") or "").strip()
-
     if not connector_name or not datastream_id or not credential_id:
         return JSONResponse(
             {"code": "missing_param", "message": "required path params missing"},
             status_code=400,
         )
-
     idempotency_key = _idempotency_key(request)
     if not idempotency_key:
         return JSONResponse(
-            {"code": "missing_header", "message": "Idempotency-Key header is required"},
+            {
+                "code": "missing_header",
+                "message": "A non-empty Idempotency-Key up to 255 characters is required",
+            },
             status_code=422,
         )
-
     trace = _trace_id(request)
-
-    # Datastream-role gate (nondisclosing 404).
-    access = _check_datastream_access(datastream_id, identity, minimum_capability="edit")
-    if access is None or not access:
-        write_audit_row(
-            identity=identity or "anonymous",
-            action=ACTION_INBOUND_CREDENTIAL_DENIED,
-            provider_account="",
-            connection_ref="",
-            metadata={
-                "datastream_id": datastream_id,
-                "credential_id": credential_id,
-                "operation": "revoke",
-                "reason": "access_denied",
-            },
-        )
-        return JSONResponse(_NOT_FOUND, status_code=404)
-
     try:
-        from core.db import get_connection  # noqa: PLC0415
+        from core.db import request_connection  # noqa: PLC0415
         from core.inbound_credentials import (  # noqa: PLC0415
             InboundCredentialConflict,
             InboundCredentialUnavailable,
             InboundCredentialValidationError,
+            datastream_matches_connector,
             revoke,
         )
         from core.operations import OperationIdempotencyConflict  # noqa: PLC0415
 
-        with get_connection() as conn:
+        with request_connection(identity) as conn:
+            access = _check_datastream_access(
+                datastream_id, identity, minimum_capability="edit", conn=conn
+            )
+            if not access:
+                _audit_credential_404(
+                    identity=identity,
+                    datastream_id=datastream_id,
+                    credential_id=credential_id,
+                    operation="revoke",
+                    reason="access_denied",
+                )
+                return JSONResponse(_NOT_FOUND, status_code=404)
+            if not datastream_matches_connector(
+                conn, datastream_id=datastream_id, connector_name=connector_name
+            ):
+                _audit_credential_404(
+                    identity=identity,
+                    datastream_id=datastream_id,
+                    credential_id=credential_id,
+                    operation="revoke",
+                    reason="scope_mismatch",
+                )
+                return JSONResponse(_NOT_FOUND, status_code=404)
             result = revoke(
                 conn,
                 credential_id=credential_id,
@@ -501,20 +561,20 @@ async def _post_revoke_credential(request: Request) -> Response:
                 trace_id=trace,
             )
             conn.commit()
-
     except InboundCredentialValidationError as exc:
-        return JSONResponse(
-            {"code": "invalid_param", "message": str(exc)},
-            status_code=400,
-        )
+        return JSONResponse({"code": "invalid_param", "message": str(exc)}, status_code=400)
     except InboundCredentialUnavailable:
+        _audit_credential_404(
+            identity=identity,
+            datastream_id=datastream_id,
+            credential_id=credential_id,
+            operation="revoke",
+            reason="resource_unavailable",
+        )
         return JSONResponse(_NOT_FOUND, status_code=404)
     except InboundCredentialConflict:
         return JSONResponse(
-            {
-                "code": "conflict",
-                "message": "Credential is already in a terminal state (revoked or expired).",
-            },
+            {"code": "conflict", "message": "Credential is already terminal."},
             status_code=409,
         )
     except OperationIdempotencyConflict:
@@ -536,9 +596,6 @@ async def _post_revoke_credential(request: Request) -> Response:
             {"code": "server_error", "message": "Credential revocation failed"},
             status_code=500,
         )
-
-    # Revoke response: safe read-model only. NO secret. channel may be "" if
-    # not resolved from the row (the revoke fn doesn't re-query channel).
     return JSONResponse(result, status_code=200)
 
 
@@ -548,66 +605,66 @@ async def _post_revoke_credential(request: Request) -> Response:
 
 
 async def _get_list_credentials(request: Request) -> Response:
-    """GET /api/connectors/{connector_name}/datastreams/{datastream_id}/credentials
-
-    Returns the safe read-model list for all active/rotating credentials.
-    NO secret in the response (E38-NFR03, AC2).
-
-    Query params:
-      include_terminal : 'true' to include REVOKED/EXPIRED rows (default false)
-    """
+    """Return a secret-free list after same-connection view/scope checks."""
     authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
-            {"code": "unauthorized", "message": "Bearer token required"},
-            status_code=401,
+            {"code": "unauthorized", "message": "Bearer token required"}, status_code=401
         )
-
     connector_name = (request.path_params.get("connector_name") or "").strip()
     datastream_id = (request.path_params.get("datastream_id") or "").strip()
-
     if not connector_name or not datastream_id:
         return JSONResponse(
             {"code": "missing_param", "message": "connector_name and datastream_id are required"},
             status_code=400,
         )
-
-    include_terminal = (
-        request.query_params.get("include_terminal", "false").lower() == "true"
-    )
-
-    # Read access: view capability is sufficient.
-    access = _check_datastream_access(datastream_id, identity, minimum_capability="view")
-    if access is None or not access:
-        return JSONResponse(_NOT_FOUND, status_code=404)
-
+    raw_include_terminal = request.query_params.get("include_terminal", "false").lower()
+    if raw_include_terminal not in {"true", "false"}:
+        return JSONResponse(
+            {"code": "invalid_param", "message": "include_terminal must be true or false"},
+            status_code=400,
+        )
+    include_terminal = raw_include_terminal == "true"
     try:
-        from core.db import get_connection  # noqa: PLC0415
-        from core.inbound_credentials import list_credentials  # noqa: PLC0415
+        from core.db import request_connection  # noqa: PLC0415
+        from core.inbound_credentials import (  # noqa: PLC0415
+            datastream_matches_connector,
+            list_credentials,
+        )
 
-        with get_connection() as conn:
+        with request_connection(identity) as conn:
+            access = _check_datastream_access(
+                datastream_id, identity, minimum_capability="view", conn=conn
+            )
+            if not access:
+                _audit_credential_404(
+                    identity=identity,
+                    datastream_id=datastream_id,
+                    operation="list",
+                    reason="access_denied",
+                )
+                return JSONResponse(_NOT_FOUND, status_code=404)
+            if not datastream_matches_connector(
+                conn, datastream_id=datastream_id, connector_name=connector_name
+            ):
+                _audit_credential_404(
+                    identity=identity,
+                    datastream_id=datastream_id,
+                    operation="list",
+                    reason="scope_mismatch",
+                )
+                return JSONResponse(_NOT_FOUND, status_code=404)
             credentials = list_credentials(
-                conn,
-                datastream_id=datastream_id,
-                include_terminal=include_terminal,
+                conn, datastream_id=datastream_id, include_terminal=include_terminal
             )
     except Exception as exc:
-        logger.error(
-            "inbound_credentials_api: GET list failed ds=%s: %s",
-            datastream_id,
-            exc,
-        )
+        logger.error("inbound_credentials_api: GET list failed ds=%s: %s", datastream_id, exc)
         return JSONResponse(
             {"code": "server_error", "message": "Credential list unavailable"},
             status_code=500,
         )
-
     return JSONResponse(
-        {
-            "datastream_id": datastream_id,
-            "credentials": credentials,
-            "count": len(credentials),
-        },
+        {"datastream_id": datastream_id, "credentials": credentials, "count": len(credentials)},
         status_code=200,
     )
 

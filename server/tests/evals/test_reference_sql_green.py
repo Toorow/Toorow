@@ -24,7 +24,7 @@ DEFAULT_DUCKDB = (
 )
 
 
-def _get_duckdb_path() -> Path | None:
+def _seed_source() -> Path | None:
     env_path = os.environ.get("TOOROW_DUCKDB_PATH")
     if env_path:
         p = Path(env_path)
@@ -32,12 +32,18 @@ def _get_duckdb_path() -> Path | None:
     return DEFAULT_DUCKDB if DEFAULT_DUCKDB.is_file() else None
 
 
-def test_reference_sql_green_on_seeds():
-    db_path = _get_duckdb_path()
-    if not db_path:
+def test_reference_sql_green_on_seeds(duckdb_seed_copy):
+    # AI-106 : meme defaut d'isolation que test_corpus_determinism -- ce test
+    # ouvrait le seed PARTAGE en lecture-ecriture et y creait des vues `marts.*`.
+    # Sous `-n 8` le verrou exclusif de DuckDB faisait rougir un test correct.
+    # `duckdb_seed_copy` rend une copie privee au worker : memes octets, donc le
+    # sha-exact de ce test reste un vrai verdict.
+    source = _seed_source()
+    if not source:
         pytest.skip(
             "TOOROW_DUCKDB_PATH not set or file not found — reference SQL green gate skipped"
         )
+    db_path = duckdb_seed_copy(source)
 
     evals_dir = Path(__file__).parent
     corpus_path = evals_dir / "corpus.yaml"
@@ -54,6 +60,38 @@ def test_reference_sql_green_on_seeds():
     marts_tables = conn.execute("SHOW TABLES FROM main_marts").fetchall()
     for (tbl,) in marts_tables:
         conn.execute(f"CREATE VIEW IF NOT EXISTS marts.{tbl} AS SELECT * FROM main_marts.{tbl}")
+
+    # AI-213 -- COMBIEN, ET PAS LAQUELLE.
+    #
+    # Ce test s'arretait sur la PREMIERE empreinte fausse. Une divergence de
+    # corpus entier et une regression d'une seule requete rendaient donc le meme
+    # message -- « Question 'X' SHA-256 mismatch » -- et ce message accuse la
+    # requete nommee, ce qu'un lecteur comprend comme « le SQL de reference a
+    # change ». Les 57 autres ne s'executaient pas.
+    #
+    # Ce sont pourtant deux diagnostics opposes : 1 sur 58, c'est cette requete ;
+    # 58 sur 58, c'est l'ENTREE qui n'est plus celle des fixtures, et aucune
+    # requete n'est en cause.
+    #
+    # RE-EPINGLE LE 2026-08-17 (AI-213, etape 2). Les fixtures ne sont plus
+    # epinglees sur un mart perdu : elles le sont sur un entrepot que
+    # `server/modules/google-analytics/seeds/run_local_loop.py` rebatit de zero,
+    # sur le corpus ancre (TOOROW_SEED_END_DATE, defaut 2026-07-19).
+    #
+    # CE QUE LE REBUILD A TROUVE, et qui explique les 40 divergences d'alors :
+    # l'ancien `local.duckdb` etait un DEPOT D'ALLUVIONS, pas une construction.
+    # `raw_ga4_standard_daily` y portait 51 300 lignes sur 2026-04-11 -> 2026-07-19,
+    # soit 38 chargements empiles de fenetres differentes ; une construction propre
+    # en rend 1 350 (90 jours x 3 appareils x 5 pays) sur 2026-04-16 -> 2026-07-14.
+    # Aucune machine ne pouvait le reproduire : il fallait avoir joue les memes
+    # chargements dans le meme ordre depuis des mois.
+    #
+    # Pour rebatir et re-epingler :
+    #     uv run python server/modules/google-analytics/seeds/run_local_loop.py
+    #     uv run python server/tests/evals/build_eval_corpus_and_fixtures.py
+    # Joue deux fois, il rend les 58 memes empreintes (mesure du 2026-08-17).
+    mismatches: list[str] = []
+    checked = 0
 
     for q in data.get("questions", []):
         q_id = q["id"]
@@ -101,7 +139,54 @@ def test_reference_sql_green_on_seeds():
             ).encode("utf-8")
             actual_sha = hashlib.sha256(fixture_bytes).hexdigest()
 
-            assert actual_sha == expected_sha, (
-                f"Question '{q_id}' query [{idx}] SHA-256 mismatch for fixture '{fixture_rel}':\n"
-                f"Expected: {expected_sha}\nActual:   {actual_sha}"
-            )
+            checked += 1
+            if actual_sha != expected_sha:
+                mismatches.append(
+                    f"  {q_id} [{idx}] -- {fixture_rel}\n"
+                    f"      expected {expected_sha[:16]}...  got {actual_sha[:16]}..."
+                )
+
+    if mismatches:
+        # The COUNT carries the diagnosis, so it is the first thing said.
+        # ONE mismatch is about its query. MANY, spread across unrelated
+        # questions, is about the input -- and the ones that still hold are the
+        # queries blind to whatever changed, not evidence that the input is fine.
+        # The threshold is deliberately not a diagnosis: the message states both
+        # readings and gives the number that separates them.
+        few = len(mismatches) <= 2
+        verdict = (
+            f"{checked - len(mismatches)} of {checked} still hold, so this is not "
+            "a wholesale replacement -- it is an input change that only some "
+            "queries observe.\n"
+            "THE WAREHOUSE UNDER THIS TEST IS DERIVABLE since 2026-08-17 "
+            "(AI-213), so the first question is no longer `which query broke` but "
+            "`is this warehouse the one the repo builds`. Rebuild it and re-run "
+            "before reading anything else into these numbers:\n"
+            "    uv run python server/modules/google-analytics/seeds/run_local_loop.py\n"
+            "It lands every connector seed on the corpus anchor "
+            "(TOOROW_SEED_END_DATE, default 2026-07-19; the GA4 family keeps its "
+            "AI-66 anchor 2026-07-15), creates the mirror relations, runs the "
+            "fee/tax and media-plan seeders, then `dbt seed/run/test`. Two "
+            "consecutive rebuilds produce the same 58 fixtures byte for byte, so "
+            "a mass divergence AFTER a rebuild means the corpus itself moved -- a "
+            "generator, a loader, a staging model or a mart -- and the number to "
+            "hunt is the one that changed there, not a fixture.\n"
+            "If the rebuild clears it, the warehouse had DRIFTED: seed loaders "
+            "append, so a `local.duckdb` that is months old is an accumulation of "
+            "past loads rather than a build. That is exactly what the 2026-08-17 "
+            "re-pin found -- 51 300 rows in `raw_ga4_standard_daily` where a "
+            "clean build lands 1 350.\n"
+            "Only then re-pin, and only with the versioned builder "
+            "(`server/tests/evals/build_eval_corpus_and_fixtures.py`). NEVER edit "
+            "a `fixture_sha256` by hand: that is a green by adjustment, and it "
+            "buys back the exact blindness this test spent three measurements "
+            "removing. Tracked as AI-213."
+            if not few
+            else "Only one or two diverge, so these queries are the subject: an "
+            "input change moves many unrelated fixtures at once, not two."
+        )
+        raise AssertionError(
+            f"{len(mismatches)} of {checked} reference fixtures diverge.\n"
+            f"{verdict}\n\n" + "\n".join(mismatches[:10])
+            + (f"\n  ... and {len(mismatches) - 10} more" if len(mismatches) > 10 else "")
+        )

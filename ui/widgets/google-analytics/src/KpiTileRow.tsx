@@ -13,14 +13,12 @@
  */
 
 import { useState } from "react";
-import Box from "@mui/material/Box";
-import Collapse from "@mui/material/Collapse";
-import Typography from "@mui/material/Typography";
-import { useTheme, alpha } from "@mui/material/styles";
+
 import KpiTile from "./KpiTile";
 import { computeDeltas } from "./dataUtils";
 import { METRICS, METRIC_LABELS } from "./types";
 import type { Row, MetricDefinition } from "./types";
+import { Box, Collapse, Typography, alpha, useTheme } from "@toorow/shell";
 
 interface KpiTileRowProps {
   rows: Row[];

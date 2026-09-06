@@ -11,9 +11,8 @@
  * (AD-10): switching dimensions re-derives from the preloaded rows.
  */
 
-import ToggleButton from "@mui/material/ToggleButton";
-import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import { COMPOSITE_SEPARATOR } from "../dataUtils";
+import { ToggleButton, ToggleButtonGroup } from "@toorow/shell";
 
 /** French display labels for known single dimensions. */
 export const DIMENSION_DISPLAY_LABELS: Record<string, string> = {

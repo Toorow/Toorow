@@ -25,7 +25,8 @@ def test_one_step_failure_does_not_block_others(caplog):
 
     The nightly pipeline currently has eleven isolated steps, ending with briefings.
     Step 4b (_run_mediaplan_alert_check) was added by Story 22.6 (FR9); the
-    per-org dbt step (_run_dbt_per_org) was added by Story 24.4 after dispatch.
+    dbt step (_run_dbt_per_project) was added by Story 24.4 after dispatch and
+    retargeted per PROJECT by AI-166.
     """
     ran: list[str] = []
 
@@ -64,10 +65,20 @@ def test_one_step_failure_does_not_block_others(caplog):
 
     with (
         patch("core.scheduler._try_advisory_lock", return_value=None),
+        # AI-346: the recompilation sweep runs FIRST and opens its own database
+        # connection; patched like the dbt step so this test measures isolation,
+        # not a database.
+        patch(
+            "core.scheduler._run_recompile_semantic_artifacts",
+            side_effect=lambda: ran.append("recompile"),
+        ),
         patch("core.scheduler.dispatch_nightly", side_effect=_dispatch),
-        # Story 24.4: per-org dbt step (default-off no-op; patched to keep the
-        # step-count deterministic and record its run like the others).
-        patch("core.scheduler._run_dbt_per_org", side_effect=lambda: ran.append("dbt_per_org")),
+        # Story 24.4 / AI-166: the dbt step (default-off no-op; patched to keep
+        # the step-count deterministic and record its run like the others).
+        patch(
+            "core.scheduler._run_dbt_per_project",
+            side_effect=lambda: ran.append("dbt_per_project"),
+        ),
         patch("core.scheduler._run_rebuild_cache", side_effect=_rebuild),
         patch("core.scheduler._run_schema_context_gen", side_effect=_schema_context),
         patch("core.scheduler._run_alert_check", side_effect=_alerts),
@@ -87,11 +98,12 @@ def test_one_step_failure_does_not_block_others(caplog):
     ):
         scheduler.run_nightly_steps(date(2026, 7, 11))
 
-    # (b) All eleven steps ran despite dispatch raising first (Story 24.4 added
-    #     dbt_per_org right after dispatch, before rebuild_cache).
+    # (b) All twelve steps ran despite dispatch raising (Story 24.4 added the
+    #     dbt step right after dispatch, before rebuild_cache; AI-346 put the
+    #     recompilation sweep first).
     assert ran == [
-        "dispatch", "dbt_per_org", "rebuild", "schema_context", "alerts", "business",
-        "anomaly", "mediaplan", "dq", "notebooks", "briefings"
+        "recompile", "dispatch", "dbt_per_project", "rebuild", "schema_context", "alerts",
+        "business", "anomaly", "mediaplan", "dq", "notebooks", "briefings"
     ]
 
     # (c) Exactly one meta-alert inserted, for the failing dispatch step.
@@ -100,10 +112,11 @@ def test_one_step_failure_does_not_block_others(caplog):
     assert "boom in dispatch" in meta_alerts[0][1]
 
     # (a) Duration log emitted for every step
-    #     (11: dispatch + dbt_per_org + rebuild + schema_context + 3 alerts + mediaplan
-    #      + dq + notebooks + briefings). AI-32 (a): "scheduler: step=<name> duration_ms=<int>".
+    #     (12: recompile + dispatch + dbt_per_project + rebuild + schema_context + 3 alerts
+    #      + mediaplan + dq + notebooks + briefings).
+    #     AI-32 (a): "scheduler: step=<name> duration_ms=<int>".
     duration_logs = [r for r in caplog.records if "duration_ms=" in r.getMessage()]
-    assert len(duration_logs) == 11
+    assert len(duration_logs) == 12
     failed_logs = [r for r in caplog.records if "nightly_step_failed" in r.message]
     assert any("dispatch_nightly" in r.message for r in failed_logs)
 
@@ -137,13 +150,13 @@ def test_all_steps_succeed_no_meta_alert(caplog):
 
     All eleven isolated steps are patched; briefings remains the final step.
     Story 22.6: _run_mediaplan_alert_check added as step 4b.
-    Story 24.4: _run_dbt_per_org added right after dispatch.
+    Story 24.4 / AI-166: _run_dbt_per_project added right after dispatch.
     """
     meta_alerts: list = []
     with (
         patch("core.scheduler._try_advisory_lock", return_value=None),
         patch("core.scheduler.dispatch_nightly", return_value=[]),
-        patch("core.scheduler._run_dbt_per_org"),
+        patch("core.scheduler._run_dbt_per_project"),
         patch("core.scheduler._run_rebuild_cache"),
         patch("core.scheduler._run_schema_context_gen"),
         patch("core.scheduler._run_alert_check"),

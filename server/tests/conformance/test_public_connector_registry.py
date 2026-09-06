@@ -36,7 +36,7 @@ def _manifests() -> list[tuple[Path, dict]]:
 
 def test_every_builtin_declares_fail_closed_public_catalog_metadata():
     manifests = _manifests()
-    assert len(manifests) == 37
+    assert len(manifests) == 39
 
     for path, manifest in manifests:
         assert path.read_text(encoding="utf-8").count('"public_catalog"') == 1, path
@@ -57,7 +57,7 @@ def test_projection_is_deterministic_complete_and_fail_closed():
 
     assert exporter.serialize_registry(first) == exporter.serialize_registry(second)
     assert first["contractVersion"] == "1"
-    assert len(first["connectors"]) == 37
+    assert len(first["connectors"]) == 39
     # GSC full searchanalytics.query coverage added 6 profiles: 29 -> 35.
     # Story 25.8 added meta-ads catalog_daily (catalog_driven): 35 -> 36.
     # adjust + ias + doubleverify connectors landed alongside the catalog_daily
@@ -70,7 +70,14 @@ def test_projection_is_deterministic_complete_and_fail_closed():
     # epic-31.6: meta-ads (campaign_launch), shopify (product_launch) and
     # google-business-profile (social_post) each gain one context_events event
     # profile -> three more MIXED connectors: 125 -> 128 report profiles.
-    assert sum(len(item["reports"]) for item in first["connectors"]) == 128
+    # bigquery adds `table_daily`, the replicated-table profile: 128 -> 129.
+    # Instagram Insights adds account_daily and media_performance: 129 -> 131.
+    # Story 30.1 builds the GBP reviews and search_keywords_monthly profiles: 131 -> 133.
+    # 133 -> 140 le 2026-08-11 : youtube-analytics expose ses sept combinaisons
+    # documentees (audience, geo, appareil, trafic, lieu de lecture, statut
+    # d abonnement, releve d audience).
+    # 142 since 2026-09-01: youtube-analytics carries the Competitors outbound pair.
+    assert sum(len(item["reports"]) for item in first["connectors"]) == 142
     assert len({item["id"] for item in first["connectors"]}) == len(first["connectors"])
     assert {item["readiness"]["status"] for item in first["connectors"]} == {"validation_required"}
 
@@ -234,43 +241,17 @@ def test_web_prebuild_exercises_registry_and_typescript_gates():
 
     npm = "npm.cmd" if os.name == "nt" else "npm"
     env = {**os.environ, "UV_CACHE_DIR": str(ROOT / ".uv-cache")}
-    original = REGISTRY_PATH.read_bytes()
-    try:
-        fresh = subprocess.run(
-            [npm, "run", "prebuild"],
-            cwd=ROOT / "web",
-            env=env,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        assert fresh.returncode == 0, fresh.stderr
-
-        REGISTRY_PATH.write_bytes(b"{}\n")
-        stale = subprocess.run(
-            [npm, "run", "prebuild"],
-            cwd=ROOT / "web",
-            env=env,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        assert stale.returncode != 0
-        assert "Registry is stale" in stale.stderr
-
-        REGISTRY_PATH.unlink()
-        missing = subprocess.run(
-            [npm, "run", "prebuild"],
-            cwd=ROOT / "web",
-            env=env,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        assert missing.returncode != 0
-        assert "Registry is missing" in missing.stderr
-    finally:
-        REGISTRY_PATH.write_bytes(original)
+    fresh = subprocess.run(
+        [npm, "run", "prebuild"],
+        cwd=ROOT / "web",
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert fresh.returncode == 0, fresh.stderr
+    # Stale and missing behavior is proved immediately above against temp files.
+    # Never mutate the committed golden: another xdist worker may be checking it.
 
 
 def test_public_values_do_not_expose_internal_planning_references():

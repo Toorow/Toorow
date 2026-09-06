@@ -292,7 +292,9 @@ describe("CardComposition — gauge block (block.data)", () => {
         data: {
           value: 32.5,
           target: 50.0,
-          target_source: "default",
+          // A BOUND objective -- the card template carried it. "default", the platform
+          // constant, is no longer emitted by the server (CAV-08).
+          target_source: "binding",
           unit: "EUR",
           direction: "down_good",
           label: "CPA vs objectif",
@@ -312,7 +314,7 @@ describe("CardComposition — gauge block (block.data)", () => {
         data: {
           value: null,
           target: 50.0,
-          target_source: "default",
+          target_source: "binding",
           unit: "EUR",
           direction: "down_good",
           label: "CPA vs objectif",
@@ -326,6 +328,80 @@ describe("CardComposition — gauge block (block.data)", () => {
   it("renders gauge empty state when block has no data", () => {
     render(<CardComposition blocks={[{ type: "gauge", binding: { metrics: "cpa" } }]} data={CARD_DATA} />);
     expect(screen.getByTestId("gauge-empty")).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CAV-08 / story 53.5 — a block whose title announces a comparison must not
+// stay silent about a missing objective.
+//
+// The gauge title is a template constant ("CPA vs target", cards.py:351) rendered
+// unconditionally as an overline. With target=null the screen was announcing a
+// comparison it did not make, and the gauge underneath said nothing.
+// ---------------------------------------------------------------------------
+
+/** A gauge block as the server emits it when nobody defined an objective. */
+function unsetGaugeBlock(title?: string): CompositionBlock[] {
+  return [
+    {
+      type: "gauge",
+      binding: { numerator: "cost", denominator: "conversions", direction: "down_good" },
+      title,
+      data: {
+        value: 30.0,
+        target: null,
+        target_source: "unset",
+        unit: "EUR",
+        direction: "down_good",
+        label: title ?? "CPA",
+      },
+    },
+  ];
+}
+
+describe("CardComposition — gauge block with no objective (CAV-08)", () => {
+  it("declares the block as unset when the server sends no target", () => {
+    render(<CardComposition blocks={unsetGaugeBlock("CPA vs objectif")} data={CARD_DATA} />);
+    expect(screen.getByTestId("composition-block-gauge")).toHaveAttribute("data-target-state", "unset");
+  });
+
+  it("declares the block as set when a target IS bound", () => {
+    const blocks: CompositionBlock[] = [
+      {
+        type: "gauge",
+        binding: { numerator: "cost", denominator: "conversions" },
+        title: "CPA vs objectif",
+        data: {
+          value: 30.0,
+          target: 50.0,
+          target_source: "binding",
+          unit: "EUR",
+          direction: "down_good",
+          label: "CPA vs objectif",
+        },
+      },
+    ];
+    render(<CardComposition blocks={blocks} data={CARD_DATA} />);
+    expect(screen.getByTestId("composition-block-gauge")).toHaveAttribute("data-target-state", "set");
+  });
+
+  it("never lets the comparison title travel alone: the absence is stated in the same block", () => {
+    render(<CardComposition blocks={unsetGaugeBlock("CPA vs objectif")} data={CARD_DATA} />);
+    const block = screen.getByTestId("composition-block-gauge");
+    // The overline still names the block, so the absence must be inside it.
+    expect(block).toHaveTextContent("CPA vs objectif");
+    expect(block.querySelector('[data-testid="gauge-no-target"]')).not.toBeNull();
+  });
+
+  it("draws no verdict for a block with no objective", () => {
+    render(<CardComposition blocks={unsetGaugeBlock("CPA vs objectif")} data={CARD_DATA} />);
+    expect(screen.getByTestId("gauge")).toHaveAttribute("data-verdict", "none");
+  });
+
+  it("shows no target figure when no objective is defined", () => {
+    render(<CardComposition blocks={unsetGaugeBlock("CPA vs objectif")} data={CARD_DATA} />);
+    const svg = screen.getByTestId("gauge").querySelector("svg");
+    expect(svg?.textContent).not.toContain("50");
   });
 });
 
@@ -614,5 +690,72 @@ describe("CardComposition — unknown block type", () => {
     expect(screen.getByTestId("composition-block-kpi_row")).toBeInTheDocument();
     expect(screen.getByTestId("composition-unknown-block")).toBeInTheDocument();
     expect(screen.getByTestId("composition-block-comment")).toBeInTheDocument();
+  });
+});
+
+
+/*
+ * THE UNIT AT THE CENTRE OF A DONUT IS A WORD, NOT A JOIN KEY (2026-08-31).
+ *
+ * The shell printed `block.data.dimension` there -- the STABLE identifier the
+ * product joins on. A donut of `device_category` therefore announced its unit in
+ * the words of the database, one line under a heading that already spoke the
+ * client's own word for the same dimension. The server now resolves that word
+ * through the same seam the heading uses and ships it as `dimension_label`; the
+ * shell reads that and nothing else.
+ */
+describe("donut centre unit", () => {
+  const donut = (data: Record<string, unknown>): CompositionBlock[] => [
+    {
+      type: "donut",
+      binding: { metrics: "active_users", dimensions: ["device_category"] },
+      title: "Users by Terminal",
+      data: {
+        total: 40,
+        slices: [
+          { label: "mobile", value: 30, pct: 75 },
+          { label: "desktop", value: 10, pct: 25 },
+        ],
+        ...data,
+      },
+    } as CompositionBlock,
+  ];
+
+  it("prints the client's word, never the identifier beside it", () => {
+    render(
+      <CardComposition
+        blocks={donut({ dimension: "device_category", dimension_label: "Terminal" })}
+        data={CARD_DATA}
+      />,
+    );
+    const centre = screen.getByTestId("donut");
+    expect(centre.textContent).toContain("Terminal");
+    expect(centre.textContent).not.toContain("device_category");
+  });
+
+  it("prints the derived word when nobody named the dimension", () => {
+    render(
+      <CardComposition
+        blocks={donut({ dimension: "device_category", dimension_label: "Device category" })}
+        data={CARD_DATA}
+      />,
+    );
+    expect(screen.getByTestId("donut").textContent).toContain("Device category");
+    expect(screen.getByTestId("donut").textContent).not.toContain("device_category");
+  });
+
+  it("says nothing rather than falling back to the identifier", () => {
+    // An envelope carrying no word is not an invitation to print the join key:
+    // "a fallback to the identifier is indistinguishable from a client having
+    // chosen that word", and the number is the answer either way.
+    render(
+      <CardComposition
+        blocks={donut({ dimension: "device_category" })}
+        data={CARD_DATA}
+      />,
+    );
+    const centre = screen.getByTestId("donut");
+    expect(centre).toBeInTheDocument();
+    expect(centre.textContent).not.toContain("device_category");
   });
 });

@@ -119,6 +119,42 @@ def test_wrong_key_fails_cleanly(local_key_env):
     assert blob.decode("ascii", "ignore") not in msg
 
 
+def test_lost_key_is_named_as_such_and_mints_no_replacement(local_key_env, tmp_path):
+    """A blob whose tenant key is gone reports a LOST KEY, and creates none (AI-278).
+
+    The regression: decryption went through `get_or_create_key`, so a key store
+    that had lost the key silently minted a fresh one and then reported the
+    intact ciphertext as "wrong key or tampered". In production that read as data
+    corruption for a Google credential that was merely unopenable, and every
+    subsequent request minted yet another key.
+    """
+    import pathlib
+
+    from core.google_token_store import (
+        GoogleTokenStoreError,
+        decrypt_token_payload,
+        encrypt_token_payload,
+    )
+
+    blob = encrypt_token_payload(
+        {"access_token": _FAKE_ACCESS, "refresh_token": _FAKE_REFRESH}, "proj_lost"
+    )
+    # The key disappears -- exactly what a container restart did in production.
+    key_dir = pathlib.Path(os.environ["TENANT_KEY_DIR"])
+    for key_file in key_dir.glob("*.key"):
+        key_file.unlink()
+
+    with pytest.raises(GoogleTokenStoreError) as exc_info:
+        decrypt_token_payload(blob, "proj_lost")
+
+    msg = str(exc_info.value)
+    assert "no tenant key" in msg.lower()
+    assert "re-authorized" in msg.lower()
+    assert _FAKE_ACCESS not in msg and _FAKE_REFRESH not in msg
+    # AND no replacement key was written by the attempt.
+    assert list(key_dir.glob("*.key")) == []
+
+
 def test_tampered_blob_fails_cleanly(local_key_env):
     """Un blob altere echoue proprement (InvalidToken -> erreur redigee)."""
     from core.google_token_store import (
@@ -223,14 +259,14 @@ def test_decrypt_rejects_unknown_blob_version(local_key_env):
 
 
 def test_check_expected_project_rejects_mismatch():
-    """review-18-1 F-1 (défense en profondeur): expected_project_id ≠ projet réel
+    """review-18-1 F-1 (défense en profondeur): expected_project_id ≠ projet actual
     de la connexion → GoogleTokenStoreError, sans contenu de token."""
     from core import google_token_store as gts
 
     with pytest.raises(gts.GoogleTokenStoreError) as exc_info:
         gts._check_expected_project("proj_real", "proj_other")
     assert "token redacted" in str(exc_info.value)
-    # None = pas de vérification demandée (l'identité est le devoir de l'appelant 18.3).
+    # None = pas de verification demandée (l'identité est le devoir de l'appelant 18.3).
     gts._check_expected_project("proj_real", None)
     gts._check_expected_project("proj_real", "proj_real")
 
@@ -470,7 +506,7 @@ def test_live_clear_purges_and_writes_audit(monkeypatch):
         assert any(
             action == "connection.revoked" and identity == "tester@example.com"
             for action, identity in rows
-        ), "ligne d'audit de purge manquante"
+        ), "ligne d'audit de purge missinge"
     finally:
         _cleanup(dsn, pid, cid)
 
@@ -548,7 +584,7 @@ def test_no_realistic_token_plaintext_in_story_files():
     ]
 
     for path in story_files:
-        assert path.exists(), f"fichier de story manquant : {path}"
+        assert path.exists(), f"fichier de story missing : {path}"
         text = path.read_text(encoding="utf-8")
         for pat in forbidden:
             m = pat.search(text)

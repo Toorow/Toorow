@@ -140,7 +140,7 @@ async def audit_endpoint(request: Request) -> Response:
     from core.api_auth import authenticate_api_request
     from core.audit import query_audit_log, rows_to_csv
 
-    authorized, _identity = await authenticate_api_request(request)
+    authorized, identity = await authenticate_api_request(request)
     if not authorized:
         return JSONResponse(
             {"code": "unauthorized", "message": "valid Bearer token required"},
@@ -148,6 +148,37 @@ async def audit_endpoint(request: Request) -> Response:
         )
 
     params = request.query_params
+    project_id = (params.get("project_id") or "").strip()
+    if not project_id:
+        return JSONResponse(
+            {"code": "invalid_param", "message": "project_id is required"},
+            status_code=422,
+        )
+
+    try:
+        from core.admin_api import _strict_project_capability_allowed  # noqa: PLC0415
+        from core.db import get_connection  # noqa: PLC0415
+
+        with get_connection() as conn:
+            allowed = _strict_project_capability_allowed(
+                conn,
+                identity=identity,
+                project_id=project_id,
+                minimum_capability="view",
+            )
+    except Exception as exc:
+        logger.warning(
+            "audit_access_unavailable project=%s: %s",
+            project_id,
+            type(exc).__name__,
+        )
+        allowed = False
+    if not allowed:
+        return JSONResponse(
+            {"code": "not_found", "message": "Project not found"},
+            status_code=404,
+        )
+
     start = params.get("start") or None
     end = params.get("end") or None
     action = params.get("action") or None
@@ -160,6 +191,7 @@ async def audit_endpoint(request: Request) -> Response:
 
     try:
         rows = query_audit_log(
+            project_id=project_id,
             limit=limit,
             start=start,
             end=end,
@@ -167,9 +199,9 @@ async def audit_endpoint(request: Request) -> Response:
             connection_ref=connection_ref,
         )
     except Exception as exc:
-        logger.error("audit_query_error: %s", exc)
+        logger.error("audit_query_error: %s", type(exc).__name__)
         return JSONResponse(
-            {"code": "audit_query_error", "message": str(exc)},
+            {"code": "audit_query_error", "message": "Audit evidence is unavailable"},
             status_code=500,
         )
 
@@ -226,6 +258,14 @@ def build_asgi_app(mcp):
 
     start_nightly_scheduler()
 
+    # AI-346: re-derive stale compiled Semantic View artifacts once, at process
+    # start, best-effort (SEMANTIC_RECOMPILE_ON_START, default true). A deploy
+    # that bumps the compiler must not leave a published View unqueryable until
+    # somebody notices.
+    from core.semantic_artifact_sweep import start_startup_sweep  # noqa: PLC0415
+
+    start_startup_sweep()
+
     # Story 2.6 -- /api/audit custom route (Option B, standalone)
     # BEGIN Story-2.6 fence
     audit_router = Router(
@@ -251,11 +291,49 @@ def build_asgi_app(mcp):
             "(run: pnpm --filter @toorow/admin build)",
             admin_dist_path,
         )
+
+    # The console build uses an ABSOLUTE base (vite.config.ts: the console is
+    # served at the root in production), so its index.html calls /assets/… and
+    # /imports/… at the ROOT, not under /admin. Serving only /admin/* answered
+    # 200 with a blank page — the worst state, and the one measured on
+    # 2026-08-07 (assets 404, deep links 500). The fallback is the SPA rule:
+    # any /admin/* path that names no real file gets index.html.
+    admin_index = admin_dist_path / "index.html" if admin_static is not None else None
+
+    async def _serve_admin_index(scope, receive, send):
+        from starlette.responses import FileResponse  # noqa: PLC0415
+
+        await FileResponse(str(admin_index))(scope, receive, send)
+
+    async def _serve_admin_static(scope, receive, send, not_found_json: bool):
+        """StaticFiles, with its raised 404 translated instead of propagated.
+
+        This Starlette raises HTTPException(404) for a missing file; through a
+        bare ASGI dispatcher that surfaces as a 500. A missing bundle is a
+        plain 404 -- and never index.html, which a browser would try to run as
+        a module.
+        """
+        from starlette.exceptions import HTTPException  # noqa: PLC0415
+        from starlette.responses import JSONResponse  # noqa: PLC0415
+
+        try:
+            await admin_static(scope, receive, send)
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            if not_found_json:
+                await JSONResponse(
+                    {"code": "not_found", "message": "Not found"}, status_code=404
+                )(scope, receive, send)
+            else:
+                await _serve_admin_index(scope, receive, send)
+
     # END Story-2.4 fence
 
     async def _combined_app(scope, receive, send):
         """Route requests:
-          /admin*      -> admin static files (Story 2.4)
+          /admin*      -> admin static files (Story 2.4), SPA fallback included
+          /assets|/imports/* -> the console's absolute-base bundles (same dist)
           /api/*       -> api_router (connections + audit) (Stories 2.4, 2.6)
           everything else -> MCP app
         """
@@ -271,10 +349,38 @@ def build_asgi_app(mcp):
                 new_path = "/"
             scope = dict(scope)
             scope["path"] = new_path
-            await admin_static(scope, receive, send)
+            candidate = (admin_dist_path / new_path.lstrip("/")).resolve()
+            in_dist = candidate.is_relative_to(admin_dist_path.resolve())
+            # SPA fallback: a deep link names no file and no EXTENSION -- it is
+            # a client route, the console owns it, it gets the index. A missing
+            # file (favicon, bundle) is a plain 404, never HTML a browser would
+            # try to execute as a module.
+            route_like = in_dist and not candidate.suffix
+            await _serve_admin_static(scope, receive, send, not_found_json=not route_like)
+            return
+
+        # The console's absolute-base bundles, served from the same dist. A
+        # missing bundle is a plain 404 -- never the index.
+        if (
+            path.startswith(("/assets/", "/imports/"))
+            and admin_static is not None
+            and (admin_dist_path / path.lstrip("/")).resolve().is_relative_to(
+                admin_dist_path.resolve()
+            )
+        ):
+            await _serve_admin_static(scope, receive, send, not_found_json=True)
             return
 
         if path == "/invite":
+            await admin_router(scope, receive, send)
+            return
+
+        # Story 50.7 -- the public Render Share surface. Without these two entries
+        # the paths fall through to the MCP app and a recipient meets a 404 on a
+        # link that is perfectly valid. Exact equality, never a `startswith`: a bare
+        # prefix test would also capture `/shareX/...`, which is the bug the `/admin`
+        # comment above records having already been fixed once.
+        if path in ("/share", "/share/view"):
             await admin_router(scope, receive, send)
             return
 

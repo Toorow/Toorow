@@ -96,8 +96,29 @@ ordering and extraction phasing.
 ```
 CATALOG_GATE_MODE=fail uv run pytest server/tests/conformance/test_api_catalog.py -q   # catalog<->manifest
 uv run pytest server/tests/conformance/ server/tests/modules/<name>/ -q               # full conformance + module
-uv run python scripts/export_connector_registry.py                                     # public registry regen
+cd web && pnpm generate:connectors && pnpm check:connectors                            # public registry regen
 ```
+
+`export_connector_registry.py` REQUIRES `--output` or `--check` — invoking it bare (as an
+earlier version of this file said) exits on an argparse error. The two `pnpm` scripts above
+are the canonical invocations; the registry lands in `web/src/generated/connector-registry.json`.
+
+Three more gates run repository-wide rather than per module, and each exists because a
+connector was green while being unusable:
+
+```
+uv run pytest server/tests/conformance/test_pull_contract.py -q            # entry point exists, signature is callable
+uv run pytest server/tests/conformance/test_all_module_capabilities.py -q  # schema_version 1.2 + capability contract
+uv run pytest server/tests/conformance/test_google_consent.py -q           # declared google scope is actually consented
+```
+
+Adding a module also moves the connector total that the storefront asserts in **two** test
+files: `web/src/lib/connectors.test.ts` (one assertion) and
+`web/src/lib/connector-catalog.test.ts` (four). Nothing in the server suite catches that.
+
+Do NOT look for an `EXPECTED_MODULE_COUNT` to increment: the constant is
+`EXPECTED_MODULE_COUNT_MIN = 12` and the assertion is a `>=`, precisely so parallel sessions
+adding modules do not churn it.
 
 ### 7. Ratify live (the only way to lift `verification: blocked`)
 
@@ -188,9 +209,21 @@ run has actually happened.
 - [ ] `api_catalog.json` generated (not hand-authored), official source pinned, drift empty
 - [ ] Every field tiered; catalog counts match the official reference
 - [ ] `error_map` filled from the provider error reference; 401-path module test
-- [ ] `account_topology` declared; discovery implemented; no account env vars
+- [ ] `account_topology` declared; discovery implemented; no account env vars — and no
+      account as a REQUIRED argument of the entry point either: an optional kwarg named by
+      `account_topology.pull_parameter`, which `core/queue.py` reads to pass the selection
+- [ ] The entry point named by `source_capabilities.reports[].dispatch.callable` exists, is
+      callable with the five worker-supplied arguments, and every reachable return carries
+      `pull_id`, `row_count`, `date_from`, `date_to` (`test_pull_contract.py`)
+- [ ] Rows land through `core.raw_landing.land_raw_rows` (or at minimum
+      `core.warehouse_write.open_raw_writer`) — a bare `duckdb.connect` writes into the
+      shared `main` schema and ignores `TOOROW_DB_MODE`
+- [ ] A `seeds/load_<name>_seed.py` exists and has been RUN, and `dbt build --select
+      stg_<name>_daily` is green — a staging model with no seed loader has never produced a row
+- [ ] Google connector: manifest `auth` block declaring the scope; `test_google_consent.py` green
 - [ ] `CATALOG_GATE_MODE=fail` green for the module; conformance + module tests green
-- [ ] Registry regenerated; totals in web assertions updated if profile counts changed
+- [ ] Registry regenerated (`pnpm generate:connectors`); the connector total bumped in the two
+      web test files; totals in web assertions updated if profile counts changed
 - [ ] Live ratification report committed (or explicitly deferred with reason)
 
 ## Maintenance contract (keeping it true over time)

@@ -99,6 +99,12 @@ at it).
 - `oauth` — RS256 JWT verification, **required for any networked/production
   deploy**. Provide `TOOROW_JWT_PUBLIC_KEY` **or** `TOOROW_JWKS_URI`.
 
+Every authenticated mode also requires `TOOROW_FEEDBACK_CONTEXT_SECRET`: inject
+at least 32 random bytes from the deployment secret manager. It signs bounded,
+short-lived Analytics feedback sidecars and is never sent as configuration to
+the browser. Rotating it immediately invalidates outstanding sidecars; users can
+refresh the Result evidence to receive a new one without losing their draft.
+
 Never expose a `static` or `disabled` instance to the public internet.
 
 #### Browser OIDC for a self-hosted console
@@ -110,7 +116,6 @@ the server-side browser flow explicitly:
 
 ```dotenv
 TOOROW_AUTH_MODE=oauth
-TOOROW_CANONICAL_IDENTITY_ENABLED=1
 TOOROW_BROWSER_AUTH_MODE=oidc
 TOOROW_OIDC_ISSUER=https://id.example.com/realms/toorow
 TOOROW_OIDC_CLIENT_ID=toorow-browser
@@ -139,10 +144,11 @@ all browser sessions. `/api/auth/logout` clears the local toorow session; generi
 RP-initiated logout at the identity provider is intentionally not assumed
 because providers do not expose one portable contract.
 
-`TOOROW_CANONICAL_IDENTITY_ENABLED=1` is mandatory before the first protected
-hosted or self-hosted setup. `0` exists only for a brownfield legacy deployment
-while identities are reconciled; a new setup remains blocked with
-`identity_activation_required`. Hosted Google GIS remains available only via the
+Canonical identity is not configurable and never was optional in any sense a
+new deployment can act on: every authenticated request resolves to the person
+its verified `(issuer, subject)` names. The variable that used to select a
+legacy authorization key was removed on 2026-08-24 along with the branch, so
+there is nothing here to set or to get wrong. Hosted Google GIS remains available only via the
 explicit `TOOROW_BROWSER_AUTH_MODE=google_gis` hosted mode. None of these browser
 variables changes Google-source OAuth or Nango connector credentials.
 
@@ -200,8 +206,8 @@ account for the maintainers' values.
 ## 7. Security checklist before going live
 
 - [ ] `TOOROW_AUTH_MODE=oauth` (never `static`/`disabled` on a public host).
-- [ ] `TOOROW_CANONICAL_IDENTITY_ENABLED=1`; `0` is brownfield-only and blocks
-      every new protected setup with `identity_activation_required`.
+- [ ] `TOOROW_FEEDBACK_CONTEXT_SECRET` is injected from Secret Manager and
+      contains at least 32 random bytes.
 - [ ] `TOOROW_BROWSER_AUTH_MODE=oidc` and the exact issuer, client id, redirect
       URI and session secret are configured; the provider advertises PKCE S256.
 - [ ] `TOOROW_DEPLOYMENT_MODE=self_hosted` and a one-time `/setup#bootstrap=...`

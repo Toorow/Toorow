@@ -134,12 +134,17 @@ def derive_initial_tasks(
     access_kind = "project_access" if project_id else "organization_access"
     accepted = _aware(accepted_at)
     expiry = accepted + timedelta(days=6)
-    common = {"reminder_policy": {"mode": "none"}, "return_path": "/onboarding/responsibilities"}
+    return_path = (
+        f"/org/{org_id}/project/{project_id}/getting-started"
+        if project_id
+        else f"/org/{org_id}/settings/members"
+    )
+    common = {"reminder_policy": {"mode": "none"}, "return_path": return_path}
     return [
         {
             **common,
             "step_key": "invitation_accepted",
-            "title": "Invitation acceptée",
+            "title": "Invitation accepted",
             "actor_type": "toorow_admin",
             "owner": toorow_admin_identity,
             "state": "completed",
@@ -153,9 +158,7 @@ def derive_initial_tasks(
             **common,
             "step_key": access_kind,
             "title": (
-                "Accès au projet confirmé"
-                if project_id
-                else "Accès à l’organisation confirmé"
+                "Project access confirmed" if project_id else "Organization access confirmed"
             ),
             "actor_type": "invited_operator",
             "owner": operator_identity,
@@ -171,18 +174,18 @@ def derive_initial_tasks(
             "step_key": "source_authorization",
             "title": "Autoriser la source et exposer le compte",
             "actor_type": "credential_owner",
-            "owner": credential_owner_identity or "Propriétaire des identifiants à désigner",
+            "owner": credential_owner_identity or "Credential owner to be designated",
             "state": "waiting",
             "expires_at": expiry,
             "handoff_method": "link",
-            "blocker": "Une autre personne doit autoriser la source",
+            "blocker": "Someone else must authorize the source",
             "return_condition": {"kind": "source_authorized", "resource_id": scope_id},
             "safe_scope": {**scope, "action": "authorize_source"},
         },
         {
             **common,
             "step_key": "first_report",
-            "title": "Créer le premier rapport récent",
+            "title": "Create the first recent report",
             "actor_type": "invited_operator",
             "owner": operator_identity,
             "state": "blocked",
@@ -195,18 +198,19 @@ def derive_initial_tasks(
         {
             **common,
             "step_key": "host_connection",
-            "title": "Connecter un hôte MCP Apps",
+            "title": "Connect an MCP Apps host",
             "actor_type": "host_admin",
             "owner": host_admin_identity
-            or "Administratrice ou administrateur de l’hôte à désigner",
+            or "Host administrator to be designated",
             "state": "waiting",
             "expires_at": expiry,
             "handoff_method": "task",
-            "blocker": "Installation dans l’hôte requise",
+            "blocker": "Installation in the host required",
             "return_condition": {"kind": "host_connected", "resource_id": scope_id},
             "safe_scope": {**scope, "action": "install_mcp_host"},
         },
     ]
+
 
 def reconcile_task_state(
     *,
@@ -246,9 +250,9 @@ def project_safe_task(row: Mapping[str, Any], *, now: datetime | None = None) ->
         state = "expired"
     policy = row.get("reminder_policy") or {"mode": "none"}
     reminder = (
-        {"mode": "none", "label": "Aucun rappel automatique"}
+        {"mode": "none", "label": "No automatic reminder"}
         if policy.get("mode") == "none"
-        else {"mode": "scheduled", "label": "Rappel planifié", "next_at": policy.get("next_at")}
+        else {"mode": "scheduled", "label": "Reminder scheduled", "next_at": policy.get("next_at")}
     )
     task_id = str(row.get("task_id") or row.get("id") or "")
     result = {
@@ -344,6 +348,7 @@ def get_reconciled_journey(
         },
         "tasks": tasks,
     }
+
 
 def bootstrap_journey_from_acceptance(
     conn,
@@ -502,6 +507,18 @@ def prepare_handoff(
                 "WHERE task_id=%s AND id<>%s AND state IN ('created','delivered')",
                 (handoff_id, task_id, handoff_id),
             )
+            cur.execute(
+                "INSERT INTO app.setup_task_events "
+                "(id,journey_id,task_id,event_type,actor_identity,reason,safe_refs) "
+                "VALUES (%s,%s,%s,'handoff_issued',%s,'operator_handoff',%s::jsonb)",
+                (
+                    f"setupevt_{ULID()}",
+                    row[1],
+                    task_id,
+                    actor,
+                    json.dumps({"handoff_id": handoff_id}),
+                ),
+            )
         result = {
             "handoff_id": handoff_id,
             "task_id": task_id,
@@ -588,6 +605,31 @@ def reassign_task(
             )
             if cur.rowcount != 1:
                 raise SetupConflict("setup reassignment race lost")
+            cur.execute(
+                "INSERT INTO app.setup_task_events "
+                "(id,journey_id,task_id,event_type,actor_identity,reason,safe_refs) "
+                "VALUES (%s,%s,%s,'owner_changed',%s,'operator_reassignment',%s::jsonb)",
+                (
+                    f"setupevt_{ULID()}",
+                    row[1],
+                    task_id,
+                    actor,
+                    json.dumps({"actor_type": actor_type}),
+                ),
+            )
+            for revoked_id in revoked:
+                cur.execute(
+                    "INSERT INTO app.setup_task_events "
+                    "(id,journey_id,task_id,event_type,actor_identity,reason,safe_refs) "
+                    "VALUES (%s,%s,%s,'handoff_revoked',%s,'owner_reassignment',%s::jsonb)",
+                    (
+                        f"setupevt_{ULID()}",
+                        row[1],
+                        task_id,
+                        actor,
+                        json.dumps({"handoff_id": revoked_id}),
+                    ),
+                )
         result = {
             "task_id": task_id,
             "actor_type": actor_type,

@@ -8,7 +8,8 @@ Covers:
   - get_events: type / category / platform / source filters work.
   - get_events: from_date / to_date window respected.
   - get_events: module_kind is NOT in the output (AD-2 / epic §2).
-  - get_events: returns empty list gracefully when warehouse unavailable.
+  - get_events: says `unavailable` (no count, no events) when no store can serve
+    (AI-344), and `count: 0` only for a window that was read and holds nothing.
   - context_events in daily-report meta include category + default_marker (Story 31.5).
 """
 
@@ -146,7 +147,7 @@ def test_enrich_empty_list():
 @pytest.fixture(autouse=True)
 def _offline(monkeypatch):
     """Offline fixtures: bypass project resolution + DB."""
-    monkeypatch.setattr("core.main._resolve_project", lambda pid: pid)
+    monkeypatch.setattr("core.main._resolve_project", lambda pid, identity=None: pid)
     monkeypatch.setattr("core.main._fetch_context_events", lambda *a, **kw: FAKE_EVENTS)
 
 
@@ -229,12 +230,50 @@ def test_get_events_cross_source_demo():
     assert "release" in types
 
 
-def test_get_events_empty_when_warehouse_down(monkeypatch):
-    """get_events returns empty result gracefully when warehouse unavailable."""
+def test_get_events_says_unavailable_and_never_count_zero_when_no_store_can_serve(monkeypatch):
+    """Case (d) of AI-344. Measured 2026-09-01 on the deployment: `count: 0,
+    events: []` for a project holding six events, because the only read path
+    was a mirror the deployment does not keep. The wire now says `unavailable`
+    with the reason and the repair, and carries neither `count` nor `events`."""
+    from core.context_events import ContextEventsUnavailable
+
+    def _no_store(*a, **kw):
+        raise ContextEventsUnavailable("The context events were not read.", "Retry.")
+
+    monkeypatch.setattr("core.main._fetch_context_events", _no_store)
+    data = _call_get_events()
+    assert data["unavailable"] == {
+        "reason": "The context events were not read.",
+        "repair": "Retry.",
+    }
+    assert "count" not in data
+    assert "events" not in data
+    assert data["project_id"] == "proj_A"
+    assert data["from"] and data["to"]
+
+
+def test_get_events_count_zero_means_a_read_window_with_no_events(monkeypatch):
+    """An empty list from the fetch is a store that was READ: `count: 0` is honest here."""
     monkeypatch.setattr("core.main._fetch_context_events", lambda *a, **kw: [])
     data = _call_get_events()
     assert data["count"] == 0
     assert data["events"] == []
+    assert "unavailable" not in data
+
+
+def test_get_events_hands_its_caller_to_the_fetch(monkeypatch):
+    """The record path opens the caller's SCOPED connection, so the tool must name
+    the caller it resolved -- the same subject its access check used."""
+    seen: dict = {}
+
+    def _capture(project_id, start, end, **kw):
+        seen.update(kw, project_id=project_id)
+        return []
+
+    monkeypatch.setattr("core.main._fetch_context_events", _capture)
+    _call_get_events()
+    assert seen["project_id"] == "proj_A"
+    assert seen["identity"]  # "anonymous" offline; the OIDC subject with a token
 
 
 # ---------------------------------------------------------------------------

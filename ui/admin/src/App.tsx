@@ -7,6 +7,10 @@
  * the shell; now the decision is explicit and driven by the scope state.
  *
  * Entry routing (in order):
+ * `RouterProvider` wraps ALL of them since 2026-08-31: every entry surface now renders
+ * the rail (`page-structure.md §A.7.1` — "the rail stays on every surface"), and the rail
+ * is a router consumer. The branch itself is a router consumer for the same reason.
+ *
  *   1. /invite#invite=<bearer>      -> JoinOrg. Highest priority, decided from the URL
  *                                     alone: an invitation must never wait on (or need)
  *                                     the org/project fetch, and the invited user has no
@@ -14,7 +18,7 @@
  *   2. /onboarding | /create-org    -> CreateOrg. Deliberate routes (an operator adding
  *                                     another organization), so they keep Cancel and get
  *                                     no welcome banner.
- *   3. otherwise                    -> inside RouterProvider > ScopeProvider, <EntryGate>
+ *   3. otherwise                    -> inside ScopeProvider, <EntryGate>
  *                                     dispatches on useScope().state:
  *                                       loading -> a sober loading surface (never a blank
  *                                                  page)
@@ -29,9 +33,8 @@
  *   state "loading" | "error" | "empty" | "ready"; `org` / `activeProject` are only
  *   meaningful when state === "ready" and are read nowhere else in this file.
  */
-import { CssBaseline } from "@mui/material";
-import { useEffect, useState, type ReactNode } from "react";
-import { RouterProvider } from "./shell/router";
+import { useEffect, useState } from "react";
+import { RouterProvider, useRoute } from "./shell/router";
 import { ScopeProvider, useScope } from "./shell/scope";
 import { OrgThemeProvider } from "./shell/orgTheme";
 import ApplicationShell from "./shell/ApplicationShell";
@@ -40,225 +43,44 @@ import JoinOrg from "./shell/pages/JoinOrg";
 import CreateOrg from "./shell/pages/CreateOrg";
 import ClaimInstance from "./shell/pages/ClaimInstance";
 import CreateProject from "./shell/pages/CreateProject";
+import RouteState from "./shell/RouteState";
+import { Toaster } from "./ui";
 import { apiFetch } from "./lib/apiFetch";
-import "./shell/application.css";
-import "./shell/pages/create-org.css";
-
-/** An invitation link — decided from the URL alone, ahead of any scope fetch. */
-function isInvitePath(p: string): boolean {
-  return p === "/invite" || p === "/invite/";
-}
-
-let inviteFragmentCapture: { locationKey: string; bearer: string } | null = null;
-
-function takeInviteBearer(): string {
-  const hash = window.location.hash || "";
-  const locationKey = window.location.pathname + window.location.search;
-  const bearer = hash.startsWith("#invite=") ? hash.slice("#invite=".length) : "";
-  if (hash) window.history.replaceState(null, "", window.location.pathname + window.location.search);
-  if (bearer) {
-    inviteFragmentCapture = { locationKey, bearer };
-    return bearer;
-  }
-  if (inviteFragmentCapture?.locationKey === locationKey) {
-    return inviteFragmentCapture.bearer;
-  }
-  return bearer;
-}
-
+// AD-42 : les decisions d'URL et les surfaces d'entree ont leur fichier.
+// Ce qui reste ici est la COMPOSITION, et elle seule.
+import {
+  goHome,
+  goToCreatedProject,
+  goToCreatedScope,
+  goToInvitationScope,
+  isCreateOrgPath,
+  isInvitePath,
+  releaseInviteBearer,
+  takeInviteBearer,
+} from "./shell/entryPaths";
+import { EntryBlocked, EntryFrame, EntryShell, ScopeError, ScopeLoading, type EntryState } from "./shell/EntryStates";
+// Tailwind + the generated @theme. Must come first: the layered
+// utilities have to be able to lose against the legacy sheets that
+// have not been migrated yet.
+import "./styles/theme.css";
+// The target sheet, loaded after the theme and before the legacy one so a
+// migrated screen can win without `!important`. It is empty on purpose: a rule
+// only enters it when a migrated screen needs it and no component covers it.
+import "./styles/console.css";
 function InviteEntry() {
   // The initializer runs before AuthGate mounts, so GIS never sees the bearer in the URL.
   const [bearer] = useState(takeInviteBearer);
   useEffect(() => {
-    if (inviteFragmentCapture?.bearer === bearer) {
-      inviteFragmentCapture = null;
-    }
+    releaseInviteBearer(bearer);
   }, [bearer]);
   return (
     <AuthGate>
-      <EntryFrame>
+      <EntryShell>
         <JoinOrg token={bearer} onAccepted={goToInvitationScope} />
-      </EntryFrame>
+      </EntryShell>
     </AuthGate>
   );
 }
-/** The explicit organization-creation routes (typed or linked deliberately). */
-function isCreateOrgPath(p: string): boolean {
-  return p === "/onboarding" || p === "/onboarding/" || p === "/create-org" || p === "/create-org/";
-}
-
-function safeServerPath(value?: string): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
-    return "/";
-  }
-  const parsed = new URL(value, window.location.origin);
-  return parsed.origin === window.location.origin ? parsed.pathname + parsed.search : "/";
-}
-
-function goToCreatedProject(projectId: string): void {
-  window.location.assign(`/p/${encodeURIComponent(projectId)}/overview/getting-started`);
-}
-
-function goToCreatedScope(_orgId: string, nextUrl?: string): void {
-  window.location.assign(safeServerPath(nextUrl));
-}
-function goToInvitationScope(nextUrl: string): void {
-  window.location.assign(safeServerPath(nextUrl));
-}
-function goHome(): void {
-  // A full navigation, so the scope is refetched with the new membership.
-  window.location.assign("/");
-}
-
-/**
- * Pre-shell frame: the neutral (unbranded) theme plus the CSS baseline, used by every
- * surface that renders before a project scope exists.
- */
-function EntryFrame({ children }: { children: ReactNode }) {
-  return (
-    <OrgThemeProvider branding={null}>
-      <CssBaseline />
-      {children}
-    </OrgThemeProvider>
-  );
-}
-
-/** state === "loading": sober, labelled, and never a blank page. */
-function ScopeLoading() {
-  return (
-    <div className="createorg-stage">
-      <div className="createorg-scrim">
-        <section
-          className="createorg-dialog"
-          role="status"
-          aria-live="polite"
-          aria-busy="true"
-          aria-labelledby="entry-loading-title"
-        >
-          <header className="createorg-header">
-            <div>
-              <h1 id="entry-loading-title">Loading your workspace</h1>
-              <p className="createorg-subtitle">
-                Checking which organizations and projects you have access to.
-              </p>
-            </div>
-          </header>
-          <div className="createorg-body">
-            <span className="signal-label info">
-              <span className="signal-mark" />
-              Loading…
-            </span>
-            <div className="entry-skeleton" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </div>
-          </div>
-        </section>
-      </div>
-    </div>
-  );
-}
-
-/** state === "error": name the failure and offer a retry. Never a fabricated shell. */
-function ScopeError() {
-  return (
-    <div className="createorg-stage">
-      <div className="createorg-scrim">
-        <section
-          className="createorg-dialog"
-          role="alert"
-          aria-labelledby="entry-error-title"
-        >
-          <header className="createorg-header">
-            <div>
-              <h1 id="entry-error-title">We could not load your workspace</h1>
-              <p className="createorg-subtitle">
-                Your organizations and projects did not load, so there is nothing we can show
-                you yet.
-              </p>
-            </div>
-          </header>
-          <div className="createorg-body">
-            <div className="createorg-error">
-              <span className="signal-label error">
-                <span className="signal-mark" />
-                Organizations and projects unavailable
-              </span>
-              <p>
-                We will not show you a workspace we could not verify. Nothing was changed. Check
-                your connection and try again; if this keeps happening, sign out and sign back in,
-                or ask an organization owner whether your access is still active.
-              </p>
-            </div>
-          </div>
-          <footer className="createorg-footer">
-            <span>Retrying reloads the console and asks for your access again.</span>
-            <div className="createorg-actions">
-              <button
-                className="primary-button"
-                type="button"
-                onClick={() => window.location.reload()}
-              >
-                Try again
-              </button>
-            </div>
-          </footer>
-        </section>
-      </div>
-    </div>
-  );
-}
-
-type EntryState = "loading" | "hosted_entry_ready" | "local_entry_ready" | "invitation_required" | "setup_required" | "identity_activation_required" | "scoped" | "error";
-
-function EntryBlocked({
-  kind,
-}: {
-  kind: "invitation_required" | "setup_required" | "identity_activation_required" | "scoped" | "organization_limit_reached";
-}) {
-  const copy =
-    kind === "invitation_required"
-      ? {
-          title: "An invitation is required",
-          detail: "Your identity has no accepted platform or organization invitation. Ask an administrator for a new invitation link.",
-        }
-      : kind === "setup_required"
-        ? {
-            title: "This instance is not claimed",
-            detail: "An operator must mint and open the one-time /setup link from a trusted server shell.",
-          }
-        : kind === "identity_activation_required"
-          ? {
-              title: "Identity activation is required",
-              detail: "An operator must reconcile existing access and enable canonical identity before first setup can continue.",
-            }
-          : kind === "organization_limit_reached"
-          ? {
-              title: "Organization creation is not available",
-              detail:
-                "You already have an active scope. Access to another organization comes from an invitation or an authorized administrator.",
-            }
-        : {
-            title: "Your workspace is incomplete",
-            detail: "Your account has scope authority but no usable project. Ask an owner to repair the organization scope.",
-          };
-  return (
-    <div className="createorg-stage">
-      <div className="createorg-scrim">
-        <section className="createorg-dialog" role="alert">
-          <header className="createorg-header">
-            <div>
-              <h1>{copy.title}</h1>
-              <p className="createorg-subtitle">{copy.detail}</p>
-            </div>
-          </header>
-        </section>
-      </div>
-    </div>
-  );
-}
-
 function useEntryState(): EntryState {
   const [entry, setEntry] = useState<EntryState>("loading");
   useEffect(() => {
@@ -274,7 +96,6 @@ function useEntryState(): EntryState {
               state === "invitation_required" ||
               state === "setup_required" ||
               state === "local_entry_ready" ||
-              state === "identity_activation_required" ||
               state === "scoped"
               ? state
               : "error",
@@ -323,8 +144,10 @@ function ScopedShell() {
   const scope = useScope();
   return (
     <OrgThemeProvider branding={scope.org?.branding ?? null}>
-      <CssBaseline />
       <ApplicationShell />
+      {/* One toaster for the whole console: a screen dispatches with notify(),
+          it never mounts its own. */}
+      <Toaster />
     </OrgThemeProvider>
   );
 }
@@ -336,6 +159,23 @@ function ScopedShell() {
  */
 function EntryGate() {
   const scope = useScope();
+  const { result } = useRoute();
+
+  if (result.kind === "unknown") {
+    return (
+      <EntryFrame>
+        <RouteState kind="unknown" reason={result.reason} onBackToOverview={() => window.location.assign("/")} />
+      </EntryFrame>
+    );
+  }
+  if (scope.state === "denied") {
+    return (
+      <EntryFrame>
+        <RouteState kind="denied" onBackToOverview={() => window.location.assign("/")} />
+      </EntryFrame>
+    );
+  }
+
 
   if (scope.state === "loading") {
     return (
@@ -369,14 +209,31 @@ function EntryGate() {
   return <ScopedShell />;
 }
 
-export default function App() {
+/**
+ * Which entry surface the address names — and why it is read through the router.
+ *
+ * The three entry routes now render INSIDE the rail (`EntryFrame`, applying
+ * `page-structure.md §A.7.1`), and a rail navigates with `pushState`. A branch
+ * decided from a single `window.location` read taken at mount would leave the
+ * address changing under a screen that never re-read it: the rail's six rows
+ * would move the URL and nothing else — a dead end worse than the missing menu
+ * A.7.1 was written against.
+ *
+ * `useRoute()` is consumed here for its SUBSCRIPTION, not its value. The router
+ * re-renders every consumer on each address change, and the pathname is read on
+ * that render. It is also why `RouterProvider` now wraps the whole app rather
+ * than only the scoped branch: the rail needs it, and a provider that exists on
+ * four addresses out of five is a provider a component cannot rely on.
+ */
+function AppSurface() {
+  useRoute();
   const path = window.location.pathname;
 
   if (path === "/setup" || path === "/setup/") {
     return (
-      <EntryFrame>
+      <EntryShell>
         <ClaimInstance />
-      </EntryFrame>
+      </EntryShell>
     );
   }
 
@@ -385,20 +242,26 @@ export default function App() {
   if (isCreateOrgPath(path)) {
     return (
       <AuthGate>
-        <EntryFrame>
+        <EntryShell>
           <DirectCreateOrgEntry />
-        </EntryFrame>
+        </EntryShell>
       </AuthGate>
     );
   }
 
   return (
     <AuthGate>
-      <RouterProvider>
-        <ScopeProvider>
-          <EntryGate />
-        </ScopeProvider>
-      </RouterProvider>
+      <ScopeProvider>
+        <EntryGate />
+      </ScopeProvider>
     </AuthGate>
+  );
+}
+
+export default function App() {
+  return (
+    <RouterProvider>
+      <AppSurface />
+    </RouterProvider>
   );
 }

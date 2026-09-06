@@ -19,7 +19,7 @@ import os
 
 # Reuse the generator so the seed rows are the canonical parse-shape (AI-54).
 import sys as _sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from ulid import ULID
@@ -123,18 +123,21 @@ def run(
     days: int = 40,
     project_id: str = "default",
     grains: str = "campaign",
+    end_date: date | None = None,
 ) -> tuple[str, int]:
     """Generate + load TikTok seed rows. Returns (pull_id, row_count).
 
     grains='campaign' (default) lands the campaign grain only; grains='multi' lands the
     three grains coexisting (F-1) so the local mart exercises the data_level filter.
+    ``end_date`` is the corpus-anchor seam the seed_all_connectors driver fills
+    (AI-213); None falls back to DEFAULT_SEED_END_DATE, never date.today().
     """
     pull_id = _mint_pull_id()
     loaded_at = datetime.now(tz=timezone.utc).isoformat().replace("+00:00", "Z")
     if grains == "multi":
-        rows = generate_multigrain_rows(days=days)
+        rows = generate_multigrain_rows(days=days, end_date=end_date)
     else:
-        rows = generate_rows(days=days)
+        rows = generate_rows(days=days, end_date=end_date)
     count = load_duckdb(rows, pull_id, loaded_at, duckdb_path, project_id=project_id)
     return pull_id, count
 

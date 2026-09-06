@@ -20,7 +20,7 @@ WITH recon_rows AS (
         f.date,
         f.connector,
         f.source_currency,
-        CAST(f.value_decimal AS DOUBLE) AS source_amount
+        CAST(f.value_decimal AS {{ toorow_float_type() }}) AS source_amount
     FROM {{ ref('epic39_validation_fixture') }} f
     WHERE f.scenario = 'recon_normalized'
       AND f.metric = 'revenue'
@@ -70,13 +70,16 @@ combined AS (
 -- missing / seed not run). Without >=2 currencies the normalization is not exercised.
 cardinality_guard AS (
     SELECT
-        CAST(NULL AS VARCHAR) AS project_id,
+        CAST(NULL AS {{ toorow_string_type() }}) AS project_id,
         CAST(NULL AS DATE) AS date,
-        CAST(NULL AS DOUBLE) AS reconciled_normalized,
-        CAST(NULL AS DOUBLE) AS naive_mixed_currency_sum,
+        CAST(NULL AS {{ toorow_float_type() }}) AS reconciled_normalized,
+        CAST(NULL AS {{ toorow_float_type() }}) AS naive_mixed_currency_sum,
         'SUM' AS method_applied,
         'CARDINALITY_FAIL: no >=2-currency recon_normalized day -- seed not run or fixture emptied'
             AS failure_reason
+    -- BigQuery refuses a WHERE with no FROM; DuckDB allows it. One constant row,
+    -- accepted by both, keeps this guard a guard on either engine.
+    FROM (SELECT 1) AS one_row
     WHERE (SELECT COUNT(*) FROM combined WHERE n_currencies >= 2) = 0
 ),
 violations AS (
@@ -87,9 +90,24 @@ violations AS (
         naive_mixed_currency_sum,
         'SUM' AS method_applied,   -- the reconciliation_rules method cited (D-5: additive money => SUM)
         CASE
-            -- expected normalized total: 100 EUR (identity) + 100 USD * 0.92 = 192.0
-            WHEN ABS(reconciled_normalized - (100.0 + 100.0 * 0.92)) > 1e-9
-                THEN 'RECON_FAIL: normalized total != converted-first expected (100 + 100*0.92 = 192.0)'
+            -- Expected normalized total: 100 EUR (identity) + 100 USD * the seed rate.
+            --
+            -- THE RATE IS READ FROM THE SEED, NOT WRITTEN HERE, and that is a repair
+            -- rather than a style choice. This test JOINED `fx_rates` for the actual
+            -- figure while RESTATING the rate as a literal `0.92` for the expected one,
+            -- so the two agreed only as long as nobody edited the seed. On 2026-08-17
+            -- commit d734a294 moved USD->EUR from 0.92 to 0.85 -- a legitimate seed
+            -- edit -- and this test went red on arithmetic that was never its subject:
+            -- it reported RECON_FAIL (185.0 != 192.0) as though convert-first had
+            -- stopped working, when convert-first was exactly what produced 185.0.
+            -- A test that reads a value for the actual and hardcodes it for the
+            -- expected does not test the seed, it duplicates it, and the duplicate
+            -- drifts silently. The 100.0 amounts stay literal on purpose: they are the
+            -- FIXTURE's two contributions, and restating them is what keeps this an
+            -- independent check rather than a tautology of the CTE above.
+            WHEN ABS(reconciled_normalized
+                     - (100.0 + 100.0 * (SELECT rate FROM rates WHERE from_currency = 'USD'))) > 1e-9
+                THEN 'RECON_FAIL: normalized total != converted-first expected (100 + 100 * seed USD->EUR rate)'
             -- the normalized total MUST differ from the naive mixed-currency sum (200.0), proving
             -- normalization actually changed the answer (AD5).
             WHEN ABS(reconciled_normalized - naive_mixed_currency_sum) < 1e-9

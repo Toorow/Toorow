@@ -475,5 +475,10 @@
       "Content-Type: application/json"
     ],
     "rate_limiting": "UNDOCUMENTED per partner/advertiser. 429 -> core.quota.RateLimitError (breaker); no published Retry-After -> default exponential backoff, conservative pacing. Spread report creation through the day; listing reports is slow (~1 min+), cache ReportScheduleId per datastream."
+  },
+  "probe": {
+    "request_style": "async_report_columns",
+    "batch_size": 25,
+    "structural_note": "A probe = POST /v3/myreports/reportschedule with configuration.dimensions+metrics = batch -> poll execution state -> download report. 400 on schedule creation is bisected to isolate invalid columns."
   }
 }

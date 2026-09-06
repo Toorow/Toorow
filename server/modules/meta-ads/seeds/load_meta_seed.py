@@ -21,7 +21,7 @@ import os
 
 # Reuse the generator so the seed rows are the canonical parse-shape (review-15-9 F-1).
 import sys as _sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from ulid import ULID
@@ -35,6 +35,12 @@ from generate_meta_seed import (  # noqa: E402
 # review-15-9 F-1: data_level distinguishes WHICH report grain landed each row
 # (CAMPAIGN | ADSET | CREATIVE). Part of the grain key so coexisting grains never
 # double-count. Legacy rows (pre-migration) stay NULL -> staging COALESCEs to CAMPAIGN.
+# `cost_source_currency` carries no DEFAULT here either. This table must mirror
+# the landing table column for column (connector.py::_RAW_CREATE_DDL), which
+# dropped `DEFAULT 'USD'` on 2026-08-17 under AD-9: an absent currency is a gap
+# and never a guess. The fixture rows below still STATE their currency -- naming
+# what it fabricates is exactly what a fixture is allowed to do -- but the table
+# no longer supplies one for a row that says nothing.
 _CREATE_DDL = """
 CREATE TABLE IF NOT EXISTS raw_meta_ads_daily (
     date                  VARCHAR,
@@ -52,7 +58,12 @@ CREATE TABLE IF NOT EXISTS raw_meta_ads_daily (
     pull_id               VARCHAR,
     loaded_at             VARCHAR,
     project_id            VARCHAR,
-    cost_source_currency  VARCHAR DEFAULT 'USD'
+    cost_source_currency  VARCHAR,
+    -- Story 39.7: the seed table mirrors the landing table column for column.
+    -- report_timezone is the per-row report-timezone provenance; the seed
+    -- INSERT below leaves it NULL -- the honest value for fixture rows
+    -- (fail-closed, never a fabricated zone).
+    report_timezone       VARCHAR
 )
 """
 
@@ -60,12 +71,17 @@ CREATE TABLE IF NOT EXISTS raw_meta_ads_daily (
 # without the column (e.g. DuckDB file created before Story 4.2).
 # Option 2 from Dev Notes: safer than drop/recreate; existing test suites keep their data.
 _ALTER_ADD_COST_SOURCE_CURRENCY = """
-ALTER TABLE raw_meta_ads_daily ADD COLUMN IF NOT EXISTS cost_source_currency VARCHAR DEFAULT 'USD'
+ALTER TABLE raw_meta_ads_daily ADD COLUMN IF NOT EXISTS cost_source_currency VARCHAR
 """
 
 # review-15-9 F-1: additive guard for data_level on pre-existing seed tables.
 _ALTER_ADD_DATA_LEVEL = (
     "ALTER TABLE raw_meta_ads_daily ADD COLUMN IF NOT EXISTS data_level VARCHAR"
+)
+
+# Story 39.7: additive guard for report_timezone on pre-existing seed tables.
+_ALTER_ADD_REPORT_TIMEZONE = (
+    "ALTER TABLE raw_meta_ads_daily ADD COLUMN IF NOT EXISTS report_timezone VARCHAR"
 )
 
 _INSERT_SQL = """
@@ -103,6 +119,11 @@ def load_duckdb(
         con.execute(_ALTER_ADD_DATA_LEVEL)  # review-15-9 F-1: migrate legacy tables.
     except Exception:
         pass  # Column already present — safe to ignore.
+    try:
+        # Story 39.7: additive report_timezone guard for pre-existing seed tables.
+        con.execute(_ALTER_ADD_REPORT_TIMEZONE)
+    except Exception:
+        pass  # Column already present — safe to ignore.
     values = [
         (
             r["date"],
@@ -135,19 +156,35 @@ def run(
     days: int = 30,
     project_id: str = "default",
     grains: str = "campaign",
+    currency: str = "USD",
+    end_date: date | None = None,
 ) -> tuple[str, int]:
     """Generate + load Meta seed rows. Returns (pull_id, row_count).
 
     grains='campaign' (default, retro-compat: 60 rows for 30 days) lands the campaign
     grain only; grains='multi' lands the three grains coexisting (F-1) so the local mart
     exercises the data_level filter.
+
+    `currency` alimente `cost_source_currency`. Les deux generateurs le declaraient
+    depuis toujours et ce point d'entree ne le passait pas, donc TOUT appelant landait
+    la valeur par defaut -- c'est ainsi que la fixture de conflit FX a cesse de porter
+    un conflit sans que personne le voie (AI-163). Le defaut ne bouge PAS : `default`
+    reste en USD, ce que `test_meta_cost_normalization` exige comme population
+    cross-devise. Le conflit se seme sur un AUTRE projet, en EUR.
+
+    ``end_date`` est la couture d'ancre du corpus que le driver seed_all_connectors
+    remplit (AI-213) ; None retombe sur DEFAULT_SEED_END_DATE, jamais date.today().
     """
     pull_id = _mint_pull_id()
     loaded_at = datetime.now(tz=timezone.utc).isoformat().replace("+00:00", "Z")
     if grains == "multi":
-        rows = generate_multigrain_rows(days=days, project_id=project_id)
+        rows = generate_multigrain_rows(
+            days=days, end_date=end_date, project_id=project_id, currency=currency
+        )
     else:
-        rows = generate_rows(days=days, project_id=project_id)
+        rows = generate_rows(
+            days=days, end_date=end_date, project_id=project_id, currency=currency
+        )
     count = load_duckdb(rows, pull_id, loaded_at, duckdb_path, project_id=project_id)
     return pull_id, count
 

@@ -115,7 +115,16 @@ class MissingAsOfRate(FxError):
 
 @dataclass(frozen=True, slots=True)
 class FxSeedRow:
-    """One row of dbt/seeds/fx_rates.csv (all 7 columns, typed)."""
+    """One row of dbt/seeds/fx_rates.csv (the seven columns this reader types).
+
+    The seed carries an eighth since 2026-08-17 -- `fx_method`, the governed
+    method of the rate (`fixed` for the posed USD/EUR line, `identity` for the
+    same-currency one). It is NOT typed here on purpose: this reader belongs to
+    the pre-48.3 seam whose successor is `core.fx_rate_sets`, and adding a field
+    would spread the method vocabulary into a module that is being retired rather
+    than extended. The warehouse reads that column directly (every staging model
+    propagates it beside `fx_source` / `fx_tier`), which is the path that matters.
+    """
 
     from_currency: str
     to_currency: str
@@ -237,9 +246,7 @@ class RateProvider(Protocol):
     so no caller of ``convert()`` changes (E39-AD4).
     """
 
-    def get_rate(
-        self, from_ccy: str, to_ccy: str, on_date: date | None
-    ) -> RateQuote | None: ...
+    def get_rate(self, from_ccy: str, to_ccy: str, on_date: date | None) -> RateQuote | None: ...
 
 
 class FixedRateProvider:
@@ -261,9 +268,7 @@ class FixedRateProvider:
     def __init__(self, seeds_dir: str | Path | None = None):
         self._rows = parse_fx_seed(seeds_dir)
 
-    def get_rate(
-        self, from_ccy: str, to_ccy: str, on_date: date | None
-    ) -> RateQuote | None:
+    def get_rate(self, from_ccy: str, to_ccy: str, on_date: date | None) -> RateQuote | None:
         # Identity: same-currency is an exact pass-through, independent of any
         # seed row (AC7 / E39-NFR01).
         if from_ccy == to_ccy:
@@ -302,9 +307,7 @@ class AsOfRateProvider(Protocol):
     ``convert()`` caller changes (E39-AD4). Do NOT import the live provider here.
     """
 
-    def get_rate(
-        self, from_ccy: str, to_ccy: str, on_date: date | None
-    ) -> RateQuote | None: ...
+    def get_rate(self, from_ccy: str, to_ccy: str, on_date: date | None) -> RateQuote | None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -322,7 +325,7 @@ class SeedAsOfRateProvider:
     ``<= on_date`` (the rate effective ON the figure's own date), or ``None`` if
     the pair has no rate at/before that date (drives MissingAsOfRate). This is a
     story-local mock table, NOT the live feed and NOT
-    ``seed_fx_conflict_resolutions.py``.
+    ``seed_fx_source_currency_bindings.py``.
 
     Accepts either an iterable of ``(from_ccy, to_ccy, rate, rate_date)`` tuples
     (``rate_date`` as ``date`` or ISO string) or a CSV path with the header
@@ -366,9 +369,7 @@ class SeedAsOfRateProvider:
                 )
         return loaded
 
-    def get_rate(
-        self, from_ccy: str, to_ccy: str, on_date: date | None
-    ) -> RateQuote | None:
+    def get_rate(self, from_ccy: str, to_ccy: str, on_date: date | None) -> RateQuote | None:
         # Identity short-circuit stays exact even on the historical tier (AC7).
         if from_ccy == to_ccy:
             return RateQuote(
@@ -459,13 +460,9 @@ def convert(
             raise MissingFxPair(from_currency, reporting_currency, on_date, tier)
     elif tier == TIER_HISTORICAL:
         if provider is None:
-            raise ValueError(
-                "tier='historical' requires an AsOfRateProvider via provider=..."
-            )
+            raise ValueError("tier='historical' requires an AsOfRateProvider via provider=...")
         if on_date is None:
-            raise ValueError(
-                "tier='historical' requires on_date (the figure's own date)"
-            )
+            raise ValueError("tier='historical' requires on_date (the figure's own date)")
         quote = provider.get_rate(from_currency, reporting_currency, on_date)
         if quote is None:
             raise MissingAsOfRate(from_currency, reporting_currency, on_date, tier)
@@ -495,7 +492,7 @@ def convert(
 # ---------------------------------------------------------------------------
 
 
-def resolve_reporting_currency(project_id: str) -> str:
+def resolve_reporting_currency(project_id: str) -> str | None:
     """Return the project's reporting currency from app.project_preferences.
 
     Reads ``canonical_currency`` for *project_id* (the platform column is
@@ -504,10 +501,8 @@ def resolve_reporting_currency(project_id: str) -> str:
     ripple into dbt / mirror / the CSV fallback -- out of scope); it bridges the
     two names HERE.
 
-    Fail-soft to ``DEFAULT_REPORTING_CURRENCY`` ("EUR", the migration-008
-    default) when the project row is absent OR the lookup fails -- never crash,
-    never invent a non-default (mirrors metric_semantics._project_org_id's
-    fail-to-default posture, E39-NFR04).
+    Returns ``None`` unless an immutable active configuration confirms the value.
+    Organization suggestions and legacy non-null preferences fail closed.
     """
     from core.db import get_connection  # noqa: PLC0415
 
@@ -515,18 +510,23 @@ def resolve_reporting_currency(project_id: str) -> str:
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT canonical_currency FROM app.project_preferences "
-                    "WHERE project_id = %s",
+                    """
+                    SELECT cv.posture #>> '{defaults,reporting_currency}'
+                    FROM app.projects p
+                    JOIN app.project_configuration_versions cv
+                      ON cv.project_id = p.id AND cv.id = p.active_configuration_version_id
+                    WHERE p.id = %s
+                    """,
                     (project_id,),
                 )
                 row = cur.fetchone()
         if row and row[0]:
             return str(row[0])
-        return DEFAULT_REPORTING_CURRENCY
+        return None
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "fx_helper: reporting currency lookup failed project=%s: %s",
             project_id,
             exc,
         )
-        return DEFAULT_REPORTING_CURRENCY
+        return None

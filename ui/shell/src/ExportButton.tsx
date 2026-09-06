@@ -24,7 +24,7 @@
 
 import { useState } from "react";
 import { toPng } from "html-to-image";
-import Box from "@mui/material/Box";
+import { Box } from "./primitives";
 
 export interface ExportButtonProps {
   /** Ref to the DOM element to capture (the widget's main container). */

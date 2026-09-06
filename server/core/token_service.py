@@ -21,7 +21,7 @@ WHAT THIS MODULE DOES (AC2 / AC3 of the story):
     reserved ``auth_expired`` code so the shell renders a reconnect affordance (AD-15).
 
 IDENTITY / AD-5 (BLOCKED-18.3 from the 18.1 F-1 review):
-  The 18.1 store documents that ``identity_has_project_access`` enforcement is the
+  The 18.1 store documents that ``identity_can_read_project`` enforcement is the
   CALLER's duty on any tenant-exposed path. Scheduled pulls are a SYSTEM context, not
   a tenant-exposed one: the queue worker resolved the project itself and runs under a
   ``system`` identity -- there is no inbound tenant identity to check here. So this
@@ -30,7 +30,7 @@ IDENTITY / AD-5 (BLOCKED-18.3 from the 18.1 F-1 review):
   confusion). ANY FUTURE tenant-exposed entry point (e.g. an interactive
   "test this connection" button in the console) MUST call
   ``get_fresh_google_token(..., identity=<real subject>)`` AND gate it with
-  ``identity_has_project_access`` BEFORE reaching this service. That guard is wired as
+  ``identity_can_read_project`` BEFORE reaching this service. That guard is wired as
   an explicit, documented parameter below so the future path cannot forget it.
 
 SECURITY INVARIANTS (18.5 is adversarial -- any plaintext token leak = CRITICAL):
@@ -109,6 +109,19 @@ def resolve_connection_by_nango_id(nango_connection_id: str) -> ResolvedConnecti
 
     Returns None when there is no matching row OR the DB is unreachable -- the caller
     then falls back to the unchanged Nango path (backward compat / non-regression).
+
+    THE IDENTIFIER IS ALSO MATCHED AGAINST ``id``
+    A google_direct row has NO nango_connection_id -- there is no Nango connection
+    behind it, and migration 128 made the column nullable to say so. Matching only
+    that column meant such a row could never be resolved, so `get_fresh_token`
+    fell through to the Nango path for every Google-direct connector call and
+    failed there. Callers holding a google_direct connection have its
+    connection_ref id and nothing else, so that is what they pass.
+
+    The two identifier spaces do not collide: connection_ref ids are minted as
+    ``conn_<ULID>`` by this codebase, while nango_connection_ids come from Nango.
+    ``nango_connection_id`` is still matched FIRST so an existing Nango call keeps
+    resolving exactly the row it resolved before.
     """
     try:
         from core.db import get_connection  # local import: avoid import cycle
@@ -120,10 +133,11 @@ def resolve_connection_by_nango_id(nango_connection_id: str) -> ResolvedConnecti
                     SELECT id, project_id, auth_path, token_expiry,
                            (encrypted_token_blob IS NOT NULL) AS has_blob
                       FROM app.connection_ref
-                     WHERE nango_connection_id = %s
+                     WHERE nango_connection_id = %s OR id = %s
+                     ORDER BY (nango_connection_id = %s) DESC
                      LIMIT 1
                     """,
-                    (nango_connection_id,),
+                    (nango_connection_id, nango_connection_id, nango_connection_id),
                 )
                 row = cur.fetchone()
     except Exception:
@@ -177,7 +191,7 @@ def get_fresh_google_token(
         resolved: the routing facts from ``resolve_connection_by_nango_id``.
         identity: the audit subject. Defaults to ``'system'`` for scheduled pulls (a
             system context, not tenant-exposed). A tenant-exposed caller MUST pass the
-            real human subject AND have gated the call with ``identity_has_project_access``
+            real human subject AND have gated the call with ``identity_can_read_project``
             beforehand (AD-5 -- see module docstring).
 
     Raises:
@@ -405,7 +419,23 @@ def google_direct_health(resolved: ResolvedConnection, now: datetime | None = No
         expiry = expiry.replace(tzinfo=timezone.utc)
 
     if now >= (expiry - timedelta(seconds=_REFRESH_SKEW_SECONDS)):
-        # Access token is due for refresh -- amber (a refresh will run at next pull).
-        return ConnectionHealth(status="stale", last_fetched_at=None)
+        # AN EXPIRED ACCESS TOKEN IS THE NORMAL STATE, NOT A DEGRADATION.
+        #
+        # A Google access token lives one hour and is minted again from the
+        # refresh token on every call (`get_fresh_token`). Reading amber off it
+        # made EVERY google_direct authorization amber for all but the hour
+        # following a refresh -- and the console renders amber as "reconnect".
+        # Measured 2026-08-11: the Source step offered
+        # "Jean-Ludovic Albany -- YouTube Analytics -- stale" on the very
+        # authorization a preview had just pulled real data through, minutes
+        # before. A signal that is amber almost always says nothing at all.
+        #
+        # The docstring above already stated the right rule -- "the poller stays
+        # green until a refresh actually fails" -- and the code returned the
+        # opposite. What is worth a colour is the REFRESH token, and its death is
+        # only observable when a refresh is attempted: that failure raises
+        # `auth_expired` at pull time and turns this red, which is where the
+        # operator's attention belongs.
+        return ConnectionHealth(status="ok", last_fetched_at=None)
 
     return ConnectionHealth(status="ok", last_fetched_at=None)

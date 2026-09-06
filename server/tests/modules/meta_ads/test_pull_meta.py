@@ -388,11 +388,17 @@ def test_pull_token_not_stored(connector, tmp_path, monkeypatch, caplog):
 
 
 @respx.mock
-def test_pull_ad_account_id_from_env(connector, tmp_path, monkeypatch):
-    """When ad_account_id is None, pull reads META_ADS_AD_ACCOUNT_ID env var."""
+def test_pull_uses_the_selected_ad_account(connector, tmp_path, monkeypatch):
+    """Le compte choisi par l'operateur atteint l'URL de la requete.
+
+    Ce test posait META_ADS_AD_ACCOUNT_ID et appelait sans le parametre : il
+    prouvait que le repli d'environnement marchait, pas que la selection
+    arrive. Le repli est supprime (une variable de deploiement tirait le meme
+    compte pour tous les projets) ; le compte est desormais passe comme le
+    worker le passe, sous le nom que le manifeste declare.
+    """
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "meta_env.duckdb"))
-    monkeypatch.setenv("META_ADS_AD_ACCOUNT_ID", "1234567890")
 
     route = respx.get(_META_INSIGHTS_URL).mock(
         return_value=httpx.Response(200, json=_META_INSIGHTS_RESPONSE)
@@ -405,6 +411,7 @@ def test_pull_ad_account_id_from_env(connector, tmp_path, monkeypatch):
             date_to="2026-07-03",
             project_id="jean-meta",
             pull_id="pull_meta_env",
+            ad_account_id="1234567890",
         )
 
     assert route.called
@@ -414,7 +421,7 @@ def test_pull_ad_account_id_from_env(connector, tmp_path, monkeypatch):
 def test_pull_missing_ad_account_id_raises(connector, monkeypatch):
     """pull raises ValueError when neither param nor env var is set."""
     monkeypatch.delenv("META_ADS_AD_ACCOUNT_ID", raising=False)
-    with pytest.raises(ValueError, match="META_ADS_AD_ACCOUNT_ID"):
+    with pytest.raises(ValueError, match="selected account"):
         connector.pull(
             connection_id="conn_test",
             date_from="2026-07-01",

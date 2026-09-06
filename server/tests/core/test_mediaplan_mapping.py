@@ -21,6 +21,8 @@ from decimal import Decimal
 
 import pytest
 
+from tests.conftest import purge_fixture_project
+
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
@@ -91,7 +93,7 @@ def test_compute_default_splits_over_one_million_lines_raises():
     keys = [f"l{i}" for i in range(1_000_001)]
     with pytest.raises(MediaPlanValidationError) as exc:
         compute_default_splits(keys)
-    assert "trop de lignes" in str(exc.value)
+    assert "too many target rows" in str(exc.value)
 
 
 def test_validate_split_sum_exact_ok():
@@ -183,9 +185,8 @@ def _seed_project(conn) -> str:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO app.projects (id, name, slug, status, currency, timezone, created_by,
-                org_id)
-            VALUES (%s, %s, %s, 'active', 'EUR', 'Europe/Paris', 'system', 'org_test_fixture')
+            INSERT INTO app.projects (id, name, slug, status, created_by, org_id)
+            VALUES (%s, %s, %s, 'active', 'system', 'org_test_fixture')
             """,
             (project_id, "Map Test", project_id),
         )
@@ -194,46 +195,26 @@ def _seed_project(conn) -> str:
 
 
 def _drop_project(conn, project_id: str) -> None:
-    """Tear down a plan tree incl. mappings (same trigger-disable pattern as 22.1)."""
-    with conn.cursor() as cur:
-        cur.execute("ALTER TABLE app.plan_allocation_daily DISABLE TRIGGER USER")
-        cur.execute("ALTER TABLE app.media_plan_versions DISABLE TRIGGER USER")
-        try:
-            cur.execute(
-                "DELETE FROM app.plan_line_mappings WHERE plan_id IN "
-                "(SELECT id FROM app.media_plans WHERE project_id = %s)",
-                (project_id,),
-            )
-            cur.execute(
-                """
-                DELETE FROM app.plan_allocation_daily WHERE version_id IN (
-                    SELECT v.id FROM app.media_plan_versions v
-                    JOIN app.media_plans p ON p.id = v.plan_id WHERE p.project_id = %s
-                )
-                """,
-                (project_id,),
-            )
-            cur.execute(
-                """
-                DELETE FROM app.media_plan_lines WHERE version_id IN (
-                    SELECT v.id FROM app.media_plan_versions v
-                    JOIN app.media_plans p ON p.id = v.plan_id WHERE p.project_id = %s
-                )
-                """,
-                (project_id,),
-            )
-            cur.execute(
-                "DELETE FROM app.media_plan_versions WHERE plan_id IN "
-                "(SELECT id FROM app.media_plans WHERE project_id = %s)",
-                (project_id,),
-            )
-            cur.execute("DELETE FROM app.media_plans WHERE project_id = %s", (project_id,))
-            cur.execute("DELETE FROM app.audit_log WHERE identity IN ('tester', 'system')")
-            cur.execute("DELETE FROM app.projects WHERE id = %s", (project_id,))
-        finally:
-            cur.execute("ALTER TABLE app.plan_allocation_daily ENABLE TRIGGER USER")
-            cur.execute("ALTER TABLE app.media_plan_versions ENABLE TRIGGER USER")
+    conn = _connect()
+    with conn.cursor():
+        # THE WHOLE TREE, THROUGH THE PRODUCTION GRAPH -- not a hand-written list.
+        #
+        # Three things were wrong here at once, and each is a class this harness
+        # already has an answer for:
+        #
+        #   * `ALTER TABLE ... DISABLE TRIGGER USER` requires OWNING the table,
+        #     and fixtures connect as a role that owns nothing. The erasure flag
+        #     `purge_fixture_project` sets is what the immutability triggers
+        #     yield to (migration 099, extended by 264), so nothing needs
+        #     disabling.
+        #   * `DELETE FROM app.audit_log` is refused, CORRECTLY: 099 excludes it
+        #     from the escape hatch on purpose -- the audit log is the durable
+        #     trace OF an erasure and must survive it. The fixture asked for
+        #     something the product forbids, and got a refusal it read as a bug.
+        #   * the per-table list loses the race to the next governed table.
+        purge_fixture_project(conn, project_id)
     conn.commit()
+
 
 
 _LINES = [
@@ -578,7 +559,11 @@ def test_unmapped_actuals_excludes_active_mappings():
 
     A is mapped to social/prospecting [1-31 mars] and its spend (5 mars) falls INSIDE
     that window -> covered -> not listed. B has no active mapping -> listed with
-    reason 'sans_mapping'.
+    reason 'no_match'.
+
+    Story 61.2 renamed the VALUE, not the constant: it was `sans_mapping`, and
+    CLAUDE.md §2 says values are written in English. Every assertion here already
+    read the constant, which is why the rename touched no expectation below.
     """
     from core.mediaplan_mapping import (
         REASON_UNMAPPED,
@@ -616,7 +601,10 @@ def test_unmapped_actuals_excludes_active_mappings():
         refs = {r["campaign_ref"] for r in result["unmapped"]}
         assert refs == {"B"}
         b = next(r for r in result["unmapped"] if r["campaign_ref"] == "B")
-        assert b["reason"] == REASON_UNMAPPED
+        assert b["reason"] == REASON_UNMAPPED == "no_match"
+        # Story 61.2: the sentence travels beside the value, so the three readers
+        # of these rows say the same thing instead of one holding the only copy.
+        assert b["reason_label"] == "No plan line of this plan matches this campaign."
         assert result["window"]["start"] == "2026-03-01"
         assert result["window"]["end"] == "2026-03-31"
     finally:
@@ -660,7 +648,8 @@ def test_unmapped_actuals_out_of_line_window_spend_is_visible():
     OUTSIDE its mapped line's window). Under the pre-fix envelope subtraction, A had
     an active mapping over the plan and was subtracted wholesale -> the 15-mars spend
     vanished from BOTH the ventilation and this view. After the fix it re-appears as
-    unmapped with reason 'hors_fenetre_lignes_mappees'. Conservation is also proven:
+    unmapped with reason 'outside_matched_line_window' (story 61.2 renamed that
+    value from `hors_fenetre_lignes_mappees`). Conservation is also proven:
     Σ(covered) + Σ(unmapped) == Σ(total daily spend).
     """
     from core.mediaplan_mapping import (
@@ -726,7 +715,10 @@ def test_unmapped_actuals_out_of_line_window_spend_is_visible():
         assert len(result["unmapped"]) == 1
         entry = result["unmapped"][0]
         assert entry["campaign_ref"] == "A"
-        assert entry["reason"] == REASON_OUT_OF_WINDOW
+        assert entry["reason"] == REASON_OUT_OF_WINDOW == "outside_matched_line_window"
+        assert entry["reason_label"] == (
+            "A line matches it, but this spend falls outside that line's window."
+        )
         assert entry["spend"] == pytest.approx(40.0)
 
         # Conservation: covered (60) + unmapped (40) == total daily spend (100).

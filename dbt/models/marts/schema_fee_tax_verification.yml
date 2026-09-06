@@ -1,0 +1,242 @@
+version: 2
+
+# Epic 41 (media cost composition) / Story 41.4 -- the KEEP_SEPARATE verification overlay.
+#
+# A NEW YAML file on purpose, and specifically NOT an edit to schema_fee_tax.yml:
+#   * dbt merges every YAML under model-paths, so a new file costs nothing functionally;
+#   * keeping the 41.4 entries out of the shared files is what makes the "only NEW files
+#     plus one rewire" claim checkable with `git diff --name-only` (AC11), asserted by
+#     server/tests/conformance/test_epic41_verification_overlay_additive.py;
+#   * schema_fee_tax.yml belongs to 41.3 and is concurrently owned by 41.5.
+#
+# The model is materialized: view (E41-NFR03 -- no state is persisted). The marts default
+# in dbt_project.yml is `table`, so the model overrides it IN-FILE; that file is not
+# edited by this story.
+
+models:
+  - name: fee_tax_verification_allocation
+    description: >
+      Story 41.4. IAS / DoubleVerify CPM verification cost allocated to campaigns BY
+      MEASURED IMPRESSIONS, as a KEEP_SEPARATE OVERLAY (Epic 27 invariant 4 / E41-FR04 /
+      E41-AD4). The cost is NEVER inside a native total and CANNOT BECOME SO: this model
+      does not ref() fee_tax_ladder_daily or fee_tax_ladder_rollup, neither of them refs
+      it, its only *_micros column is verification_cost_micros, and a twin-project
+      byte-identity differential proves the cost ladder is unmoved by the presence of
+      verification cost.
+
+      Verification connectors emit NO cost metric at all -- only additive impression /ad
+      counts -- so the CPM RATE is a DECLARED, confirmed FeeTaxRule
+      (category='VERIFICATION', form='CPM', base_target='MEASURED_IMPRESSIONS') and the
+      ALLOCATION BASE is a real metric read from fact_daily_kpi
+      (metric='measured_impressions'). Because CPM is LINEAR in impressions, the
+      per-campaign formula IS the allocation by measured impressions: the parts sum to
+      the whole with ZERO allocation residue and there is no ratio to apply.
+
+      The base is selected BY METRIC NAME and never by connector name, so there is zero
+      connector vocabulary here (AD-2 / E41-NFR05) and DoubleVerify -- which has a staging
+      model but reaches NO mart today -- is supported the day its fact_daily_kpi block
+      lands, with no change to this model.
+
+      No FX is applied and NO fx_* COLUMN IS CARRIED: the base is a count, the rate must
+      already be in the project's canonical currency or the component is refused, and an
+      all-NULL FX block would invite a reader to believe a conversion happened.
+
+      With the module OFF (or with no preferences row) this view returns ZERO rows.
+    config:
+      materialized: view
+    tests:
+      # AI-05 grain. COALESCE is REQUIRED: a rule_without_base row legitimately carries a
+      # NULL date (a rule that priced nothing has no day), and a NULL inside the key would
+      # make `unique` silently ignore the row.
+      - unique:
+          name: fee_tax_verification_allocation_grain_unique
+          arguments:
+            column_name: >
+              project_id || '|' || row_kind
+              || '|' || COALESCE(CAST(date AS STRING), '__no_date__')
+              || '|' || connector || '|' || breakdown_dimension
+              || '|' || breakdown_value || '|' || currency
+    columns:
+      - name: row_kind
+        description: >
+          'allocation' = one priced (or knowingly unpriced) impression row.
+          'rule_without_base' = the REASON ROW for a confirmed CPM rule that priced
+          nothing anywhere, emitted so the rule can never silently vanish.
+        tests:
+          - not_null
+          - accepted_values:
+              name: fee_tax_verification_allocation_row_kind_accepted
+              arguments:
+                values: ["allocation", "rule_without_base"]
+      - name: project_id
+        description: "Project whose module is ON, by construction."
+        tests: [not_null]
+      - name: date
+        description: >
+          Day grain, typed DATE. NO not_null test ON PURPOSE: it is NULL on
+          row_kind='rule_without_base' rows, where inventing a day (effective_from, say)
+          would be a fabricated value. test_epic41_verification_typed_gaps.sql asserts
+          instead that it is never NULL on an 'allocation' row.
+      - name: connector
+        description: "The VERIFICATION connector (ias, ...); '' on a reason row."
+        tests: [not_null]
+      - name: breakdown_dimension
+        description: >
+          The canonical single series ('campaign_id' today); '__rule_without_base__' on a
+          reason row. Exactly ONE series per (project, date, connector) enters the
+          allocation, so a future multi-partition verification connector cannot silently
+          multiply the fee.
+        tests: [not_null]
+      - name: breakdown_value
+        description: >
+          The campaign ref IN THE VERIFICATION VENDOR'S OWN ID SPACE (not the DSP's -- see
+          spend_link_state); the rule_id on a reason row.
+        tests: [not_null]
+      - name: currency
+        description: "mirror.project_preferences.canonical_currency. No FX is applied here."
+        tests: [not_null]
+      - name: measured_impressions
+        description: >
+          The allocation base -- a read of a real fact, ALWAYS POPULATED on an
+          'allocation' row (including when no rule was declared, so the impression count
+          stays fully visible). NULL on a reason row. No not_null test: see `date`.
+      - name: verification_cost_micros
+        description: >
+          THE ONE AND ONLY MONEY COLUMN IN THIS MODEL, in exact integer micros of
+          `currency`: ROUND(measured_impressions * cpm_micros / 1000), ROUND_HALF_UP, one
+          rounding per (row x rule), then an exact integer SUM across rules.
+          NULL when gap_codes <> '' (a declared computation could not be carried out) and
+          NULL when coverage_state = 'NO_RULE_DECLARED' (nobody told us the rate -- a 0
+          would ASSERT a zero cost we do not know). The ONLY legitimate 0 is a real
+          measured zero base. This value is an OVERLAY: it is not, and cannot become, part
+          of any fee_tax_ladder_daily column.
+      - name: coverage_state
+        description: >
+          "Is there a rate to apply at all?" -- ORTHOGONAL to gap_codes and to
+          spend_link_state; do not conflate the three.
+          PRICED = at least one confirmed CPM rule reached this row.
+          NO_RULE_DECLARED = real impressions, no rule reaches the row. This is a KNOWN
+          fact, not an unresolvable one, so it contributes NO gap code and leaves
+          is_allocation_complete TRUE -- a client billed for IAS outside the platform is
+          an ordinary configuration, and a flag that is always on is worse than no flag.
+          RULE_WITHOUT_BASE = the reason row.
+        tests:
+          - not_null
+          - accepted_values:
+              name: fee_tax_verification_allocation_coverage_state_accepted
+              arguments:
+                values: ["PRICED", "NO_RULE_DECLARED", "RULE_WITHOUT_BASE"]
+      - name: applied_rule_ids
+        description: "'|'-joined, sorted rule ids that fired; '' when none (AD-9)."
+        tests: [not_null]
+      - name: applied_rule_count
+        tests: [not_null]
+      - name: rule_effective_from
+        description: "Declared window start -- provenance on reason rows only, NULL on allocation rows."
+      - name: rule_effective_to
+        description: "Declared window end (NULL = open-ended) -- reason rows only."
+      - name: spend_link_state
+        description: >
+          "Can we NAME the spend row this sits beside?" -- ANNOTATION, NEVER COMPUTATION.
+          It affects verification_cost_micros, gap_codes and is_allocation_complete in NO
+          WAY: an unlinked verification row carries its full, exact cost and is complete.
+          LINKED_VIA_CAMPAIGN_REF = literal cross-connector breakdown_value equality
+          inside one (project, day). Weaker provenance, never governed truth.
+          UNLINKED_AMBIGUOUS_SPEND_MATCH = matched spend on >= 2 distinct connectors, an
+          id collision -- ONE IS NEVER PICKED.
+          UNLINKED_NO_SPEND_MATCH = nothing matched. THIS IS THE EXPECTED MAJORITY
+          OUTCOME, not a broken build: vendor and DSP id spaces usually differ.
+          NOT_ATTEMPTED = a reason row.
+          LINKED_VIA_PLAN_LINE is RESERVED HERE BUT NEVER EMITTED (ruling Q2): it would
+          need a governed cross-connector campaign identity nobody has declared. Keeping
+          the token accepted makes adding the rung later purely additive.
+        tests:
+          - not_null
+          - accepted_values:
+              name: fee_tax_verification_allocation_spend_link_state_accepted
+              arguments:
+                values:
+                  - LINKED_VIA_CAMPAIGN_REF
+                  # RESERVED, NEVER EMITTED. Read this beside the value, not four
+                  # paragraphs above it: listing a value in accepted_values reads as
+                  # COVERAGE, and this one has none. Nothing will emit it until a
+                  # GOVERNED cross-connector campaign identity exists -- i.e. until a
+                  # media-plan line can be named as the shared key of a vendor row and a
+                  # DSP row (mirror.plan_line_mappings carries the mapping but no
+                  # verification feed is mapped through it, and ruling Q2 refuses to
+                  # infer one). `test_epic41_verification_spend_link_states.sql` asserts
+                  # it stays unemitted, so this note and the build cannot disagree.
+                  - LINKED_VIA_PLAN_LINE
+                  - UNLINKED_AMBIGUOUS_SPEND_MATCH
+                  - UNLINKED_NO_SPEND_MATCH
+                  - NOT_ATTEMPTED
+      - name: spend_link_source
+        description: >
+          Non-empty IF AND ONLY IF linked (the resolution_source convention Story 41.2
+          established); '' otherwise, never NULL.
+        tests:
+          - not_null
+          - accepted_values:
+              name: fee_tax_verification_allocation_spend_link_source_accepted
+              arguments:
+                values: ["campaign_ref_equality", ""]
+      - name: linked_connector
+        description: "The annotated spend row's connector KEY. NO AMOUNT. NULL when unlinked."
+      - name: linked_breakdown_value
+        description: "The annotated spend row's campaign KEY. NO AMOUNT. NULL when unlinked."
+      - name: attr_country
+        description: "Carried from Story 41.2. OPAQUE PROVENANCE -- never branched on here."
+      - name: attr_market
+        description: "Carried from Story 41.2. OPAQUE PROVENANCE -- never branched on here."
+      - name: attr_source_type
+        description: >
+          Carried from Story 41.2. NULL for ias / doubleverify today, and that is CORRECT:
+          a verification feed resolves to source_type UNKNOWN, which is excluded from
+          COST_CASCADE_SOURCE_TYPES -- precisely what keeps it out of net media.
+      - name: resolution_source
+        description: "Story 41.2's country-resolution provenance. Opaque; never branched on."
+      - name: gap_codes
+        description: >
+          "Did a DECLARED computation fail to run?" -- '|'-joined, SORTED, distinct; ''
+          (never NULL) when clean. Sorted BY CONSTRUCTION via an alphabetical CASE chain,
+          not by a cross-engine aggregate ordering. Vocabulary: CONDITION_KEY_UNKNOWN,
+          COUNTRY_UNRESOLVED, CURRENCY_MISMATCH, DATASTREAM_SCOPE_AMBIGUOUS,
+          MARKET_UNRESOLVED, PLACEMENT_TYPE_UNRESOLVED, RULE_SCOPE_UNRESOLVED,
+          SOURCE_TYPE_UNRESOLVED, TAX_CODE_UNRESOLVED, VERIFICATION_BASE_MISSING,
+          VERIFICATION_CPM_OUT_OF_RANGE, VERIFICATION_PLAN_SCOPE_UNSUPPORTED.
+          VERIFICATION_RULE_MISSING does NOT exist -- "no rule declared" is a
+          coverage_state, never a gap.
+
+          VERIFICATION_CPM_OUT_OF_RANGE IS EMITTED, and that is a repair rather than a
+          statement of the obvious: until 2026-08-10 every fixture CPM was in range, so
+          the code was declared and unreachable and the range guard could be deleted with
+          no line turning red. Three fixture projects now sit on its three boundaries
+          (negative / >= 1e10 / NULL) and
+          `dbt/tests/test_epic41_verification_cpm_out_of_range.sql` requires the code.
+        tests: [not_null]
+      - name: is_allocation_complete
+        description: >
+          gap_codes = ''. It means EXACTLY ONE THING: "a declared computation could not be
+          carried out". It is never set by a missing rule and never by an unlinked spend
+          row.
+        tests: [not_null]
+      - name: keep_separate
+        description: >
+          Literal TRUE on every row -- the contract, self-described on the data so 41.6's
+          card and 41.8's MCP tool read it rather than assume it. DOCUMENTATION, NOT A
+          GUARD: a column value protects nothing. The guards are DAG isolation, the
+          money-column ban and the twin differential.
+        tests: [not_null]
+      - name: reconciliation_status
+        description: >
+          Literal 'KEEP_SEPARATE' -- the same token as
+          server/core/metric_reconciliation.py's RouteStatus.KEEP_SEPARATE, whose decision
+          returns target_mart=None because there is no place to put a combined number.
+        tests:
+          - not_null
+          - accepted_values:
+              name: fee_tax_verification_allocation_reconciliation_status_accepted
+              arguments:
+                values: ["KEEP_SEPARATE"]
+      - name: pull_id
+        description: "AD-7 provenance of the impression rows; NULL on a reason row."

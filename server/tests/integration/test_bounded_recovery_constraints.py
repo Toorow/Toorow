@@ -27,6 +27,11 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
+from tests.migration_ledger import (  # noqa: E402
+    apply_migrations_absent_from_the_ledger,
+    rearm_the_erasure_hatch,
+)
+
 MIGRATIONS = ROOT / "infra" / "nango" / "migrations"
 
 # The minimal dependency chain the operation_preparations FKs require.
@@ -52,12 +57,15 @@ def _id(prefix: str) -> str:
 
 
 def _apply_chain(conn) -> None:
-    with conn.cursor() as cur:
-        for name in _CHAIN:
-            path = MIGRATIONS / name
-            if path.exists():
-                cur.execute(path.read_text(encoding="utf-8"))
-    conn.commit()
+    """Ne rejouer que ce que le ledger ne porte pas -- voir `tests.migration_ledger`.
+
+    `030`, `032` et `042` sont ANTERIEURES a la `099` : les rejouer contre une
+    base migree recree `trg_datastream_plan_versions_immutable`,
+    `trg_datastream_mapping_versions_immutable` et
+    `trg_datastream_publication_log_immutable` SANS la clause `rgpd_erasure`,
+    et un effacement d org echoue ensuite pour toute la session.
+    """
+    apply_migrations_absent_from_the_ledger(conn, [MIGRATIONS / name for name in _CHAIN])
 
 
 def _seed(conn):
@@ -167,9 +175,14 @@ def test_reapplying_080_is_idempotent(live_postgres) -> None:
     conn = live_postgres
     _apply_chain(conn)
     # A second apply is a no-op (the DO block only swaps when tokens are missing).
+    # THE REPLAY IS THE SUBJECT HERE, so it cannot go through the ledger helper --
+    # skipping it would make this assertion vacuous. `080` creates no DELETE guard
+    # inside the org tree, so it costs no erasure hatch; the re-arm below is the
+    # belt that keeps that true if `080` ever grows one.
     with conn.cursor() as cur:
         cur.execute((MIGRATIONS / "080_bounded_recovery.sql").read_text(encoding="utf-8"))
     conn.commit()
+    rearm_the_erasure_hatch(conn)
     org_id, project_id, ds_id = _seed(conn)
     prep_id = _insert_prep(conn, org_id=org_id, project_id=project_id,
                            ds_id=ds_id, kind="reload")

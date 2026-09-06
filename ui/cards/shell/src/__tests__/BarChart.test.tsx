@@ -27,7 +27,7 @@ describe("BarChart — horizontal", () => {
     expect(chart).toHaveAttribute("data-variant", "horizontal");
     expect(chart).toHaveTextContent("Organique");
     expect(chart).toHaveTextContent("Payant");
-    expect(chart).toHaveTextContent("1 500"); // fr-FR locale
+    expect(chart).toHaveTextContent("1,500"); // FORMATTER_LOCALE (story 76-8)
   });
 
   it("has an accessible aria role and label", () => {
@@ -93,7 +93,7 @@ describe("BarChart — direction-aware movers coloring (F-1 + F-3)", () => {
       />,
     );
     const chart = screen.getByTestId("bar-chart");
-    // +3,2 sign must appear (fr-FR format)
+    // the + sign must appear on the mover label
     expect(chart.textContent).toContain("+");
   });
 

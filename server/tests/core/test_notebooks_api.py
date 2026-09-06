@@ -144,103 +144,93 @@ def test_list_notebooks_returns_last_run_status(client):
 # ---------------------------------------------------------------------------
 
 
-def test_patch_notebook_updates_title(client):
-    """PATCH /api/notebooks/{id} with title -> title updated, updated_at bumped."""
-    updated_row = (
-        "nb_TEST", "proj_test", "Nouveau titre", "adhoc", "last_30d",
-        None,
-        datetime(2026, 7, 1, tzinfo=timezone.utc),
-        datetime(2026, 7, 12, tzinfo=timezone.utc),
-    )
-    cursor_mock = MagicMock()
-    cursor_mock.fetchone.return_value = updated_row
-    cursor_mock.description = [
-        ("id",), ("project_id",), ("title",), ("report_ref",),
-        ("window_rule",), ("narrative_prompt",), ("created_at",), ("updated_at",),
-    ]
-    conn_mock = _make_mock_conn(cursor_mock)
-
-    with patch("core.db.get_connection", return_value=conn_mock):
-        resp = client.patch(
-            "/api/notebooks/nb_TEST",
-            json={"title": "Nouveau titre"},
-        )
-
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["title"] == "Nouveau titre"
-    assert data["id"] == "nb_TEST"
-    assert "2026-07-12" in data["updated_at"]
-
-
-def test_patch_notebook_not_found(client):
-    """PATCH /api/notebooks/{id} when not found -> 404."""
-    cursor_mock = MagicMock()
-    cursor_mock.fetchone.return_value = None
-    conn_mock = _make_mock_conn(cursor_mock)
-
-    with patch("core.db.get_connection", return_value=conn_mock):
-        resp = client.patch("/api/notebooks/nb_MISSING", json={"title": "New"})
-
-    assert resp.status_code == 404
-
-
-def test_patch_notebook_invalid_window_rule(client):
-    """PATCH with invalid window_rule -> 400."""
-    resp = client.patch(
-        "/api/notebooks/nb_TEST",
-        json={"window_rule": "quarterly"},
-    )
-    assert resp.status_code == 400
-
-
 # ---------------------------------------------------------------------------
-# test_delete_notebook_cascades_runs
+# PATCH et DELETE : le magasin herite ne prend plus d'ecriture (2026-08-22, 67.23)
 # ---------------------------------------------------------------------------
+#
+# CE QUE CES CINQ TESTS TENAIENT, et pourquoi ce n'est plus vrai. Ils prouvaient
+# qu'un PATCH met a jour un titre, qu'un DELETE cascade sur les runs, et que les
+# deux rendent 404 sur un identifiant absent. Les trois proprietes etaient
+# justes ; l'objet qu'elles gardaient ne doit plus exister.
+#
+# `app.notebooks` avait UN seul ecrivain -- l'outil MCP `save_notebook`, il n'y a
+# aucune route REST de creation -- et les ecrans canoniques d'Analyze lisent
+# `app.analysis_notebooks`. Un modele creait donc un objet reel, audite, que rien
+# ne montrait. La porte MCP a bascule sur le magasin gouverne ; ces ecritures-ci
+# sont l'autre moitie de l'acte.
+#
+# LES LECTURES RESTENT, et leurs tests avec elles : `_list_notebooks`,
+# `_get_notebook` et `_export_notebook_html` sont intacts et tiennent AC12
+# << remain readable >>.
 
 
-def test_delete_notebook_cascades_runs(client):
-    """DELETE /api/notebooks/{id} -> 204; CASCADE removes notebook_runs at DB level."""
-    # Both SELECT and DELETE use the same cursor in _delete_notebook
-    cursor_mock = MagicMock()
-    cursor_mock.fetchone.return_value = ("nb_TEST", "proj_test")
-    conn_mock = _make_mock_conn(cursor_mock)
-
-    with (
-        patch("core.db.get_connection", return_value=conn_mock),
-        patch("core.admin_api.write_audit_row") as mock_audit,
-    ):
-        resp = client.delete("/api/notebooks/nb_TEST")
-
-    assert resp.status_code == 204
-    # Verify both SELECT and DELETE SQL were called (two execute calls)
-    calls = cursor_mock.execute.call_args_list
-    assert len(calls) == 2
-    sql_calls = [c[0][0] for c in calls]
-    assert any("SELECT" in sql for sql in sql_calls)
-    assert any("DELETE FROM app.notebooks" in sql for sql in sql_calls)
-    # Audit row written for deletion
-    mock_audit.assert_called_once()
-    assert mock_audit.call_args[1]["action"] == "notebook_deleted"
+def _refusal_of(resp) -> dict:
+    assert resp.status_code == 409, resp.text
+    return resp.json()
 
 
-def test_delete_notebook_not_found(client):
-    """DELETE /api/notebooks/{id} when not found -> 404."""
-    cursor_mock = MagicMock()
-    cursor_mock.fetchone.return_value = None
-    conn_mock = _make_mock_conn(cursor_mock)
+def test_a_patch_is_refused_and_names_the_surface_that_works(client):
+    body = _refusal_of(client.patch("/api/notebooks/nb_TEST", json={"title": "x"}))
+    assert body["code"] == "legacy_store_is_read_only"
+    # LA PHRASE NOMME UN GESTE, pas une cause technique : la personne doit savoir
+    # ou aller, pas de quelle table il s'agit.
+    assert "Analyze" in body["message"]
+    assert "app.notebooks" not in body["message"]
 
-    with patch("core.db.get_connection", return_value=conn_mock):
-        resp = client.delete("/api/notebooks/nb_MISSING")
 
-    assert resp.status_code == 404
+def test_a_delete_is_refused_with_the_same_words(client):
+    """Un seul refus pour les trois portes -- deux phrases seraient deux regles."""
+    patched = _refusal_of(client.patch("/api/notebooks/nb_TEST", json={"title": "x"}))
+    deleted = _refusal_of(client.delete("/api/notebooks/nb_TEST"))
+    scheduled = _refusal_of(
+        client.patch("/api/notebooks/nb_TEST/schedule", json={"scheduled": True})
+    )
+    assert patched == deleted == scheduled
+
+
+def test_the_refusal_needs_no_database_at_all(client):
+    """Il tombe AVANT toute lecture, et c'est ce qui le rend indistinguable.
+
+    Aucune doublure de connexion n'est posee ici : si la porte ouvrait une
+    connexion, ce test echouerait sur la vraie base ou sur son absence. Qu'il
+    passe est la preuve que le refus ne depend d'aucune ligne -- donc qu'un
+    identifiant reel et un identifiant invente recoivent exactement la meme
+    reponse.
+    """
+    real = client.delete("/api/notebooks/nb_TEST")
+    absent = client.delete("/api/notebooks/nb_DOES_NOT_EXIST")
+    assert real.status_code == absent.status_code == 409
+    assert real.json() == absent.json()
+
+
+def test_the_read_doors_are_untouched(client):
+    """AC12 << remain readable >> : refuser les ecritures n'a ferme aucune lecture."""
+    from core import notebooks_api
+
+    paths = {
+        (route.path, frozenset(route.methods - {"HEAD"}))
+        for route in list(notebooks_api.NOTEBOOKS_ROUTES_1)
+        + list(notebooks_api.NOTEBOOKS_ROUTES_2)
+    }
+    assert ("/api/notebooks", frozenset({"GET"})) in paths
+    assert ("/api/notebooks/{notebook_id}", frozenset({"GET"})) in paths
+    assert (
+        "/api/notebooks/{notebook_id}/runs/{run_id}/export/html",
+        frozenset({"GET"}),
+    ) in paths
+    # Et le magasin herite ne porte plus AUCUNE ecriture, mesure sur la source.
+    import inspect
+
+    source = inspect.getsource(notebooks_api)
+    for verb in ("INSERT INTO app.notebooks", "UPDATE app.notebooks", "DELETE FROM app.notebooks"):
+        assert verb not in source, f"une ecriture subsiste : {verb}"
 
 
 class TestSlideXssEscaping:
     """review-epic-6 F-3: stored values must never render as live HTML."""
 
     def test_data_table_escapes_script_tags(self):
-        from core.admin_api import _build_data_table_html
+        from core.notebooks_api import _build_data_table_html  # noqa: PLC0415
 
         evil = {"data": {"metrics": {"<script>alert(1)</script>": "<img onerror=x>"}}}
         html_out = _build_data_table_html(evil)

@@ -1,55 +1,88 @@
 ---
 title: Data Quality Surveillance & Monitors
-description: Deep dive into toorow's 5 universal automated data quality monitors, baseline checks, and alert ledgers.
+description: Deep dive into toorow's 10 universal automated data quality monitors, baseline checks, and alert ledgers.
 ---
 
 Data quality is a first-class citizen in **toorow**. Every ingestion pull executed across built-in connectors or managed file feeds undergoes automated surveillance before metrics are exposed to semantic marts and AI agents.
 
 ---
 
-## 1. The 5 Universal Data Quality Monitors
+## 1. The 10 Universal Data Quality Monitors
 
-Implemented in `server/core/dq_monitors.py`, these five monitors run automatically after every ingestion cycle:
+Implemented in `server/core/dq_monitors.py` and registered in
+`server/core/dq_monitor_registry.py`, these monitors run automatically after
+every ingestion cycle. Nine watch one Datastream each; one watches the project.
 
 ```mermaid
 flowchart LR
-    A["Raw Ingestion Landings"] --> B["Volume Monitor"]
-    A --> C["Timeliness & Freshness"]
-    A --> D["Duplication Monitor"]
-    A --> E["Schema Drift Monitor"]
-    A --> F["Date Format Integrity"]
-    B & C & D & E & F --> G["DQ Ledger & Alert Dispatch"]
+    A["Raw Ingestion Landings"] --> B["Volume"]
+    A --> C["Timeliness"]
+    A --> D["Arrival timeliness"]
+    A --> E["Duplication"]
+    A --> F["Schema drift"]
+    A --> G["Rejected rows"]
+    A --> H["Null rate"]
+    A --> I["Zero rows"]
+    A --> J["Unresolved values"]
+    A --> K["Unresolved geography"]
+    B & C & D & E & F & G & H & I & J & K --> L["DQ Ledger & Alert Dispatch"]
 ```
 
-### Admin Console: Quality Dashboard
-
-![Quality Dashboard — 4 monitors at 100% health: Volume, Ponctualité, Doublons, Cohérence de schéma](/images/dq-monitors.png)
-
-### 1. Volume Anomaly Monitor (`volume`)
+### 1. Volume (`volume`)
 Detects unexpected drops or spikes in ingested row counts compared to historical trailing averages.
 - **Baseline Window**: 30-day trailing mean and standard deviation.
-- **Threshold**: Triggers warning when `|z-score| >= 3.0` and error when `|z-score| >= 5.0`.
 - **Use Case**: Catches silent API source failures where an API returns `HTTP 200 OK` with an empty data array.
 
-### 2. Timeliness & Freshness Monitor (`timeliness`)
+### 2. Timeliness (`timeliness`)
 Monitors the delta between the maximum date/timestamp present in the ingested data and the execution time.
 - **Max Delay Threshold**: Configurable per connector (default: 24 hours for daily APIs).
-- **Alert Action**: Flags datastreams as `stale` or `delayed` in the Admin Console and morning briefing ledger.
+- **Alert Action**: Flags datastreams as `stale` or `delayed` in the console.
 
-### 3. Duplication Monitor (`duplication`)
+### 3. Arrival timeliness (`arrival_timeliness`)
+The timeliness question asked the other way round, for a feed that **arrives**
+instead of being pulled — an emailed file, a dropped export. It watches the
+deadline the feed was promised to meet, not the age of the newest row.
+
+### 4. Duplication (`duplication`)
 Verifies joint-grain uniqueness across raw landing rows prior to staging transformation.
-- **Check Condition**: Identifies rows sharing identical `(project_id, date, metric, breakdown_dimension, breakdown_value)`.
-- **Resolution**: While staging dbt models automatically deduplicate via `QUALIFY ROW_NUMBER() OVER (PARTITION BY grain ORDER BY pull_id DESC) = 1`, the monitor logs duplicate ingestion instances for pipeline auditing.
+- **Check Condition**: Identifies rows sharing the declared grain.
+- **Resolution**: Staging models deduplicate via `QUALIFY ROW_NUMBER() OVER (PARTITION BY grain ORDER BY pull_id DESC) = 1`; the monitor logs the duplicate landings so the pipeline can be audited.
 
-### 4. Schema Drift Monitor (`schema_drift`)
+### 5. Schema drift (`schema`)
 Detects unexpected changes in upstream source field types, missing expected columns, or newly introduced unmapped columns.
 - **Behavior**: Compares incoming payload field structures against the authoritative manifest descriptor (`manifest.json`).
-- **Safety Action**: Unmapped columns are safely landed in raw JSON storage without breaking downstream staging queries.
+- **Safety Action**: Unmapped columns land in raw JSON storage without breaking downstream staging queries.
 
-### 5. Date Format & Grain Integrity Monitor (`date_format`)
-Validates date string formatting, ISO compliance, and temporal consistency.
-- **Check Condition**: Ensures dates conform strictly to `YYYY-MM-DD` and timestamps match ISO 8601 extended standards.
-- **Grain Validation**: Verifies that daily reports do not contain intraday timestamps without explicit grain declaration.
+### 6. Rejected rows (`date_format`)
+Validates date string formatting, ISO compliance, and temporal consistency, and
+names the rows that were rejected for it.
+- **Check Condition**: Dates conform to `YYYY-MM-DD`, timestamps to ISO 8601 extended.
+- **Grain Validation**: Daily reports may not carry intraday timestamps without an explicit grain declaration.
+
+### 7. Null rate (`null_rate`)
+The share of a **required** field that arrived empty. Required means: a member of
+the active mapping version's declared grain — a list a person chose — and nothing
+else. What is judged is the *missing* rate, `NULL` **or** blank, because a landed
+empty string is just as absent as a null and was measured as the more common
+spelling of the two. A mapping version with an empty grain answers
+`not_applicable` rather than inventing a rule.
+
+### 8. Zero rows (`zero_rows`)
+Did this Datastream's window return nothing, where the source has been producing?
+Distinguished from the volume monitor: zero is not a small number, it is an
+absence, and it has its own repair.
+
+### 9. Unresolved values (`unresolved_values`)
+After mapping, which values does the reading still fail to name — a video grouped
+under nothing, a placement no plan line covers? It fires per
+`(datastream, dimension, reason)`, and it remembers what it has already announced
+by fingerprint, never by value: the backlog present when the monitor is armed
+becomes the baseline and is not posted, so the alert you get is a *new* gap.
+
+### 10. Unresolved geography (`geography`)
+Project-scoped, and evaluated only on a Local-markets project: a Global project
+makes no geographic promise, so an unmapped country value is not a gap against
+anything it published.
 
 ---
 

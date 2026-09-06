@@ -1,525 +1,166 @@
-/**
- * Sources — the provider-accounts surface.
- *
- * Visual lineage:
- *   _bmad-output/planning-artifacts/ux-designs/ux-connector-2026-07-23/
- *     mockups/sources.html
- *
- * The application shell (ApplicationShell.tsx) already renders the frame,
- * sidebar, topbar, and <main className="main">. This component renders ONLY the
- * page content: the page header, the three summary cards, and the
- * provider-accounts panel.
- *
- * Data: GET /api/connections (see ../../ConnectionsList.tsx) — provider,
- * health.status, token_expiry, exposure, owner_org_name and
- * active_datastream_count are all real fields on that read-model, and every cell
- * below is derived from them.
- *
- * WHAT WAS REMOVED
- * ----------------
- * This page used to open on four invented provider accounts — "Acme Ads",
- * "Northwind Search", "acme.com", "Planning team" — complete with credential
- * expiry dates, owning organizations and per-source Datastream counts, and it
- * KEPT them in two cases that matter:
- *   - `if (!resp.ok) return;  // keep mockup literals on any failure`
- *   - `if (connections.length > 0)` — an account with genuinely NO connections
- *     was shown four, which is the worst possible reading for the case it is
- *     most likely to occur in.
- * The three summary counts were then computed FROM those literals, so a broken
- * or empty console reported "4 usable provider accounts, 3 healthy".
- *
- * Now: a failed load is said and no rows are rendered; an empty list is rendered
- * as empty; the summary cards read from the same real rows or say nothing.
- * Controls that had no wiring (Add Datastream, Add connection, the provider
- * filter, Manage/Use/Reconnect) are rendered only when the shell passes a
- * handler for them.
- *
- * Styling: application.css (global, via the shell) + sources.css.
- */
-import { useCallback, useEffect, useState } from "react";
-import type { Connection, ConnectionHealth } from "../../ConnectionsList";
-import "../application.css";
-import "./sources.css";
-import { apiFetch } from "../../lib/apiFetch";
-
-// ---------------------------------------------------------------------------
+import { useMemo } from "react";
 import ConnectButton from "../../ConnectButton";
-import GoogleConnectPanel from "../../GoogleConnectPanel";
-// Provider -> logo + display label. Real /connectors/* assets only; provider
-// logos are never hand-drawn (see project doctrine). Keys are matched against a
-// lowercased connection.provider prefix.
-// ---------------------------------------------------------------------------
+import ConnectGoogleButton from "../../authorizations/ConnectGoogleButton";
+import { DataCollectionLayout, EvidenceTime, StateValue, type DataColumn } from "../../data/DataCollectionLayout";
+import { useDataSurface, usePageCursor } from "../../data/dataSurface";
+import { ConnectorMark, ObjectId, Status } from "../../ui";
 
-interface ProviderMeta {
-  logo: string;
-  alt: string;
-  label: string;
-}
-
-const PROVIDER_META: Record<string, ProviderMeta> = {
-  meta: { logo: "/connectors/meta.svg", alt: "Meta", label: "Meta Ads" },
-  facebook: { logo: "/connectors/meta.svg", alt: "Meta", label: "Meta Ads" },
-  google_ads: { logo: "/connectors/google-ads.png", alt: "Google Ads", label: "Google Ads" },
-  "google-ads": { logo: "/connectors/google-ads.png", alt: "Google Ads", label: "Google Ads" },
-  google_analytics: {
-    logo: "/connectors/google-analytics.png",
-    alt: "Google Analytics",
-    label: "Google Analytics 4",
-  },
-  ga4: {
-    logo: "/connectors/google-analytics.png",
-    alt: "Google Analytics",
-    label: "Google Analytics 4",
-  },
-  google_sheets: {
-    logo: "/connectors/google-sheets.png",
-    alt: "Google Sheets",
-    label: "Google Sheets",
-  },
-  "google-sheets": {
-    logo: "/connectors/google-sheets.png",
-    alt: "Google Sheets",
-    label: "Google Sheets",
-  },
-};
-
-function providerMeta(provider: string): ProviderMeta {
-  const key = (provider || "").toLowerCase();
-  const match = Object.keys(PROVIDER_META).find((k) => key.startsWith(k));
-  // Unknown provider: surface the raw provider string rather than borrow another
-  // vendor's logo, which would misattribute the account.
-  return match ? PROVIDER_META[match] : { logo: "", alt: provider, label: provider };
-}
-
-// ---------------------------------------------------------------------------
-// View model — one row per connection, every field derived from the API.
-// ---------------------------------------------------------------------------
-
-type HealthState = "success" | "warning" | "error";
-
-interface SourceRow {
-  id: string;
-  logo: string;
-  logoAlt: string;
-  accountName: string;
-  providerLabel: string;
-  health: HealthState;
-  healthLabel: string;
-  healthDetail: string;
-  owner: string;
-  exposure: string;
-  usedBy: string;
-  connection: Connection;
-  canManage: boolean;
-}
-
-type LoadState =
-  | { status: "loading" }
-  | { status: "denied" }
-  | { status: "error"; message: string }
-  | { status: "ok"; rows: SourceRow[] };
-
-// Health status from the API -> the three visual states.
-function healthFromApi(health?: ConnectionHealth | null): {
-  state: HealthState;
-  label: string;
-} {
-  switch (health?.status) {
-    case "ok":
-      return { state: "success", label: "Healthy" };
-    case "stale":
-      return { state: "warning", label: "Reconnect" };
-    case "revoked":
-      return { state: "error", label: "Disconnected" };
-    default:
-      return { state: "warning", label: "Unknown" };
-  }
-}
-
-/** Absolute date "18 Aug 2026" (no time), else "". */
-function fmtDate(iso?: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-}
-
-/** Expiry copy from token_expiry: "Expires/Expired {date}" (empty when unknown). */
-function expiryDetail(tokenExpiry?: string | null): string {
-  const date = fmtDate(tokenExpiry);
-  if (!date) return "";
-  const past = new Date(tokenExpiry as string).getTime() < Date.now();
-  return `${past ? "Expired" : "Expires"} ${date}`;
-}
-
-/** Ownership/exposure copy from the derived exposure enum + owner org. */
-function exposureCopy(
-  exposure: Connection["exposure"],
-  ownerOrgName?: string | null,
-  expired?: boolean,
-): string {
-  switch (exposure) {
-    case "provided_by_org":
-      return ownerOrgName ? `Provided by ${ownerOrgName}` : "Provided by another organization";
-    case "shared_with_org":
-      return "Owned · Shared with other organizations";
-    case "owned":
-    default:
-      return expired ? "Owned · Authorization expired" : "Owned · You can manage";
-  }
-}
-
-function fromConnections(connections: Connection[]): SourceRow[] {
-  return connections.map((conn) => {
-    const meta = providerMeta(conn.provider);
-    const h = healthFromApi(
-      conn.status === "revoked" ? { status: "revoked", last_checked_at: null, last_fetched_at: null } : conn.health
-    );
-    const count = conn.active_datastream_count ?? 0;
-    const detail = expiryDetail(conn.token_expiry);
-    const expired = detail.startsWith("Expired") || h.state === "error";
+/** `organization` / `delegated` — the SHARING half of this page's function. */
+function ownership(scope: unknown, ownerOrgName?: string): { label: string; tone: "success" | "warning" | "neutral"; hint: string } {
+  if (scope === "organization") {
     return {
-      id: conn.id,
-      connection: conn,
-      canManage: conn.can_manage === true,
-      logo: meta.logo,
-      logoAlt: meta.alt,
-      accountName: conn.account_label || conn.nango_connection_id || conn.id,
-      providerLabel: meta.label,
-      health: h.state,
-      healthLabel: h.label,
-      healthDetail: detail,
-      owner: conn.owner_org_name ?? "",
-      exposure: exposureCopy(conn.exposure, conn.owner_org_name, expired),
-      usedBy: `${count} Datastream${count === 1 ? "" : "s"}`,
+      label: "This organization",
+      tone: "success",
+      hint: "Owned here — this Project can reconnect it itself.",
     };
-  });
-}
-
-interface SourcesProps {
-  projectId?: string;
-  /** Header/row actions. Each control is rendered ONLY when the shell wires it —
-   *  a button that does nothing is worse than no button. */
-  onAddDatastream?: () => void;
-  onAddConnection?: () => void;
-  onManageConnection?: (connectionId: string) => void;
-  onReconnect?: (connectionId: string) => void;
-}
-
-function RowActions({
-  row,
-  onManageConnection,
-  onReconnect,
-  onOpenManage,
-}: {
-  row: SourceRow;
-  onManageConnection?: (id: string) => void;
-  onReconnect?: (id: string) => void;
-  onOpenManage: (row: SourceRow) => void;
-}) {
-  if (!row.canManage) return null;
-  const needsReconnect = row.health !== "success";
-  return (
-    <div className="row-actions">
-      <button
-        className="quiet-button"
-        type="button"
-        onClick={() => {
-          onManageConnection?.(row.id);
-          onOpenManage(row);
-        }}
-      >
-        Manage
-      </button>
-      {needsReconnect && (
-        <button
-          className="secondary-button"
-          type="button"
-          onClick={() => {
-            onReconnect?.(row.id);
-            onOpenManage(row);
-          }}
-        >
-          Reconnect
-        </button>
-      )}
-    </div>
-  );
+  }
+  if (scope === "delegated") {
+    return {
+      label: ownerOrgName ? `Provided by ${ownerOrgName}` : "Shared with this Project",
+      tone: "warning",
+      hint: ownerOrgName ? `Provided by ${ownerOrgName}. Repairing it needs its owner, not this Project.` : "Provided by another organization. Repairing it needs its owner, not this Project.",
+    };
+  }
+  return { label: "Unavailable", tone: "neutral", hint: "No ownership evidence was returned." };
 }
 
 export default function Sources({
   projectId,
-  onAddDatastream,
-  onAddConnection,
-  onManageConnection,
-  onReconnect,
-}: SourcesProps) {
-  const [state, setState] = useState<LoadState>({ status: "loading" });
-  const [managedRow, setManagedRow] = useState<SourceRow | null>(null);
-  const [confirmRevoke, setConfirmRevoke] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
+  onOpenSourceAccount,
+  onOpenConnector,
+}: {
+  projectId?: string;
+  onOpenSourceAccount?: (id: string) => void;
+  /** Opens the Connector Workbench for the Connector serving a Source Account.
+   *
+   *  A callback, not an address. Only the mount owns the Organization segment
+   *  `parsePath` requires, and the cell that used to compose
+   *  `/data/connectors?id={id}` proved what happens without one: the address was
+   *  refused on its first segment and the only gesture the column offered opened
+   *  the unknown-route screen. Absent, the Connector is still NAMED — which one
+   *  serves an account is the reading of the column — it just offers nothing. */
+  onOpenConnector?: (id: string) => void;
+}) {
+  // Half the Data collections carried a pager and half carried none, on the same
+  // layout and against the same envelope. Since 2026-08-18 `_compose_collection`
+  // composes the page metadata for `sources` too, so the footer and the pager
+  // below are live — the wiring never changed, only the envelope did.
+  const { cursor, canGoBack, goToFirstPage, goToNextPage, goToPreviousPage } = usePageCursor();
+  const { state, reload } = useDataSurface(projectId, "sources", undefined, { cursor: cursor || undefined });
+  const columns = useMemo<readonly DataColumn[]>(() => [
+    {
+      key: "account",
+      label: "Source Account",
+      render: (item) => (
+        <div className="flex items-center gap-3">
+          <ConnectorMark provider={item.connector_ref?.id} />
+          <div className="min-w-0">
+            <strong className="block truncate text-text">{item.label ?? item.object_ref.id}</strong>
+            <ObjectId value={item.object_ref.id} title="Source Account" />
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "ownership",
+      label: "Ownership",
+      render: (item) => {
+        const scope = item.authorization_ref?.owner_scope;
+        const ownerOrgName = (item.authorization_ref as { owner_org_name?: string } | undefined)?.owner_org_name;
+        const read = ownership(scope, ownerOrgName);
+        return <span title={read.hint}><Status tone={read.tone}>{read.label}</Status></span>;
+      },
+    },
+    {
+      key: "authorization",
+      label: "Authorization",
+      render: (item) => <StateValue value={item.states.authorization ?? "unavailable"} />,
+    },
+    { key: "availability", label: "Availability", render: (item) => <StateValue value={item.states.availability} /> },
+    { key: "freshness", label: "Freshness", render: (item) => <StateValue value={item.states.freshness} /> },
+    {
+      key: "usage",
+      label: "Used by",
+      render: (item) => {
+        const count = (item.evidence as { used_by_count?: unknown } | undefined)?.used_by_count;
+        if (typeof count !== "number") return <StateValue value={item.states.usage} />;
+        return (
+          <span className="text-ui text-text">
+            {count === 0 ? "Nothing yet" : `${count} Datastream${count === 1 ? "" : "s"}`}
+          </span>
+        );
+      },
+    },
+    {
+      key: "connector",
+      label: "Connector",
+      // The cell used to render `<a href="/data/connectors?id={id}">`, an address
+      // this console's own router refuses on its first segment
+      // (`router.tsx:130`, "Expected an organization route"): the only gesture
+      // the column offered opened the unknown-route screen. Same defect as the
+      // wizard's owner links (57.4) and the Workbench tab band (57.5), on the
+      // Sources collection.
+      //
+      // It is not repaired into a second canonical address either: the cell now
+      // asks the mount to navigate, exactly as the row already does through
+      // `onOpenSourceAccount`. `ContentRouter` answers with
+      // `openDataObject("connectors", "connector", id)`, the one resolver every
+      // other Data object goes through — the remedy story 57.5 used for the
+      // wizard's success link.
+      //
+      // `ObjectNav`'s rule, applied to a cell: with a callback and no address it
+      // is a `<button>`, so it is reachable by keyboard and announced as a
+      // control; with neither it is inert text that still names the Connector.
+      render: (item) => {
+        const connectorId = item.connector_ref?.id;
+        if (!connectorId) return <span className="font-mono text-ui">Unavailable</span>;
+        if (!onOpenConnector) return <span className="font-mono text-ui">{connectorId}</span>;
+        return (
+          <button
+            type="button"
+            className="font-mono text-ui text-text-link underline"
+            onClick={(event) => {
+              // The row opens the Source Account; this cell opens the Connector.
+              // Without this the click would do both, and land on the other one.
+              event.stopPropagation();
+              onOpenConnector(connectorId);
+            }}
+          >
+            {connectorId}
+          </button>
+        );
+      },
+    },
+    { key: "evidence", label: "Last observed", render: (item) => <EvidenceTime value={item.evidence_as_of} /> },
+  ], []);
 
-  const load = useCallback(async () => {
-    setState({ status: "loading" });
-    try {
-    if (!projectId) {
-      setState({ status: "denied" });
-      return;
-    }
-      const url = `/api/connections?project_id=${encodeURIComponent(projectId)}`;
-      const resp = await apiFetch(url);
-      if ([401, 403, 404].includes(resp.status)) {
-        setState({ status: "denied" });
-        return;
-      }
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data: { connections?: Connection[] } = await resp.json();
-      // An empty list is the answer, not a reason to render accounts.
-      setState({ status: "ok", rows: fromConnections(data.connections ?? []) });
-    } catch (err) {
-      setState({ status: "error", message: err instanceof Error ? err.message : String(err) });
-    }
-  }, [projectId]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const rows = state.status === "ok" ? state.rows : [];
-  const healthyCount = rows.filter((r) => r.health === "success").length;
-  const attentionCount = rows.length - healthyCount;
-  /** Summary figures exist only when the list was actually read. */
-  const figure = (n: number) => (state.status === "ok" ? String(n) : "—");
-  const figureNote = (note: string) =>
-    state.status === "loading" ? "Loading…" : state.status === "error" ? "Not available" : note;
-
-  const showActions = rows.some((row) => row.canManage);
-
-  async function revokeManagedConnection() {
-    if (!projectId || !managedRow?.canManage) return;
-    setActionError(null);
-    try {
-      const resp = await apiFetch(
-        `/api/projects/${encodeURIComponent(projectId)}/connections/${encodeURIComponent(managedRow.id)}/revoke`,
-        { method: "POST" }
-      );
-      if (!resp.ok) {
-        const body = (await resp.json().catch(() => ({}))) as { message?: string };
-        throw new Error(body.message ?? `HTTP ${resp.status}`);
-      }
-      setConfirmRevoke(false);
-      setManagedRow(null);
-      await load();
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
-    }
-  }
+  // THE GOOGLE DOOR IS ITS OWN GESTURE, and it comes first because it is the one
+  // this screen is reached FOR: `Add Datastream` -> `Set up source access` lands
+  // here, and until 2026-08-11 the only control on the page sent every provider
+  // to Nango — which cannot start a `google_direct` consent, the authorization
+  // every Google Connector needs. The wizard told a person to create the
+  // authorization here; here offered no gesture that could.
+  const connectActions = (
+    <div className="flex gap-3">
+      <ConnectGoogleButton projectId={projectId} />
+      <ConnectButton projectId={projectId} onSuccess={reload} label="Connect another source" />
+    </div>
+  );
 
   return (
-    <>
-
-      <div className="page-header">
-        <div>
-          <h1>Sources</h1>
-          <p>Authorizations and provider accounts available to this project.</p>
-        </div>
-        <div className="header-actions">
-          {onAddDatastream && (
-            <button className="secondary-button" type="button" onClick={() => onAddDatastream()}>
-              Add Datastream
-            </button>
-          )}
-          <ConnectButton
-            projectId={projectId}
-            excludeProviders={["google"]}
-            label="Add connection"
-            onSuccess={() => {
-              onAddConnection?.();
-              void load();
-            }}
-          />
-        </div>
-      </div>
-
-      <section className="source-summary">
-        <article className="panel source-card">
-          <span>Usable provider accounts</span>
-          <strong>{figure(rows.length)}</strong>
-          <p>{figureNote("Owned by or shared with your organization")}</p>
-        </article>
-        <article className="panel source-card">
-          <span>Healthy</span>
-          <strong>{figure(healthyCount)}</strong>
-          <p>{figureNote("Ready for new Datastreams")}</p>
-        </article>
-        <article className="panel source-card">
-          <span>Needs attention</span>
-          <strong>{figure(attentionCount)}</strong>
-          <p>{figureNote("Reconnect before the next run")}</p>
-        </article>
-      </section>
-
-      <section className="panel source-panel">
-        <div className="source-panel-header">
-          <div>
-            <h2>Provider accounts</h2>
-            <p>Access is scoped to the organization. Credential material is never displayed.</p>
-          </div>
-        </div>
-
-        {state.status === "loading" && (
-          <p className="source-status" role="status">
-
-            Loading provider accounts…
-          </p>
-        )}
-
-        {state.status === "denied" && (
-          <div className="source-load-error" role="alert">
-            <span className="signal-label error">
-              <span className="signal-mark" /> Access denied
-            </span>
-            <p>This project is unavailable or your account cannot view its provider accounts.</p>
-          </div>
-        )}
-        {state.status === "error" && (
-          <div className="source-load-error" role="alert">
-            <span className="signal-label error">
-              <span className="signal-mark" />
-              Could not load the provider accounts
-            </span>
-            <p>
-              {state.message}. No account is being listed — this is a loading failure, not an
-              empty account list.
-            </p>
-            <button className="secondary-button" type="button" onClick={() => void load()}>
-              Retry
-            </button>
-          </div>
-        )}
-
-        {state.status === "ok" && rows.length === 0 && (
-          <p className="source-status">
-            No provider account is connected to this project yet. Connect a source to start
-            building Datastreams.
-          </p>
-        )}
-
-        {state.status === "ok" && rows.length > 0 && (
-          <div className="table-scroll" tabIndex={0} aria-label="Usable provider accounts">
-            <table className="source-table">
-              <thead>
-                <tr>
-                  <th>Provider account</th>
-                  <th>Health</th>
-                  <th>Owner and exposure</th>
-                  <th>Used by</th>
-                  {showActions && (
-                    <th>
-                      <span className="sr-only">Actions</span>
-                    </th>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id}>
-                    <td>
-                      <div className="provider-cell">
-                        {row.logo ? (
-                          <span className="provider-logo">
-                            <img src={row.logo} alt={row.logoAlt} />
-                          </span>
-                        ) : null}
-                        <div>
-                          <strong>{row.accountName}</strong>
-                          <small>{row.providerLabel}</small>
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="health-cell">
-                        <span className={`signal-label ${row.health}`}>
-                          <span className="signal-mark" />
-                          {row.healthLabel}
-                        </span>
-                        {row.healthDetail ? <small>{row.healthDetail}</small> : null}
-                      </div>
-                    </td>
-                    <td>
-                      <div className="owner-cell">
-
-                        <strong>{row.owner || "—"}</strong>
-                        {row.exposure ? <small>{row.exposure}</small> : null}
-                      </div>
-                    </td>
-                    <td>{row.usedBy}</td>
-                    {showActions && (
-                      <td>
-                        <RowActions
-                          row={row}
-                          onManageConnection={onManageConnection}
-                          onReconnect={onReconnect}
-                          onOpenManage={(selected) => {
-                            setManagedRow(selected);
-                            setConfirmRevoke(false);
-                          }}
-                        />
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {managedRow && projectId && (
-          <div className="source-management" role="region" aria-label={`Manage ${managedRow.accountName}`}>
-            <div className="source-panel-header">
-              <div>
-                <h3>{managedRow.accountName}</h3>
-                <p>{managedRow.providerLabel} authorization</p>
-              </div>
-              <button className="quiet-button" type="button" onClick={() => setManagedRow(null)}>
-                Close
-              </button>
-            </div>
-            {actionError && <p className="source-load-error" role="alert">{actionError}</p>}
-            {managedRow.connection.auth_path === "google_direct" ? (
-              <GoogleConnectPanel
-                connectionRefId={managedRow.id}
-                projectId={projectId}
-                onStatusChange={() => void load()}
-              />
-            ) : (
-              <div className="row-actions">
-                <ConnectButton
-                  projectId={projectId}
-                  fixedProvider={managedRow.connection.provider}
-                  nangoConnectionId={managedRow.connection.nango_connection_id}
-                  label="Reconnect"
-                  onSuccess={() => void load()}
-                />
-                {!confirmRevoke ? (
-                  <button className="quiet-button" type="button" onClick={() => setConfirmRevoke(true)}>
-                    Revoke
-                  </button>
-                ) : (
-                  <>
-                    <span>Revoke this authorization?</span>
-                    <button className="quiet-button" type="button" onClick={() => setConfirmRevoke(false)}>
-                      Cancel
-                    </button>
-                    <button className="secondary-button" type="button" onClick={() => void revokeManagedConnection()}>
-                      Confirm revoke
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </section>
-    </>
+    <DataCollectionLayout
+      title="Sources"
+      description="Provider accounts this Project can use: who owns them, whether they are shared, and what depends on them."
+      emptyTitle="No source account reaches this Project"
+      emptyDescription="Nobody has connected a provider account to this Project yet. Connect Google, or connect another source, with the buttons above — that consent is what puts an account here."
+      state={state}
+      reload={reload}
+      columns={columns}
+      actions={connectActions}
+      onOpen={onOpenSourceAccount ? (item) => onOpenSourceAccount(item.object_ref.id) : undefined}
+      onNextPage={() => { if (state.status === "ready" && state.envelope.next_cursor) goToNextPage(state.envelope.next_cursor); }}
+      onPreviousPage={canGoBack ? goToPreviousPage : undefined}
+      onFirstPage={cursor ? goToFirstPage : undefined}
+    />
   );
 }

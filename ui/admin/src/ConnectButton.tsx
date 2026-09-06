@@ -29,20 +29,20 @@
  * AD-15: OAuth runs in the admin console browser tab only — never inside a
  * Claude chat iframe.
  * AD-3: no tokens are stored; only nango_connection_id is passed to the server.
- * AD-2: the provider list is DATA (/api/modules/available), never hardcoded.
+ * AD-2: the provider list is DATA (/api/connectors/available), never hardcoded.
  *
  * review-global-gaps G-08: projectId prop + MUI Snackbar (no window.alert).
  */
 import { useCallback, useEffect, useState } from "react";
 import {
-  Alert,
   Button,
-  CircularProgress,
-  ListItemText,
-  Menu,
-  MenuItem,
-  Snackbar,
-} from "@mui/material";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  Spinner,
+  notify,
+} from "./ui";
 import { apiFetch } from "./lib/apiFetch";
 
 interface ConnectButtonProps {
@@ -62,8 +62,12 @@ interface ConnectButtonProps {
  *  be exercised in tests. NO localhost default: an unconfigured build must fail
  *  loudly, not silently point production at a developer machine. */
 function nangoBaseUrl(): string | null {
-  const raw = (import.meta.env.VITE_NANGO_BASE_URL as string | undefined)?.trim();
-  return raw ? raw.replace(/\/+$/, "") : null;
+  const raw = import.meta.env.VITE_NANGO_BASE_URL as string | undefined;
+  if (raw !== undefined) {
+    const trimmed = raw.trim();
+    return trimmed ? trimmed.replace(/\/+$/, "") : null;
+  }
+  return "https://api.nango.dev";
 }
 
 function nangoPublicKey(): string | undefined {
@@ -200,18 +204,21 @@ export default function ConnectButton({
 }: ConnectButtonProps) {
   const [loading, setLoading] = useState(false);
   const [providers, setProviders] = useState<ProvidersState>({ status: "loading" });
-  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
-  const [snackbar, setSnackbar] = useState<{
-    open: boolean;
-    severity: "error" | "warning" | "success";
-    message: string;
-  }>({ open: false, severity: "error", message: "" });
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
+    // Re-consent already names its provider. Reading the whole connector
+    // catalogue here used to add an unrelated request to every authorization
+    // row and could make a valid reconnect disappear when the catalogue was
+    // temporarily unavailable.
+    if (fixedProvider) {
+      setProviders({ status: "ok", list: [] });
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
-        const resp = await apiFetch("/api/modules/available");
+        const resp = await apiFetch("/api/connectors/available");
         if (!resp.ok) {
           if (!cancelled) {
             setProviders({ status: "error", message: `HTTP ${resp.status}` });
@@ -219,7 +226,7 @@ export default function ConnectButton({
           return;
         }
         const body = await resp.json();
-        const list: ProviderOption[] = (Array.isArray(body) ? body : (body.modules ?? []))
+        const list: ProviderOption[] = (Array.isArray(body) ? body : (body.connectors ?? []))
           .map((m: { name?: string; display_name?: string }) => ({
             name: m.name ?? "",
             display_name: m.display_name ?? m.name ?? "",
@@ -239,21 +246,20 @@ export default function ConnectButton({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [fixedProvider]);
 
+  // `notify` owns the queue, the timing and the dismissal -- including the rule
+  // that an error stays until it is read, which the 8s autoHideDuration here did
+  // NOT do. Three pieces of local state and a close handler left with it.
   const showSnackbar = useCallback(
     (severity: "error" | "warning" | "success", message: string) => {
-      setSnackbar({ open: true, severity, message });
+      notify(message, { tone: severity });
     },
     []
   );
 
-  function handleCloseSnackbar() {
-    setSnackbar((prev) => ({ ...prev, open: false }));
-  }
-
   async function handleConnect(provider: string) {
-    setMenuAnchor(null);
+    setMenuOpen(false);
     if (!projectId) {
       showSnackbar(
         "error",
@@ -374,71 +380,72 @@ export default function ConnectButton({
 
   return (
     <>
-      <Button
-        variant="contained"
-        color="primary"
-        onClick={(e) => {
-          if (fixedProvider) void handleConnect(fixedProvider);
-          else setMenuAnchor(e.currentTarget);
-        }}
-        disabled={loading}
-        startIcon={loading ? <CircularProgress size={16} color="inherit" /> : null}
-        data-testid="connect-source-button"
-      >
-        {loading ? "Connecting..." : label}
-      </Button>
-      <Menu anchorEl={menuAnchor} open={!fixedProvider && Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>
-        {providers.status === "loading" && (
-          <MenuItem disabled data-testid="connect-providers-loading">
-            <ListItemText primary="Loading available sources…" />
-          </MenuItem>
-        )}
-        {providers.status === "error" && (
-          <MenuItem disabled data-testid="connect-providers-error">
-            <ListItemText
-              primary="Could not load the available sources"
-              secondary={`${providers.message} — the list below is unknown, not empty.`}
-            />
-          </MenuItem>
-        )}
-        {providers.status === "ok" &&
-          visibleProviders.length === 0 && (
-            <MenuItem disabled data-testid="connect-providers-empty">
-              <ListItemText
-                primary="No connector module is installed"
-                secondary="Install a module before connecting a source."
-              />
-            </MenuItem>
-          )}
-        {providers.status === "ok" &&
-          visibleProviders.map((p) => (
-            <MenuItem
-              key={p.name}
-              onClick={() => {
-                void handleConnect(p.name);
-              }}
-              data-testid={`connect-provider-${p.name}`}
-            >
-              <ListItemText primary={p.display_name} secondary={p.name} />
-            </MenuItem>
-          ))}
-      </Menu>
-
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={8000}
-        onClose={handleCloseSnackbar}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-      >
-        <Alert
-          onClose={handleCloseSnackbar}
-          severity={snackbar.severity}
-          variant="filled"
-          sx={{ width: "100%" }}
+      {/* A fixed provider connects on click and has no menu at all; only the
+          free case needs the dropdown, so the trigger is conditional rather than
+          a menu that opens onto one disabled item. */}
+      {fixedProvider ? (
+        <Button
+          onClick={() => void handleConnect(fixedProvider)}
+          disabled={loading}
+          data-testid="connect-source-button"
         >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
+          {loading && <Spinner size="inline" label="Connecting" />}
+          {loading ? "Connecting..." : label}
+        </Button>
+      ) : (
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+          <DropdownMenuTrigger asChild>
+            <Button disabled={loading} data-testid="connect-source-button">
+              {loading && <Spinner size="inline" label="Connecting" />}
+              {loading ? "Connecting..." : label}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            {providers.status === "loading" && (
+              <DropdownMenuItem disabled data-testid="connect-providers-loading">
+                Loading available sources…
+              </DropdownMenuItem>
+            )}
+            {providers.status === "error" && (
+              <DropdownMenuItem disabled data-testid="connect-providers-error">
+                <span className="grid gap-0.5">
+                  <span>Could not load the available sources</span>
+                  <span className="text-caption text-text-secondary">
+                    {`${providers.message} — the list below is unknown, not empty.`}
+                  </span>
+                </span>
+              </DropdownMenuItem>
+            )}
+            {providers.status === "ok" && visibleProviders.length === 0 && (
+              <DropdownMenuItem disabled data-testid="connect-providers-empty">
+                <span className="grid gap-0.5">
+                  <span>No connector is installed</span>
+                  <span className="text-caption text-text-secondary">
+                    Install a connector before connecting a source.
+                  </span>
+                </span>
+              </DropdownMenuItem>
+            )}
+            {providers.status === "ok" &&
+              visibleProviders.map((p) => (
+                <DropdownMenuItem
+                  key={p.name}
+                  onSelect={() => {
+                    void handleConnect(p.name);
+                  }}
+                  data-testid={`connect-provider-${p.name}`}
+                >
+                  <span className="grid gap-0.5">
+                    <span>{p.display_name}</span>
+                    <span className="font-mono text-caption text-text-secondary">
+                      {p.name}
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+              ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </>
   );
 }

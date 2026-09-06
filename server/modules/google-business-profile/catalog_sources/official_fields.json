@@ -108,7 +108,7 @@
     "source_field": "account_id",
     "kind": "dimension",
     "data_type": "string",
-    "description": "Business Profile account id (accounts/{account_id}) owning the location. Structural; planned (not extracted into the daily fact by v1).",
+    "description": "Business Profile account id (accounts/{account_id}) owning the location. Resolved from the topology parent; the v4 reviews path needs the account+location pair.",
     "section": "TOPOLOGY"
   },
   {
@@ -124,15 +124,15 @@
     "source_field": "searchKeyword",
     "kind": "dimension",
     "data_type": "string",
-    "description": "A search term users typed to find the business (searchkeywords.impressions.monthly). MONTHLY granularity only -- a separate monthly fact, never merged with the daily metrics stream. Planned.",
+    "description": "A search term users typed to find the business (searchkeywords.impressions.monthly). MONTHLY granularity only -- a separate monthly fact, never merged with the daily metrics stream.",
     "section": "SEARCH KEYWORDS"
   },
   {
     "field_id": "search_keyword_impressions",
-    "source_field": "insightsValue",
+    "source_field": "insightsValue.value",
     "kind": "metric",
     "data_type": "integer",
-    "description": "Monthly impression count for a search keyword. Union insightsValue.{value|threshold}: threshold = a floor for low-volume keywords (e.g. '<15') Google will not report exactly -- model as nullable/threshold-flagged. MONTHLY, additive within a month. Planned.",
+    "description": "Exact monthly impressions for a search keyword (insightsValue.value). Additive ACROSS KEYWORDS WITHIN A MONTH; the monthly grain is never merged into the daily fact. NULL when the keyword fell under the privacy floor -- read search_keyword_impressions_threshold then.",
     "section": "SEARCH KEYWORDS"
   },
   {
@@ -140,15 +140,15 @@
     "source_field": "reviewId",
     "kind": "dimension",
     "data_type": "string",
-    "description": "Encrypted unique review id (legacy My Business API v4 accounts.locations.reviews.list). Planned (v4 allowlist-gated).",
+    "description": "Encrypted unique review id (legacy My Business API v4 accounts.locations.reviews.list). The supersede key of the reviews fact.",
     "section": "REVIEWS"
   },
   {
     "field_id": "review_star_rating",
     "source_field": "starRating",
-    "kind": "dimension",
-    "data_type": "string",
-    "description": "Review star rating enum: STAR_RATING_UNSPECIFIED, ONE, TWO, THREE, FOUR, FIVE. Planned (v4-gated). The derived average rating is NON-ADDITIVE.",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Rating a reviewer gave, as a 1..5 LEVEL (v4 enum ONE..FIVE; the STAR_RATING_UNSPECIFIED sentinel lands NULL, never 0 -- 0 is not a value on this scale). NON-ADDITIVE: averaged, never summed.",
     "section": "REVIEWS"
   },
   {
@@ -156,7 +156,7 @@
     "source_field": "comment",
     "kind": "dimension",
     "data_type": "string",
-    "description": "Review free-text body. Planned (v4-gated).",
+    "description": "Review free-text body (nullable -- a rating without text is normal).",
     "section": "REVIEWS"
   },
   {
@@ -164,7 +164,7 @@
     "source_field": "createTime",
     "kind": "dimension",
     "data_type": "datetime",
-    "description": "Review creation timestamp (RFC 3339). Planned (v4-gated).",
+    "description": "Review creation timestamp (RFC 3339). The additive new_reviews count is derived from it.",
     "section": "REVIEWS"
   },
   {
@@ -172,7 +172,7 @@
     "source_field": "reviewer.displayName",
     "kind": "dimension",
     "data_type": "string",
-    "description": "Reviewer display name (only when reviewer.isAnonymous=false). Planned (v4-gated).",
+    "description": "Reviewer display name. PII -- persisted lean and NULLED when reviewer.isAnonymous is true; the reviewer photo URL is never persisted at all.",
     "section": "REVIEWS"
   },
   {
@@ -180,7 +180,7 @@
     "source_field": "reviewReply.comment",
     "kind": "dimension",
     "data_type": "string",
-    "description": "Owner reply text to the review (<=4096 bytes). Planned (v4-gated).",
+    "description": "Owner reply text to the review (<=4096 bytes, nullable).",
     "section": "REVIEWS"
   },
   {
@@ -188,7 +188,7 @@
     "source_field": "averageRating",
     "kind": "metric",
     "data_type": "decimal",
-    "description": "Location average star rating (reviews.list aggregate). NON-ADDITIVE (an average -- never summed). Planned (v4-gated).",
+    "description": "Location average star rating (reviews.list aggregate). NON-ADDITIVE: a level read by last-value, never summed.",
     "section": "REVIEWS"
   },
   {
@@ -196,7 +196,63 @@
     "source_field": "totalReviewCount",
     "kind": "metric",
     "data_type": "integer",
-    "description": "Location total review count (reviews.list aggregate). Point-in-time count. Planned (v4-gated).",
+    "description": "Location total review count (reviews.list aggregate). A LEVEL, not a flow: last-value, never summed.",
     "section": "REVIEWS"
+  },
+  {
+    "field_id": "review_update_time",
+    "source_field": "updateTime",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "Timestamp of the last edit to the review (RFC 3339). Drives the supersede order so a re-pull keeps the freshest text of each review.",
+    "section": "REVIEWS"
+  },
+  {
+    "field_id": "reviewer_is_anonymous",
+    "source_field": "reviewer.isAnonymous",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "description": "Whether the reviewer asked to stay anonymous. Landed so the anonymisation is auditable rather than merely applied.",
+    "section": "REVIEWS"
+  },
+  {
+    "field_id": "review_reply_update_time",
+    "source_field": "reviewReply.updateTime",
+    "kind": "dimension",
+    "data_type": "datetime",
+    "description": "Timestamp of the last edit to the owner reply (RFC 3339, nullable). Freshness of the response, not of the review.",
+    "section": "REVIEWS"
+  },
+  {
+    "field_id": "month",
+    "source_field": "monthlyRange",
+    "kind": "dimension",
+    "data_type": "string",
+    "description": "Reporting month (YYYY-MM). The response carries no month, so it is stamped from the month REQUESTED: the connector asks one month at a time and the grain is observed rather than assumed.",
+    "section": "SEARCH KEYWORDS"
+  },
+  {
+    "field_id": "search_keyword_impressions_threshold",
+    "source_field": "insightsValue.threshold",
+    "kind": "metric",
+    "data_type": "integer",
+    "description": "Privacy FLOOR returned instead of an exact count for a low-volume keyword ('fewer than N'). NON-ADDITIVE by nature: summing floors produces a number that is neither a bound nor a count. Mutually exclusive with search_keyword_impressions.",
+    "section": "SEARCH KEYWORDS"
+  },
+  {
+    "field_id": "is_thresholded",
+    "source_field": "insightsValue",
+    "kind": "dimension",
+    "data_type": "boolean",
+    "description": "True when the provider returned a threshold instead of a count. The flag that keeps a floor from being read as a measurement.",
+    "section": "SEARCH KEYWORDS"
+  },
+  {
+    "field_id": "social_post",
+    "source_field": "createTime",
+    "kind": "event",
+    "data_type": "datetime",
+    "description": "Date a Business Profile local post was published (localPost.createTime, legacy v4 localPosts edge). Canonical event_type social_post; label = localPost.summary. Landed as a context_events pulse (value null), never a metric.",
+    "section": "LOCAL POSTS"
   }
 ]

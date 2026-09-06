@@ -5,6 +5,7 @@ import json
 from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock
 
+import core.projects_api as projects_api  # AD-43 : le handler vit chez son sujet
 from starlette.requests import Request
 
 
@@ -48,7 +49,7 @@ def test_production_project_list_is_filtered_by_caller_authority(monkeypatch):
         {"type": "http", "method": "GET", "path": "/api/projects", "headers": []}
     )
 
-    response = asyncio.run(admin_api._list_projects(request))
+    response = asyncio.run(projects_api._list_projects(request))
 
     assert response.status_code == 200
     assert json.loads(response.body) == {"projects": []}

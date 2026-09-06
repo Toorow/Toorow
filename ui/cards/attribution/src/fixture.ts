@@ -62,7 +62,7 @@ export const FIXTURE_ENVELOPE: CardEnvelope = {
     card_type: "attribution",
     title: "Attribution",
     answers_question:
-      "Quelle part de mes conversions vient de chaque canal, en dernier clic vs premier clic ?",
+      "What share of my conversions comes from each channel, last click vs first click?",
     date_range: { start: "2026-06-17", end: "2026-07-16" },
     connectors: ["google-analytics"],
     metrics: {

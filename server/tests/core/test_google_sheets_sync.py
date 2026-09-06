@@ -32,6 +32,8 @@ import pytest  # noqa: E402
 from core.google_sheets_sync import (  # noqa: E402
     ERR_DUPLICATE_HEADERS,
     ERR_EMPTY_CANDIDATE,
+    ERR_EXECUTION_MISSING,
+    ERR_MISSING_GOVERNANCE_VERSIONS,
     ERR_QUOTA_HOURLY_NOT_PERMITTED,
     ERR_RANGE_DRIFT,
     ERR_REVOKED_CONSENT,
@@ -1503,3 +1505,125 @@ class TestRateLimitReRaises:
                         )
                     )
                 )
+
+
+# ---------------------------------------------------------------------------
+# 17. AD-7 provenance: the run's execution + versions reach the landing.
+# ---------------------------------------------------------------------------
+
+
+class TestLandingProvenance:
+    """AD-7: landed rows carry execution_id / plan_version_id /
+    mapping_version_id / project_id -- the same four columns import_runner
+    lands. _write_landing_rows used to write parsed_rows bare, which made the
+    rows invisible to every scoped reader (collected_mapped_reader filters
+    WHERE project_id = ...) and NULL to the superseding's MAX(execution_id).
+    """
+
+    def test_run_sync_forwards_the_runs_provenance_to_the_landing(self):
+        import_result = _opened_import_result("mfl_PROV01", "dse_PROV01")
+        captured: dict = {}
+
+        def capturing_write(rows, **kwargs):
+            captured.update(kwargs)
+            return 2
+
+        with (
+            patch("core.google_sheets_sync.ledger.open_import", return_value=import_result),
+            patch("core.google_sheets_sync.ledger.record_rows", return_value={}),
+            patch(
+                "core.google_sheets_sync.ledger.evaluate_rejection_gate_for_ledger",
+                return_value=None,
+            ),
+            patch("core.google_sheets_sync.ledger.mark_outcome", return_value={}),
+            patch("core.google_sheets_sync._write_landing_rows", side_effect=capturing_write),
+        ):
+            from core.google_sheets_sync import run_sync
+
+            run_sync(**_base_run_sync_args())
+
+        # The execution id comes from the run open_import minted -- never made up.
+        assert captured["execution_id"] == "dse_PROV01"
+        assert captured["plan_version_id"] == "dsp_01"
+        assert captured["mapping_version_id"] == "dmap_01"
+        assert captured["project_id"] == _PROJECT_ID
+
+    def test_empty_versions_are_resolved_from_the_datastream(self):
+        """The scheduled dispatch passes NO versions (the schedule table has
+        none -- migration 079); run_sync reads the committed ones from
+        app.datastreams, the same source datastream_first_candidate mints from.
+        """
+        import_result = _opened_import_result("mfl_PROV02", "dse_PROV02")
+        captured: dict = {}
+
+        conn = MagicMock()
+        cur = conn.cursor.return_value.__enter__.return_value
+        cur.fetchone.return_value = ("dsp_CURRENT", "dmap_CURRENT")
+
+        def capturing_write(rows, **kwargs):
+            captured.update(kwargs)
+            return 2
+
+        with (
+            patch(
+                "core.google_sheets_sync.ledger.open_import", return_value=import_result
+            ) as mock_open,
+            patch("core.google_sheets_sync.ledger.record_rows", return_value={}),
+            patch(
+                "core.google_sheets_sync.ledger.evaluate_rejection_gate_for_ledger",
+                return_value=None,
+            ),
+            patch("core.google_sheets_sync.ledger.mark_outcome", return_value={}),
+            patch("core.google_sheets_sync._write_landing_rows", side_effect=capturing_write),
+        ):
+            from core.google_sheets_sync import run_sync
+
+            run_sync(
+                **_base_run_sync_args(plan_version_id="", mapping_version_id="", conn=conn)
+            )
+
+        # The RESOLVED versions reach both the ledger and the landing, so the
+        # execution, the ledger row and the landed rows name the same ticket.
+        assert mock_open.call_args.kwargs["plan_version_id"] == "dsp_CURRENT"
+        assert mock_open.call_args.kwargs["mapping_version_id"] == "dmap_CURRENT"
+        assert captured["plan_version_id"] == "dsp_CURRENT"
+        assert captured["mapping_version_id"] == "dmap_CURRENT"
+
+    def test_no_committed_versions_is_a_named_refusal(self):
+        """A datastream with nothing committed cannot land governed rows.
+
+        That is said (missing_governance_versions), never landed blank --
+        blank provenance is how the channel became invisible in the first place.
+        """
+        conn = MagicMock()
+        cur = conn.cursor.return_value.__enter__.return_value
+        cur.fetchone.return_value = (None, None)
+
+        with pytest.raises(SheetsSyncError) as exc_info:
+            from core.google_sheets_sync import run_sync
+
+            run_sync(
+                **_base_run_sync_args(plan_version_id="", mapping_version_id="", conn=conn)
+            )
+
+        assert exc_info.value.code == ERR_MISSING_GOVERNANCE_VERSIONS
+
+    def test_a_missing_execution_fails_instead_of_landing_bare_rows(self):
+        """open_import mints the execution on the write path; if it ever returns
+        none, the run fails named rather than landing provenance-less rows."""
+        import_result = _opened_import_result("mfl_NOEXEC", "dse_NOEXEC")
+        import_result["execution"] = None
+
+        with (
+            patch("core.google_sheets_sync.ledger.open_import", return_value=import_result),
+            patch("core.google_sheets_sync.ledger.record_rows", return_value={}),
+            patch("core.google_sheets_sync.ledger.mark_outcome", return_value={}),
+            patch("core.google_sheets_sync._write_landing_rows", return_value=2) as mock_write,
+        ):
+            from core.google_sheets_sync import run_sync
+
+            result = run_sync(**_base_run_sync_args())
+
+        assert result["outcome"] == "failed"
+        assert result["error_code"] == ERR_EXECUTION_MISSING
+        assert not mock_write.called, "no landing without the execution its rows must name"

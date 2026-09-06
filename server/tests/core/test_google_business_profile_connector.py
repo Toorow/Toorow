@@ -204,3 +204,137 @@ def test_gbp_discover_accounts_topology():
     assert topology == [
         {"id": "locations/loc_101", "label": "Store Downtown", "parent": "accounts/acc_1"}
     ]
+
+
+def test_gbp_metric_columns_still_match_the_manifest_mapping():
+    """Le residu nomme par la story 30.1 le 2026-07-31, desormais surveille.
+
+    `_METRIC_COLUMNS` est une liste ecrite a la main sous une docstring qui
+    annonce << AD-2: no hardcoded field list >>. Elle correspondait 11 pour 11 au
+    mapping du manifeste -- et RIEN n'aurait rougi si elle avait derive : le
+    connecteur aurait demande onze enums a Google et ecrit une autre serie de
+    colonnes, en silence, avec des NULL partout.
+
+    Ce test est cette alarme. Il ne supprime pas la liste (les 39 connecteurs
+    ecrivent leur DDL de la meme facon) ; il rend sa derive impossible a rater.
+    """
+    manifest = connector._load_manifest()
+    mapping = manifest["canonical_metric_mapping"]
+
+    # Meme contenu ET meme ORDRE : l'INSERT est positionnel.
+    assert connector._METRIC_COLUMNS == list(mapping.values())
+    # Les enums demandes a l'API sont exactement les cles de ce mapping.
+    assert connector._metric_source_tokens() == list(mapping.keys())
+
+    # Et le profil location_daily du manifeste declare ces memes 11 metriques.
+    daily = next(
+        report
+        for report in manifest["source_capabilities"]["reports"]
+        if report["id"] == "location_daily"
+    )
+    assert daily["metrics"] == connector._METRIC_COLUMNS
+
+
+def test_gbp_seed_loader_metric_columns_do_not_drift_from_the_connector():
+    """Le seed ecrit un INSERT positionnel avec sa PROPRE copie de la liste.
+
+    Deux copies de la meme sequence, dans deux fichiers, sans rien entre elles :
+    si l'une bouge, le seed charge des valeurs dans les mauvaises colonnes et le
+    mart est faux sans qu'une seule requete echoue.
+    """
+    import importlib.util as _il
+
+    seed_path = (
+        REPO_ROOT / "server" / "modules" / "google-business-profile"
+        / "seeds" / "load_google_business_profile_seed.py"
+    )
+    spec = _il.spec_from_file_location("gbp_seed_under_test", seed_path)
+    seed = _il.module_from_spec(spec)
+    spec.loader.exec_module(seed)
+
+    assert list(seed._METRIC_COLUMNS) == connector._METRIC_COLUMNS
+
+
+# ---------------------------------------------------------------------------
+# The 0-QPM gate on the DEFAULT profile (story 30.1 DoD :218, 2026-08-25).
+# ---------------------------------------------------------------------------
+#
+# Every Business Profile project starts at 0 QPM and stays there until Google
+# approves an access request BY HAND, so a 403 on the very first collection is
+# the NORMAL first day of this connector, not an incident. The optional profiles
+# return a prevented envelope; `pull_location_daily` cannot -- reporting an empty
+# day as a success would fabricate a day -- so it raises, and the refusal is
+# carried on the raised error for `core.pull_envelope.prevented_by_error` to
+# read. Measured 2026-08-24, that reader did not exist and the two attributes had
+# no consumer outside this module: the window was written
+# `failed / permission_denied / reconnect`.
+
+
+def _forbidden_response(url):
+    return httpx.Response(
+        403,
+        request=httpx.Request("GET", url),
+        json={
+            "error": {
+                "code": 403,
+                "status": "PERMISSION_DENIED",
+                "message": "Business Profile API has not been used in project ...",
+            }
+        },
+    )
+
+
+def test_gbp_default_pull_refused_at_zero_qpm_raises_a_readable_precondition():
+    """Le chemin PRINCIPAL, pas un profil optionnel : `pull()` par defaut.
+
+    L'assertion ne porte pas sur l'attribut brut mais sur ce que le LECTEUR DU
+    CORE en tire -- reason ET phrase -- parce que c'est ce couple qui atteint
+    l'ecran. Retirer `error.precondition` du connecteur fait rougir ici ; retirer
+    le lecteur du core fait rougir dans `test_queue_prevented_pull.py`.
+    """
+    from core.pull_envelope import prevented_by_error
+
+    def mock_get(url, params=None, headers=None, timeout=None):
+        return _forbidden_response(url)
+
+    with (
+        patch("core.nango_client.get_fresh_token", return_value="fake_token"),
+        patch("httpx.get", side_effect=mock_get),
+    ):
+        with pytest.raises(Exception) as caught:  # noqa: PT011 -- classe typee du core
+            connector.pull(
+                connection_id="conn_gbp",
+                date_from="2026-07-01",
+                date_to="2026-07-02",
+                project_id="default",
+                pull_id="pull_gbp_qpm",
+                location_id="loc_100",
+            )
+
+    # La classe HTTP ne bouge pas : c'est bien un 403, et le core la connait.
+    assert caught.value.error_class == "permission_denied"
+
+    read = prevented_by_error(caught.value, module_name="google-business-profile")
+    assert read is not None, "le 403 0-QPM ne porte aucune precondition lisible"
+    assert read.reason == "google_access_pending"
+    # La phrase nomme le GESTE qui debloque, jamais le code HTTP -- et elle dit
+    # que rien n'est mal configure, parce que rien ne l'est.
+    assert "Request Business Profile API quota" in read.message
+    assert "403" not in read.message
+
+
+def test_gbp_a_403_outside_a_gated_surface_stays_an_ordinary_refusal():
+    """La precondition est une PORTE NOMMEE, pas une amnistie sur tous les 403.
+
+    Sans cette borne, le lecteur du core transformerait n'importe quel refus
+    d'acces reel en fenetre `prevented` -- une erreur reelle rendue muette.
+    """
+    from core.pull_envelope import prevented_by_error
+
+    with pytest.raises(Exception) as caught:  # noqa: PT011
+        connector._raise_for_status(
+            _forbidden_response("https://example.com/v1/x"), surface="not_a_gate"
+        )
+
+    assert caught.value.error_class == "permission_denied"
+    assert prevented_by_error(caught.value, module_name="google-business-profile") is None

@@ -9,10 +9,12 @@
 -- that dimension's rows — exactly as cross_source_conversions.sql does.
 -- This is an architectural requirement (Story 4.4, AD-13, review-1-6 lesson).
 --
--- ANOMALY_BASELINE_WINDOW env var (default 29): trailing days preceding + current.
--- 30-day window total: 29 preceding rows + current row.
+-- ANOMALY_BASELINE_WINDOW env var (default 29): trailing ROWS preceding + current.
+-- 30-ROW window total, not 30 days (story 53.8): the frame is ROWS, not RANGE, so
+-- a series with gaps stretches the same 30 rows over 40+ calendar days silently.
 --
--- See docs/anomaly-detection-method.md for method documentation (AD-9).
+-- See docs/anomaly-detection-method.mdx for method documentation (AD-9), and its
+-- section 1b for the (n-1)/sqrt(n) bound this frame imposes on the z-score.
 {{
   config(materialized='table')
 }}
@@ -65,6 +67,22 @@ SELECT
         PARTITION BY project_id, connector, metric
         ORDER BY date
         ROWS BETWEEN {{ env_var('ANOMALY_BASELINE_WINDOW', '29') }} PRECEDING AND CURRENT ROW
-    ) AS rolling_stddev
+    ) AS rolling_stddev,
+    -- Story 53.8 (CAV-13): how many observations the estimator above actually
+    -- had. Same PARTITION BY / ORDER BY / ROWS frame, character for character:
+    -- a count over a different frame would describe a different estimator.
+    --
+    -- Why it must be materialised HERE and not derived downstream:
+    -- anomalies_daily keeps only rows that already cleared the threshold, so
+    -- below the threshold there is no row and no count. metric_baselines has one
+    -- row per project x connector x metric x date INCLUDING the days nothing
+    -- fires -- which is exactly where "the detector could not yet speak" has to
+    -- be readable. Nothing about the estimator changes: this is a count, not a
+    -- filter, and the two frames above are untouched.
+    COUNT(metric_value) OVER (
+        PARTITION BY project_id, connector, metric
+        ORDER BY date
+        ROWS BETWEEN {{ env_var('ANOMALY_BASELINE_WINDOW', '29') }} PRECEDING AND CURRENT ROW
+    ) AS observation_count
 FROM single_dim_totals
 WHERE metric_value IS NOT NULL

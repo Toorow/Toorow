@@ -2,7 +2,7 @@
   "name": "@toorow/card-attribution",
   "private": true,
   "version": "0.1.0",
-  "description": "Attribution card (Epic 16, Story 16.3) — canaux dernier clic vs premier clic, campagnes, part des conversions. Single-file build (AD-11).",
+  "description": "Attribution card (Epic 16, Story 16.3) \u2014 canaux dernier clic vs premier clic, campagnes, part des conversions. Single-file build (AD-11).",
   "type": "module",
   "scripts": {
     "build": "vite build",
@@ -13,9 +13,6 @@
   "dependencies": {
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "@mui/material": "^9.0.0",
-    "@emotion/react": "^11.13.0",
-    "@emotion/styled": "^11.13.0",
     "@toorow/shell": "workspace:*",
     "@toorow/card-shell": "workspace:*"
   },

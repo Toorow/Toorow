@@ -60,6 +60,10 @@ import unicodedata
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
+from core.envelope import (  # noqa: F401 -- re-exported label vocabulary (see section C)
+    LABEL_SOURCE_CLIENT,
+    LABEL_SOURCE_FALLBACK,
+)
 from core.metric_semantics import (  # noqa: F401 -- re-exported socle symbols (27.1)
     SCOPE_ORG,
     SCOPE_PLATFORM,
@@ -553,18 +557,18 @@ def _assert_no_chain(
         # The canonical we point at is already a source elsewhere -> A->B then B->C.
         if src == canonical_value:
             raise ChainedMappingError(
-                f"mapping refuse : la valeur canonique '{canonical_value}' est deja la "
+                f"mapping refused: canonical value '{canonical_value}' is already the "
                 f"source d'un autre mapping confirme (dimension '{canonical_dimension}') ; "
-                "une chaine A->B->C est interdite -- pointez chaque source vers la MEME "
+                "a chain A->B->C is forbidden -- point every source at the SAME "
                 "valeur canonique terminale"
             )
         # Our source is already a terminal canonical elsewhere -> X->A then A->B (cycle).
         if canon == source_value:
             raise ChainedMappingError(
-                f"mapping refuse : la source '{source_value}' est deja une valeur "
+                f"mapping refused: source '{source_value}' is already a "
                 f"canonique terminale d'un autre mapping confirme (dimension "
-                f"'{canonical_dimension}') ; une chaine / un cycle est interdit -- une "
-                "valeur canonique ne peut pas redevenir une source"
+                f"'{canonical_dimension}'); a chain / a cycle is forbidden -- a "
+                "canonical value cannot become a source again"
             )
 
 
@@ -1211,9 +1215,17 @@ def conform_value(
 ENTITY_TYPE_LABEL = "dimension_label"
 _LABEL_ID_PREFIX = "dlb_"
 
-# Where a resolved label came from (contract of resolve_dimension_label).
-LABEL_SOURCE_CLIENT = "client"                 # a stored row won the cascade
-LABEL_SOURCE_FALLBACK = "fallback_identifier"  # nothing stored -> the stable id is shown
+# Where a resolved label came from (contract of resolve_dimension_label):
+# LABEL_SOURCE_CLIENT / LABEL_SOURCE_FALLBACK, imported at the top of this file.
+#
+# THEY ARE NOT SPELLED HERE, and that is the point. The same two words travel on
+# the wire in `meta.dimension_labels[...].label_source`, and they are read by
+# surfaces this module may never be imported into: the narration is forbidden any
+# data-access import by `scripts/check_narrative_no_raw.py`, and it must still be
+# able to tell a chosen name from a default. So the vocabulary lives with the
+# envelope contract that carries it (`core.envelope`, which imports nothing) and
+# is re-exported here for every caller reading it from the store side. Two
+# spellings of one vocabulary is how a heading and a sentence drift apart.
 
 _LABEL_COLUMNS = (
     "id, canonical_dimension, display_label, description, scope_level, org_id, "
@@ -1412,8 +1424,19 @@ def set_dimension_label(
     The stable identifier is NEVER touched -- only the string the user reads. Idempotent:
     a re-write with identical content writes NO audit line. Raises InvalidScope on an
     inconsistent triplet, ValueError on a blank identifier/label (the DB CHECK mirrors it).
+
+    THE CONNECTION IS ARMED, AND IT IS THE SECOND BARRIER. `app.dimension_labels`
+    carries an RLS policy (`274_a_row_without_an_org_belongs_to_no_tenant.sql:50-55`),
+    and a policy with no `WITH CHECK` uses its `USING` expression for the INSERT
+    too -- so the floor governs this UPSERT as well as the read behind it. On a
+    bare `get_connection()` the floor was never armed and the row landed in the
+    named organization whatever the caller was, which `core/db.py:316-319` names
+    exactly: arming a DIFFERENT connection buys nothing, the one that WRITES is
+    the one that must carry the context. `identity` is already this function's
+    argument, and `request_connection` translates it (a no-op when it is already
+    canonical, and an unknown subject passes through and is refused downstream).
     """
-    from core.db import get_connection  # noqa: PLC0415
+    from core.db import request_connection  # noqa: PLC0415
 
     validate_scope(scope_level, org_id, project_id)
     if not canonical_dimension or not canonical_dimension.strip():
@@ -1421,7 +1444,7 @@ def set_dimension_label(
     if not display_label or not display_label.strip():
         raise ValueError("display_label must not be blank")
 
-    with get_connection() as conn:
+    with request_connection(identity) as conn:
         before = _select_label(
             conn,
             scope_level=scope_level,
@@ -1487,11 +1510,16 @@ def delete_dimension_label(
     """Delete the label row at one exact scope + audit. True if a row went.
 
     Deleting an override simply re-exposes the less specific scope (or the identifier
-    fallback) -- it never deletes the dimension itself."""
-    from core.db import get_connection  # noqa: PLC0415
+    fallback) -- it never deletes the dimension itself.
+
+    Armed for the same reason as `set_dimension_label` above, and named here too
+    rather than left as the one writer of this table still on a bare connection:
+    a defect of a connector is a defect of every connector, and a defect of a
+    writer is a defect of every writer of the same table."""
+    from core.db import request_connection  # noqa: PLC0415
 
     validate_scope(scope_level, org_id, project_id)
-    with get_connection() as conn:
+    with request_connection(identity) as conn:
         before = _select_label(
             conn,
             scope_level=scope_level,

@@ -1,0 +1,218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://toorow.dev/schemas/retrieval-branch-evidence.schema.json",
+  "title": "Retrieval branch evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "state"],
+  "properties": {
+    "schema_version": {"const": "retrieval-branch-evidence.v1"},
+    "state": {
+      "enum": [
+        "branches_listed",
+        "no_branch_judged",
+        "branches_not_recorded",
+        "unavailable"
+      ]
+    },
+    "walk": {"$ref": "#/$defs/walk"},
+    "branches": {
+      "type": "array",
+      "maxItems": 24,
+      "items": {"$ref": "#/$defs/branch"}
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"state": {"const": "branches_listed"}}},
+      "then": {
+        "required": ["walk", "branches"],
+        "properties": {
+          "branches": {"minItems": 1},
+          "walk": {
+            "properties": {"listed_count": {"minimum": 1}}
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"state": {"const": "no_branch_judged"}}},
+      "then": {
+        "required": ["walk", "branches"],
+        "properties": {
+          "branches": {"maxItems": 0},
+          "walk": {
+            "properties": {
+              "judged_count": {"const": 0},
+              "selected_count": {"const": 0},
+              "rejected_count": {"const": 0},
+              "listed_count": {"const": 0},
+              "listing_truncated": {"const": false}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {"enum": ["branches_not_recorded", "unavailable"]}
+        }
+      },
+      "then": {
+        "properties": {
+          "walk": false,
+          "branches": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "walk": {
+            "properties": {"producer": {"const": "context_search"}},
+            "required": ["producer"]
+          }
+        },
+        "required": ["walk"]
+      },
+      "then": {
+        "properties": {
+          "branches": {
+            "items": {
+              "properties": {
+                "kind": {"enum": ["topic", "procedure", "schema_doc"]},
+                "score": {"type": "number"},
+                "tier": {"enum": ["title", "description", "neighbor"]},
+                "matched": {"type": "boolean"}
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "branches": {
+            "items": {
+              "properties": {
+                "kind": {"const": "context_event"},
+                "score": {"type": "null"},
+                "tier": {"type": "null"},
+                "matched": {"type": "null"}
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "branch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "score",
+        "tier",
+        "matched",
+        "rank",
+        "fate",
+        "reason"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
+        },
+        "kind": {
+          "enum": ["topic", "procedure", "schema_doc", "context_event"]
+        },
+        "title": {"type": "string", "minLength": 1, "maxLength": 200},
+        "score": {"type": ["number", "null"]},
+        "tier": {
+          "type": ["string", "null"],
+          "enum": ["title", "description", "neighbor", null]
+        },
+        "matched": {"type": ["boolean", "null"]},
+        "rank": {"type": "integer", "minimum": 1},
+        "fate": {"enum": ["selected", "rejected"]},
+        "reason": {
+          "type": ["string", "null"],
+          "enum": [
+            "below_cutoff",
+            "date_mismatch",
+            "connector_mismatch",
+            "anti_trigger",
+            null
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"fate": {"const": "selected"}}},
+          "then": {"properties": {"reason": {"type": "null"}}},
+          "else": {"properties": {"reason": {"type": "string"}}}
+        }
+      ]
+    },
+    "walk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer",
+        "mode",
+        "graph_hop_depth",
+        "semantic_recall",
+        "selection_limit",
+        "judged_count",
+        "selected_count",
+        "rejected_count",
+        "listed_count",
+        "listing_truncated",
+        "not_reached_enumerated",
+        "tier_scale"
+      ],
+      "properties": {
+        "producer": {"enum": ["context_search", "briefing_context_event"]},
+        "mode": {"type": "string", "minLength": 1, "maxLength": 128},
+        "graph_hop_depth": {"type": "integer", "minimum": 0},
+        "semantic_recall": {"type": "boolean"},
+        "selection_limit": {"type": "integer", "minimum": 0},
+        "judged_count": {"type": "integer", "minimum": 0},
+        "selected_count": {"type": "integer", "minimum": 0},
+        "rejected_count": {"type": "integer", "minimum": 0},
+        "listed_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 24
+        },
+        "listing_truncated": {"type": "boolean"},
+        "not_reached_enumerated": {"const": false},
+        "tier_scale": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["title", "description", "neighbor"],
+              "properties": {
+                "title": {"type": "number"},
+                "description": {"type": "number"},
+                "neighbor": {"type": "number"}
+              }
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"producer": {"const": "context_search"}}},
+          "then": {"properties": {"tier_scale": {"type": "object"}}},
+          "else": {"properties": {"tier_scale": {"type": "null"}}}
+        }
+      ]
+    }
+  }
+}

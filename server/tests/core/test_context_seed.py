@@ -171,6 +171,22 @@ EDGE_COLS = [
 ]
 
 
+#: The bind order of `context_relationships.create_relationship`'s head INSERT.
+RELATIONSHIP_PARAMS = [
+    "id",
+    "org_id",
+    "project_id",
+    "source_type",
+    "source_id",
+    "target_type",
+    "target_id",
+    "relationship_kind",
+    "provenance",
+    "projection_edge_id",
+    "created_by",
+]
+
+
 def _norm(sql: str) -> str:
     return " ".join(sql.split())
 
@@ -185,6 +201,11 @@ class FakeDB:
         self.topics: dict[str, dict[str, Any]] = {}
         self.topic_versions: list[dict[str, Any]] = []
         self.edges: list[dict[str, Any]] = []
+        #: Story 49-6 AC5: the authority behind every projected edge. The seed
+        #: does not read them, but a fixture that discarded them could not tell
+        #: an edge written by the authority from an edge written beside it.
+        self.relationships: list[dict[str, Any]] = []
+        self.relationship_versions: list[tuple[Any, ...]] = []
         self.audit: list[tuple[Any, ...]] = []
         self.calls: list[tuple[str, Any]] = []
         self.savepoints: list[str] = []
@@ -195,6 +216,10 @@ class FakeDB:
         self.topic_race_status: str = "active"
         #: Same idea for the edge insert: raise UniqueViolation N times.
         self.edge_race_remaining: int = 0
+        #: Seeded business domains, slug -> id (org "org_1").
+        self.org_domains: dict[str, str] = {}
+        #: Governed business links already written: (taxonomy_id, target_id, project_id).
+        self.links: set[tuple[str, str, str]] = set()
         self._seq = 0
 
     def next_ts(self) -> str:
@@ -306,6 +331,34 @@ class FakeCursor:
             self._set(TOPIC_COLS, [tuple(row[c] for c in TOPIC_COLS)])
             return
 
+        # --- story 49-6 AC5: the relationship AUTHORITY behind the projection ---
+        #
+        # `context_store.create_graph_edge` no longer writes `app.context_graph`
+        # itself: it declares a relation through `core.context_relationships`,
+        # which appends an immutable version and writes the legacy row as a READ
+        # PROJECTION in the same transaction. The seed's path is unchanged --
+        # same call, same returned edge row -- but four more statements ride on
+        # it, and a fake connection is a dispatch table, so they are named here.
+        if sql.startswith("SELECT status FROM app.context_relationships"):
+            # The duplicate guard. The seed's own `_edge_exists` already ran, so
+            # nothing is ever live here in these fixtures.
+            self._set(["status"], [])
+            return
+
+        if sql.startswith("INSERT INTO app.context_relationships"):
+            self.db.relationships.append(dict(zip(RELATIONSHIP_PARAMS, params)))
+            self._set([], [])
+            return
+
+        if sql.startswith("INSERT INTO app.context_relationship_versions"):
+            self.db.relationship_versions.append(params)
+            self._set([], [])
+            return
+
+        if sql.startswith("UPDATE app.context_relationships SET current_version_id"):
+            self._set([], [])
+            return
+
         if sql.startswith("INSERT INTO app.context_graph"):
             if self.db.edge_race_remaining > 0:
                 self.db.edge_race_remaining -= 1
@@ -364,13 +417,32 @@ class FakeCursor:
             self._set(["changed_by"], [(latest["changed_by"],)] if latest else [])
             return
 
-        if sql.startswith("SELECT COALESCE(MAX(version_number), 0)"):
+        if sql.startswith("SELECT COALESCE(MAX(version_number)"):
             rows = [
                 v["version_number"]
                 for v in self.db.topic_versions
                 if v["topic_id"] == params[0]
             ]
             self._set(["max"], [(max(rows) if rows else 0,)])
+            return
+
+        if sql.startswith(
+            "SELECT 1 FROM app.context_graph WHERE from_id = %s AND from_type = %s"
+        ):
+            # The AUTHORITY's projection guard (49-6 AC5): it asks the full
+            # endpoint tuple, where the seed's own `_edge_exists` below asks
+            # three columns. Two different questions on one table, told apart by
+            # the columns they name rather than by the number of binds.
+            from_id, from_type, to_id, to_type, edge_type = params
+            hit = any(
+                e["from_id"] == from_id
+                and e["from_type"] == from_type
+                and e["to_id"] == to_id
+                and e["to_type"] == to_type
+                and e["edge_type"] == edge_type
+                for e in self.db.edges
+            )
+            self._set(["?column?"], [(1,)] if hit else [])
             return
 
         if sql.startswith("SELECT 1 FROM app.context_graph"):
@@ -393,6 +465,68 @@ class FakeCursor:
         if sql.startswith("SELECT 1 FROM app.schema_context"):
             hit = any(doc_id == params[0] for doc_id, _ in self.db.schema_docs)
             self._set(["?column?"], [(1,)] if hit else [])
+            return
+
+        # -- the connector -> business domain link (manifest business_domain) --
+        if sql.startswith("SELECT org_id FROM app.projects WHERE id"):
+            self._set(["org_id"], [("org_1",)])
+            return
+
+        if sql.startswith("SELECT 1 FROM app.projects WHERE id"):
+            self._set(["?column?"], [(1,)])
+            return
+
+        # ONE branch since story 49.2, because there is one reader. The slug
+        # lookup and `business_taxonomy.get_domain` both go through
+        # `core.business_identity_catalogue`, whose single statement selects the
+        # superseded store's own columns plus `source` from a union of the
+        # authority and the legacy row. Its parameters are, in order:
+        # (org_id, all_statuses, status, all_ids, ids).
+        if sql.startswith(
+            "SELECT id, org_id, slug, name, description, owner, status, created_by, "
+            "created_at, updated_at, archived_at, source FROM ("
+        ):
+            wanted_ids = None if params[3] else {str(item) for item in params[4]}
+            rows = [
+                (
+                    domain_id, "org_1", slug, slug.title(), "", None,
+                    "active", "seed", self.db.next_ts(), self.db.next_ts(), None,
+                    # The fixture organization has not converged, so the legacy
+                    # row is what answers -- and the payload SAYS so rather than
+                    # letting the caller infer it.
+                    "superseded",
+                )
+                for slug, domain_id in sorted(self.db.org_domains.items())
+                if wanted_ids is None or str(domain_id) in wanted_ids
+            ]
+            self._set(
+                [c.strip() for c in (
+                    "id, org_id, slug, name, description, owner, status, created_by, "
+                    "created_at, updated_at, archived_at, source"
+                ).split(",")],
+                rows,
+            )
+            return
+
+        if sql.startswith("SELECT 1 FROM app.mdm_business_links"):
+            hit = (params[0], params[1], params[2]) in self.db.links
+            self._set(["?column?"], [(1,)] if hit else [])
+            return
+
+        if sql.startswith("INSERT INTO app.mdm_business_links"):
+            link_id, org_id, project_id, taxonomy_type, taxonomy_id = params[:5]
+            target_type, target_id, relation_type, link_origin, created_by = params[5:10]
+            self.db.links.add((taxonomy_id, target_id, project_id))
+            self._set(
+                [c.strip() for c in (
+                    "id, org_id, project_id, taxonomy_type, taxonomy_id, target_type, "
+                    "target_id, relation_type, link_origin, created_by, created_at"
+                ).split(",")],
+                [(
+                    link_id, org_id, project_id, taxonomy_type, taxonomy_id, target_type,
+                    target_id, relation_type, link_origin, created_by, self.db.next_ts(),
+                )],
+            )
             return
 
         if sql.startswith(
@@ -973,6 +1107,14 @@ def test_landing_hook_invokes_the_seed_with_the_landed_module():
         def fetchone(self):
             return conn_ref_row
 
+        def fetchall(self):
+            # The verified accounts of this consent -- read by
+            # `queue._resolve_selected_account`. This subject is the seed hook,
+            # not the account: no row, which says "nothing was verified here".
+            # It used to be missing, and the `AttributeError` was swallowed by
+            # that resolver's `except` (AI-327).
+            return []
+
     class _Conn:
         def cursor(self):
             return _Cursor()
@@ -1030,9 +1172,20 @@ pg_available = pytest.mark.skipif(
     not _pg_reachable(), reason="TEST_POSTGRES_DSN not set/reachable -- skip live PG"
 )
 
-_MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "infra" / "nango" / "migrations"
-_MIGRATION_031 = _MIGRATIONS_DIR / "031_context_layer.sql"
-_MIGRATION_113 = _MIGRATIONS_DIR / "113_context_topics_platform_title_unique.sql"
+def _require_tables(conn, *tables: str) -> None:
+    """Refuse to run against a base the migrations have not reached, and say so."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT tablename FROM pg_tables WHERE schemaname = 'app' AND tablename = ANY(%s)",
+            (list(tables),),
+        )
+        present = {row[0] for row in cur.fetchall()}
+    missing = sorted(set(tables) - present)
+    assert not missing, (
+        f"schema `app` is missing {missing} -- this base has not been migrated. "
+        "Run `python scripts/apply_migrations.py`, or stand a fresh one up with "
+        "`python scripts/disposable_postgres.py up`."
+    )
 
 
 @pg_available
@@ -1047,11 +1200,38 @@ def test_live_seed_is_idempotent_and_respects_the_human_edit(
     title = "Connector: Demo Source"
 
     with get_connection() as conn:
+        # THE SCHEMA IS THE MIGRATION RUNNER'S JOB, NOT THIS TEST'S. These two
+        # lines replayed migrations 031 and 113 through `get_connection()` to
+        # conjure their own tables. That stopped being possible on 2026-08-04
+        # (`cef2e3f6`, migration 207): the application role stopped OWNING the
+        # schema -- which is the whole point, since an owner is not subject to
+        # RLS -- so replaying a migration under it answers `InsufficientPrivilege:
+        # must be owner of table context_topics`, and this test failed before its
+        # first assertion on every base built by `disposable_postgres.py`.
+        #
+        # A test may not repair the schema it reads. It asks for it, and says the
+        # gesture when it is not there.
+        _require_tables(conn, "context_topics", "context_topics_versions", "context_graph")
+
+        # THE PROJECT IS REAL NOW, and that is story 49-6 AC5 tightening the
+        # contract rather than the fixture being tidied. The relationship
+        # authority DERIVES the organization from the project graph, so an edge
+        # scoped to a project id that names no project can no longer be written
+        # -- and migration 317's pre-flight refuses to carry one either. Before
+        # the authority, `app.context_graph` had no foreign key at all and this
+        # fixture invented a project that existed nowhere.
+        org_id = f"org_seed_{uuid.uuid4().hex[:10]}"
         with conn.cursor() as cur:
-            cur.execute(_MIGRATION_031.read_text(encoding="utf-8"))
-        conn.commit()
-        with conn.cursor() as cur:
-            cur.execute(_MIGRATION_113.read_text(encoding="utf-8"))
+            cur.execute(
+                "INSERT INTO app.organizations (id, name, slug, status, created_by) "
+                "VALUES (%s, 'seed fixture', %s, 'active', 'test')",
+                (org_id, org_id.replace("_", "-")),
+            )
+            cur.execute(
+                "INSERT INTO app.projects (id, org_id, name, slug, created_by) "
+                "VALUES (%s, %s, 'seed fixture', %s, 'test')",
+                (project_id, org_id, project_id.replace("_", "-")),
+            )
         conn.commit()
 
         # Two schema docs on one of the module's relations, one unrelated doc.
@@ -1157,6 +1337,22 @@ def test_live_seed_is_idempotent_and_respects_the_human_edit(
             conn.commit()
         finally:
             with conn.cursor() as cur:
+                # Since migration 317 an edge is the PROJECTION of a relation
+                # held by app.context_relationships; deleting the projection
+                # alone leaves the relation and its versions behind, and the
+                # next backfill test on this base collides with them
+                # (measured 2026-08-28: uq_context_relationships_active). The
+                # versions are append-only, so the erasure hatch is the door.
+                cur.execute("SET LOCAL app.rgpd_erasure = 'on'")
+                cur.execute(
+                    "DELETE FROM app.context_relationship_versions WHERE relationship_id IN "
+                    "(SELECT id FROM app.context_relationships WHERE project_id = %s)",
+                    (project_id,),
+                )
+                cur.execute(
+                    "DELETE FROM app.context_relationships WHERE project_id = %s",
+                    (project_id,),
+                )
                 cur.execute(
                     "DELETE FROM app.context_graph WHERE project_id = %s", (project_id,)
                 )
@@ -1186,7 +1382,7 @@ def test_seed_new_project_helper_calls_hook_without_schema_generation():
     """
     from unittest.mock import MagicMock  # noqa: PLC0415
 
-    from core.admin_api import _seed_new_project  # noqa: PLC0415
+    from core.projects_api import _seed_new_project  # noqa: PLC0415
 
     seed_spy = MagicMock(return_value=None)
     with patch.object(context_seed, "seed_project_context_best_effort", seed_spy):
@@ -1199,7 +1395,7 @@ def test_seed_new_project_helper_swallows_seed_failure():
     """A raising seed never propagates out of the project-creation hook."""
     from unittest.mock import MagicMock  # noqa: PLC0415
 
-    from core.admin_api import _seed_new_project  # noqa: PLC0415
+    from core.projects_api import _seed_new_project  # noqa: PLC0415
 
     seed_spy = MagicMock(side_effect=RuntimeError("boom"))
     with patch.object(context_seed, "seed_project_context_best_effort", seed_spy):
@@ -1223,11 +1419,32 @@ async def test_project_creation_invokes_the_seed_without_schema_generation(
     monkeypatch.setenv("PLATFORM_DB_URL", os.environ["TEST_POSTGRES_DSN"])
     from unittest.mock import AsyncMock, MagicMock  # noqa: PLC0415
 
-    from core.admin_api import _create_project  # noqa: PLC0415
     from core.db import get_connection  # noqa: PLC0415
+    from core.projects_api import _create_project  # noqa: PLC0415
 
     seed_spy = MagicMock(return_value=None)
     slug = f"seedhook-{uuid.uuid4().hex[:8]}"
+
+    # THE ORGANIZATION IS SEEDED BECAUSE A PROJECT WITHOUT ONE IS NOT CREATED.
+    # `47e9faaf` (2026-07-25) stopped degrading an org-less creation into an
+    # orphan and started refusing it -- 422 `org_required`, *"a project without
+    # an organization has no warehouse to land in and escapes the partitioning:
+    # it is not a degraded project, it is an impossible one"*. This test asked
+    # for 201 with no membership at all, so it was asserting the orphan.
+    org_id = f"org_seedhook_{uuid.uuid4().hex[:8]}"
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO app.organizations (id, name, slug, status, created_by) "
+                "VALUES (%s, 'seed hook fixture', %s, 'active', 'test')",
+                (org_id, org_id.replace("_", "-")),
+            )
+            cur.execute(
+                "INSERT INTO app.org_members (id, org_id, identity, role, status, joined_at) "
+                "VALUES (%s, %s, 'tester@example.com', 'owner', 'active', now())",
+                (f"orgm_{uuid.uuid4().hex[:12]}", org_id),
+            )
+        conn.commit()
 
     with patch(
         "core.admin_api._check_auth", return_value=(True, "tester@example.com")
@@ -1260,4 +1477,80 @@ async def test_project_creation_invokes_the_seed_without_schema_generation(
                     except Exception:
                         cur.execute("ROLLBACK TO SAVEPOINT sp_seed_cleanup")
                     cur.execute("RELEASE SAVEPOINT sp_seed_cleanup")
+            # The org goes through the product's purge: migration 130 seeds
+            # `app.mdm_business_domains` into every new organization, and that
+            # table references it ON DELETE RESTRICT.
+            from tests.conftest import purge_fixture_org  # noqa: PLC0415
+
+            purge_fixture_org(conn, org_id)
             conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# The connector -> business domain link (manifest `business_domain`)
+# ---------------------------------------------------------------------------
+
+
+def _declare_domain(
+    registry_dir: Path, module: str = MODULE_NAME, domain: str = "marketing"
+) -> None:
+    """Rewrite the fixture manifest with a business_domain declared."""
+    manifest_path = registry_dir / module / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["business_domain"] = domain
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+
+def test_seed_links_the_connector_card_to_its_declared_domain(registry_dir: Path):
+    """Le mapping vit dans le manifest (AD-2 : pas de noms de connecteurs dans
+    core). Une carte plateforme `Connector: X` devient trouvable en marchant la
+    taxonomie : un lien explains domaine -> topic, par projet."""
+    _declare_domain(registry_dir)
+    db = _seeded_db()
+    db.org_domains["marketing"] = "bdm_marketing"
+
+    summary = _run(db, registry_dir)
+
+    assert summary["links_created"] == 1
+    topic_id = next(iter(db.topics))
+    assert ("bdm_marketing", topic_id, PROJECT_ID) in db.links
+
+
+def test_seed_domain_link_is_idempotent(registry_dir: Path):
+    _declare_domain(registry_dir)
+    db = _seeded_db()
+    db.org_domains["marketing"] = "bdm_marketing"
+
+    _run(db, registry_dir)
+    second = _run(db, registry_dir)
+
+    assert second["links_created"] == 0
+    assert len(db.links) == 1
+
+
+def test_seed_without_a_declared_domain_writes_no_link(registry_dir: Path):
+    """Pas de mapping => pas de lien : l'absence est honnete, jamais comblee
+    par un domaine devine."""
+    db = _seeded_db()
+    db.org_domains["marketing"] = "bdm_marketing"
+
+    summary = _run(db, registry_dir)
+
+    assert summary["links_created"] == 0
+    assert db.links == set()
+    assert not any("mdm_business_links" in sql for sql, _ in db.calls)
+
+
+def test_seed_domain_link_survives_an_unmapped_domain(registry_dir: Path):
+    """Un manifest qui nomme un domaine absent de l'org ne casse pas le seed :
+    la carte est semee, le lien est saute, le module n'est pas compte en echec."""
+    _declare_domain(registry_dir, domain="legal")  # pas de domaine legal dans l'org fake
+    db = _seeded_db()
+    db.org_domains["marketing"] = "bdm_marketing"
+
+    summary = _run(db, registry_dir)
+
+    assert summary["links_created"] == 0
+    assert db.links == set()
+    assert summary["topics_created"] == 1
+    assert MODULE_NAME not in summary["modules_skipped"]

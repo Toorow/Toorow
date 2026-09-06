@@ -50,5 +50,10 @@
       "YOUTUBE_CONSOLIDATED"
     ]
   },
-  "_semantic_guard": "SEE gam-connector-from-gam-native memory. AUDIENCE_SEGMENT_* = GAM ad-server audiences (targeting), NOT GA4-built audiences. GOOGLE_ANALYTICS_* = GA<->GAM ad-monetization link view, NOT GA4 behavioral data. These must keep DISTINCT canonical targets + provenance from any GA4 connector field — never merged."
+  "_semantic_guard": "SEE gam-connector-from-gam-native memory. AUDIENCE_SEGMENT_* = GAM ad-server audiences (targeting), NOT GA4-built audiences. GOOGLE_ANALYTICS_* = GA<->GAM ad-monetization link view, NOT GA4 behavioral data. These must keep DISTINCT canonical targets + provenance from any GA4 connector field — never merged.",
+  "probe": {
+    "request_style": "metrics_dimensions",
+    "batch_size": 20,
+    "structural_note": "Google Ad Manager REST API v1 POST networks.reports with report_type, dimensions, and metrics. Incompatible combo or unrecognized fields return 400 InvalidArgument, bisected to isolate offending fields."
+  }
 }

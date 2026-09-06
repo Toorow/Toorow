@@ -2,10 +2,13 @@
   "schema_version": "1.2",
   "name": "dv360",
   "display_name": "Display & Video 360",
+  "business_domain": "marketing",
   "public_catalog": {
     "visibility": "public",
     "category": "paid_media",
-    "onboarding_modes": ["connector_pull"],
+    "onboarding_modes": [
+      "connector_pull"
+    ],
     "verification": {
       "status": "blocked",
       "reason_code": "live_evidence_not_ratified",
@@ -23,42 +26,128 @@
     "scope": "https://www.googleapis.com/auth/display-video"
   },
   "account_topology": {
-    "levels": ["partner", "advertiser"],
+    "_comment": "Story 25.7 / conformance test_pull_contract: the reporting entity is the ADVERTISER and it is the only identifier the Bid Manager query needs (filters: FILTER_ADVERTISER). partner_id is provenance, not routing -- it is a column of raw_dv360_daily -- so discover_accounts mints the composite opaque id '<advertiser_id>@<partner_id>' to keep it, and a bare advertiser id is accepted with an empty partner rather than refused. Core never interprets the id (AD-2). Env-var account fallbacks are FORBIDDEN: one variable per deployment would pull the same advertiser for every project.",
+    "levels": [
+      {
+        "id": "partner",
+        "label": "Partner"
+      },
+      {
+        "id": "advertiser",
+        "label": "Advertiser"
+      }
+    ],
     "selection_level": "advertiser",
-    "discovery": {"callable": "discover_accounts"},
-    "selection": {"required": true, "opaque": true}
+    "discovery": {
+      "callable": "discover_accounts"
+    },
+    "pull_parameter": "advertiser_id",
+    "selection": {
+      "required": true,
+      "opaque": true
+    },
+    "operating_context": {
+      "parameters": {
+        "partner_id": "partner"
+      },
+      "_note": "DV360 identifie l'annonceur SOUS son partenaire ; la feuille seule ne suffit pas. Le coeur ne connait aucun nom de niveau (AD-2) : ce mapping dit quel niveau du `selection_path` alimente quel parametre de `pull()`."
+    }
   },
   "report_profiles": [
     {
       "id": "standard_daily",
+      "raw_relation": "raw_dv360_daily",
+      "staging_relation": "stg_dv360_daily",
       "display_name": "Standard delivery (daily)",
-      "metrics": ["impressions", "clicks", "media_cost_micros"],
-      "dimensions": ["date", "advertiser_id", "campaign_id", "insertion_order_id", "line_item_id", "creative_id"],
-      "extraction_capabilities": {"row_limit": null, "filters_supported": true, "realtime": false},
+      "metrics": [
+        "impressions",
+        "clicks",
+        "media_cost_micros"
+      ],
+      "dimensions": [
+        "date",
+        "advertiser_id",
+        "campaign_id",
+        "insertion_order_id",
+        "line_item_id",
+        "creative_id"
+      ],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": true,
+        "realtime": false
+      },
       "extraction_path": "custom_pull"
     },
     {
       "id": "conversion_daily",
+      "raw_relation": "raw_dv360_daily",
+      "staging_relation": "stg_dv360_daily",
       "display_name": "Conversions (daily)",
-      "metrics": ["conversions", "conversion_value_micros"],
-      "dimensions": ["date", "advertiser_id", "campaign_id", "conversion_type", "currency", "timezone"],
-      "extraction_capabilities": {"row_limit": null, "filters_supported": true, "realtime": false},
+      "metrics": [
+        "conversions",
+        "conversion_value_micros"
+      ],
+      "dimensions": [
+        "date",
+        "advertiser_id",
+        "campaign_id",
+        "conversion_type",
+        "currency",
+        "timezone"
+      ],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": true,
+        "realtime": false
+      },
       "extraction_path": "custom_pull"
     },
     {
       "id": "reach",
+      "raw_relation": "raw_dv360_daily",
+      "staging_relation": "stg_dv360_daily",
       "display_name": "Reach and frequency",
-      "metrics": ["unique_reach", "average_frequency"],
-      "dimensions": ["date", "advertiser_id", "campaign_id", "country", "timezone"],
-      "extraction_capabilities": {"row_limit": null, "filters_supported": true, "realtime": false},
+      "metrics": [
+        "unique_reach",
+        "average_frequency"
+      ],
+      "dimensions": [
+        "date",
+        "advertiser_id",
+        "campaign_id",
+        "country",
+        "timezone"
+      ],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": true,
+        "realtime": false
+      },
       "extraction_path": "custom_pull"
     },
     {
       "id": "youtube_compatible",
+      "raw_relation": "raw_dv360_daily",
+      "staging_relation": "stg_dv360_daily",
       "display_name": "YouTube-compatible delivery",
-      "metrics": ["impressions", "clicks", "viewability_rate"],
-      "dimensions": ["date", "advertiser_id", "campaign_id", "youtube_ad_group_id", "country"],
-      "extraction_capabilities": {"row_limit": null, "filters_supported": true, "realtime": false},
+      "metrics": [
+        "impressions",
+        "clicks",
+        "viewability_rate"
+      ],
+      "dimensions": [
+        "date",
+        "advertiser_id",
+        "campaign_id",
+        "youtube_ad_group_id",
+        "country"
+      ],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": true,
+        "realtime": false
+      },
       "extraction_path": "custom_pull"
     }
   ],
@@ -68,9 +157,21 @@
     "media_cost_micros": "cost",
     "conversions": "conversions",
     "conversion_value_micros": "conversions_value",
-    "unique_reach": {"canonical": "unique_reach", "aggregation_rule": "max", "non_additive": true},
-    "average_frequency": {"canonical": "average_frequency", "aggregation_rule": "impression_weighted", "non_additive": true},
-    "viewability_rate": {"canonical": "viewability_rate", "aggregation_rule": "impression_weighted", "non_additive": true}
+    "unique_reach": {
+      "canonical": "unique_reach",
+      "aggregation_rule": "max",
+      "non_additive": true
+    },
+    "average_frequency": {
+      "canonical": "average_frequency",
+      "aggregation_rule": "impression_weighted",
+      "non_additive": true
+    },
+    "viewability_rate": {
+      "canonical": "viewability_rate",
+      "aggregation_rule": "impression_weighted",
+      "non_additive": true
+    }
   },
   "canonical_dimension_mapping": {
     "date": "date",
@@ -90,73 +191,541 @@
     "403:PERMISSION_DENIED": "permission_denied",
     "400:INVALID_ARGUMENT": "invalid_request",
     "404:NOT_FOUND": "invalid_request",
-    "409:ABORTED": "provider_transient",
-    "429:RESOURCE_EXHAUSTED": "provider_transient"
+    "409:ABORTED": "provider_transient"
   },
-  "quota": {"window_seconds": 60, "budget_points": 240, "read_cost": 1, "write_cost": 1},
+  "_error_map_note": "429 and the RESOURCE_EXHAUSTED reason carry NO error_map entry on purpose: _raise_response intercepts both before classify_http_error is ever reached and raises core.quota.RateLimitError, which is the breaker path (retry_after honoured, no reclassification). A '429:RESOURCE_EXHAUSTED' key used to sit in the map above -- unreachable code in data form, which read as coverage while covering nothing.",
+  "quota": {
+    "window_seconds": 60,
+    "budget_points": 240,
+    "read_cost": 1,
+    "write_cost": 1
+  },
   "_quota_note": "Bid Manager uses 4 QPS/project, 240 requests/minute/user and 2000/day/project. Discovery v4 is charged separately at 1500/minute/project and 300/minute/advertiser; runtime only performs reads.",
   "source_capabilities": {
     "contract_version": "1",
-    "field_discovery": {"mode": "static", "allowed_targets": []},
+    "field_discovery": {
+      "mode": "static",
+      "allowed_targets": []
+    },
     "fields": [
-      {"field_id": "date", "source_field": "FILTER_DATE", "kind": "dimension", "physical_type": "date", "description": "Advertiser reporting date.", "semantic_hints": ["date"], "canonical_target": "date", "aggregation": "none", "non_additive": false},
-      {"field_id": "advertiser_id", "source_field": "FILTER_ADVERTISER", "kind": "dimension", "physical_type": "string", "description": "Selected advertiser identifier.", "semantic_hints": ["advertiser", "identifier"], "canonical_target": "advertiser_id", "aggregation": "none", "non_additive": false},
-      {"field_id": "campaign_id", "source_field": "FILTER_MEDIA_PLAN", "kind": "dimension", "physical_type": "string", "description": "Campaign identifier.", "semantic_hints": ["campaign", "identifier"], "canonical_target": "campaign_id", "aggregation": "none", "non_additive": false},
-      {"field_id": "insertion_order_id", "source_field": "FILTER_INSERTION_ORDER", "kind": "dimension", "physical_type": "string", "description": "Insertion order identifier.", "semantic_hints": ["insertion_order", "identifier"], "canonical_target": "insertion_order_id", "aggregation": "none", "non_additive": false},
-      {"field_id": "line_item_id", "source_field": "FILTER_LINE_ITEM", "kind": "dimension", "physical_type": "string", "description": "Line item identifier.", "semantic_hints": ["line_item", "identifier"], "canonical_target": "line_item_id", "aggregation": "none", "non_additive": false},
-      {"field_id": "creative_id", "source_field": "FILTER_CREATIVE", "kind": "dimension", "physical_type": "string", "description": "Creative identifier.", "semantic_hints": ["creative", "identifier"], "canonical_target": "creative_id", "aggregation": "none", "non_additive": false},
-      {"field_id": "conversion_type", "source_field": "FILTER_FLOODLIGHT_ACTIVITY", "kind": "dimension", "physical_type": "string", "description": "Conversion activity.", "semantic_hints": ["conversion"], "canonical_target": "conversion_type", "aggregation": "none", "non_additive": false},
-      {"field_id": "country", "source_field": "FILTER_COUNTRY", "kind": "dimension", "physical_type": "string", "description": "Provider country value.", "semantic_hints": ["country"], "canonical_target": "country", "aggregation": "none", "non_additive": false},
-      {"field_id": "currency", "source_field": "FILTER_ADVERTISER_CURRENCY", "kind": "dimension", "physical_type": "string", "description": "Advertiser currency code.", "semantic_hints": ["currency"], "canonical_target": "currency", "aggregation": "none", "non_additive": false},
-      {"field_id": "timezone", "source_field": "FILTER_ADVERTISER_TIMEZONE", "kind": "dimension", "physical_type": "string", "description": "Advertiser reporting timezone.", "semantic_hints": ["timezone"], "canonical_target": "timezone", "aggregation": "none", "non_additive": false},
-      {"field_id": "youtube_ad_group_id", "source_field": "FILTER_YOUTUBE_AD_GROUP", "kind": "dimension", "physical_type": "string", "description": "YouTube ad group identifier.", "semantic_hints": ["youtube", "identifier"], "canonical_target": "youtube_ad_group_id", "aggregation": "none", "non_additive": false},
-      {"field_id": "impressions", "source_field": "METRIC_IMPRESSIONS", "kind": "metric", "physical_type": "integer", "description": "Recorded impressions.", "semantic_hints": ["delivery"], "canonical_target": "impressions", "aggregation": "sum", "non_additive": false},
-      {"field_id": "clicks", "source_field": "METRIC_CLICKS", "kind": "metric", "physical_type": "integer", "description": "Recorded clicks.", "semantic_hints": ["delivery"], "canonical_target": "clicks", "aggregation": "sum", "non_additive": false},
-      {"field_id": "media_cost_micros", "source_field": "METRIC_MEDIA_COST_ADVERTISER", "kind": "metric", "physical_type": "integer", "description": "Media cost in advertiser-currency micros.", "semantic_hints": ["cost", "currency", "micros"], "canonical_target": "cost", "aggregation": "sum", "non_additive": false},
-      {"field_id": "conversions", "source_field": "METRIC_TOTAL_CONVERSIONS", "kind": "metric", "physical_type": "decimal", "description": "Attributed conversions.", "semantic_hints": ["conversion"], "canonical_target": "conversions", "aggregation": "sum", "non_additive": false},
-      {"field_id": "conversion_value_micros", "source_field": "METRIC_TOTAL_CONVERSIONS_REVENUE_ADVERTISER", "kind": "metric", "physical_type": "integer", "description": "Conversion value in advertiser-currency micros.", "semantic_hints": ["conversion", "currency", "micros"], "canonical_target": "conversions_value", "aggregation": "sum", "non_additive": false},
-      {"field_id": "unique_reach", "source_field": "METRIC_UNIQUE_REACH_IMPRESSION_REACH", "kind": "metric", "physical_type": "integer", "description": "Unique reach at exact provider grain.", "semantic_hints": ["reach", "non_additive"], "canonical_target": "unique_reach", "aggregation": "max", "non_additive": true},
-      {"field_id": "average_frequency", "source_field": "METRIC_UNIQUE_REACH_AVERAGE_IMPRESSION_FREQUENCY", "kind": "metric", "physical_type": "decimal", "description": "Average impression frequency.", "semantic_hints": ["frequency", "ratio", "non_additive"], "canonical_target": "average_frequency", "aggregation": "impression_weighted", "non_additive": true},
-      {"field_id": "viewability_rate", "source_field": "METRIC_ACTIVE_VIEW_VIEWABLE_PERCENT", "kind": "metric", "physical_type": "decimal", "description": "Viewable impression percentage.", "semantic_hints": ["percentage", "non_additive"], "canonical_target": "viewability_rate", "aggregation": "impression_weighted", "non_additive": true}
+      {
+        "field_id": "date",
+        "source_field": "FILTER_DATE",
+        "kind": "dimension",
+        "physical_type": "date",
+        "description": "Advertiser reporting date.",
+        "semantic_hints": [
+          "date"
+        ],
+        "canonical_target": "date",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "advertiser_id",
+        "source_field": "FILTER_ADVERTISER",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Selected advertiser identifier.",
+        "semantic_hints": [
+          "advertiser",
+          "identifier"
+        ],
+        "canonical_target": "advertiser_id",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "campaign_id",
+        "source_field": "FILTER_MEDIA_PLAN",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Campaign identifier.",
+        "semantic_hints": [
+          "campaign",
+          "identifier"
+        ],
+        "canonical_target": "campaign_id",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "insertion_order_id",
+        "source_field": "FILTER_INSERTION_ORDER",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Insertion order identifier.",
+        "semantic_hints": [
+          "insertion_order",
+          "identifier"
+        ],
+        "canonical_target": "insertion_order_id",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "line_item_id",
+        "source_field": "FILTER_LINE_ITEM",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Line item identifier.",
+        "semantic_hints": [
+          "line_item",
+          "identifier"
+        ],
+        "canonical_target": "line_item_id",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "creative_id",
+        "source_field": "FILTER_CREATIVE",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Creative identifier.",
+        "semantic_hints": [
+          "creative",
+          "identifier"
+        ],
+        "canonical_target": "creative_id",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "conversion_type",
+        "source_field": "FILTER_FLOODLIGHT_ACTIVITY",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Conversion activity.",
+        "semantic_hints": [
+          "conversion"
+        ],
+        "canonical_target": "conversion_type",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "country",
+        "source_field": "FILTER_COUNTRY",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Country name (e.g. 'France', 'United States'); FILTER_COUNTRY_ID is the separate provider identifier.",
+        "semantic_hints": [
+          "country"
+        ],
+        "canonical_target": "country",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "currency",
+        "source_field": "FILTER_ADVERTISER_CURRENCY",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Advertiser currency code.",
+        "semantic_hints": [
+          "currency"
+        ],
+        "canonical_target": "currency",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "timezone",
+        "source_field": "FILTER_ADVERTISER_TIMEZONE",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Advertiser reporting timezone.",
+        "semantic_hints": [
+          "timezone"
+        ],
+        "canonical_target": "timezone",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "youtube_ad_group_id",
+        "source_field": "FILTER_YOUTUBE_AD_GROUP",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "YouTube ad group identifier.",
+        "semantic_hints": [
+          "youtube",
+          "identifier"
+        ],
+        "canonical_target": "youtube_ad_group_id",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "impressions",
+        "source_field": "METRIC_IMPRESSIONS",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Recorded impressions.",
+        "semantic_hints": [
+          "delivery"
+        ],
+        "canonical_target": "impressions",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "clicks",
+        "source_field": "METRIC_CLICKS",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Recorded clicks.",
+        "semantic_hints": [
+          "delivery"
+        ],
+        "canonical_target": "clicks",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "media_cost_micros",
+        "source_field": "METRIC_MEDIA_COST_ADVERTISER",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Media cost in advertiser-currency micros.",
+        "semantic_hints": [
+          "cost",
+          "currency",
+          "micros"
+        ],
+        "canonical_target": "cost",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "conversions",
+        "source_field": "METRIC_TOTAL_CONVERSIONS",
+        "kind": "metric",
+        "physical_type": "decimal",
+        "description": "Attributed conversions.",
+        "semantic_hints": [
+          "conversion"
+        ],
+        "canonical_target": "conversions",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "conversion_value_micros",
+        "source_field": "METRIC_TOTAL_CONVERSIONS_REVENUE_ADVERTISER",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Conversion value in advertiser-currency micros.",
+        "semantic_hints": [
+          "conversion",
+          "currency",
+          "micros"
+        ],
+        "canonical_target": "conversions_value",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "unique_reach",
+        "source_field": "METRIC_UNIQUE_REACH_IMPRESSION_REACH",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Unique reach at exact provider grain.",
+        "semantic_hints": [
+          "reach",
+          "non_additive"
+        ],
+        "canonical_target": "unique_reach",
+        "aggregation": "max",
+        "non_additive": true
+      },
+      {
+        "field_id": "average_frequency",
+        "source_field": "METRIC_UNIQUE_REACH_AVERAGE_IMPRESSION_FREQUENCY",
+        "kind": "metric",
+        "physical_type": "decimal",
+        "description": "Average impression frequency.",
+        "semantic_hints": [
+          "frequency",
+          "ratio",
+          "non_additive"
+        ],
+        "canonical_target": "average_frequency",
+        "aggregation": "impression_weighted",
+        "non_additive": true
+      },
+      {
+        "field_id": "viewability_rate",
+        "source_field": "METRIC_ACTIVE_VIEW_VIEWABLE_PERCENT",
+        "kind": "metric",
+        "physical_type": "decimal",
+        "description": "Viewable impression percentage.",
+        "semantic_hints": [
+          "percentage",
+          "non_additive"
+        ],
+        "canonical_target": "viewability_rate",
+        "aggregation": "impression_weighted",
+        "non_additive": true
+      }
     ],
     "reports": [
       {
-        "id": "standard_daily", "selection_mode": "exact_bundle", "availability": {"status": "selectable"},
-        "metrics": ["impressions", "clicks", "media_cost_micros"],
-        "dimensions": ["date", "advertiser_id", "campaign_id", "insertion_order_id", "line_item_id", "creative_id"],
-        "supported_grains": [["date", "advertiser_id", "campaign_id", "insertion_order_id", "line_item_id", "creative_id"]],
-        "compatibility": [], "filters": [{"field_id": "date", "operators": ["gte", "lte"]}],
-        "pagination": {"mode": "link", "completeness": "complete", "max_pages": null, "row_limit": null, "truncation_signal": "none"},
-        "quota_cost": {"read_points": 1, "unit": "request"}, "incremental": {"mode": "date_window", "cursor_field": null},
-        "cadence": {"minimum_interval_minutes": 1440, "supported_modes": ["manual", "daily"]}, "dispatch": {"callable": "pull_standard_daily"}
+        "id": "standard_daily",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "metrics": [
+          "impressions",
+          "clicks",
+          "media_cost_micros"
+        ],
+        "dimensions": [
+          "date",
+          "advertiser_id",
+          "campaign_id",
+          "insertion_order_id",
+          "line_item_id",
+          "creative_id"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "advertiser_id",
+            "campaign_id",
+            "insertion_order_id",
+            "line_item_id",
+            "creative_id"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "link",
+          "completeness": "complete",
+          "max_pages": null,
+          "row_limit": null,
+          "truncation_signal": "none"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "request"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "dispatch": {
+          "callable": "pull_standard_daily"
+        }
       },
       {
-        "id": "conversion_daily", "selection_mode": "exact_bundle", "availability": {"status": "selectable"},
-        "metrics": ["conversions", "conversion_value_micros"], "dimensions": ["date", "advertiser_id", "campaign_id", "conversion_type", "currency", "timezone"],
-        "supported_grains": [["date", "advertiser_id", "campaign_id", "conversion_type", "currency", "timezone"]],
-        "compatibility": [], "filters": [{"field_id": "date", "operators": ["gte", "lte"]}],
-        "pagination": {"mode": "link", "completeness": "complete", "max_pages": null, "row_limit": null, "truncation_signal": "none"},
-        "quota_cost": {"read_points": 1, "unit": "request"}, "incremental": {"mode": "date_window", "cursor_field": null},
-        "cadence": {"minimum_interval_minutes": 1440, "supported_modes": ["manual", "daily"]}, "dispatch": {"callable": "pull_conversion_daily"}
+        "id": "conversion_daily",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "metrics": [
+          "conversions",
+          "conversion_value_micros"
+        ],
+        "dimensions": [
+          "date",
+          "advertiser_id",
+          "campaign_id",
+          "conversion_type",
+          "currency",
+          "timezone"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "advertiser_id",
+            "campaign_id",
+            "conversion_type",
+            "currency",
+            "timezone"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "link",
+          "completeness": "complete",
+          "max_pages": null,
+          "row_limit": null,
+          "truncation_signal": "none"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "request"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "dispatch": {
+          "callable": "pull_conversion_daily"
+        }
       },
       {
-        "id": "reach", "selection_mode": "exact_bundle", "availability": {"status": "selectable"},
-        "metrics": ["unique_reach", "average_frequency"], "dimensions": ["date", "advertiser_id", "campaign_id", "country", "timezone"],
-        "supported_grains": [["date", "advertiser_id", "campaign_id", "country", "timezone"]],
-        "compatibility": [], "filters": [{"field_id": "date", "operators": ["gte", "lte"]}],
-        "pagination": {"mode": "link", "completeness": "complete", "max_pages": null, "row_limit": null, "truncation_signal": "none"},
-        "quota_cost": {"read_points": 1, "unit": "request"}, "incremental": {"mode": "date_window", "cursor_field": null},
-        "cadence": {"minimum_interval_minutes": 1440, "supported_modes": ["manual", "daily"]}, "dispatch": {"callable": "pull_reach"}
+        "id": "reach",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "metrics": [
+          "unique_reach",
+          "average_frequency"
+        ],
+        "dimensions": [
+          "date",
+          "advertiser_id",
+          "campaign_id",
+          "country",
+          "timezone"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "advertiser_id",
+            "campaign_id",
+            "country",
+            "timezone"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "link",
+          "completeness": "complete",
+          "max_pages": null,
+          "row_limit": null,
+          "truncation_signal": "none"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "request"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "dispatch": {
+          "callable": "pull_reach"
+        }
       },
       {
-        "id": "youtube_compatible", "selection_mode": "exact_bundle", "availability": {"status": "selectable"},
-        "metrics": ["impressions", "clicks", "viewability_rate"], "dimensions": ["date", "advertiser_id", "campaign_id", "youtube_ad_group_id", "country"],
-        "supported_grains": [["date", "advertiser_id", "campaign_id", "youtube_ad_group_id", "country"]],
-        "compatibility": [], "filters": [{"field_id": "date", "operators": ["gte", "lte"]}],
-        "pagination": {"mode": "link", "completeness": "complete", "max_pages": null, "row_limit": null, "truncation_signal": "none"},
-        "quota_cost": {"read_points": 1, "unit": "request"}, "incremental": {"mode": "date_window", "cursor_field": null},
-        "cadence": {"minimum_interval_minutes": 1440, "supported_modes": ["manual", "daily"]}, "dispatch": {"callable": "pull_youtube_compatible"}
+        "id": "youtube_compatible",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "metrics": [
+          "impressions",
+          "clicks",
+          "viewability_rate"
+        ],
+        "dimensions": [
+          "date",
+          "advertiser_id",
+          "campaign_id",
+          "youtube_ad_group_id",
+          "country"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "advertiser_id",
+            "campaign_id",
+            "youtube_ad_group_id",
+            "country"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "link",
+          "completeness": "complete",
+          "max_pages": null,
+          "row_limit": null,
+          "truncation_signal": "none"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "request"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "dispatch": {
+          "callable": "pull_youtube_compatible"
+        }
       }
     ]
-  }
+  },
+  "_max_provider_backfill_days_note": "No max_provider_backfill_days is declared: this provider's published reporting window has not been established as of 2026-08-17. The key is left absent rather than filled with an estimate -- an invented re-collection bound promises the operator a history the provider never committed to. Establishing it means reading the provider's own documentation and recording the URL here, as the modules that do declare one have done."
 }

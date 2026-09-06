@@ -5,13 +5,40 @@ selection, typed gaps, provenance shape, re-derivation, AD-2 grep, provider-swap
 seam (the 39.5 live-feed plug point).
 
 Pg-gated (skipped when TEST_POSTGRES_DSN is unset): resolve_reporting_currency
-against a real app.project_preferences row (migration 008 already in the tree).
+against the Project's ACTIVE configuration version.
+
+WHERE THE REPORTING CURRENCY LIVES, and why these three tests were rewritten.
+Story 39.4 read `app.project_preferences.canonical_currency` and fell soft to
+`"EUR"` for anything it could not find (E39-NFR04). Both halves of that are
+gone. `resolve_reporting_currency` now reads
+`app.project_configuration_versions.posture -> defaults -> reporting_currency`
+of the version `app.projects.active_configuration_version_id` points at, and
+returns `None` when no confirmed configuration names one.
+
+The amendment is ratified, in two places that say the same thing:
+
+  * `docs/product-architecture/capabilities/placement-mapping.md` -- the gap
+    table names `reporting_currency_unresolved` ("nothing names the currency the
+    conversion targeted") as a TYPED gap that suppresses the amount, and records
+    under `money_policy_unconfirmed` that *"Story 48.3 removed its `'EUR'`
+    default"*. An unresolved currency is a refusal, not a default.
+  * `docs/product-architecture/capabilities/currency-fx.md` -- "Unsafe
+    mixed-currency aggregation fails closed instead of producing a plausible but
+    false total", with "a cross-currency total succeeds without explicit FX
+    evidence" listed under *Incomplete if*.
+
+A soft `"EUR"` is exactly the plausible-but-false label those two forbid: it
+would state an amount under a currency nobody confirmed.
+`DEFAULT_REPORTING_CURRENCY` survives as the documented platform default a
+person is OFFERED, never as an answer the resolver invents.
 
 Harness header + _pg_reachable gate calqués sur test_dataset_access_grants.py.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import uuid
@@ -76,6 +103,19 @@ def _as_of_provider() -> SeedAsOfRateProvider:
 # ---------------------------------------------------------------------------
 
 
+def _seed_usd_eur_rate() -> float:
+    """The USD->EUR rate the seed actually carries (d734a294 moved it 0.92->0.85).
+
+    Asserting a literal here re-created the drift d7cd5986 repaired in the dbt
+    twin: the property under test is "the helper reads the seed", never "the
+    seed holds 0.92".
+    """
+    rows = parse_fx_seed()
+    return next(
+        r.rate for r in rows if (r.from_currency, r.to_currency) == ("USD", "EUR")
+    )
+
+
 def test_parse_fx_seed_reads_typed_rows():
     """Test 1: parse_fx_seed reads the seed rows, all 7 columns typed."""
     rows = parse_fx_seed()
@@ -86,7 +126,7 @@ def test_parse_fx_seed_reads_typed_rows():
 
     usd = by_pair[("USD", "EUR")]
     assert isinstance(usd, FxSeedRow)
-    assert usd.rate == pytest.approx(0.92)
+    assert usd.rate == pytest.approx(_seed_usd_eur_rate())
     assert isinstance(usd.rate, float)
     assert usd.rate_date == date(2026, 7, 1)
     assert usd.rate_policy == "static_dev_rate"
@@ -102,7 +142,7 @@ def test_fixed_provider_selects_row_in_window():
     """Test 2: FixedRateProvider returns the seed rate when the date is in window."""
     quote = FixedRateProvider().get_rate("USD", "EUR", _D_2026)
     assert quote is not None
-    assert quote.rate == pytest.approx(0.92)
+    assert quote.rate == pytest.approx(_seed_usd_eur_rate())
     assert quote.source == "seed"
     assert quote.tier == "fixed"
 
@@ -133,7 +173,7 @@ def test_convert_fixed_is_deterministic_value():
     result = convert(
         100.0, "USD", reporting_currency="EUR", tier="fixed", on_date=_D_2026
     )
-    assert result.amount == pytest.approx(92.0, abs=1e-9)
+    assert result.amount == pytest.approx(100.0 * _seed_usd_eur_rate(), abs=1e-9)
     assert result.reporting_currency == "EUR"
     assert result.source_amount == 100.0
     assert result.source_currency == "USD"
@@ -301,7 +341,7 @@ def test_as_ad9_provenance_extends_not_replaces():
     assert prov["source_system"] == "x"
     assert prov["source_field"] == "cost"
     assert prov["pull_id"] == "p1"
-    assert prov["fx"]["rate"] == pytest.approx(0.92)
+    assert prov["fx"]["rate"] == pytest.approx(_seed_usd_eur_rate())
     assert prov["fx"]["source"] == "seed"
     # Base dict is not mutated.
     assert "fx" not in base
@@ -395,54 +435,99 @@ def test_rederivation_on_rate_change(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Pg-gated -- resolve_reporting_currency against app.project_preferences
+# Pg-gated -- resolve_reporting_currency against the ACTIVE configuration version
+#
+# The seeding writes the two rows the resolver joins, and nothing else: a
+# Project and the configuration version `active_configuration_version_id` names.
+# `app.project_preferences` is deliberately NOT written -- a legacy non-null
+# preference must not be able to answer for a currency nobody confirmed, and a
+# fixture that wrote one would prove the opposite of what the module docstring
+# quotes.
 # ---------------------------------------------------------------------------
 
 
-def _insert_pref(project_id: str, currency: str) -> None:
+def _seed_confirmed_currency(project_id: str, currency: str) -> None:
+    """A Project whose ACTIVE configuration version confirms *currency*."""
     from core.db import get_connection
 
+    version_id = f"pcv_{uuid.uuid4().hex[:12]}"
+    posture = json.dumps({"defaults": {"reporting_currency": currency}}, sort_keys=True)
+    # Both columns are CHECKed against `^[0-9a-f]{64}$` (migration 131), so the
+    # fixture hashes what it writes rather than passing a placeholder.
+    content_hash = hashlib.sha256(posture.encode("utf-8")).hexdigest()
+    fingerprint = hashlib.sha256(version_id.encode("utf-8")).hexdigest()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO app.project_preferences (project_id, canonical_currency) "
-                "VALUES (%s, %s) ON CONFLICT (project_id) DO UPDATE "
-                "SET canonical_currency = EXCLUDED.canonical_currency",
-                (project_id, currency),
+                """
+                INSERT INTO app.projects (id, name, slug, created_by, org_id)
+                VALUES (%s, %s, %s, 'test', 'org_test_fixture')
+                ON CONFLICT (id) DO NOTHING
+                """,
+                (project_id, project_id, project_id),
+            )
+            cur.execute(
+                """
+                INSERT INTO app.project_configuration_versions
+                    (id, project_id, version_number, posture,
+                     dependency_fingerprint, content_hash, activated_by)
+                VALUES (%s, %s, 1, %s::jsonb, %s, %s, 'test')
+                """,
+                (version_id, project_id, posture, fingerprint, content_hash),
+            )
+            cur.execute(
+                "UPDATE app.projects SET active_configuration_version_id = %s WHERE id = %s",
+                (version_id, project_id),
             )
         conn.commit()
 
 
-def _delete_pref(project_id: str) -> None:
+def _retire_project(project_id: str) -> None:
+    """Unpoint the Project from its version. It cannot be deleted, and that is the design.
+
+    `trg_project_configuration_versions_immutable` (migration 131) refuses UPDATE
+    and DELETE on a configuration version outright -- a confirmed configuration is
+    a record of a decision, not a row -- and `project_configuration_versions
+    .project_id` is `ON DELETE RESTRICT`, so the Project cannot go either. The
+    same shape as `app.nightly_step_runs`: the fixture mints a FRESH id per test
+    rather than pretending it can clean up, and leaves the two rows where the
+    guard insists they stay.
+    """
     from core.db import get_connection
 
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "DELETE FROM app.project_preferences WHERE project_id = %s",
+                "UPDATE app.projects SET active_configuration_version_id = NULL, "
+                "status = 'archived' WHERE id = %s",
                 (project_id,),
             )
         conn.commit()
 
 
 @pg_available
-def test_resolve_reporting_currency_reads_row():
-    """Test 20: resolve_reporting_currency returns the row's canonical_currency."""
-    pid = f"fx_pref_{uuid.uuid4().hex[:8]}"
-    _insert_pref(pid, "USD")
+def test_resolve_reporting_currency_reads_the_confirmed_configuration():
+    """Test 20: the active configuration version's `defaults.reporting_currency`."""
+    pid = f"proj_fx_{uuid.uuid4().hex[:8]}"
+    _seed_confirmed_currency(pid, "USD")
     try:
         assert resolve_reporting_currency(pid) == "USD"
     finally:
-        _delete_pref(pid)
+        _retire_project(pid)
 
 
 @pg_available
-def test_resolve_reporting_currency_fail_soft_default():
-    """Test 21: unknown project -> EUR fail-soft default (E39-NFR04)."""
-    assert (
-        resolve_reporting_currency(f"does-not-exist-{uuid.uuid4().hex[:8]}")
-        == DEFAULT_REPORTING_CURRENCY
-    )
+def test_an_unconfirmed_project_resolves_to_no_currency_at_all():
+    """Test 21: unknown / unconfirmed Project -> None, never a soft `EUR`.
+
+    `reporting_currency_unresolved` is a typed gap that SUPPRESSES the amount
+    (placement-mapping.md). Answering `DEFAULT_REPORTING_CURRENCY` here would
+    label a figure with a currency nobody chose, which is the plausible-but-false
+    total currency-fx.md refuses -- so the constant stays a documented offer and
+    is asserted NOT to be the resolver's answer.
+    """
+    assert resolve_reporting_currency(f"does-not-exist-{uuid.uuid4().hex[:8]}") is None
+    assert DEFAULT_REPORTING_CURRENCY == "EUR"
 
 
 @pg_available
@@ -453,12 +538,12 @@ def test_resolve_then_convert_composes():
     converting EUR -> USD (a project whose reporting currency is USD) honestly
     raises MissingFxPair -- proving fail-closed without editing the shared seed.
     """
-    pid = f"fx_pref_{uuid.uuid4().hex[:8]}"
-    _insert_pref(pid, "USD")
+    pid = f"proj_fx_{uuid.uuid4().hex[:8]}"
+    _seed_confirmed_currency(pid, "USD")
     try:
         reporting = resolve_reporting_currency(pid)
         assert reporting == "USD"
         with pytest.raises(MissingFxPair):
             convert(100.0, "EUR", reporting_currency=reporting, tier="fixed", on_date=_D_2026)
     finally:
-        _delete_pref(pid)
+        _retire_project(pid)

@@ -16,9 +16,8 @@
  */
 
 import { useMemo } from "react";
-import { useTheme, alpha } from "@mui/material/styles";
-import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
+import { NO_VALUE, formatValue } from "./format";
+import { Box, Typography, alpha, useTheme } from "@toorow/shell";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CELL = 15;        // px, cell edge (slightly larger for clarity)
@@ -32,6 +31,9 @@ const MONTHS_FR = [
   "juil.", "août", "sept.", "oct.", "nov.", "déc.",
 ];
 const DOW_FR = ["L", "M", "M", "J", "V", "S", "D"]; // Monday-first
+
+/** The steps the intensity legend shows, as a fraction of the maximum. */
+const LEGEND_STOPS = [0.05, 0.25, 0.5, 0.75, 1];
 
 /** Context event marker (Story 4.4, AC7). */
 export interface ContextEvent {
@@ -210,7 +212,7 @@ export default function CalendarHeatmap({
                     role={c.inRange ? "button" : undefined}
                     aria-label={
                       c.inRange
-                        ? `${c.date} : ${(c.value ?? 0).toLocaleString("fr-FR")}`
+                        ? `${c.date} : ${formatValue(c.value ?? 0)}`
                         : undefined
                     }
                     onKeyDown={
@@ -223,7 +225,7 @@ export default function CalendarHeatmap({
                   >
                     {c.inRange && (
                       <title>
-                        {`${c.date} — ${metricLabel} : ${(c.value ?? 0).toLocaleString("fr-FR")}`}
+                        {`${c.date} — ${metricLabel} : ${formatValue(c.value ?? 0)}`}
                       </title>
                     )}
                   </rect>
@@ -253,6 +255,41 @@ export default function CalendarHeatmap({
             })}
           </g>
         </svg>
+      </Box>
+      {/* INTENSITY LEGEND (story 76-8). A colour ramp with no scale does not
+          read: the reader sees that one cell is "darker" without knowing by how
+          much. The legend names the TWO real bounds — 0 and the maximum observed
+          over the window — and the metric they measure. */}
+      <Box
+        sx={{ display: "flex", alignItems: "center", gap: 0.75, mt: 0.75, flexWrap: "wrap" }}
+        data-testid="heatmap-intensity-legend"
+      >
+        <Typography variant="caption" sx={{ color: labelColor }}>
+          {metricLabel} per day
+        </Typography>
+        <Typography variant="caption" sx={{ color: labelColor }}>
+          0
+        </Typography>
+        <Box sx={{ display: "flex", gap: "2px" }} aria-hidden>
+          {LEGEND_STOPS.map((stop) => (
+            <Box
+              key={stop}
+              sx={{
+                width: CELL,
+                height: CELL,
+                borderRadius: "2.5px",
+                bgcolor: fillFor(maxValue > 0 ? maxValue * stop : null),
+                border: `0.5px solid ${hairlineStroke}`,
+              }}
+            />
+          ))}
+        </Box>
+        <Typography variant="caption" sx={{ color: labelColor }}>
+          {maxValue > 0 ? formatValue(maxValue) : NO_VALUE}
+        </Typography>
+        <Typography variant="caption" sx={{ color: theme.palette.warning.main }}>
+          ○ day carrying a context event
+        </Typography>
       </Box>
     </Box>
   );

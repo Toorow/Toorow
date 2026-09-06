@@ -46,6 +46,19 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
+from core.audit import declare_action
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12) : declarees ICI, a cote du code qui les ecrit, et non
+# dans `core/audit.py`. Ce fichier etait un carrefour -- 43 editions de 29
+# sujets depuis juin, dont 34 n'ajoutaient qu'une constante -- et 45 % des
+# actions reellement ecrites en production n'y etaient meme pas declarees,
+# parce que la liste etait trop loin pour valoir le detour. `write_audit_row`
+# refuse desormais une action que personne n'a declaree.
+ACTION_CONNECTOR_ACTIVATION_DENIED = declare_action("connector.activation.denied")
+
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -67,8 +80,11 @@ async def _check_auth(request: Request) -> tuple[bool, str]:
 
 
 def _idempotency_key(request: Request) -> str | None:
-    """Extract and return the Idempotency-Key header value, or None."""
-    return request.headers.get("Idempotency-Key") or None
+    """Extract and normalize the Idempotency-Key header."""
+    value = request.headers.get("Idempotency-Key")
+    if value is None:
+        return None
+    return value.strip() or None
 
 
 def _trace_id(request: Request) -> str | None:
@@ -124,14 +140,14 @@ async def _post_connector_activation(request: Request) -> Response:
     """POST /api/connectors/{connector_name}/activation
 
     Org-owner only. Idempotency-Key required. Activates a READY connector for
-    an organisation. Body: {org_id (required), activated_by?}.
+    an organisation. Body: {org_id (required)}. Activation provenance always
+    comes from the authenticated identity, never from request data.
 
     Not-READY -> 422 (nondisclosing; installation state not disclosed).
     Non-owner -> 404. Missing Idempotency-Key -> 422.
     Conflicting payload on same key -> 409.
     """
     from core.audit import (  # noqa: PLC0415
-        ACTION_CONNECTOR_ACTIVATION_DENIED,
         write_audit_row,
     )
 
@@ -162,9 +178,14 @@ async def _post_connector_activation(request: Request) -> Response:
     try:
         body_bytes = await request.body()
         body: dict = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
+    except Exception:
         return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
+            {"code": "invalid_body", "message": "Request body must be valid JSON"},
+            status_code=400,
+        )
+    if not isinstance(body, dict):
+        return JSONResponse(
+            {"code": "invalid_body", "message": "Request body must be a JSON object"},
             status_code=400,
         )
 
@@ -174,7 +195,7 @@ async def _post_connector_activation(request: Request) -> Response:
             {"code": "missing_param", "message": "org_id is required in body"},
             status_code=400,
         )
-    activated_by = (body.get("activated_by") or identity or "").strip()
+    activated_by = identity
     environment = _get_environment()
     trace = _trace_id(request)
 
@@ -206,7 +227,11 @@ async def _post_connector_activation(request: Request) -> Response:
         return JSONResponse(_NOT_FOUND, status_code=404)
 
     try:
-        from core.connector_activation import activate  # noqa: PLC0415
+        from core.connector_activation import (  # noqa: PLC0415
+            ConnectorActivationConflict,
+            ConnectorActivationValidationError,
+            activate,
+        )
         from core.connector_installation_api import ConnectorNotReady  # noqa: PLC0415
         from core.db import get_connection  # noqa: PLC0415
         from core.operations import OperationIdempotencyConflict  # noqa: PLC0415
@@ -225,7 +250,17 @@ async def _post_connector_activation(request: Request) -> Response:
             )
             conn.commit()
     except ConnectorNotReady:
-        # Nondisclosing: do not reveal the installation state or why it is not ready.
+        write_audit_row(
+            identity=identity or "anonymous",
+            action=ACTION_CONNECTOR_ACTIVATION_DENIED,
+            provider_account="",
+            connection_ref="",
+            metadata={
+                "connector_name": connector_name,
+                "org_id": org_id,
+                "reason": "connector_unavailable",
+            },
+        )
         return JSONResponse(
             {
                 "code": "connector_unavailable",
@@ -242,6 +277,16 @@ async def _post_connector_activation(request: Request) -> Response:
                 ),
             },
             status_code=409,
+        )
+    except ConnectorActivationConflict:
+        return JSONResponse(
+            {"code": "conflict", "message": "Activation state changed concurrently"},
+            status_code=409,
+        )
+    except ConnectorActivationValidationError:
+        return JSONResponse(
+            {"code": "validation_error", "message": "Activation request is invalid"},
+            status_code=422,
         )
     except Exception as exc:
         logger.error(
@@ -274,7 +319,6 @@ async def _post_connector_deactivation(request: Request) -> Response:
     Body: {org_id (required)}.
     """
     from core.audit import (  # noqa: PLC0415
-        ACTION_CONNECTOR_ACTIVATION_DENIED,
         write_audit_row,
     )
 
@@ -305,9 +349,14 @@ async def _post_connector_deactivation(request: Request) -> Response:
     try:
         body_bytes = await request.body()
         body: dict = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
+    except Exception:
         return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
+            {"code": "invalid_body", "message": "Request body must be valid JSON"},
+            status_code=400,
+        )
+    if not isinstance(body, dict):
+        return JSONResponse(
+            {"code": "invalid_body", "message": "Request body must be a JSON object"},
             status_code=400,
         )
 
@@ -349,7 +398,9 @@ async def _post_connector_deactivation(request: Request) -> Response:
 
     try:
         from core.connector_activation import (  # noqa: PLC0415
+            ConnectorActivationConflict,
             ConnectorActivationUnavailable,
+            ConnectorActivationValidationError,
             deactivate,
         )
         from core.db import get_connection  # noqa: PLC0415
@@ -378,6 +429,16 @@ async def _post_connector_deactivation(request: Request) -> Response:
                 ),
             },
             status_code=409,
+        )
+    except ConnectorActivationConflict:
+        return JSONResponse(
+            {"code": "conflict", "message": "Activation state changed concurrently"},
+            status_code=409,
+        )
+    except ConnectorActivationValidationError:
+        return JSONResponse(
+            {"code": "validation_error", "message": "Deactivation request is invalid"},
+            status_code=422,
         )
     except Exception as exc:
         logger.error(

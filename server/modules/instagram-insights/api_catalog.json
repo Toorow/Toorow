@@ -1,0 +1,136 @@
+{
+  "api_version": "instagram-graph-v24.0",
+  "catalog_version": "1",
+  "connector": "instagram-insights",
+  "exposure_policy": "catalog_driven",
+  "fields": [
+    {
+      "description": "Selected Instagram professional account id.",
+      "exposure": "exposed",
+      "field_id": "account_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "ig_user_id",
+      "tier": "core"
+    },
+    {
+      "description": "Profile views during the provider day.",
+      "exposure": "exposed",
+      "field_id": "account_profile_views",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "METRIC",
+      "source_field": "profile_views",
+      "tier": "core"
+    },
+    {
+      "description": "Unique accounts reached during the provider day.",
+      "exposure": "exposed",
+      "field_id": "account_reach",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "NON_ADDITIVE",
+      "source_field": "reach",
+      "tier": "standard"
+    },
+    {
+      "description": "Media caption when exposed.",
+      "exposure": "exposed",
+      "field_id": "caption",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "caption",
+      "tier": "core"
+    },
+    {
+      "description": "Provider reporting date derived from the insight end timestamp.",
+      "exposure": "exposed",
+      "field_id": "date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "DIMENSION",
+      "source_field": "values.end_time",
+      "tier": "core"
+    },
+    {
+      "description": "Current lifetime media comments at pull time.",
+      "exposure": "exposed",
+      "field_id": "media_comments",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "NON_ADDITIVE",
+      "source_field": "comments",
+      "tier": "standard"
+    },
+    {
+      "description": "Owned Instagram media id.",
+      "exposure": "exposed",
+      "field_id": "media_id",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "id",
+      "tier": "core"
+    },
+    {
+      "description": "Instagram product surface such as FEED or REELS.",
+      "exposure": "exposed",
+      "field_id": "media_product_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "media_product_type",
+      "tier": "core"
+    },
+    {
+      "description": "Current lifetime media shares at pull time.",
+      "exposure": "exposed",
+      "field_id": "media_shares",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "NON_ADDITIVE",
+      "source_field": "shares",
+      "tier": "standard"
+    },
+    {
+      "description": "Provider media type.",
+      "exposure": "exposed",
+      "field_id": "media_type",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "media_type",
+      "tier": "core"
+    },
+    {
+      "description": "Public media permalink when exposed.",
+      "exposure": "exposed",
+      "field_id": "permalink",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DIMENSION",
+      "source_field": "permalink",
+      "tier": "core"
+    },
+    {
+      "description": "UTC media publication timestamp.",
+      "exposure": "exposed",
+      "field_id": "published_at",
+      "kind": "dimension",
+      "physical_type": "datetime",
+      "section": "DIMENSION",
+      "source_field": "timestamp",
+      "tier": "core"
+    }
+  ],
+  "generated_at": "2026-08-01T00:00:00Z",
+  "sources": [
+    {
+      "fetched_at": "2026-08-01",
+      "kind": "official",
+      "url": "https://www.postman.com/meta/instagram/folder/23987686-f659d7d1-d74c-44e4-9192-9b1e8694c511"
+    }
+  ]
+}

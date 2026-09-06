@@ -53,9 +53,18 @@ def test_graphql_http_200_errors_are_typed_and_quota_is_parsed(connector):
         payload,
         headers={"API-Version": "2026-07", "RateLimit": "limit=5000, remaining=0, reset=12"},
     )
-    with pytest.raises(connector.MondayGraphQLError) as exc:
+    # Une limite de debit doit lever le TYPE que `queue.py` attrape pour remettre
+    # le job en file et alimenter le disjoncteur. Ce test attendait auparavant un
+    # `MondayGraphQLError` portant la chaine "rate_limited" dans un attribut :
+    # c'etait epingler le defaut, puisque le worker route sur le type et voyait
+    # une exception generique. monday est le cas ou ca compte le plus -- il repond
+    # HTTP 200 et met la limite dans le corps, donc AUCUNE de ses cinq limites de
+    # debit n'atteignait le disjoncteur.
+    from core.quota import RateLimitError
+
+    with pytest.raises(RateLimitError) as exc:
         connector.graphql_request(Client([response]), "token", "query { boards { id } }")
-    assert exc.value.code == "rate_limited"
+    assert exc.value.platform == "monday"
     assert exc.value.retry_after == 12
 
 

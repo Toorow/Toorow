@@ -1,317 +1,842 @@
 /**
- * RegressionRuns — the eval-run history surface for the Test workspace.
+ * Regression Runs — the Level 2 collection of the Test workspace's two
+ * reproducible-evidence objects (Stories 51.2 and 51.4).
  *
- * Grounds the eval loop (epic 14): the offline runner (scripts/run_evals.py)
- * replays the golden-question set and scores SQL precision + citation recall.
- * Each run produces a score (e.g. 48/50) and surfaces REGRESSIONS — questions
- * that passed before and now fail. The Overview metric strip already teases the
- * latest run ("Latest test run 48 / 50, 2 regressions to review"); this screen
- * is the full run history behind it.
+ * This screen replaces an Epic 14 vestige that read `/api/eval/runs` and showed
+ * `Latest score`, `Pass rate` and `Regressions to review` over an
+ * undifferentiated list. Each of those three is the on-screen form of the merge
+ * `analyze-and-test.md:210` forbids: `app.eval_runs` carries one compensating
+ * `precision_pct`, and a pass rate over a mixed list of offline runs and
+ * observed traces is a single trust score built from three evidence modes.
  *
- * The application shell (ApplicationShell.tsx) already renders the frame,
- * sidebar, topbar, and <main className="main">. This component renders ONLY the
- * page content that lives inside <main>: the page header, a summary strip, and
- * the runs table.
+ * What replaces it is the separation itself. **Offline** and **Observed Cohort**
+ * are two sections, loaded by two independent requests, rendered from two
+ * independent states. Nothing is computed across them — there is no variable in
+ * this file that both sections contribute to, which is what makes "never merged"
+ * a property of the code rather than a promise in a comment.
  *
- * Data: the eval-run history is fetched from GET /api/eval/runs?project_id=<id>
- * (most-recent-first). The RUNS literal below stays as a designed, honest
- * fallback: it renders while the fetch is in flight and offline, and a
- * successful fetch replaces it with the real run set (honestly empty until the
- * offline runner has produced a run). The summary strip derives from whatever
- * list is currently rendered so the strip and table never disagree.
+ * An Observed Cohort has no object type in `shell/navigation.ts` (the section
+ * declares `evaluation-run` and `trace-observation`, and only those). It is
+ * therefore not addressable, and this screen does NOT invent an address for it:
+ * a cohort is expanded in place and its members deep-link to the Trace
+ * Observation workbench, which is a declared object route.
  *
- * Styling: application.css (global, via the shell) for shell/layout classes
- * (page-header, panel, metric-strip, section-header, signal-label, signal-mark
- * success|warning, secondary-button, table classes) + regression-runs.css for
- * the page-specific score-cell layout. Colors come exclusively from the
- * application.css CSS variables (dark-safe); numbers use Geist tabular via those
- * classes and the Geist-family cells here.
+ * Composed only from `ui/admin/src/ui/index.ts` — no stylesheet, no hex colour,
+ * no literal spacing, no per-screen class prefix, no page width clamp.
  */
-import { useEffect, useState } from "react";
-import "../application.css";
-import "./regression-runs.css";
-import { apiFetch } from "../../lib/apiFetch";
+import { useCallback, useEffect, useState } from "react";
+
+import { ApiError } from "../../lib/apiFetch";
+import { stateLabel,
+  ObjectId,
+  Badge,
+  Button,
+  Cluster,
+  EmptyState,
+  Failure,
+  Retry,
+  Metric,
+  PageHeader,
+  StatusLegend,
+  Panel,
+  PanelHeader,
+  SectionHeader,
+  Stack,
+  Status,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  TableScroll,
+  formatPercent,
+} from "../../ui";
+import {
+  fetchActiveBaseline,
+  fetchContextAdherence,
+  listEvaluationRuns,
+  listRunProfiles,
+  type AdherenceBasis,
+  type AdherenceOverview,
+  type Baseline,
+  type EvaluationRunSummary,
+  type RunProfile,
+} from "../../test/evaluationRunClient";
+import {
+  fetchObservedCohort,
+  listObservedCohorts,
+  type CohortDetail,
+  type CohortSummary,
+} from "../../test/observedEvidenceClient";
+import { verdictLabel, verdictTone, evidenceModeLabel } from "../../test/testEvidence";
+
+/** What a read did NOT return. Renamed from `Failure` in 76-4: the console's
+ *  error BLOCK is now `Failure` from `ui/`, and one file cannot hold both. */
+type ReadFailure = { kind: "not-found" } | { kind: "error"; message: string };
+
+type OfflineState =
+  | { status: "loading" }
+  | { status: "ready"; runs: EvaluationRunSummary[]; profiles: RunProfile[]; baselines: Record<string, Baseline | null> }
+  | ({ status: "failed" } & ReadFailure);
+
+type ObservedState =
+  | { status: "loading" }
+  | { status: "ready"; cohorts: CohortSummary[] }
+  | ({ status: "failed" } & ReadFailure);
+
+type AdherenceState =
+  | { status: "loading" }
+  | { status: "ready"; overview: AdherenceOverview }
+  | ({ status: "failed" } & ReadFailure);
+
+function asFailure(error: unknown): ReadFailure {
+  // Foreign, denied and absent answer identically by design; the screen repeats
+  // that ambiguity rather than guessing which one it was.
+  if (error instanceof ApiError && (error.status === 404 || error.unauthenticated)) {
+    return { kind: "not-found" };
+  }
+  return { kind: "error", message: error instanceof Error ? error.message : String(error) };
+}
+
+function FailureNote({ what, failure, retry }: { what: string; failure: ReadFailure; retry: () => void }) {
+  if (failure.kind === "not-found") {
+    return (
+      <Status as="block" tone="warning" title={`${what} was not opened`}>
+        This Project has no such evidence available to you, or the Project does not exist. The two
+        answer identically on purpose, and nothing has been shown in its place.
+      </Status>
+    );
+  }
+  // ONE ERROR SURFACE FOR THE CONSOLE (76-4). This branch was `Failure`'s shape
+  // with the two halves `Failure` did not have -- a titled subject and a way to
+  // ask again -- discovered here first. Both are in `ui/AsyncStates.tsx` now, so
+  // the private copy is deleted rather than kept in step by hand.
+  return (
+    <Failure
+      what={what}
+      message={`${failure.message}. No run, cohort or figure has been fabricated to fill the section.`}
+      action={<Retry onClick={retry} />}
+    />
+  );
+}
 
 // ---------------------------------------------------------------------------
-// View model. One row per eval run against the golden-question set, most recent
-// first. `regressions` is the count of questions that passed on a prior run and
-// now fail; `status` is "passed" when there are none, "regressed" otherwise.
+// Offline — reproducible runs, their profiles and their explicitly approved
+// baselines.
 // ---------------------------------------------------------------------------
 
-type RunStatus = "passed" | "regressed";
+function OfflineSection({
+  state,
+  retry,
+  onOpenEvaluationRun,
+}: {
+  state: OfflineState;
+  retry: () => void;
+  onOpenEvaluationRun?: (runId: string) => void;
+}) {
+  return (
+    <Stack>
+      <SectionHeader
+        title="Offline"
+        description="A fixed question-set version, a pinned data snapshot and an as-of date: reproducible, and the only evidence mode eligible to block."
+      />
 
-interface EvalRun {
-  /** Human-readable run timestamp (date + time). */
-  when: string;
-  /** Questions answered correctly out of the golden-set total. */
-  scored: number;
-  /** Golden-set size (denominator of the score). */
-  total: number;
-  /** SQL precision as a percentage, 0–100. */
-  precision: number;
-  /** Count of questions that regressed since the previous passing run. */
-  regressions: number;
-  status: RunStatus;
+      {state.status === "loading" && (
+        <p role="status" className="text-body text-text-secondary">
+          Reading the offline Evaluation Runs…
+        </p>
+      )}
+      {state.status === "failed" && (
+        <FailureNote what="The offline evidence" failure={state} retry={retry} />
+      )}
+
+      {state.status === "ready" && (
+        <>
+          <Panel flush>
+            <PanelHeader
+              title="Run profiles and approved baselines"
+              description="A baseline is an explicit approval of one finalized run. It is never moved by finalizing a newer one."
+            />
+            {state.profiles.length === 0 ? (
+              <EmptyState
+                title="No run profile"
+                description="A run belongs to a named profile, and a baseline is approved for one profile. Neither exists in this Project yet."
+              />
+            ) : (
+              <TableScroll label="Run profiles">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Profile</TableHead>
+                      <TableHead>Evidence mode</TableHead>
+                      <TableHead>Approved baseline</TableHead>
+                      <TableHead>Approved by</TableHead>
+                      <TableHead>Reason</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {state.profiles.map((profile) => {
+                      const baseline = state.baselines[profile.id] ?? null;
+                      return (
+                        <TableRow key={profile.id}>
+                          <TableCell className="font-semibold text-text">
+                            {profile.name}
+                            <span className="block text-caption text-text-secondary"><ObjectId value={profile.id} title="Run profile" /></span>
+                          </TableCell>
+                          <TableCell>
+                            <Badge tone="neutral">{evidenceModeLabel(profile.evidence_mode)}</Badge>
+                          </TableCell>
+                          <TableCell className="text-technical break-all">
+                            {baseline ? (
+                              baseline.run_id
+                            ) : (
+                              <Status tone="neutral" data-testid={`baseline-${profile.id}`}>
+                                None approved
+                              </Status>
+                            )}
+                          </TableCell>
+                          <TableCell>{baseline?.approved_by ?? "—"}</TableCell>
+                          <TableCell>{baseline?.approval_reason ?? "No approval has been recorded"}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </TableScroll>
+            )}
+          </Panel>
+
+          <Panel flush>
+            <PanelHeader
+              title="Offline Evaluation Runs"
+              description="Every run states its own case count and its own unresolved pins. No column ranks one run against another."
+            />
+            {state.runs.length === 0 ? (
+              <EmptyState
+                title="No offline Evaluation Run"
+                description="Nothing has been read from the repository evaluation corpus in its place: that record is test code, and a run built from it would not pin the environment it claims to describe."
+              />
+            ) : (
+              <TableScroll label="Offline Evaluation Runs">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Run</TableHead>
+                      <TableHead>Profile</TableHead>
+                      <TableHead>Lifecycle</TableHead>
+                      <TableHead>As of</TableHead>
+                      <TableHead>Cases</TableHead>
+                      <TableHead>Unresolved pins</TableHead>
+                      <TableHead>Question set</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {state.runs.map((run) => (
+                      <TableRow key={run.id}>
+                        <TableCell className="font-semibold text-text">
+                          {onOpenEvaluationRun ? (
+                            <Button variant="link" size="sm" onClick={() => onOpenEvaluationRun(run.id)}>
+                              <ObjectId value={run.id} title="Run" />
+                            </Button>
+                          ) : (
+                            <ObjectId value={run.id} title="Run" />
+                          )}
+                        </TableCell>
+                        <TableCell>{run.run_profile}</TableCell>
+                        <TableCell>
+                          <Badge tone="neutral">{run.lifecycle}</Badge>
+                        </TableCell>
+                        <TableCell>{run.as_of ?? "Unavailable"}</TableCell>
+                        <TableCell>{run.case_count}</TableCell>
+                        <TableCell>
+                          {run.unresolved_pin_count > 0 ? (
+                            <Status tone="neutral">{run.unresolved_pin_count} declared</Status>
+                          ) : (
+                            "None"
+                          )}
+                        </TableCell>
+                        <TableCell className="text-technical break-all">
+                          {run.question_set_fingerprint ?? "Not fingerprinted until finalized"}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableScroll>
+            )}
+          </Panel>
+        </>
+      )}
+    </Stack>
+  );
 }
 
-// Mockup literals — the designed eval-run history. Rendered verbatim so the page
-// is finished with no backend. Most recent first; the top row is the "48 / 50,
-// 2 regressions" run Overview surfaces.
-// TODO(api): replace with the offline runner's persisted run history
-// (scripts/run_evals.py output; score, precision, citation recall, regressions).
-const RUNS: EvalRun[] = [
-  {
-    when: "24 Jul 2026 · 09:12",
-    scored: 48,
-    total: 50,
-    precision: 96,
-    regressions: 2,
-    status: "regressed",
-  },
-  {
-    when: "23 Jul 2026 · 18:40",
-    scored: 50,
-    total: 50,
-    precision: 100,
-    regressions: 0,
-    status: "passed",
-  },
-  {
-    when: "23 Jul 2026 · 08:55",
-    scored: 49,
-    total: 50,
-    precision: 98,
-    regressions: 0,
-    status: "passed",
-  },
-  {
-    when: "22 Jul 2026 · 17:03",
-    scored: 46,
-    total: 50,
-    precision: 92,
-    regressions: 3,
-    status: "regressed",
-  },
-  {
-    when: "22 Jul 2026 · 09:20",
-    scored: 49,
-    total: 50,
-    precision: 98,
-    regressions: 0,
-    status: "passed",
-  },
-  {
-    when: "21 Jul 2026 · 16:48",
-    scored: 50,
-    total: 50,
-    precision: 100,
-    regressions: 0,
-    status: "passed",
-  },
-];
+// ---------------------------------------------------------------------------
+// Observed Cohort — a reference window. Never a baseline, never blocking.
+// ---------------------------------------------------------------------------
 
-/** Round a ratio to a whole-percent string, e.g. 0.96 -> "96%". */
-function pct(numerator: number, denominator: number): string {
-  if (denominator === 0) return "—";
-  return `${Math.round((numerator / denominator) * 100)}%`;
-}
-
-// The shape one run takes over the wire (GET /api/eval/runs). run_at is ISO 8601,
-// precision_pct is a number (e.g. 96.0), status is "passed" | "regressed".
-interface ApiRun {
-  id: string;
-  run_at: string;
-  score_passed: number;
-  score_total: number;
-  precision_pct: number;
-  regressions: number;
-  status: string;
-}
-
-/** Format an ISO 8601 timestamp to a short "24 Jul 2026 · 09:12". Falls back to
- *  the raw string if it does not parse, so a bad value never blanks the cell. */
-function formatWhen(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const day = String(d.getDate()).padStart(2, "0");
-  const month = d.toLocaleString("en-US", { month: "short" });
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${day} ${month} ${d.getFullYear()} · ${hh}:${mm}`;
-}
-
-/** Map a wire run to the view model the table renders. */
-function toRun(r: ApiRun): EvalRun {
-  return {
-    when: formatWhen(r.run_at),
-    scored: r.score_passed,
-    total: r.score_total,
-    precision: Math.round(r.precision_pct),
-    regressions: r.regressions,
-    status: r.status === "passed" ? "passed" : "regressed",
+function CohortMembers({
+  detail,
+  onOpenTraceObservation,
+}: {
+  detail: CohortDetail;
+  onOpenTraceObservation?: (aiPathId: string) => void;
+}) {
+  if (detail.members.length === 0) {
+    return (
+      <EmptyState
+        title="This cohort resolved to no member"
+        description="The frozen selection is empty. It is kept as it was resolved rather than re-run, because a cohort that refreshed itself would change the denominator of every figure already read from it."
+      />
+    );
+  }
+  // THE KEY SITS WITH THE MARKS IT EXPLAINS, and lists only the verdicts these
+  // members carry. It was on the page header, three entries fixed, on a screen
+  // whose verdict marks live two components down — so a cohort where everything
+  // passed still explained what a failure looks like. `unverifiable` is neutral
+  // rather than amber or red because NOTHING WAS JUDGED, and the open dotted
+  // ring is the one shape a reader cannot mistake for a result
+  // (`analyze-and-test.md:282-284`); when a cohort carries one, the key says so.
+  const verdictMeaning: Record<string, { label: string; meaning: string }> = {
+    success: { label: "Pass", meaning: "the case was judged and met its expectation" },
+    error: { label: "Fail", meaning: "the case was judged and did not meet it" },
+    neutral: { label: "Unverifiable", meaning: "nothing was judged — no score is implied in either direction" },
   };
-}
-
-interface RegressionRunsProps {
-  projectId?: string;
-}
-
-export default function RegressionRuns({ projectId = "default" }: RegressionRunsProps) {
-  // RUNS render finished while the fetch is in flight and offline; a successful
-  // fetch replaces them with the real, most-recent-first history (which is
-  // honestly empty until the offline runner has produced a run).
-  const [runs, setRuns] = useState<EvalRun[]>(RUNS);
-  const [loaded, setLoaded] = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const res = await apiFetch(
-          `/api/eval/runs?project_id=${encodeURIComponent(projectId)}`,
-        );
-        if (!res.ok) return; // keep the mock fallback
-        const body = (await res.json()) as { runs?: ApiRun[] };
-        if (alive) {
-          setRuns((body.runs ?? []).map(toRun));
-          setLoaded(true);
-        }
-      } catch {
-        /* offline — keep the designed mock so the surface stays finished. */
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [projectId]);
-
-  // Summary derives from the rendered rows so the strip and table never disagree.
-  const latest = runs.length > 0 ? runs[0] : undefined;
-  const cleanRuns = runs.filter((r) => r.regressions === 0).length;
-  const passRate = pct(cleanRuns, runs.length);
-  const openRegressions = latest ? latest.regressions : 0;
-  const empty = loaded && runs.length === 0;
+  const verdicts = new Set(detail.members.map((member) => verdictTone(member.assessment.verdict)));
+  const legend = [...verdicts]
+    .filter((tone) => tone in verdictMeaning)
+    .map((tone) => ({ tone, ...verdictMeaning[tone] }));
 
   return (
-    <>
-      <div className="page-header">
-        <div>
-          <h1>Regression runs</h1>
-          <p>
-            History of eval runs against the golden questions. Watch for regressions before
-            shipping changes.
-          </p>
-        </div>
-        {/* TODO(api): trigger a fresh eval run (scripts/run_evals.py). */}
-        <button className="secondary-button" type="button">
-          Run evals
-        </button>
-      </div>
+    <Stack>
+    <StatusLegend label="What a verdict mark means" entries={legend} />
+    <TableScroll label={`Observations in cohort ${detail.id}`}>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Observation</TableHead>
+            <TableHead>Observed at</TableHead>
+            <TableHead>Path evidence</TableHead>
+            <TableHead>Path verdict</TableHead>
+            <TableHead>Result</TableHead>
+            <TableHead>Render</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {detail.members.map((member) => (
+            <TableRow key={member.id}>
+              <TableCell className="font-semibold text-text">
+                {onOpenTraceObservation ? (
+                  <Button
+                    variant="link"
+                    size="sm"
+                    onClick={() => onOpenTraceObservation(member.ai_path_id)}
+                  >
+                    <ObjectId value={member.ai_path_id} title="AI Path" />
+                  </Button>
+                ) : (
+                  <ObjectId value={member.ai_path_id} title="AI Path" />
+                )}
+              </TableCell>
+              <TableCell>{member.observed_at ?? "Unavailable"}</TableCell>
+              <TableCell>{stateLabel(member.path_evidence_state)}</TableCell>
+              <TableCell>
+                <Status tone={verdictTone(member.assessment.verdict)}>
+                  {verdictLabel(member.assessment.verdict)}
+                </Status>
+              </TableCell>
+              <TableCell className="text-technical break-all">
+                {member.query_result_id ?? "No Result pinned"}
+              </TableCell>
+              <TableCell>
+                {/* The rendered artifact has no owner. Its pin is held NULL by the
+                    schema, so the only reachable state is Unverifiable. */}
+                <Status tone="neutral" data-testid={`render-${member.id}`}>
+                  {verdictLabel(member.render.state)}
+                </Status>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableScroll>
+    </Stack>
+  );
+}
 
-      <section className="metric-strip">
-        <div className="metric">
-          <span>Latest score</span>
-          <strong>
-            {latest ? `${latest.scored} / ${latest.total}` : "—"}
-          </strong>
-          <small>{latest ? latest.when : "No runs yet"}</small>
-        </div>
-        <div className="metric">
-          <span>Pass rate</span>
-          <strong>{passRate}</strong>
-          <small>
-            {cleanRuns}/{runs.length} recent runs clean
-          </small>
-        </div>
-        <div className="metric">
-          <span>Regressions to review</span>
-          <strong>{openRegressions}</strong>
-          <small>
-            {openRegressions > 0 ? (
-              <>
-                <span className="signal warning" aria-hidden="true" />
-                Passed before, failing now
-              </>
-            ) : (
-              <>
-                <span className="signal" aria-hidden="true" />
-                Nothing to review
-              </>
-            )}
-          </small>
-        </div>
-      </section>
+function ObservedSection({
+  projectId,
+  state,
+  retry,
+  onOpenTraceObservation,
+}: {
+  projectId: string;
+  state: ObservedState;
+  retry: () => void;
+  onOpenTraceObservation?: (aiPathId: string) => void;
+}) {
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<CohortDetail | null>(null);
+  const [detailFailure, setDetailFailure] = useState<ReadFailure | null>(null);
 
-      <section className="panel runs-panel">
-        <div className="section-header">
-          <div>
-            <h2>Run history</h2>
-            <p>
-              Each run replays the golden-question set and scores SQL precision and citation
-              recall. Most recent first.
+  useEffect(() => {
+    if (!openId) {
+      setDetail(null);
+      setDetailFailure(null);
+      return;
+    }
+    const controller = new AbortController();
+    let live = true;
+    setDetail(null);
+    setDetailFailure(null);
+    fetchObservedCohort(projectId, openId, { signal: controller.signal })
+      .then((value) => {
+        if (live) setDetail(value);
+      })
+      .catch((error: unknown) => {
+        if (!live || controller.signal.aborted) return;
+        setDetailFailure(asFailure(error));
+      });
+    return () => {
+      live = false;
+      controller.abort();
+    };
+  }, [projectId, openId]);
+
+  return (
+    <Stack>
+      <SectionHeader
+        title="Observed Cohort"
+        description="Authorized real traces, frozen by an explicit window, scope and version selection. It detects drift and proposes Golden Questions; it can never block."
+      />
+
+      <Status as="block" tone="neutral" title="A reference window, not a baseline">
+        An Observed Cohort preserves the environment that was actually observed, so it cannot be
+        approved as a baseline and cannot be compared as if it were reproducible. Nothing in this
+        section is counted together with the Offline section above.
+      </Status>
+
+      {state.status === "loading" && (
+        <p role="status" className="text-body text-text-secondary">
+          Reading the Observed Cohorts…
+        </p>
+      )}
+      {state.status === "failed" && (
+        <FailureNote what="The observed evidence" failure={state} retry={retry} />
+      )}
+
+      {state.status === "ready" && (
+        <Panel flush>
+          <PanelHeader
+            title="Observed Cohorts"
+            description="Each cohort carries its own member count. That count is the denominator of every figure read from it, and it is never added to another cohort's."
+          />
+          {state.cohorts.length === 0 ? (
+            <EmptyState
+              title="No Observed Cohort"
+              description="No authorized real trace has been frozen into a cohort in this Project. An empty section is the honest state; a sample cohort would be evidence about nothing."
+            />
+          ) : (
+            <TableScroll label="Observed Cohorts">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Cohort</TableHead>
+                    <TableHead>Window</TableHead>
+                    <TableHead>Members</TableHead>
+                    <TableHead>Blocking</TableHead>
+                    <TableHead>Filter fingerprint</TableHead>
+                    <TableHead>Observations</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {state.cohorts.map((cohort) => (
+                    <TableRow key={cohort.id}>
+                      <TableCell className="font-semibold text-text">
+                        {cohort.label ?? cohort.id}
+                        <span className="block text-caption text-text-secondary"><ObjectId value={cohort.id} title="Cohort" /></span>
+                      </TableCell>
+                      <TableCell>
+                        {cohort.window_start ?? "Unavailable"} → {cohort.window_end ?? "Unavailable"}
+                      </TableCell>
+                      <TableCell>{cohort.member_count}</TableCell>
+                      <TableCell>
+                        <Status tone="neutral" data-testid={`blocking-${cohort.id}`}>
+                          {cohort.blocking ? "Blocking" : "Non-blocking"}
+                        </Status>
+                      </TableCell>
+                      <TableCell className="text-technical break-all">
+                        {cohort.filter_hash ?? "Unavailable"}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setOpenId(openId === cohort.id ? null : cohort.id)}
+                        >
+                          {openId === cohort.id ? "Hide observations" : "Show observations"}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableScroll>
+          )}
+
+          {openId && detailFailure && (
+            <div className="p-5">
+              <FailureNote
+                what="This cohort"
+                failure={detailFailure}
+                retry={() => setOpenId(openId)}
+              />
+            </div>
+          )}
+          {openId && !detailFailure && !detail && (
+            <p role="status" className="p-5 text-body text-text-secondary">
+              Reading the frozen membership…
             </p>
-          </div>
-        </div>
-        <div className="table-scroll" tabIndex={0} aria-label="Eval run history">
-          <table className="table runs-table">
-            <thead>
-              <tr>
-                <th>Run</th>
-                <th>Score</th>
-                <th>Precision</th>
-                <th>Regressions</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {empty ? (
-                <tr>
-                  <td colSpan={5} className="runs-empty">
-                    No eval runs yet. Run the golden-question set to record the
-                    first run and start tracking regressions.
-                  </td>
-                </tr>
-              ) : null}
-              {runs.map((run, i) => (
-                <tr key={`${run.when}-${i}`}>
-                  <td>{run.when}</td>
-                  <td>
-                    <span className="score-cell number">
-                      {run.scored} / {run.total}
-                    </span>
-                  </td>
-                  <td>
-                    <span className="number">{run.precision}%</span>
-                  </td>
-                  <td>
-                    {run.regressions > 0 ? (
-                      <span className="signal-label warning">
-                        <span className="signal-mark" />
-                        <span className="number">{run.regressions}</span>
-                      </span>
-                    ) : (
-                      <span className="muted number">0</span>
-                    )}
-                  </td>
-                  <td>
-                    {run.status === "passed" ? (
-                      <span className="signal-label success">
-                        <span className="signal-mark" />
-                        Passed
-                      </span>
-                    ) : (
-                      <span className="signal-label warning">
-                        <span className="signal-mark" />
-                        Regressed
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+          )}
+          {openId && detail && (
+            <div className="border-t border-divider-base">
+              <PanelHeader
+                title={detail.label ?? detail.id}
+                description={detail.evidence_label}
+              />
+              <CohortMembers detail={detail} onOpenTraceObservation={onOpenTraceObservation} />
+            </div>
+          )}
+        </Panel>
+      )}
+    </Stack>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The collection.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Context adherence — the measure that was written since migration 034 and read
+// by nothing.
+//
+// It answers one question: when this Project was asked a data question, had the
+// governed context been consulted first. It is NOT the `context_adherence`
+// dimension of a run — that judges one pinned execution against one question —
+// and the two are deliberately not shown as one figure.
+//
+// Every count is rendered WITH its denominator ("3 of 4"), never as a bare
+// percentage: a share over four observations reads exactly like a share over
+// four hundred, and this section is the first place in the console where that
+// confusion could start.
+//
+// AND NO FIGURE HERE SPANS THE TWO KINDS OF EVIDENCE. A row labelled "All
+// questions" stood at the top of the first table and rendered the server's
+// pooled total, so the headline figure a reader met FIRST was one wall-clock
+// inference added to the trace-identified measures — the exact merge
+// `analyze-and-test.md:1330` forbids. It is gone, both here and in the payload;
+// the per-basis table below carries the totals, apart.
+// ---------------------------------------------------------------------------
+
+/** How each basis is named on screen. One place, so two tables cannot disagree. */
+const BASIS_LABEL: Record<AdherenceBasis, string> = {
+  observed_session: "Observed exchange",
+  inferred_window: "Inferred",
+};
+
+function BasisBadge({ basis }: { basis: AdherenceBasis }) {
+  return (
+    <Badge tone={basis === "observed_session" ? "neutral" : "warning"}>
+      {BASIS_LABEL[basis]}
+    </Badge>
+  );
+}
+
+/** "3 of 4" — the denominator is not optional, and never a lone percentage. */
+function OutOf({ adherent, observations }: { adherent: number; observations: number }) {
+  return (
+    <>
+      <span className="font-semibold text-text">
+        {adherent} of {observations}
+      </span>
+      {observations > 0 && (
+        <span className="block text-caption text-text-secondary">
+          {formatPercent(adherent / observations)} consulted context first
+        </span>
+      )}
     </>
+  );
+}
+
+function AdherenceSection({ state, retry }: { state: AdherenceState; retry: () => void }) {
+  return (
+    <Stack>
+      <SectionHeader
+        title="Context adherence"
+        description="When someone asked this Project a data question, had the governed context been consulted first? Measured, never enforced — a question that skipped the context is still answered."
+      />
+
+      {state.status === "loading" && (
+        <p role="status" className="text-body text-text-secondary">
+          Reading what the pre-query gate measured…
+        </p>
+      )}
+      {state.status === "failed" && (
+        <FailureNote what="The adherence measure" failure={state} retry={retry} />
+      )}
+
+      {state.status === "ready" && state.overview.empty_state && (
+        <EmptyState
+          title={state.overview.empty_state.headline}
+          description={`${state.overview.empty_state.detail} ${state.overview.empty_state.next_step}`}
+        />
+      )}
+
+      {state.status === "ready" && !state.overview.empty_state && (
+        <Panel flush>
+          <PanelHeader
+            title={`Last ${state.overview.window.days} days`}
+            description={`${state.overview.observations} question${state.overview.observations === 1 ? "" : "s"} measured. Two kinds of evidence, reported apart: one is known to be a single exchange, the other is an approximation. There is no combined figure — pooling them would let an inference read as a measure.`}
+          />
+          <TableScroll label="Context adherence by kind of evidence">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Evidence</TableHead>
+                  <TableHead>Consulted context first</TableHead>
+                  <TableHead>What it proves</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {state.overview.by_basis.map((bucket) => (
+                  <TableRow key={bucket.basis}>
+                    <TableCell>
+                      <BasisBadge basis={bucket.basis} />
+                    </TableCell>
+                    <TableCell>
+                      <OutOf adherent={bucket.adherent} observations={bucket.observations} />
+                    </TableCell>
+                    <TableCell className="text-text-secondary">{bucket.means}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableScroll>
+          <TableScroll label="Context adherence by data question and kind of evidence">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Data question</TableHead>
+                  <TableHead>Evidence</TableHead>
+                  <TableHead>Consulted context first</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {state.overview.by_data_tool.map((bucket) => (
+                  <TableRow key={`${bucket.data_tool}:${bucket.basis}`}>
+                    <TableCell className="text-technical break-all">{bucket.data_tool}</TableCell>
+                    <TableCell>
+                      <BasisBadge basis={bucket.basis} />
+                    </TableCell>
+                    <TableCell>
+                      <OutOf adherent={bucket.adherent} observations={bucket.observations} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableScroll>
+        </Panel>
+      )}
+    </Stack>
+  );
+}
+
+export default function RegressionRuns({
+  projectId,
+  onOpenEvaluationRun,
+  onOpenTraceObservation,
+}: {
+  projectId?: string;
+  /** Supplied by the shell. Without it the rows stay readable rather than being
+   *  dressed as links to a screen nothing would open. */
+  onOpenEvaluationRun?: (runId: string) => void;
+  onOpenTraceObservation?: (aiPathId: string) => void;
+}) {
+  const [offline, setOffline] = useState<OfflineState>({ status: "loading" });
+  const [observed, setObserved] = useState<ObservedState>({ status: "loading" });
+  const [adherence, setAdherence] = useState<AdherenceState>({ status: "loading" });
+  const [offlineToken, setOfflineToken] = useState(0);
+  const [observedToken, setObservedToken] = useState(0);
+  const [adherenceToken, setAdherenceToken] = useState(0);
+
+  // Two loads, two states, no shared variable. A single request feeding both
+  // sections is how a figure ends up computed across evidence modes.
+  useEffect(() => {
+    if (!projectId) return;
+    const controller = new AbortController();
+    let live = true;
+    setOffline({ status: "loading" });
+    Promise.all([
+      listEvaluationRuns(projectId, "offline", { signal: controller.signal }),
+      listRunProfiles(projectId, { signal: controller.signal }),
+    ])
+      .then(async ([collection, profiles]) => {
+        // The payload is CHECKED, not trusted. Without this, a response that
+        // carries no `run_profiles` threw `Cannot read properties of undefined
+        // (reading 'filter')` -- and this screen's honest refusal surface then
+        // printed that TypeError verbatim to the person, under "The offline
+        // evidence could not be read". A stack message is not an explanation,
+        // and it was only visible once the screen could be captured at all.
+        //
+        // Every other reader in this console already refuses a shape it does
+        // not recognise rather than guessing (the `/sample` echo check, the Data
+        // envelope check). This one trusted.
+        if (!Array.isArray(profiles?.run_profiles)) {
+          throw new Error(
+            "The run-profile response did not carry a profile list, so no offline evidence can be read.",
+          );
+        }
+        const offlineProfiles = profiles.run_profiles.filter(
+          (profile) => profile.evidence_mode === "offline",
+        );
+        const approvals = await Promise.all(
+          offlineProfiles.map((profile) =>
+            fetchActiveBaseline(projectId, profile.id, { signal: controller.signal })
+              .then((answer) => [profile.id, answer.baseline] as const)
+              // A profile whose baseline cannot be read reports "none approved"
+              // rather than borrowing another profile's approval.
+              .catch(() => [profile.id, null] as const),
+          ),
+        );
+        if (!live) return;
+        setOffline({
+          status: "ready",
+          runs: collection.evaluation_runs ?? [],
+          profiles: profiles.run_profiles ?? [],
+          baselines: Object.fromEntries(approvals),
+        });
+      })
+      .catch((error: unknown) => {
+        if (!live || controller.signal.aborted) return;
+        setOffline({ status: "failed", ...asFailure(error) });
+      });
+    return () => {
+      live = false;
+      controller.abort();
+    };
+  }, [projectId, offlineToken]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    const controller = new AbortController();
+    let live = true;
+    setObserved({ status: "loading" });
+    listObservedCohorts(projectId, { signal: controller.signal })
+      .then((value) => {
+        if (live) setObserved({ status: "ready", cohorts: value.cohorts ?? [] });
+      })
+      .catch((error: unknown) => {
+        if (!live || controller.signal.aborted) return;
+        setObserved({ status: "failed", ...asFailure(error) });
+      });
+    return () => {
+      live = false;
+      controller.abort();
+    };
+  }, [projectId, observedToken]);
+
+  // A third load, a third state. Same rule as the two above: no variable is
+  // shared, so nothing can be computed across evidence modes by accident.
+  useEffect(() => {
+    if (!projectId) return;
+    const controller = new AbortController();
+    let live = true;
+    setAdherence({ status: "loading" });
+    fetchContextAdherence(projectId, undefined, { signal: controller.signal })
+      .then((overview) => {
+        if (live) setAdherence({ status: "ready", overview });
+      })
+      .catch((error: unknown) => {
+        if (!live || controller.signal.aborted) return;
+        setAdherence({ status: "failed", ...asFailure(error) });
+      });
+    return () => {
+      live = false;
+      controller.abort();
+    };
+  }, [projectId, adherenceToken]);
+
+  const retryOffline = useCallback(() => setOfflineToken((token) => token + 1), []);
+  const retryObserved = useCallback(() => setObservedToken((token) => token + 1), []);
+  const retryAdherence = useCallback(() => setAdherenceToken((token) => token + 1), []);
+
+  const header = (
+    <PageHeader
+      title="Regression Runs"
+      description="Execute or observe a version-pinned cohort and compare it with an approved baseline. Offline and observed evidence stay separate, here and everywhere."
+    />
+  );
+
+  if (!projectId) {
+    return (
+      <Stack>
+        {header}
+        <Status as="block" tone="warning" title="Select a Project">
+          Evaluation evidence is Project-scoped. Nothing has been read, and no other Project's runs
+          have been shown in its place.
+        </Status>
+      </Stack>
+    );
+  }
+
+  return (
+    <Stack>
+      {header}
+
+      <Status as="block" tone="neutral" title="Three evidence modes, never one score">
+        Offline runs, observed trace cohorts and user feedback answer different questions and are
+        never merged into a trust score. This screen therefore reports no pass rate, no latest score
+        and no figure computed across the two sections below. Each run states its verdicts per
+        dimension, each cohort states its own denominator.
+      </Status>
+
+      <Panel className="grid gap-2 p-2 md:grid-cols-2">
+        <Metric
+          label="Offline Evaluation Runs"
+          value={offline.status === "ready" ? offline.runs.length : "Unavailable"}
+          hint="Reproducible, eligible to block"
+        />
+        <Metric
+          label="Observed Cohorts"
+          value={observed.status === "ready" ? observed.cohorts.length : "Unavailable"}
+          hint="Reference windows, never blocking"
+        />
+      </Panel>
+
+      <OfflineSection
+        state={offline}
+        retry={retryOffline}
+        onOpenEvaluationRun={onOpenEvaluationRun}
+      />
+
+      <ObservedSection
+        projectId={projectId}
+        state={observed}
+        retry={retryObserved}
+        onOpenTraceObservation={onOpenTraceObservation}
+      />
+
+      <AdherenceSection state={adherence} retry={retryAdherence} />
+
+      <Cluster>
+        <span className="text-caption text-text-secondary">
+          An Observed Cohort has no object route in this workspace: `shell/navigation.ts` declares
+          `evaluation-run` and `trace-observation`, and no address has been invented for a third.
+        </span>
+      </Cluster>
+    </Stack>
   );
 }

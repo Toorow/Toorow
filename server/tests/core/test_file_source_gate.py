@@ -1,19 +1,20 @@
 """toorow -- tests for the file-source required-field validation gate (Story 22.15).
 
 OFFLINE: evaluate_required_field_gate is pure (reuses the 12.3 profile_fields
-confidence + ambiguity scoring). record_gate_confirmation's execute_operation
+confidence + ambiguity scoring). confirm_mapping_version's execute_operation
 call is asserted with a patched operations seam.
 """
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 from core.file_source_gate import (
     GateNotPassed,
+    confirm_mapping_version,
     evaluate_required_field_gate,
-    record_gate_confirmation,
 )
 
 
@@ -67,29 +68,85 @@ def test_gate_flags_low_confidence_required_binding():
 
 
 # ---------------------------------------------------------------------------
-# record_gate_confirmation (AD-7)
+# confirm_mapping_version (AD-7)
 # ---------------------------------------------------------------------------
 
 
-def test_confirmation_refuses_a_failing_gate():
+def test_mapping_confirmation_refuses_a_failing_gate():
+    """Fail-closed, sur la fonction qui TOURNE.
+
+    Cette assertion vivait sur `record_gate_confirmation`, que plus aucun chemin
+    de production n'appelait (AI-92) : l'invariant etait prouve sur l'ancetre et
+    pas sur son successeur. Portee ici avant que l'ancetre ne soit retire -- sinon
+    supprimer du code mort aurait emporte une preuve avec lui.
+    """
     failing = {"passed": False, "missing_required": ["mdm_cost"], "flagged": []}
     with pytest.raises(GateNotPassed):
-        record_gate_confirmation(
+        confirm_mapping_version(
             MagicMock(), template_id="fst_1", project_id="p", org_id="o",
-            actor="u", gate_result=failing, idempotency_key="k", content_hash="a" * 64,
+            datastream_id="ds_1", actor="u", gate_result=failing,
+            mapping_payload={}, evidence={"sample_content_hash": "b" * 64},
+            idempotency_key="k", content_hash="a" * 64,
+            pinned_plan_version_id="dpv_1",
         )
 
 
-def test_confirmation_records_through_execute_operation_when_passed():
+def test_mapping_confirmation_is_atomic_and_never_advances_the_pointer():
     passing = {"passed": True, "missing_required": [], "flagged": [], "ambiguities": []}
-    fake_op = MagicMock(operation_id="op_1", replayed=False)
-    with patch("core.operations.execute_operation", return_value=fake_op) as mock_exec:
-        out = record_gate_confirmation(
-            MagicMock(), template_id="fst_1", project_id="p", org_id="o",
-            actor="u", gate_result=passing, idempotency_key="k", content_hash="a" * 64,
+    conn = MagicMock()
+    cursor = MagicMock()
+    cursor.__enter__ = MagicMock(return_value=cursor)
+    cursor.__exit__ = MagicMock(return_value=False)
+    cursor.fetchone.return_value = ("fst_1",)
+    conn.cursor.return_value = cursor
+    saved = {
+        "id": "dmap_pending",
+        "plan_version_id": "dpv_1",
+        "executable": True,
+        "blocking_count": 0,
+    }
+
+    def execute(_conn, spec, *, mutation):
+        result = mutation(_conn, "op_1")
+        return SimpleNamespace(
+            result=result.result,
+            operation_id="op_1",
+            replayed=False,
         )
-    assert out == {"confirmed": True, "operation_id": "op_1", "replayed": False}
-    assert mock_exec.call_count == 1
-    spec = mock_exec.call_args.args[1]
-    assert spec.command_type == "file_source.template.gate_confirmed"
-    assert spec.confirmation_mode == "human"  # AD-7: human-in-the-loop
+
+    from core.file_source_gate import confirm_mapping_version
+
+    evidence = {
+        "template_id": "fst_1",
+        "template_content_hash": "a" * 64,
+        "sample_content_hash": "b" * 64,
+        "sample_filename": "sample.csv",
+        "actor": "u",
+        "confirmed_at": "2026-08-01T00:00:00+00:00",
+        "resolutions": [],
+        "accepted_warnings": [],
+        "warning_reason": None,
+    }
+    with patch(
+        "core.datastream_field_mapping.save_field_mapping", return_value=saved
+    ) as save, patch("core.operations.execute_operation", side_effect=execute):
+        out = confirm_mapping_version(
+            conn,
+            template_id="fst_1",
+            project_id="p",
+            org_id="o",
+            datastream_id="ds_1",
+            actor="u",
+            gate_result=passing,
+            mapping_payload={"fields": []},
+            evidence=evidence,
+            idempotency_key="idem",
+            content_hash="a" * 64,
+            pinned_plan_version_id="dpv_1",
+        )
+
+    assert out["mapping_version_id"] == "dmap_pending"
+    assert out["active_pointer_advanced"] is False
+    assert save.call_args.kwargs["advance_pointer"] is False
+    assert save.call_args.kwargs["commit"] is False
+    assert "file_source_template_confirmations" in cursor.execute.call_args_list[0].args[0]

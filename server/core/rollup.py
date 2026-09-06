@@ -13,7 +13,7 @@ Rollup dict shape (per metric)::
         "value": 1245,
         "delta": 134,
         "delta_pct": "+12%",
-        "period": "sem. préc.",
+        "period": "prev. wk.",
         "source_system": "<connector-name-from-row>",
         "source_field": "clicks",
         "pull_id": "pull_01JXXXXXXXXXX",
@@ -23,10 +23,21 @@ Rollup dict shape (per metric)::
 # AD-2: source-agnostic — no module-specific strings. source_system / source_field /
 #       pull_id are read from the DATA ROWS (dynamic values), never hard-coded here.
 # AD-4: non-additive metrics (average_position, ratios) are NOT naively summed. The
-#       average_position value is impression-weighted over the rows; other non-additive
-#       metrics fall back to a simple mean of their (already semantic-view) values.
+#       average_position value is impression-weighted over the rows; a ratio metric sums
+#       its numerator and its denominator and divides ONCE (`_ratio_value`), and returns
+#       None when that evidence is absent. It NEVER falls back to a mean of the rows --
+#       the mean of daily CTRs is not the period CTR unless every day carries identical
+#       impressions, and across connectors it is not a ratio of anything. This header
+#       said the opposite until story 53.2, four months after `552ffe1` repaired the code.
 # AD-9: provenance (source_system, source_field, pull_id) is assembled per metric so the
 #       narrative can cite every claim.
+
+THE ONE ROLLUP AUTHORITY. There used to be a second one -- `reports._rollup` -- and it
+computed a different number for the same rows: `sums[metric] / counts[metric]`, the
+unweighted mean CAV-03 was closed for. Two days of `ctr` (5/10 then 10/1000) gave 0.255
+there and 0.01485 here, and it was the 0.255 that reached `build_envelope`'s
+`data["metrics"]`. `reports._rollup` is now a projection of `compute_rollup` and computes
+nothing of its own; a new aggregation belongs in this module or nowhere.
 """
 
 from __future__ import annotations
@@ -34,20 +45,40 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 # Metrics that must never be summed. average_position is impression-weighted; the
-# ratio metrics (roas/ctr/cpa) arrive from semantic views already at day-grain so
-# a simple mean of their rows is the correct rollup here (AD-4). This constant is a
-# generic, warehouse-vocabulary list — not a module name (AD-2).
+# ratio metrics (roas/ctr/cpa) arrive from semantic views already at day-grain and are
+# re-aggregated from their numerator/denominator evidence, never averaged (AD-4, see
+# `_ratio_value`). This constant is a generic, warehouse-vocabulary list — not a module
+# name (AD-2).
+#
+# STORY 60.2: this is a PLATFORM DEFAULT, no longer the authority. It answers for
+# the four metrics the platform ships and for nothing a client defines; a metric
+# the client declared `non_additive` or `semi_additive` is added to it per Project
+# by `declared_non_additive_metrics`. Four literal names decided the question for
+# every custom ratio until then, and `efficiency_index` was summed.
 _NON_ADDITIVE_METRICS = frozenset(
     {"average_position", "roas", "ctr", "cpa"}
 )
 
 # The French label for the comparison window used in every citation line (UX-DR10).
-_PERIOD_LABEL = "sem. préc."
+_PERIOD_LABEL = "prev. wk."
 
 # Special token: group/filter a metric by the row-level ``connector`` column (cross-source),
 # selecting each connector's ONE canonical breakdown partition. Mirrors cards.DIMENSION_CONNECTOR
 # (re-exported there for backward-compat). Pure warehouse vocabulary, not a module name (AD-2).
 DIMENSION_CONNECTOR = "connector"
+
+#: Route statuses under which a SINGLE combined number must not be published.
+#: Imported by name rather than copied so the two modules cannot drift
+#: (`core.metric_reconciliation` owns the vocabulary; this is the consumer it
+#: declared itself to be waiting for).
+_COMBINATION_REFUSED = frozenset(
+    {
+        "UNRULED_OVERLAP",            # >=2 emitters, no resolved rule -- the gate
+        "KEEP_SEPARATE",              # the rule says N series, never a total
+        "NOT_COMBINABLE",             # non-additive without a rule
+        "OVERRIDE_NOT_MATERIALIZED",  # the mart is frozen on another priority
+    }
+)
 
 
 def _row_date(row: dict) -> str | None:
@@ -271,8 +302,89 @@ def rows_for_dimension(
     return out
 
 
-def _metric_value(metric: str, rows: list[dict]) -> float | None:
+def _governed_rule(metric: str) -> str | None:
+    """The metric's declared aggregation rule, or None when the dictionary is absent.
+
+    Lazy import: `rollup` imports neither warehouse nor any mart (AD-1, enforced by
+    `make check-narrative-no-raw`). `report_dictionary` is configuration, not data.
+    """
+    try:
+        from core import report_dictionary  # noqa: PLC0415
+
+        return report_dictionary.aggregation_rule(metric)
+    except Exception:  # noqa: BLE001 -- no dictionary: caller falls back to refusal
+        return None
+
+
+def _ratio_value(metric: str, metric_rows: list[dict]) -> float | None:
+    """Sum the numerator, sum the denominator, divide once. Refuse without evidence.
+
+    Mirrors `core.geographic_semantics._aggregate` for the `ratio` / `weighted_ratio`
+    rules, over the rows of ONE metric. Returns None -- never a mean -- when any row
+    lacks its evidence or the denominator sums to zero.
+    """
+    rule = _governed_rule(metric)
+    if rule is not None and rule not in {"ratio", "weighted_ratio"}:
+        # The dictionary declares something else for this metric (e.g. `max`). Applying a
+        # ratio here would be this module inventing a second opinion.
+        return None
+
+    numerator = 0.0
+    denominator = 0.0
+    for row in metric_rows:
+        num = row.get("semantic_numerator")
+        den = row.get("semantic_denominator")
+        if num is None or den is None:
+            return None
+        try:
+            numerator += float(num)
+            denominator += float(den)
+        except (TypeError, ValueError):
+            return None
+    if denominator == 0:
+        return None
+    return numerator / denominator
+
+
+def declared_non_additive_metrics(project_id: str | None) -> frozenset[str]:
+    """The metrics THIS PROJECT declared non-additive, on top of the defaults.
+
+    Story 60.2. `_NON_ADDITIVE_METRICS` above is a PLATFORM DEFAULT, not an
+    authority: it holds four literal names, and `is_ratio_name` adds a suffix
+    rule. A client metric named `efficiency_index` -- a ratio by construction and
+    by nothing in its name -- passes both and used to be summed across days.
+    `core.metric_semantics.resolve_declared_additivity` reads what the client
+    actually DECLARED, in the Semantic Model first and in `metric_definitions`
+    second.
+
+    Lazy import + fail-soft, exactly like `_governed_rule` above: this module
+    stays deterministic offline, and an unreadable store degrades to the previous
+    behaviour rather than to a refusal. A declaration can only ADD to the set --
+    it is never allowed to make a platform ratio summable, because the reverse
+    direction is the one that prints a wrong number confidently.
+    """
+    if not project_id:
+        return frozenset()
+    try:
+        from core import metric_semantics  # noqa: PLC0415
+
+        return metric_semantics.declared_non_additive(
+            metric_semantics.resolve_declared_additivity(project_id)
+        )
+    except Exception:  # noqa: BLE001 -- no store: the platform defaults stand
+        return frozenset()
+
+
+def _metric_value(
+    metric: str, rows: list[dict], non_additive: frozenset[str] | None = None
+) -> float | None:
     """Compute the rollup value for *metric* over *rows* (additive vs non-additive).
+
+    ``non_additive`` is the effective set for the Project being rendered:
+    `_NON_ADDITIVE_METRICS` (the platform default) plus whatever the client
+    declared non-additive or semi-additive. ``None`` means "no project context",
+    and the platform default alone applies -- which is what every caller did
+    before Story 60.2, byte for byte.
 
     ADDITIVE metrics (everything not in _NON_ADDITIVE_METRICS) are pinned to ONE canonical
     breakdown partition PER CONNECTOR before summing (review-epic-10 CRITICAL-A): a metric
@@ -280,21 +392,44 @@ def _metric_value(metric: str, rows: list[dict]) -> float | None:
     device_category + country + user_type + landing_page on the same days) would otherwise
     be summed N times, inflating the KPI hero / LLM-summary total N-fold. Pinning via
     ``rows_for_dimension(..., DIMENSION_CONNECTOR)`` counts each connector's day ONCE, exactly
-    like the card sparkline / donut / gauge already do. Non-additive metrics (average_position
-    impression-weighted; ratio metrics mean) are NOT re-partitioned -- their aggregation is
-    already correct over the full row set (AD-4).
+    like the card sparkline / donut / gauge already do.
+
+    RATIO METRICS (`roas`, `ctr`, `cpa`) are aggregated by summing their numerator and
+    denominator evidence and dividing ONCE -- not by averaging already-computed ratios.
+    They used to return `sum(values) / len(values)`, the unweighted arithmetic mean over
+    every day AND every connector. That is a different number wearing the same unit: the
+    mean of daily CTRs is not the period CTR unless every day carries identical
+    impressions, and across connectors it is not a ratio of anything. A reader deciding
+    on "ROAS 3.4" had no way to see it.
+
+    The evidence is already there and was simply unused: `warehouse` emits
+    `semantic_numerator` / `semantic_denominator` alongside every ratio metric
+    (`_SEMANTIC_EVIDENCE_BY_METRIC`), for the reason its own comment gives -- to
+    "re-aggregate ... without averaging already-computed ratios". The rule comes from the
+    governed dictionary (`report_dictionary.aggregation_rule`), so this function applies a
+    declared rule rather than a second opinion, and `core.geographic_semantics._aggregate`
+    stays the reference implementation of the same contract.
+
+    FAIL-CLOSED, deliberately. When a ratio metric's evidence is absent the value is
+    `None` and the metric is omitted, never silently averaged -- the posture
+    `geographic_semantics` already states: *"A non-additive metric that is summed because
+    its evidence was missing is a wrong number presented as a right one, which is worse
+    than no number."*
     """
     if metric == "average_position":
         return weighted_avg_position(rows)
 
-    if metric in _NON_ADDITIVE_METRICS:
+    # `is None` and not `or`: an EMPTY declared set is a real answer ("this
+    # Project declared nothing extra"), and `or` would quietly widen it back to
+    # the defaults -- the exact shape of bug this story is repairing elsewhere.
+    effective = _NON_ADDITIVE_METRICS if non_additive is None else non_additive
+    if metric in effective:
         metric_rows = [
             r for r in rows if r.get("metric") == metric and r.get("value") is not None
         ]
         if not metric_rows:
             return None
-        vals = [float(r["value"]) for r in metric_rows]
-        return sum(vals) / len(vals) if vals else None
+        return _ratio_value(metric, metric_rows)
 
     # Additive: pin to the canonical partition per connector so parallel breakdowns are not
     # double-counted, then sum. rows_for_dimension already filters to this metric only.
@@ -307,22 +442,38 @@ def _metric_value(metric: str, rows: list[dict]) -> float | None:
     return sum(float(r["value"]) for r in partition_rows)
 
 
-def _provenance(metric: str, rows: list[dict], pull_ids: list[str]) -> tuple[str, str, str | None]:
-    """Return (source_system, source_field, pull_id) for *metric* from the data rows.
+def _provenance(
+    metric: str, rows: list[dict], pull_ids: list[str]
+) -> tuple[str, str, str | None, list[str]]:
+    """Return (source_system, source_field, pull_id, source_systems) for *metric*.
 
-    source_system is the connector name carried on the metric's rows (dynamic
-    value, AD-2). source_field is the metric name (the warehouse field). pull_id is
-    the most recent pull_id contributing to the metric (rolling re-pull → newest),
-    falling back to the caller-supplied ``pull_ids`` list.
+    THE DEFECT THIS SIGNATURE EXISTS TO CLOSE. ``source_system`` used to be the
+    connector of the FIRST row encountered -- the loop `break`-ed on it -- while
+    ``_metric_value`` sums ONE canonical partition PER CONNECTOR and then adds
+    every connector together. A cross-source total was therefore printed with a
+    citation naming a single source, and the citation is the whole mechanism by
+    which "every claim is cited" (FR7) is supposed to hold. A reader deciding on
+    "Conversions 12 340 (google-ads:conversions, pull_...)" had no way to see that
+    two providers were added, possibly double-counting the same conversion.
+
+    ``source_systems`` is now the sorted, de-duplicated list of every connector
+    that actually contributed a row to this metric, and ``source_system`` is the
+    honest label built from it (``a+b`` when several). ``source_field`` and
+    ``pull_id`` keep their meaning; ``pull_id`` remains the most recent
+    contributing pull (rolling re-pull -> newest), falling back to the
+    caller-supplied ``pull_ids`` list.
+
+    NOT FIXED HERE: whether adding those sources is legitimate at all.
+    ``core.metric_reconciliation.resolve_route`` answers that -- and declares
+    itself passive, with no consumer in this module. Wiring it is story 52.2. This
+    change makes the addition VISIBLE; it does not make it correct.
     """
     metric_rows = [r for r in rows if r.get("metric") == metric]
 
-    source_system = ""
-    for row in metric_rows:
-        conn = row.get("connector")
-        if conn:
-            source_system = str(conn)
-            break
+    source_systems = sorted(
+        {str(row["connector"]) for row in metric_rows if row.get("connector")}
+    )
+    source_system = "+".join(source_systems)
 
     # Most recent pull_id for this metric: prefer the row with the greatest
     # loaded_at; fall back to the max pull_id string, then to the caller's list.
@@ -342,7 +493,7 @@ def _provenance(metric: str, rows: list[dict], pull_ids: list[str]) -> tuple[str
     if best_pull is None and pull_ids:
         best_pull = pull_ids[-1]
 
-    return source_system, metric, best_pull
+    return source_system, metric, best_pull, source_systems
 
 
 def _format_delta_pct(value: float | None, prior: float | None) -> tuple[float | None, str | None]:
@@ -361,6 +512,74 @@ def _format_delta_pct(value: float | None, prior: float | None) -> tuple[float |
     return delta, f"{sign}{abs(pct):.0f}%"
 
 
+#: How the combination question was ANSWERED for this metric. Every rollup entry
+#: carries one, because "no refusal" used to cover four different situations and a
+#: reader could not tell "verified and permitted" from "never asked".
+CHECK_SINGLE_SOURCE = "single_source"    # one connector contributed: nothing to combine
+CHECK_NOT_REQUESTED = "not_requested"    # no resolver was wired at this call site
+CHECK_VERIFIED = "verified"              # the gate answered, and it permits the total
+CHECK_UNAVAILABLE = "unavailable"        # the gate was asked and could not answer
+CHECK_REFUSED = "refused"                # the gate answered, and it refuses the total
+
+
+def combination_refusal(
+    metric: str, source_systems: list[str], route_resolver
+) -> tuple[str | None, str]:
+    """Return ``(refusing_route_status_or_None, combination_check)``.
+
+    PUBLIC BECAUSE A SECOND READER ASKS IT. This was private while `compute_rollup`
+    was its only caller, and the mart path was then the only path that could answer
+    "was this total checked". The Analyze Result lens
+    (`analyze_workbench._metric_combination`) now asks the same question about the
+    same metrics, and it asks THIS function rather than re-deriving the verdict from
+    `_COMBINATION_REFUSED` on its own -- two readings of one gate is how the console
+    and the model channel start disagreeing about whether a number was verified.
+    `_combination_refusal` stays as an alias below (AI-02 convention of this module).
+
+    ``combination_check`` is the second half of the answer and it is the point: a
+    total published because the gate said yes and a total published because nobody
+    asked used to be the SAME output. One is a checked number; the other is the
+    CAV-02 belief itself.
+
+    The resolver is called with the connectors this rollup actually OBSERVED
+    contributing rows. `metric_reconciliation.resolve_route` unions them into its
+    declared emitters, so an unreachable manifest registry can no longer answer
+    DIRECT_SUM -- a permission -- about two sources it never saw.
+
+    Fail-SOFT on the resolver itself (it is `resolve_route`, already fail-soft): a
+    resolver that raises must not take the report down. The total then goes out
+    UNVERIFIED, and now says so.
+    """
+    if route_resolver is None:
+        return None, CHECK_NOT_REQUESTED
+    if len(source_systems) < 2:
+        return None, CHECK_SINGLE_SOURCE
+    try:
+        status = route_resolver(metric, tuple(source_systems))
+    except Exception:  # noqa: BLE001 -- see docstring
+        return None, CHECK_UNAVAILABLE
+    status = getattr(status, "status", status)
+    if status in _COMBINATION_REFUSED:
+        return str(status), CHECK_REFUSED
+    return None, CHECK_VERIFIED
+
+
+def _per_source_values(
+    metric: str,
+    current_rows: list[dict],
+    source_systems: list[str],
+    non_additive: frozenset[str] | None = None,
+) -> dict[str, float]:
+    """Each connector's own figure, computed by the same rule as the total."""
+    per_source: dict[str, float] = {}
+    for connector in source_systems:
+        subset = [r for r in current_rows if r.get("connector") == connector]
+        value = _metric_value(metric, subset, non_additive)
+        if value is not None:
+            per_source[connector] = value
+    return per_source
+
+
 def compute_rollup(
     rows: list[dict],
     metrics: list[str],
@@ -368,6 +587,8 @@ def compute_rollup(
     date_to: str,
     project_id: str,
     pull_ids: list[str],
+    *,
+    route_resolver=None,
 ) -> dict:
     """Compute the per-metric rollup dict consumed by ``narrative.build_narrative``.
 
@@ -379,17 +600,66 @@ def compute_rollup(
     rows (AD-9), never hard-coded (AD-2).
 
     Metrics with no rows in the current period are omitted from the result.
+
+    ``route_resolver`` — WHETHER SEVERAL SOURCES MAY BE ADDED AT ALL.
+    A callable ``(metric, observed_sources) -> status``, in practice the one
+    ``core.metric_reconciliation.route_status_resolver(project_id)`` returns,
+    consulted ONLY when two or more connectors contributed rows for that metric.
+    The observed sources travel with the question because the gate's own emitter
+    enumeration is fail-soft and answers ``DIRECT_SUM`` -- a permission -- when it
+    is unreachable.
+    ``resolve_route`` has always been able to answer this — it returns
+    ``UNRULED_OVERLAP`` when several sources emit the same metric with no resolved
+    rule — but it declared itself *"STRICTLY PASSIVE … no existing consumer
+    (rollup.py, cards.py, the dbt marts) is touched"*, so nothing ever asked. Two
+    sources double-counting the same conversion were simply added.
+
+    On a refusing status the metric keeps its entry but carries **no combined
+    value**: ``value`` is None, ``combination_refused`` names the status and
+    ``per_source`` gives each connector's own figure. A total nobody may compute is
+    not replaced by a plausible one.
+
+    Injected rather than imported so this module keeps its AD-1 posture (no
+    warehouse, no mart, no DB) and stays deterministic offline. ``None`` still
+    publishes the total, but it now labels it ``combination_check ==
+    "not_requested"`` instead of leaving it indistinguishable from a checked one.
     """
     current_rows, prior_rows = split_periods(rows, date_from, date_to)
 
+    # Story 60.2: the platform default UNION what this Project declared. Read
+    # ONCE per report, not once per metric -- and resolved here rather than
+    # inside `_metric_value` so that function stays pure and offline-testable.
+    non_additive = _NON_ADDITIVE_METRICS | declared_non_additive_metrics(project_id)
+
     rollup: dict[str, dict] = {}
     for metric in metrics:
-        value = _metric_value(metric, current_rows)
+        value = _metric_value(metric, current_rows, non_additive)
         if value is None:
             continue
-        prior = _metric_value(metric, prior_rows)
+        prior = _metric_value(metric, prior_rows, non_additive)
         delta, delta_pct = _format_delta_pct(value, prior)
-        source_system, source_field, pull_id = _provenance(metric, current_rows, pull_ids)
+        source_system, source_field, pull_id, source_systems = _provenance(
+            metric, current_rows, pull_ids
+        )
+        refusal, check = combination_refusal(metric, source_systems, route_resolver)
+        if refusal is not None:
+            rollup[metric] = {
+                "value": None,
+                "combination_refused": refusal,
+                "combination_check": check,
+                "per_source": _per_source_values(
+                    metric, current_rows, source_systems, non_additive
+                ),
+                "delta": None,
+                "delta_pct": None,
+                "period": _PERIOD_LABEL,
+                "source_system": source_system,
+                "source_field": source_field,
+                "pull_id": pull_id,
+                "source_systems": source_systems,
+                "source_count": len(source_systems),
+            }
+            continue
         rollup[metric] = {
             "value": value,
             "delta": delta,
@@ -398,6 +668,13 @@ def compute_rollup(
             "source_system": source_system,
             "source_field": source_field,
             "pull_id": pull_id,
+            # Every connector that contributed a row to this value, and how many.
+            # `_metric_value` adds them together; without these two keys the sum
+            # was indistinguishable from a single-source figure.
+            "source_systems": source_systems,
+            "source_count": len(source_systems),
+            # And WHETHER anyone checked that adding them is legitimate.
+            "combination_check": check,
         }
     return rollup
 
@@ -410,3 +687,4 @@ def compute_rollup(
 # ---------------------------------------------------------------------------
 _split_periods = split_periods
 _weighted_avg_position = weighted_avg_position
+_combination_refusal = combination_refusal

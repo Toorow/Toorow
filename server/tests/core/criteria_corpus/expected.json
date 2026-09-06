@@ -1,0 +1,86 @@
+{
+  "_README": {
+    "why": "The reference the bullet walk is measured against, and it does NOT come from the walk. Every list below was written by reading the neighbouring .md file the way a person reads it, then the parser was run against it -- never the other way round. A reviewer who suspects otherwise can delete `scripts/finished_work_audit.py` and still say what each of these documents means.",
+    "the-defect-this-replaces": "test_criteria_parser.py compared `criteria_split` to `criteria_split` with the five inline patterns switched off. Both halves share the bullet walk, so no mutation inside the walk could ever make it red. Replayed 2026-08-21: six mutations of that walk left the 32 tests green, four of them changing the real output of the instrument the whole repository is measured with.",
+    "how-to-add-a-document": "Write the .md, write its two lists here by hand, and only then run the suite. If the two disagree, one of them is wrong and the disagreement is the finding -- do not paste the parser's answer in.",
+    "regeneration": "There is none, on purpose. A regeneration command would turn this file back into a copy of the code it measures.",
+    "how-a-mutation-is-replayed": [
+      "copy scripts/finished_work_audit.py outside the repository -- that copy is what restores it",
+      "apply ONE change to the parser (drop `target.pop()`, write `#{2}` for `#{2,3}`, drop the `buffer.append(line.strip())` that continues a bullet, make `_BLOCKQUOTE` never match, make `_REPLACES_HEADING` never match, drop the `close_bullet()` a blank line performs)",
+      "python -m pytest server/tests/core/test_criteria_parser.py -q",
+      "python scripts/finished_work_audit.py --inline-criteria   # what the instrument now answers",
+      "restore the file from the copy, byte for byte, and check it"
+    ],
+    "measured-2026-08-21": "Before this corpus existed, those six left all 32 tests green. After it, all six are red on `test_the_walk_returns_what_a_reader_reads`, and so are the five mutations that were already dying: 11 replayed, 0 survivors."
+  },
+
+  "bullets.md": {
+    "reads": "the four shapes a bullet is written in: dashed, numbered, carried over two lines, and separated from its list by a blank line",
+    "listed": [
+      "a dashed bullet, stated on one line",
+      "a dashed bullet whose sentence continues on the following line",
+      "a numbered bullet, because two ratified pages number theirs",
+      "a numbered bullet that ends on a semicolon",
+      "a bullet separated from the list above by a blank line"
+    ],
+    "appended": []
+  },
+
+  "h3-amendments.md": {
+    "reads": "an amendment that opens its own H3, and the French heading `user-bridge.md` uses",
+    "listed": [
+      "the opening criterion of the page",
+      "a criterion added by the amendment, under a heading of its own",
+      "une puce ratifiee sous un titre francais, qui n'est pas moins contraignante"
+    ],
+    "appended": []
+  },
+
+  "replaces.md": {
+    "reads": "a SUBSTITUTION: the replaced bullet leaves the list, and the replacement takes its index -- so the list still holds two criteria, not three",
+    "listed": [
+      "the first criterion of the page",
+      "the replacement, which takes the index the replaced bullet held"
+    ],
+    "appended": []
+  },
+
+  "inline-clauses.md": {
+    "reads": "every form that is NOT a bullet of the established list, and the one form that is. The order of `appended` is document order, which is the whole reason no verdict may be keyed on it.",
+    "listed": [
+      "the only bullet of the established list",
+      "a bullet under the end-of-line opener, which belongs to the established list"
+    ],
+    "appended": [
+      "a clause stated at column zero, ahead of the page's own list",
+      "a clause carried on the opener's own line, which does not",
+      "a bullet under an inline opener, which is appended and never listed",
+      "a clause stated mid-paragraph",
+      "a clause indented under a numbered step, after a blank line",
+      "a version is bound without evidence"
+    ],
+    "not-read-and-why": {
+      "a continuation of the sentence above, and not a clause": "indented, and the line above it is not blank -- an indented marker there continues the sentence it hangs under",
+      "clause 2 of this page is prose about the list, not a criterion": "the sentence makes `Incomplete if` its object",
+      "ratified |": "the table cell ends at the pipe; the next column is another subject"
+    }
+  },
+
+  "blockquote.md": {
+    "reads": "the fence is stripped for the inline forms and NEVER for the bullet ones -- a quoted bullet would otherwise enter the established list and move every index under it",
+    "listed": [
+      "the established bullet of this page"
+    ],
+    "appended": [
+      "a clause ratified inside a blockquote of this page"
+    ]
+  },
+
+  "prose-about-the-list.md": {
+    "reads": "the three refusals: a sentence that makes the marker its object, a tail too short to be a sentence, and a tail that opens on punctuation",
+    "listed": [
+      "the single real criterion of this page"
+    ],
+    "appended": []
+  }
+}

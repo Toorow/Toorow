@@ -27,9 +27,12 @@ from __future__ import annotations
 import datetime as _dt
 import hashlib
 import json
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+
+from tests.conftest import REPO_ROOT
 
 # ---------------------------------------------------------------------------
 # Shared mock helpers (mirrors test_epic38_inbound_credentials.py style).
@@ -89,6 +92,7 @@ _FAKE_DS_ID = "ds-test-receipt-1"
 _FAKE_CRED_ID = "dic_01JZAAABBBCCCDDDEEEFFF00002"
 _FAKE_PROVIDER_EVENT_ID = "evt-test-001"
 _FAKE_RECIPIENT_HASH = _sha256("ds_abc123@inbound.example.com")
+_FAKE_RECEIPT_FINGERPRINT = _sha256("canonical-receipt-evidence")
 
 
 def _fake_row(
@@ -105,6 +109,7 @@ def _fake_row(
         "email",                # channel
         _FAKE_PROVIDER_EVENT_ID,# provider_event_id
         _FAKE_RECIPIENT_HASH,   # recipient_hash
+        _FAKE_RECEIPT_FINGERPRINT,  # receipt_fingerprint
         2,                      # attachment_count
         102400,                 # total_bytes
         "gs://bucket/path",     # quarantine_uri
@@ -165,6 +170,7 @@ def test_record_receipt_requires_datastream_id():
             channel="email",
             provider_event_id="evt-1",
             recipient_hash=None,
+            receipt_fingerprint=_FAKE_RECEIPT_FINGERPRINT,
             actor="test",
             host_context={},
             trace_id=None,
@@ -183,6 +189,7 @@ def test_record_receipt_rejects_unknown_channel():
             channel="fax",
             provider_event_id="evt-1",
             recipient_hash=None,
+            receipt_fingerprint=_FAKE_RECEIPT_FINGERPRINT,
             actor="test",
             host_context={},
             trace_id=None,
@@ -201,6 +208,7 @@ def test_record_receipt_rejects_bad_recipient_hash():
             channel="email",
             provider_event_id="evt-1",
             recipient_hash="tooshort",
+            receipt_fingerprint=_FAKE_RECEIPT_FINGERPRINT,
             actor="test",
             host_context={},
             trace_id=None,
@@ -263,6 +271,7 @@ def test_record_receipt_inserts_received_row(monkeypatch):
         channel="email",
         provider_event_id=_FAKE_PROVIDER_EVENT_ID,
         recipient_hash=_FAKE_RECIPIENT_HASH,
+            receipt_fingerprint=_FAKE_RECEIPT_FINGERPRINT,
         attachment_count=2,
         total_bytes=102400,
         quarantine_uri=None,
@@ -304,6 +313,7 @@ def test_record_receipt_no_raw_address_in_request_payload(monkeypatch):
         channel="email",
         provider_event_id="evt-leak-check",
         recipient_hash=h,
+            receipt_fingerprint=_FAKE_RECEIPT_FINGERPRINT,
         actor="system",
         host_context={},
         trace_id=None,
@@ -338,6 +348,7 @@ def test_record_receipt_no_raw_address_in_safe_read_model(monkeypatch):
         channel="email",
         provider_event_id="evt-read-model-check",
         recipient_hash=h,
+            receipt_fingerprint=_FAKE_RECEIPT_FINGERPRINT,
         actor="system",
         host_context={},
         trace_id=None,
@@ -372,6 +383,7 @@ def test_record_receipt_deduplicates_redelivery(monkeypatch):
         channel="email",
         provider_event_id=_FAKE_PROVIDER_EVENT_ID,
         recipient_hash=_FAKE_RECIPIENT_HASH,
+            receipt_fingerprint=_FAKE_RECEIPT_FINGERPRINT,
         actor="system",
         host_context={},
         trace_id=None,
@@ -396,10 +408,13 @@ def test_mark_state_received_to_processing(monkeypatch):
 
     # cursor 1: _load_receipt_row. cursor 2: _resolve_org_id. cursor 3: mutation
     # reuses one cursor for UPDATE (rowcount=1) + SELECT-back.
+    mutation_cur = _cur(
+        _fake_row("RECEIVED"), _fake_row("PROCESSING"), rowcount=1
+    )
     conn = _conn_with(
         _cur(_fake_row("RECEIVED")),
         _cur(("org-test",)),
-        _cur(_fake_row("PROCESSING"), rowcount=1),
+        mutation_cur,
     )
 
     result = ir.mark_state(
@@ -415,6 +430,10 @@ def test_mark_state_received_to_processing(monkeypatch):
 
     assert result["state"] == "PROCESSING"
     assert result["import_ledger_id"] is None
+    assert any(
+        "updated_at = clock_timestamp()" in call.args[0]
+        for call in mutation_cur.execute.call_args_list
+    )
 
 
 def test_mark_state_processing_to_landed_sets_import_ledger_id(monkeypatch):
@@ -429,7 +448,7 @@ def test_mark_state_processing_to_landed_sets_import_ledger_id(monkeypatch):
     conn = _conn_with(
         _cur(_fake_row("PROCESSING")),
         _cur(("org-test",)),
-        _cur(landed_row, rowcount=1),
+        _cur(_fake_row("PROCESSING"), landed_row, rowcount=1),
     )
 
     result = ir.mark_state(
@@ -453,6 +472,23 @@ def test_mark_state_processing_to_landed_sets_import_ledger_id(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+def test_mark_state_rejects_error_evidence_for_non_error_state():
+    from core.inbound_receipts import InboundReceiptValidationError, mark_state
+
+    with pytest.raises(InboundReceiptValidationError, match="error evidence"):
+        mark_state(
+            object(),
+            receipt_id=_FAKE_RECEIPT_ID,
+            datastream_id=_FAKE_DS_ID,
+            state="PROCESSING",
+            actor="worker",
+            host_context={},
+            trace_id=None,
+            idempotency_key="invalid-error-evidence",
+            error_code="should-not-survive",
+        )
+
+
 def test_mark_state_to_failed_sets_error_fields(monkeypatch):
     """mark_state RECEIVED -> FAILED: error_code and error_detail appear in result."""
     from core import inbound_receipts as ir
@@ -466,7 +502,7 @@ def test_mark_state_to_failed_sets_error_fields(monkeypatch):
     conn = _conn_with(
         _cur(_fake_row("RECEIVED")),
         _cur(("org-test",)),
-        _cur(failed_row, rowcount=1),
+        _cur(_fake_row("RECEIVED"), failed_row, rowcount=1),
     )
 
     result = ir.mark_state(
@@ -594,6 +630,7 @@ def test_safe_read_model_never_contains_raw_address():
         "email",
         _FAKE_PROVIDER_EVENT_ID,
         h,           # recipient_hash
+        _FAKE_RECEIPT_FINGERPRINT,  # receipt_fingerprint
         1,           # attachment_count
         None,        # total_bytes
         None,        # quarantine_uri
@@ -645,25 +682,268 @@ def test_mark_state_raises_not_found_for_absent_receipt():
 
 
 # ---------------------------------------------------------------------------
+# Story 38.8 closure regressions.
+# ---------------------------------------------------------------------------
+
+
+def test_canonical_fingerprint_binds_order_content_and_filename():
+    from core.inbound_receipts import canonical_receipt_fingerprint
+
+    base = {
+        "datastream_id": _FAKE_DS_ID,
+        "credential_id": _FAKE_CRED_ID,
+        "channel": "email",
+        "recipient_hash": _FAKE_RECIPIENT_HASH,
+    }
+    first = {
+        "ordinal": 0,
+        "filename": "same.csv",
+        "content_type": "text/csv",
+        "size": 3,
+        "content_sha256": _sha256("one"),
+    }
+    second = {
+        "ordinal": 1,
+        "filename": "same.csv",
+        "content_type": "text/csv",
+        "size": 3,
+        "content_sha256": _sha256("two"),
+    }
+    fingerprint = canonical_receipt_fingerprint(**base, attachments=[first, second])
+    assert fingerprint == canonical_receipt_fingerprint(
+        **base, attachments=[dict(first), dict(second)]
+    )
+    swapped = [dict(second, ordinal=0), dict(first, ordinal=1)]
+    assert fingerprint != canonical_receipt_fingerprint(**base, attachments=swapped)
+    renamed = [dict(first, filename="other.csv"), second]
+    assert fingerprint != canonical_receipt_fingerprint(**base, attachments=renamed)
+
+
+def test_operation_replay_is_reported_as_receipt_deduplication(monkeypatch):
+    from core import inbound_receipts as ir
+    from core.operations import OperationResult
+
+    stored = ir._row_to_dict(_fake_row("RECEIVED"))
+    monkeypatch.setattr(
+        ir,
+        "execute_operation",
+        lambda conn, spec, *, mutation: OperationResult(
+            "op-existing", "succeeded", stored, "audit-existing", "outbox-existing", True
+        ),
+    )
+    result = ir.record_receipt(
+        _conn_with(
+            _cur(("org-test",)),
+            _cur(_fake_row("LANDED", import_ledger_id="mfl_replayed")),
+        ),
+        datastream_id=_FAKE_DS_ID,
+        credential_id=_FAKE_CRED_ID,
+        channel="email",
+        provider_event_id=_FAKE_PROVIDER_EVENT_ID,
+        recipient_hash=_FAKE_RECIPIENT_HASH,
+        receipt_fingerprint=_FAKE_RECEIPT_FINGERPRINT,
+        attachment_count=2,
+        total_bytes=102400,
+        quarantine_uri="gs://bucket/path",
+        actor="system",
+        host_context={},
+        trace_id=None,
+        idempotency_key="same-operation-key",
+    )
+    assert result["receipt_id"] == _FAKE_RECEIPT_ID
+    assert result["state"] == "LANDED"
+    assert result["import_ledger_id"] == "mfl_replayed"
+    assert result["deduplicated"] is True
+    assert result["operation_outcome"] == "succeeded"
+
+
+def test_provider_event_fingerprint_mismatch_is_rejected_before_write():
+    from core.inbound_receipts import (
+        InboundReceiptFingerprintMismatch,
+        assert_provider_event_fingerprint,
+    )
+
+    with pytest.raises(InboundReceiptFingerprintMismatch):
+        assert_provider_event_fingerprint(
+            _conn_with(_cur((_sha256("different"),))),
+            datastream_id=_FAKE_DS_ID,
+            provider_event_id=_FAKE_PROVIDER_EVENT_ID,
+            receipt_fingerprint=_FAKE_RECEIPT_FINGERPRINT,
+        )
+
+
+def test_terminal_receipt_cannot_transition(monkeypatch):
+    from core import inbound_receipts as ir
+
+    _stub_operation(monkeypatch, ir)
+    conn = _conn_with(
+        _cur(_fake_row("LANDED", import_ledger_id="mfl_terminal")),
+        _cur(("org-test",)),
+        _cur(_fake_row("LANDED", import_ledger_id="mfl_terminal")),
+    )
+    with pytest.raises(ir.InboundReceiptStateError, match="terminal"):
+        ir.mark_state(
+            conn,
+            receipt_id=_FAKE_RECEIPT_ID,
+            datastream_id=_FAKE_DS_ID,
+            state="FAILED",
+            actor="worker",
+            host_context={},
+            trace_id=None,
+            idempotency_key="terminal-transition",
+        )
+
+
+def test_audited_scan_recovery_reopens_only_failed_receipt(monkeypatch):
+    from core import inbound_receipts as ir
+
+    captured = {}
+    _stub_operation(monkeypatch, ir, capture=captured)
+    failed = _fake_row(
+        "FAILED",
+        error_code="scan_attempts_exhausted",
+        error_detail="dead letter evidence",
+    )
+    processing = _fake_row("PROCESSING")
+    conn = _conn_with(
+        _cur(failed),
+        _cur(("org-test",)),
+        _cur(failed, processing, rowcount=1),
+    )
+
+    result = ir.mark_state(
+        conn,
+        receipt_id=_FAKE_RECEIPT_ID,
+        datastream_id=_FAKE_DS_ID,
+        state="PROCESSING",
+        actor="operator",
+        host_context={},
+        trace_id="a" * 32,
+        idempotency_key="scan-job-recovery:job-1:1",
+        scan_recovery=True,
+    )
+
+    assert result["state"] == "PROCESSING"
+    assert captured["specs"][0].request_payload["scan_recovery"] is True
+
+
+def test_scan_recovery_flag_rejects_non_processing_target():
+    from core import inbound_receipts as ir
+
+    with pytest.raises(ir.InboundReceiptValidationError, match="PROCESSING"):
+        ir.mark_state(
+            MagicMock(),
+            receipt_id=_FAKE_RECEIPT_ID,
+            datastream_id=_FAKE_DS_ID,
+            state="FAILED",
+            actor="operator",
+            host_context={},
+            trace_id=None,
+            idempotency_key="invalid-scan-recovery",
+            error_code="scan_attempts_exhausted",
+            scan_recovery=True,
+        )
+
+def test_concurrent_state_change_fails_atomic_update(monkeypatch):
+    from core import inbound_receipts as ir
+
+    _stub_operation(monkeypatch, ir)
+    conn = _conn_with(
+        _cur(_fake_row("RECEIVED")),
+        _cur(("org-test",)),
+        _cur(_fake_row("RECEIVED"), None),
+    )
+    with pytest.raises(ir.InboundReceiptStateError, match="concurrently"):
+        ir.mark_state(
+            conn,
+            receipt_id=_FAKE_RECEIPT_ID,
+            datastream_id=_FAKE_DS_ID,
+            state="PROCESSING",
+            actor="worker",
+            host_context={},
+            trace_id=None,
+            idempotency_key="concurrent-transition",
+        )
+
+
+def test_state_request_hash_is_retry_stable_and_covers_error_detail(monkeypatch):
+    from core import inbound_receipts as ir
+
+    captured = {}
+    _stub_operation(monkeypatch, ir, capture=captured)
+    detail = "bounded operator evidence"
+    failed = _fake_row("FAILED", error_code="parse_error", error_detail=detail)
+    ir.mark_state(
+        _conn_with(
+            _cur(_fake_row("RECEIVED")),
+            _cur(("org-test",)),
+            _cur(_fake_row("RECEIVED"), failed),
+        ),
+        receipt_id=_FAKE_RECEIPT_ID,
+        datastream_id=_FAKE_DS_ID,
+        state="FAILED",
+        actor="worker",
+        host_context={},
+        trace_id=None,
+        idempotency_key="stable-state-retry",
+        error_code="parse_error",
+        error_detail=detail,
+    )
+    payload = captured["specs"][0].request_payload
+    assert "from_state" not in payload
+    assert detail not in json.dumps(payload)
+    assert payload["error_detail_hash"] == _sha256(detail)
+
+
+def test_additive_migration_enforces_fingerprint_provenance_graph_and_force_rls():
+    sql = Path(
+        REPO_ROOT / "infra/nango/migrations/184_inbound_receipt_durability_guard.sql"
+    ).read_text(encoding="utf-8")
+    required = (
+        "ADD COLUMN IF NOT EXISTS receipt_fingerprint",
+        "ck_inbrx_receipt_fingerprint",
+        "receipt transition requires new operation provenance",
+        "illegal inbound receipt state transition",
+        "LANDED receipt requires import ledger evidence",
+        "inbound.receipt.recorded",
+        "inbound.receipt.state_advanced",
+        "SECURITY DEFINER",
+        "SET row_security = off",
+        "FORCE ROW LEVEL SECURITY",
+        "epic36_has_resource_access",
+        "o.resource_path",
+        "jsonb_build_array('datastream:' || NEW.datastream_id)",
+        "jsonb_build_array('receipt:' || NEW.id)",
+    )
+    for fragment in required:
+        assert fragment in sql
+
+
+# ---------------------------------------------------------------------------
 # Live-PG-gated tests.
 # ---------------------------------------------------------------------------
 
 
-def _insert_op(cur, op_id: str, ik_hash: str, req_hash: str = None) -> None:
-    """Insert a minimal operations row for FK satisfaction."""
-
-    if req_hash is None:
-        req_hash = "a" * 64
-    cur.execute(
-        "INSERT INTO app.operations "
-        "(id, effective_org_id, command_type, actor, resource_path, "
-        "host_context, versions, request_hash, provider_references, "
-        "confirmation_mode, idempotency_key_hash, state) "
-        "VALUES (%s, 'platform', 'inbound.receipt.recorded', 'test', "
-        "'[\"ds:test\"]'::jsonb, '{}'::jsonb, '{}'::jsonb, %s, "
-        "'{}'::jsonb, 'server', %s, 'pending')",
-        (op_id, req_hash, ik_hash),
-    )
+# NOTE ON WHY THESE FOUR TESTS CHANGED SHAPE (2026-07-31).
+#
+# They had never executed. They requested a fixture named `pg_conn` that was
+# defined in three places, none visible from `tests/core/`, so every run ended
+# in `ERROR ... fixture 'pg_conn' not found` whether or not a PostgreSQL was
+# available (recorded as AI-93). `tests/core/conftest.py` now provides it.
+#
+# Once they finally ran, they failed -- on their own fixtures, not on the code
+# they were meant to guard. Three literals had never met a database:
+#
+#   * `effective_org_id='platform'`, which is not a row in app.organizations;
+#   * `idempotency_key_hash = "g" * 64`, past 'f' and so not hex, rejected by
+#     the column CHECK;
+#   * a `datastream_id` of `ds-test-rcpt-<ulid>` existing in no table, while
+#     inbound_receipts.datastream_id carries a real FK.
+#
+# They now build actual referents through the shared `inbound_pg_scope` and
+# `insert_operation` fixtures. What they assert is unchanged -- immutability,
+# de-duplication, DELETE refusal, no raw-address column -- because those
+# assertions were right; only the ground under them was missing.
 
 
 def _insert_receipt(
@@ -680,13 +960,14 @@ def _insert_receipt(
     cur.execute(
         "INSERT INTO app.inbound_receipts "
         "(id, datastream_id, channel, provider_event_id, "
-        "recipient_hash, attachment_count, state, operation_id) "
-        "VALUES (%s, %s, 'email', %s, %s, 0, %s, %s)",
+        "recipient_hash, receipt_fingerprint, attachment_count, state, operation_id) "
+        "VALUES (%s, %s, 'email', %s, %s, %s, 0, %s, %s)",
         (
             receipt_id,
             datastream_id,
             provider_event_id,
             recipient_hash,
+            _FAKE_RECEIPT_FINGERPRINT,
             state,
             op_id,
         ),
@@ -694,14 +975,13 @@ def _insert_receipt(
 
 
 @pytest.mark.live_pg
-def test_live_pg_unique_dedup_constraint(pg_conn):
+def test_live_pg_unique_dedup_constraint(pg_conn, inbound_pg_scope, insert_operation):
     """Live-PG: UNIQUE (datastream_id, provider_event_id) prevents double-record."""
     import ulid as _ulid
 
     with pg_conn.cursor() as cur:
-        ds_id = f"ds-test-rcpt-{_ulid.ULID()}"
-        op_id = f"op_{_ulid.ULID()}"
-        _insert_op(cur, op_id, "a" * 64)
+        ds_id = inbound_pg_scope["datastream_id"]
+        op_id = insert_operation("inbound.receipt.recorded")
 
         rx_id = f"inbrx_{_ulid.ULID()}"
         event_id = f"evt-{_ulid.ULID()}"
@@ -715,8 +995,7 @@ def test_live_pg_unique_dedup_constraint(pg_conn):
         pg_conn.commit()
 
         # Second INSERT with same (datastream_id, provider_event_id) must fail.
-        op_id2 = f"op_{_ulid.ULID()}"
-        _insert_op(cur, op_id2, "b" * 64, req_hash="c" * 64)
+        op_id2 = insert_operation("inbound.receipt.recorded")
         rx_id2 = f"inbrx_{_ulid.ULID()}"
         try:
             _insert_receipt(
@@ -736,14 +1015,15 @@ def test_live_pg_unique_dedup_constraint(pg_conn):
 
 
 @pytest.mark.live_pg
-def test_live_pg_immutability_trigger_blocks_provider_event_id_update(pg_conn):
+def test_live_pg_immutability_trigger_blocks_provider_event_id_update(
+    pg_conn, inbound_pg_scope, insert_operation
+):
     """Live-PG: protect_inbound_receipt blocks updating frozen column provider_event_id."""
     import ulid as _ulid
 
     with pg_conn.cursor() as cur:
-        ds_id = f"ds-test-immut-rx-{_ulid.ULID()}"
-        op_id = f"op_{_ulid.ULID()}"
-        _insert_op(cur, op_id, "d" * 64, req_hash="e" * 64)
+        ds_id = inbound_pg_scope["datastream_id"]
+        op_id = insert_operation("inbound.receipt.recorded")
 
         rx_id = f"inbrx_{_ulid.ULID()}"
         event_id = f"evt-immut-{_ulid.ULID()}"
@@ -775,14 +1055,13 @@ def test_live_pg_immutability_trigger_blocks_provider_event_id_update(pg_conn):
 
 
 @pytest.mark.live_pg
-def test_live_pg_delete_forbidden(pg_conn):
+def test_live_pg_delete_forbidden(pg_conn, inbound_pg_scope, insert_operation):
     """Live-PG: DELETE on inbound_receipts is forbidden by the trigger."""
     import ulid as _ulid
 
     with pg_conn.cursor() as cur:
-        ds_id = f"ds-test-del-rx-{_ulid.ULID()}"
-        op_id = f"op_{_ulid.ULID()}"
-        _insert_op(cur, op_id, "f" * 64, req_hash="g" * 64)
+        ds_id = inbound_pg_scope["datastream_id"]
+        op_id = insert_operation("inbound.receipt.recorded")
 
         rx_id = f"inbrx_{_ulid.ULID()}"
         event_id = f"evt-del-{_ulid.ULID()}"

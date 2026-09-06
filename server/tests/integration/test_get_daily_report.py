@@ -9,7 +9,7 @@ Covers:
   T7.3 — summary <=30 lines, no raw JSON, structuredContent shape, _meta.ui.resourceUri
   T7.4 — tool named exactly "get_daily_report" (no module prefix)
   T7.5 — health tool still responds (Story 1.1 regression)
-  T7.6 — list_modules tool still responds (Story 1.3 regression)
+  T7.6 — list_connectors tool still responds (Story 1.3 regression)
   Story 2.5 AC8 — auth_expired alert in envelope when revoked connection
   Story 2.5 AC5 — stale_since populated when stale connection
   Story 2.5 no-op — Epic 1 backward compat when no connection_ref exists
@@ -23,6 +23,7 @@ from datetime import date, datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
+from core import confidence as confidence_module
 from core.main import mcp
 from fastmcp.client import Client, FastMCPTransport
 
@@ -139,15 +140,38 @@ async def test_get_daily_report_structured_content_schema():
     assert isinstance(meta["alerts"], list), "meta.alerts must be a list"
 
     data = envelope["data"]
-    assert "rows" in data, "data.rows must be present"
-    assert len(data["rows"]) == len(fixture_rows), (
-        f"data.rows length {len(data['rows'])} != fixture {len(fixture_rows)}"
+    # Story 50.6 -- UPDATED, not weakened. `data.rows` used to be the full dataset
+    # in the MODEL-visible channel; `visualization-and-rendering.md` requires the
+    # opposite. What stays here is a stated descriptor carrying the EXACT row
+    # count, so the model-visible payload can never read as a complete dataset
+    # that is really a truncated one; the dataset itself travels whole in `_meta`.
+    assert "rows" in data, "data.rows must state what was routed"
+    descriptor = data["rows"]
+    assert descriptor["withheld"] == "moved_to_app_channel", descriptor
+    assert descriptor["row_count"] == len(fixture_rows), (
+        f"stated row_count {descriptor['row_count']} != fixture {len(fixture_rows)}"
+    )
+
+    # And the dataset really is there, whole, on the app channel -- the two halves
+    # of one envelope, which is what makes this a split rather than a loss.
+    app_meta = getattr(result, "meta", None) or getattr(result, "_meta", None)
+    assert app_meta is not None, "_meta must carry the routed dataset"
+    routed = app_meta["toorow.app_payload"]["rows"]
+    assert len(routed) == len(fixture_rows), (
+        f"routed rows {len(routed)} != fixture {len(fixture_rows)}"
     )
 
 
 @pytest.mark.anyio
-async def test_get_daily_report_meta_ui_resource_uri():
-    """Tool result must carry _meta.ui.resourceUri = 'ui://core/daily-report' (Story 1.6 AC8)."""
+async def test_get_daily_report_meta_carries_app_data_and_no_widget():
+    """Story 50.6 -- INVERTED from "must carry _meta.ui.resourceUri" (Story 1.6 AC8).
+
+    A data tool no longer advertises a widget (`visualization-and-rendering.md`,
+    "Tool split"). `_meta` is still present and still propagates -- that half of
+    the original test is exactly what Story 50.6 depends on -- but it now carries
+    the APP DATA the model-channel split routed out of `structuredContent`, not a
+    resource advertisement.
+    """
     with patch("core.main.warehouse.query_daily_report", return_value=[]):
         async with Client(FastMCPTransport(mcp)) as client:
             result = await client.call_tool(
@@ -164,9 +188,11 @@ async def test_get_daily_report_meta_ui_resource_uri():
     # review-1-5 F-03: unconditional — a regression in _meta propagation must
     # fail loudly, not skip the assertion.
     assert meta is not None, "_meta must propagate to the client result (AC4)"
-    assert meta.get("ui", {}).get("resourceUri") == "ui://core/daily-report", (
-        f"Expected ui://core/daily-report, got: {meta}"
+    assert meta.get("ui") is None, (
+        f"a data tool must not advertise a widget resource; got: {meta}"
     )
+    # The channel is alive and carries the routed dataset under ONE namespaced key.
+    assert "toorow.app_payload" in meta, f"app payload missing from _meta: {meta}"
 
 
 # ---------------------------------------------------------------------------
@@ -205,19 +231,35 @@ async def test_health_tool_regression():
 
 
 # ---------------------------------------------------------------------------
-# T7.6 — list_modules tool regression (Story 1.3)
+# T7.6 — list_connectors tool regression (Story 1.3)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.anyio
-async def test_list_modules_tool_regression():
-    """list_modules tool must still respond after Story 1.5 changes (Story 1.3 regression)."""
+async def test_list_connectors_tool_regression():
+    """list_connectors tool must still respond after Story 1.5 changes (Story 1.3 regression)."""
     async with Client(FastMCPTransport(mcp)) as client:
-        result = await client.call_tool("list_modules", {})
+        result = await client.call_tool("list_connectors", {})
 
-    assert not result.is_error, f"list_modules returned error: {result}"
+    assert not result.is_error, f"list_connectors returned error: {result}"
     payload = result.structured_content or {}
     data = payload.get("data", payload)
-    assert "modules" in data, f"Expected 'modules' in list_modules response: {data}"
+    # The key is `connectors`: Connector is the canonical noun and Module was
+    # retired (docs/product-architecture/glossary.md). And since Story 50.6 the
+    # list itself rides the APP channel, leaving a stated descriptor behind --
+    # so a regression check that only looked for a key name would pass on an
+    # empty answer. Assert BOTH: the descriptor is honest about how much moved,
+    # and the app channel really carries that many connectors.
+    listed = data.get("connectors")
+    assert listed is not None, f"Expected 'connectors' in list_connectors response: {data}"
+
+    from core.model_channel import APP_PAYLOAD_META_KEY, WITHHELD_MARKER
+
+    if isinstance(listed, dict) and listed.get("withheld") == WITHHELD_MARKER:
+        listed = ((result.meta or {}).get(APP_PAYLOAD_META_KEY) or {}).get("connectors")
+    assert isinstance(listed, list) and listed, (
+        f"list_connectors answered with no connectors at all: {data}"
+    )
+    assert data.get("count") == len(listed)
 
 
 # ---------------------------------------------------------------------------
@@ -253,14 +295,62 @@ _FAKE_LAST_FETCHED = datetime(2026, 7, 9, 12, 0, 0, tzinfo=timezone.utc)
 
 
 def _make_health_db(health_row: tuple | None):
-    """Return a fake get_connection yielding a connection with one health row.
+    """Return a fake get_connection that answers the HEALTH query, and only it.
 
     health_row: (status, last_fetched_at, conn_created_at) or None if no connection_ref.
+
+    Two things this fake got wrong, both fixed here, both worth stating because
+    they are the reason five tests in this file were red.
+
+    1. It only implemented ``fetchone()``. Story 53.3 / CAV-04 (`2d9c5391`)
+       deliberately changed `core.health_enrichment` from reading ONE row --
+       the organization's oldest credential, which may have contributed nothing
+       to the figures -- to reading EVERY contributing connection and letting the
+       worst one decide. That read is `fetchall()`. A fake without it made the
+       enrichment swallow an AttributeError and no-op, so the alert the test
+       asserted never appeared.
+
+    2. It answered EVERY query with the health row. `get_daily_report` also
+       resolves org branding through `core.db.get_connection`, and that query
+       selects five columns; handed a three-column health row it raised "not
+       enough values to unpack (expected 5, got 3)" straight out of the tool.
+       (`core.branding.resolve_org_branding` should never have been able to do
+       that -- its contract is "never raised" -- and it no longer can. But a fake
+       that answers questions it was not asked is a polluted instrument: it
+       cannot tell a product defect from its own noise.) So this one dispatches
+       on the SQL and returns nothing for anything that is not the health read.
+
+    3. IT IGNORED THE `WHERE` CLAUSE, and that made every test below vacuous.
+       Measured on the second pass of story 53.3: replacing the scope predicate
+       with `WHERE (%s IS NOT NULL OR TRUE)` -- which makes the report read EVERY
+       organization's connections -- left the file at its exact baseline, and so
+       did deleting `AND r.provider = ANY(%s)`, the very filter the story was
+       written to add. A fake that answers on `"connection_health" in statement`
+       says only "some health query was typed".
+
+       A double cannot evaluate SQL, so it cannot assert the ANSWER. It can
+       assert the QUESTION, and that is what it now does: the health read must
+       carry the governed project chain and both window bounds, or the fake
+       raises. Scope is a property of the statement, which is exactly the kind of
+       property a double is entitled to check. The DATA semantics -- project A
+       does not inherit project B's revoked credential -- are proven against a
+       real database in `test_health_scope_pg.py`, because only a database can
+       prove them.
     """
+
+    #: Every fragment the health read must contain to be scoped. Each one is a
+    #: separate mutation that used to cost nothing.
+    required_scope_fragments = (
+        "app.pull_jobs",        # the governed chain, not `connection_ref.owner_org_id`
+        "app.datastreams",      # ... through the Datastream, which carries the project
+        "ds.project_id = %s",   # THIS project
+        "pj.date_from <= %s",   # THIS window (start)
+        "pj.date_to >= %s",     # THIS window (end)
+    )
 
     class FakeCursor:
         def __init__(self):
-            self._row = health_row
+            self._rows: list[tuple] = []
 
         def __enter__(self):
             return self
@@ -269,10 +359,23 @@ def _make_health_db(health_row: tuple | None):
             pass
 
         def execute(self, sql, params=None):
-            pass
+            statement = sql if isinstance(sql, str) else str(sql)
+            is_health_read = "connection_health" in statement
+            if is_health_read:
+                missing = [f for f in required_scope_fragments if f not in statement]
+                assert not missing, (
+                    "the connection-health read lost its scope: "
+                    f"{missing} absent from the statement. A health verdict that "
+                    "is not bound to this project and this window describes "
+                    "someone else's connection.\n" + statement
+                )
+            self._rows = [health_row] if (is_health_read and health_row is not None) else []
 
         def fetchone(self):
-            return self._row
+            return self._rows[0] if self._rows else None
+
+        def fetchall(self):
+            return list(self._rows)
 
     class FakeConn:
         def cursor(self):
@@ -468,6 +571,188 @@ async def test_get_daily_report_db_unreachable_is_no_op():
     assert envelope is not None
     assert "meta" in envelope
     assert "data" in envelope
+
+
+# ---------------------------------------------------------------------------
+# Story 53.3, second pass: the health read is bound to a project and a window
+#
+# These assert the SQL and its parameters, not the answer. The answer needs a
+# database and is proven in `tests/integration/test_health_scope_pg.py`. What is
+# provable here -- and what nothing proved before -- is that the scope clauses
+# are still in the statement and that the values bound to them are the report's
+# own project and dates.
+# ---------------------------------------------------------------------------
+
+
+def _capturing_db(health_row: tuple | None):
+    """A fake connection that records every statement and its parameters."""
+    captured: list[tuple[str, tuple | None]] = []
+
+    class FakeCursor:
+        def __init__(self):
+            self._rows: list[tuple] = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def execute(self, sql, params=None):
+            statement = sql if isinstance(sql, str) else str(sql)
+            captured.append((statement, params))
+            is_health_read = "connection_health" in statement
+            self._rows = [health_row] if (is_health_read and health_row is not None) else []
+
+        def fetchone(self):
+            return self._rows[0] if self._rows else None
+
+        def fetchall(self):
+            return list(self._rows)
+
+    class FakeConn:
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            pass
+
+        def close(self):
+            pass
+
+    @contextmanager
+    def _fake_get_connection():
+        yield FakeConn()
+
+    return _fake_get_connection, captured
+
+
+def _health_reads(captured):
+    return [(sql, params) for sql, params in captured if "connection_health" in sql]
+
+
+@pytest.mark.anyio
+async def test_health_read_binds_this_project_and_this_window():
+    """The parameters carry the report's project and its two dates -- not the org.
+
+    The rejected version filtered on
+    `r.owner_org_id = (SELECT org_id FROM app.projects WHERE id = %s)`, so the
+    only project-shaped value in the query was used to find the ORGANIZATION, and
+    no date was bound at all. Both facts are visible in the parameter tuple.
+    """
+    fixture_rows = _make_fixture_rows(7)
+    db, captured = _capturing_db(("ok", _FAKE_LAST_FETCHED, None))
+
+    with patch("core.main.warehouse.query_daily_report", return_value=fixture_rows), patch(
+        "core.db.get_connection", new=db
+    ):
+        async with Client(FastMCPTransport(mcp)) as client:
+            result = await client.call_tool(
+                "get_daily_report",
+                {
+                    "project_id": "default",
+                    "date_range": {"start": "2026-01-01", "end": "2026-01-07"},
+                    "connectors": ["my-connector"],
+                },
+            )
+
+    assert not result.is_error, f"Tool returned error: {result}"
+    reads = _health_reads(captured)
+    assert reads, "no connection-health read was issued at all"
+    for statement, params in reads:
+        assert "owner_org_id" not in statement, (
+            "the health read is org-scoped again -- one project's badge will "
+            f"describe another's credential:\n{statement}"
+        )
+        assert params is not None
+        assert params[0] == "default", f"project not bound: {params!r}"
+        assert "2026-01-07" in params, f"window end not bound: {params!r}"
+        assert "2026-01-01" in params, f"window start not bound: {params!r}"
+
+
+@pytest.mark.anyio
+async def test_health_read_keeps_the_contributing_provider_filter():
+    """`AND r.provider = ANY(%s)` is the story's own addition and nothing tested it.
+
+    Deleting it left the suite at its baseline. It is what stops a revoked
+    credential for a connector that contributed NOTHING from putting an
+    `auth_expired` banner on a report built from another one.
+    """
+    fixture_rows = _make_fixture_rows(7)
+    db, captured = _capturing_db(("ok", _FAKE_LAST_FETCHED, None))
+
+    with patch("core.main.warehouse.query_daily_report", return_value=fixture_rows), patch(
+        "core.db.get_connection", new=db
+    ):
+        async with Client(FastMCPTransport(mcp)) as client:
+            await client.call_tool(
+                "get_daily_report",
+                {
+                    "project_id": "default",
+                    "date_range": {"start": "2026-01-01", "end": "2026-01-07"},
+                    "connectors": ["my-connector"],
+                },
+            )
+
+    reads = _health_reads(captured)
+    assert reads, "no connection-health read was issued at all"
+    statement, params = reads[0]
+    assert "r.provider = ANY(%s)" in statement, (
+        f"the contributing-provider filter is gone:\n{statement}"
+    )
+    assert ["my-connector"] in params, (
+        f"the contributors from meta.provenance were not bound: {params!r}"
+    )
+
+
+@pytest.mark.anyio
+async def test_one_envelope_carries_one_answer_about_freshness():
+    """`stale_since` and `meta.confidence.freshness` are the same question, twice.
+
+    They are computed two lines apart in `core.main` and used to disagree: the
+    WORST connection decided the first, `max(loaded_at)` -- the NEWEST load -- the
+    second. So a report could say "this source has been frozen since June" and
+    "freshness: 1.0" in one payload, and nothing in the suite compared them.
+
+    This asserts the hand-off itself, at the seam. The arbitration it enforces is
+    unit-tested in `tests/core/test_confidence_freshness_arbitrage.py`; what only
+    this test can prove is that `get_daily_report` actually passes the verdict on.
+    """
+    fixture_rows = _make_fixture_rows(7)
+    frozen_since = datetime(2026, 1, 2, 6, 0, 0, tzinfo=timezone.utc)
+    stale_db = _make_health_db(("stale", frozen_since, None))
+
+    captured: dict = {}
+    real_compute = confidence_module.compute_confidence
+
+    def _spy(*args, **kwargs):
+        captured.update(kwargs)
+        return real_compute(*args, **kwargs)
+
+    with patch("core.main.warehouse.query_daily_report", return_value=fixture_rows), patch(
+        "core.db.get_connection", new=stale_db
+    ), patch.object(confidence_module, "compute_confidence", new=_spy):
+        async with Client(FastMCPTransport(mcp)) as client:
+            result = await client.call_tool(
+                "get_daily_report",
+                {
+                    "project_id": "default",
+                    "date_range": {"start": "2026-01-01", "end": "2026-01-07"},
+                    "connectors": ["my-connector"],
+                },
+            )
+
+    assert not result.is_error, f"Tool returned error: {result}"
+    envelope = result.structured_content
+    stale_since = envelope["meta"]["freshness"].get("stale_since")
+    assert stale_since is not None, "the fixture no longer produces a stale verdict"
+
+    assert captured.get("stale_since") == stale_since, (
+        "the health verdict on this envelope never reached the confidence term: "
+        f"{captured.get('stale_since')!r} != {stale_since!r}"
+    )
+    assert captured.get("date_to") == "2026-01-07"
+    assert captured.get("date_from") == "2026-01-01"
 
 
 # ---------------------------------------------------------------------------

@@ -1,60 +1,62 @@
 ---
 title: Semantic Layer & Canonical Marts
-description: Architecture of toorow's canonical daily fact surface, MDM semantic engine, geographic & currency harmonization, dbt ratio views, and DuckDB read-through cache.
+description: How toorow turns raw landings into governed indicators — Master Data vocabulary, multi-source reconciliation, currency conversion at read, additive facts and non-additive ratio views.
 ---
 
-The **Semantic Layer** is toorow's central data modeling boundary. It transforms raw ingestion landings into unified, standardized, governed business indicators available to AI agents and the Admin Console.
+The **Semantic Layer** is where raw ingestion becomes a number someone can defend. It carries the vocabulary a column may be bound to, the rules that decide what happens when two sources report the same thing, and the boundary between what is stored and what is computed.
 
-The semantic engine has expanded significantly over recent epics — from a basic fact mart to a full **Metric Data Master (MDM)**, multi-source reconciliation, geographic posture governance, and multi-currency harmonization.
+<Note>
+This page was rewritten on 2026-08-15 against the code. The previous version described a system that does not exist here: it called `mdm_*` "Metric Data Master" (it is **Master Data**), named a canonical metric `spend` (it is `cost`), and credited a live Frankfurter FX API that nothing in the server calls. If you read it before that date, re-read the two sections below.
+</Note>
 
 ---
 
-## Data Lineage & Model Flow
+## Data lineage
 
 ```mermaid
 flowchart TD
-    subgraph raw["Raw Landings"]
+    subgraph raw["Raw landings"]
         A1["raw_google_analytics"]
         A2["raw_meta_ads"]
         A3["raw_shopify"]
     end
 
-    subgraph staging["Staging Models (QUALIFY dedup)"]
+    subgraph staging["Staging (QUALIFY dedup, source currency preserved)"]
         B1["stg_ga4_daily"]
         B2["stg_meta_ads_daily"]
-        B3["stg_shopify_daily"]
+        B3["stg_shopify_orders_daily"]
     end
 
-    subgraph mdm["Metric Data Master (MDM)"]
-        C0["dim_metric — canonical definitions"]
+    subgraph mdm["Master Data & metric semantics"]
+        C0["dim_metric — the delivered metric catalogue"]
         C1["overlap_groups — cross-source reconciliation"]
-        C2["source_metric_mappings — connector field bridge"]
+        C2["source_metric_mappings — connector field to canonical target"]
     end
 
-    subgraph marts["Canonical Marts"]
-        D1["fact_daily_kpi — Additive Metrics Only"]
+    subgraph marts["Canonical marts"]
+        D1["fact_daily_kpi — additive metrics only"]
     end
 
-    subgraph semantic["dbt Semantic Views"]
+    subgraph semantic["dbt semantic views"]
         E1["semantic_ctr"]
         E2["semantic_cpa"]
         E3["semantic_roas"]
         E4["semantic_avg_position"]
     end
 
-    subgraph serve["Serving Layer"]
-        F1["DuckDB Read-Through Cache"]
-        F2["FastMCP Server — AI Agents"]
+    subgraph serve["Serving"]
+        F1["DuckDB read-through cache (optional)"]
+        F2["FastMCP server — AI agents"]
     end
 
     A1 -->|"QUALIFY pull_id DESC"| B1
     A2 -->|"QUALIFY pull_id DESC"| B2
     A3 -->|"QUALIFY pull_id DESC"| B3
 
-    B1 & B2 & B3 -->|"UNION ALL + MDM Cascade"| D1
+    B1 & B2 & B3 -->|"UNION ALL + reconciliation"| D1
     C0 & C1 & C2 --> D1
 
-    D1 -->|"On-The-Fly Ratios"| E1 & E2 & E3 & E4
+    D1 -->|"computed at read"| E1 & E2 & E3 & E4
 
     D1 & E1 & E2 & E3 & E4 --> F1
     F1 --> F2
@@ -62,124 +64,123 @@ flowchart TD
 
 ---
 
-## 1. The Data Model (MDM) — Metric Dictionary
+## 1. The vocabulary a column binds to
 
-The **Data Model** is the canonical interface between raw source fields and the unified semantic metric space. Every connector field is mapped to a canonical target metric through a 3-layer structure:
+**MDM here means Master Data**, not "metric data". Three things carry meaning, and they are not interchangeable:
 
-- **`dim_metric`** — Canonical metric definitions: name, aggregation rule, additive flag, ratio numerator/denominator.
-- **`overlap_groups` + `overlap_group_members`** — Multi-source reconciliation topology: which connectors emit the same metric and how their overlap is resolved (`SUM`, `PRIORITY`, `DEDUP_ID`, `KEEP_SEPARATE`).
-- **`source_metric_mappings`** — The bridge between a connector's physical field ID and the MDM canonical definition.
+- **Canonical Field** (`app.mdm_canonical_fields`) — a name, a kind (`metric` or `dimension`), a value type, and an aggregation or an explicit non-additivity. It is the closed enumeration every mapped column is validated against. It carries no formula.
+- **Common key** (`app.mdm_common_keys`) — an ordered, immutable, versioned list of canonical *dimensions* shared by several Datastreams. `Day + Campaign` says two sources speak about the same day and the same campaign. It does **not** say one row of one meets one row of the other — that sentence belongs to a Semantic View relationship, and only a relationship pinning an exact key version is executable.
+- **Semantic Concept** (`app.semantic_concepts`) — a governed, versioned business definition carrying an expression and an additivity class.
 
-### Admin Console: Data Model View
-
-![Data Model — KPI dictionary showing metrics, dimensions, and attribution per datastream](/images/data-model.png)
-
-The Data Model screen surfaces the live canonical field registry. Each field shows its:
-- **Type**: Metric (blue dot) or Dimension (grey circle)
-- **Aggregation Rule** (`sum`, `average`, `count`, `currency`)
-- **"Fed by" panel**: Which active datastreams feed this target field via their configured mappings
-
-![Data Model detail — "Clics" metric drawer showing fed-by datastreams and type information](/images/data-model-detail.png)
+`dbt/seeds/dim_metric.csv` is the delivered metric catalogue that the warehouse reads: name, additive flag, aggregation rule, and — for ratios — the numerator and denominator. `source_metric_mappings` bridges a connector's physical field to a canonical target; `overlap_groups` declares what happens when two connectors report the same one.
 
 ---
 
-## 2. Multi-Source Reconciliation Engine
+## 2. Multi-source reconciliation
 
-When multiple connectors emit the **same metric** (e.g., GA4 and Meta Ads both reporting conversions), the reconciliation engine resolves the overlap according to declared rules:
+When several connectors emit the same metric, the overlap is resolved by a declared rule, never by a default:
 
-| Method | Description | Typical Use Case |
+| Method | What it does | Typical use |
 |---|---|---|
-| `PRIORITY` | Highest-priority connector wins. Falls back to next in priority list. | When one source is authoritative (e.g., GA4 for web conversions). |
-| `SUM` | Sum values across all sources. | When sources are additive and non-overlapping. |
-| `DEDUP_ID` | Deduplicate based on a shared event ID. | When same events are reported across sources. |
-| `KEEP_SEPARATE` | Keep metrics separate per connector, no merge. | Costs (Google Ads spend ≠ Meta Ads spend). |
+| `PRIORITY` | The highest-priority source wins, falling back down the list. | One source is authoritative for the fact. |
+| `SUM` | Adds across sources. | Sources are additive and non-overlapping. |
+| `DEDUP_ID` | Deduplicates on a shared event id. | The same events arrive twice. |
+| `KEEP_SEPARATE` | No merge; each source keeps its own number. | Media cost per platform. |
 
-Resolution is scoped hierarchically: **PROJECT** overrides **ORG** overrides **PLATFORM** defaults. Every mutation writes an append-only audit row in the same transaction.
-
----
-
-## 3. Geographic Posture & Market Semantics
-
-Markets are defined by **the customer's business scope**, not by language or connector geography defaults. The geographic semantics module (`server/core/geographic_semantics.py`) enforces this:
-
-- **Geographic Posture**: Each project declares a `geographic_posture` — single-market, multi-market, or global.
-- **Market Dimensions**: Geography rolls up to `country` (ISO 3166-1) and optionally `market_group` (commercial region clusters).
-- **Language is not a dimension**: Language is a content attribute, not a market dimension. Connectors reporting by language are normalized before mart write.
+Resolution is scoped **PROJECT over ORG over PLATFORM**. Without a rule, summing across sources stays refused — the absence of a declaration is never read as permission.
 
 ---
 
-## 4. Multi-Currency Harmonization (FX Engine)
+## 3. Money: the source currency is preserved, conversion happens once, at read
 
-All monetary metrics (`spend`, `revenue`, `cost`) are harmonized to the project's declared target currency via the live FX engine (`server/core/money.py`, `server/core/fx_frankfurter.py`):
+This is the section the old page got wrong in a way that matters.
 
-- **FX at Read** (not at staging): Currency conversion is applied at query time via the Frankfurter FX API rates, avoiding permanent data mutation and enabling retroactive recalculation when the target currency changes.
-- **Money-in-Micros**: Monetary values are stored as integer micros internally to avoid floating-point rounding drift. Connectors declare monetary fields in their manifest for adapter-level normalization.
-- **Cross-Currency Refusal**: Queries attempting to mix unconverted currencies across sources are refused with a deterministic repair action, not silently summed.
+- **Staging preserves the amount as the source reported it**, beside the currency it was reported in (`cost_source_value`, `cost_source_currency`). No conversion happens there, so a target-currency change never requires re-ingesting anything.
+- **Conversion happens once, at read**, and it carries its provenance: the rate, the date the rate was **quoted**, and the source of that rate.
+- **Rates come from a seeded table** (`dbt/seeds/fx_rates.csv`, tagged `fx_source = 'seed'`, `fx_tier = 'fixed'`) — not from a live currency API. Refreshing them is a deliberate build step someone reviews. A currency with no rate leaves the converted value `NULL` and a gap code saying why, rather than letting a source-currency amount be summed into a total that means nothing.
+- **A cross-currency total is refused, not guessed.** A sum mixing currencies without a conversion returns a named refusal with the repair, and a contribution whose currency the governed vocabulary does not carry is an explicit gap.
+- **Currencies come from one governed ISO 4217 vocabulary** (156 selectable tender currencies), served to every selector by `/api/reference/currencies`. It carries each currency's minor unit, so rounding is data rather than a guess.
 
 ---
 
-## 5. Canonical Daily Fact Surface (`fact_daily_kpi`)
+## 4. Geography
 
-`fact_daily_kpi` is the single canonical additive fact table. All ingestion channels converge here after MDM mapping and geographic/currency harmonization.
+A market is defined by the customer's business scope, not by a connector's default or by a language. Geography rolls up to `country` (ISO 3166-1), and a **market** is a named group of countries that do not overlap.
 
-### Stored Additive Metrics Only
+**Language is not a market dimension.** It is three separate things — audience language, content language, targeting language — and they are never comparable to each other, let alone to a country.
 
-| Metric | `canonical_target` | Aggregation |
+---
+
+## 5. `fact_daily_kpi` — additive metrics only
+
+One canonical daily fact table, reached after mapping and reconciliation. The catalogue it is built from is `dbt/seeds/dim_metric.csv`; these are the wired additive targets:
+
+| Metric | Canonical name | Aggregation |
 |---|---|---|
 | Impressions | `impressions` | `sum` |
 | Clicks | `clicks` | `sum` |
-| Ad Spend | `spend` | `sum` (harmonized to project currency) |
+| Media cost | `cost` | `sum` |
 | Conversions | `conversions` | `sum` |
-| Revenue | `revenue` | `sum` (harmonized to project currency) |
-| Deployments | `deployments` | `count` |
-| Active Users | `active_users` | `sum` |
+| Revenue | `revenue` | `sum` |
+| Sessions | `sessions` | `sum` |
+| Active users | `active_users` | `sum` |
+
+The money metric is `cost`. There is no canonical `spend`.
 
 ---
 
-## 6. Non-Additive Ratio Views
+## 6. Ratios are computed, never stored
 
-Non-additive metrics are **never stored** in `fact_daily_kpi` (AD-4 invariant). They are calculated on-the-fly via dbt semantic views:
+A non-additive metric is never written into `fact_daily_kpi`. It is computed at read by a dbt view, always **sum-then-divide** — never divide-then-sum, which is how a ratio of ratios silently becomes a wrong number:
 
 | Metric | View | Formula |
 |---|---|---|
 | **CTR** | `semantic_ctr` | `SUM(clicks) / NULLIF(SUM(impressions), 0)` |
-| **CPA** | `semantic_cpa` | `SUM(spend) / NULLIF(SUM(conversions), 0)` |
-| **ROAS** | `semantic_roas` | `SUM(revenue) / NULLIF(SUM(spend), 0)` |
-| **Avg Position** | `semantic_avg_position` | `SUM(position × impressions) / NULLIF(SUM(impressions), 0)` *(Impression-Weighted)* |
+| **CPA** | `semantic_cpa` | `SUM(cost) / NULLIF(SUM(conversions), 0)` |
+| **ROAS** | `semantic_roas` | `SUM(revenue) / NULLIF(SUM(cost), 0)` |
+| **Average position** | `semantic_avg_position` | `SUM(position × impressions) / NULLIF(SUM(impressions), 0)` |
+
+**The catalogue and the view are kept in step by a gate.** `dbt/seeds/dim_metric.csv` declares each ratio's numerator and denominator; the view computes it. `make check-metric-formula-parity` fails the build if the two ever disagree — a CPA computed on clicks while the catalogue says conversions produces a plausible, wrong number on every screen at once.
 
 ---
 
-## 7. MCP App Widget: Live Semantic Output
+## 7. Where this is read and written in the console
 
-The semantic marts directly power the **MCP App GA Widget** — the interactive React UI served to AI agent hosts:
+The vocabulary lives in **Governance › Semantic Model**, one lens per object type: `Concepts`, `Semantic Views`, `Mapping Coverage`, `Value Tables`, `Cleanup Rules` and `Canonical Fields`. A canonical field is not a Concept, and they have separate lenses for that reason — one is the name a column binds to, the other is a versioned definition carrying a formula.
 
-![MCP App GA Widget — daily report with active users, sessions, conversions, and calendar heatmap](/images/widget-ga-report.png)
-
----
-
-## 8. Read-Through Cache (DuckDB)
-
-To deliver low-latency responses to AI agents without incurring BigQuery query costs, toorow includes an optional DuckDB read-through cache:
-
-- **Activation**: `TOOROW_CACHE_ENABLED=true`
-- **Ephemeral Snapshot**: Rolling window (default 30 days), strictly scoped per `project_id`.
-- **Automatic Rebuild**: After nightly ingestion or on-demand via admin API.
+Conflicts that need a decision — a field two sources report in different currencies, a metric with no declared aggregation — are arbitrated in **Governance › Controls & Quality › Conflicts**, and shown as coverage evidence in `Mapping Coverage`.
 
 ---
 
-## Next Steps & Cross-References
+## 8. Live semantic output in an MCP app
+
+The marts power the MCP app widgets served to agent hosts — the same numbers, rendered where the conversation happens:
+
+---
+
+## 9. Read-through cache (DuckDB, optional)
+
+To answer agents without paying for a warehouse query every time:
+
+- **Off by default**, enabled with `TOOROW_CACHE_ENABLED=true`.
+- **An ephemeral snapshot** over a rolling window, strictly scoped per `project_id`.
+- **Rebuilt** after ingestion or on demand. A stale or disabled cache says so rather than serving silence.
+
+---
+
+## Next steps
 
 <CardGroup cols={2}>
   <Card title="Data Quality Monitors" icon="shield-check" href="/data-quality">
-    Review automated DQ surveillance that guards ingestion into the semantic marts.
+    The surveillance that guards ingestion into these marts.
   </Card>
   <Card title="Anomaly Detection" icon="chart-line" href="/anomaly-detection-method">
-    Explore how semantic marts feed z-score baseline anomaly tracking.
+    How these marts feed baseline anomaly tracking.
   </Card>
   <Card title="MCP App Use Cases" icon="layer-group" href="/use-cases-library">
-    See how AI agents query semantic marts to render interactive UI widgets.
+    How agents query the marts to render interactive widgets.
   </Card>
   <Card title="Adding a Connector" icon="plug" href="/adding-a-connector">
-    Map new source fields to canonical semantic targets.
+    Mapping new source fields to canonical targets.
   </Card>
 </CardGroup>

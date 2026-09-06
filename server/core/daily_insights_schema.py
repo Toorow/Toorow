@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from datetime import date
 
@@ -40,6 +41,26 @@ SCHEMA_VERSION = "1"
 # Block types are the Epic 23 dataviz primitives (cards.py). The published-insight
 # schema references them; it does not define a second vocabulary.
 ALLOWED_BLOCK_TYPES = frozenset(
+    # "waterfall" WAS declared here and is not any more (AI-170). The comment it
+    # carried said Story 41.6 had added a `waterfall` resolver to
+    # `cards._BLOCK_RESOLVERS`; `git log -S'"waterfall"' -- server/core/cards.py`
+    # shows 41.6 doing the opposite, and its own message says so:
+    # `0bc6aded` "la carte Tax & Fees sur mesure est DEMONTEE au profit de la
+    # famille waterfall". The bespoke card was dismantled, the resolver went with
+    # it, and the waterfall became a GENERIC visual family of the shared render
+    # runtime -- `core/visualization_families.py::_WATERFALL`, `answer_contract`,
+    # and the conformance suite literally named `test_story_41_6_generic_
+    # waterfall_cutover`. Nothing was lost; this line was left behind.
+    #
+    # Leaving it declared was not a harmless trace: this vocabulary is what an
+    # agent may EMIT, so it advertised a block that no resolver can render. The
+    # trace of the remaining work lives in story 41.6 and in AI-143, not in a
+    # vocabulary entry that produces an unrenderable card.
+    #
+    # A tax waterfall as an ORDERING of rules -- which taxes apply, in which
+    # direction -- is a different object from this bridge FIGURE. It belongs to
+    # the "Ordered rule-set workbench" of `docs/product-architecture/governance.md`,
+    # and it is not a card block.
     {"kpi_row", "line", "bar", "gauge", "donut", "funnel", "table", "comment"}
 )
 
@@ -68,6 +89,161 @@ MAX_PAYLOAD_BYTES = 512 * 1024  # the final server-enriched published payload
 
 
 # ---------------------------------------------------------------------------
+# Evidence vocabulary (story 53.4). ONE place declares what a ref may name, and
+# the schema, the compiled pattern and the universe builder all read it, so a
+# kind can never be enforced in one and advertised in the other.
+# ---------------------------------------------------------------------------
+
+#: The kinds an evidence ref may name. Both are OBSERVATIONS the server measured
+#: for one project over one window.
+#:
+#: A CARD TEMPLATE IS DELIBERATELY NOT ONE OF THEM, and removing it is the point
+#: of this constant. `card:<template>` used to be a third kind, and it made the
+#: requirement satisfiable by TAUTOLOGY: gate 4 below already refuses any payload
+#: whose `card.template` is not in `available_templates`, and the universe was
+#: built from those same ids -- so an insight that cited nothing but the template
+#: it renders cleared the evidence gate while pointing at no datum at all. A
+#: published claim must point at a MEASUREMENT, not at the form that displays it:
+#: a template is neither "produced for this project" nor "for this period", which
+#: is exactly what AC1 of story 53.4 requires of a ref.
+EVIDENCE_KINDS: tuple[str, ...] = ("metric", "dimension")
+
+#: The shape of an evidence ref, as a pattern string. Declared in
+#: `PUBLISHED_INSIGHT_SCHEMA` (what the agent READS) and compiled into
+#: `_EVIDENCE_REF` (what the validator ENFORCES) from this single source.
+EVIDENCE_REF_PATTERN = r"^(" + "|".join(EVIDENCE_KINDS) + r"):.+$"
+
+
+def evidence_universe(
+    *,
+    available_metrics: set[str],
+    available_dimensions: set[str],
+) -> set[str]:
+    """The refs that RESOLVE, built from what the server measured. Pure.
+
+    The namespace of an evidence ref belongs to this contract module, not to a
+    call site: the enforcement (`_EVIDENCE_REF`), the declaration
+    (`PUBLISHED_INSIGHT_SCHEMA`) and the construction (here) then cannot drift
+    apart. `core.main._resolve_evidence_refs` is a thin wrapper over this.
+
+    EMPTY IS POSSIBLE AND FAILS CLOSED, WITH NO EXCEPTION LEFT. A warehouse
+    hiccup makes the caller's availability empty, so this returns an empty
+    universe and every publication is refused. The previous version of this rule
+    claimed exactly that while a third kind (`card:`) was fed from a catalog
+    helper that falls back to the PLATFORM DEFAULTS on failure -- so two thirds
+    of the universe collapsed on an outage and one third stayed full. A comment
+    that swears a guard the code does not keep is worse than no comment.
+    """
+
+    return {f"metric:{name}" for name in available_metrics} | {
+        f"dimension:{name}" for name in available_dimensions
+    }
+
+
+# ---------------------------------------------------------------------------
+# Provenance of the envelope (story 53.4, AC5 / AC6)
+# ---------------------------------------------------------------------------
+
+#: WHERE THE CONFIDENCE A SURFACE READS COMES FROM. It used to be
+#: `model_declared`: `insight.confidence` was chosen by the model that also wrote
+#: the prose and checked for nothing but enum membership, and story 53.4 could
+#: only make that visible. `proactive-assertions.md` ("Incomplete if": *a
+#: confidence level is declared by the author of the claim rather than derived*)
+#: asks for the derivation, and `core.insight_confidence` now performs it from
+#: the rows carrying the members the insight CITED, over the insight's own
+#: period. The word is a const in the schema, so a payload that still claims
+#: `model_declared` no longer validates.
+CONFIDENCE_PROVENANCE = "derived"
+
+#: Fields of the payload that are model-authored PROSE. No gate reads them.
+#: `insight.title` is on this list although AC6 names only the other three: it is
+#: 200 characters of model prose rendered as a headline, and a provenance block
+#: that omits it would understate exactly what it exists to disclose. The
+#: optional ones are reported only when the payload carries them.
+MODEL_AUTHORED_FIELDS: tuple[str, ...] = (
+    "insight.title",
+    "insight.summary",
+    "insight.whyItMatters",
+    "insight.recommendedAction",
+    "insight.limitations",
+)
+
+
+def authorship_block(payload: dict) -> dict:
+    """Derive the provenance envelope of one payload. Pure and deterministic.
+
+    STORY 53.4 -- CE QUI EST ECRIT ET CE QUI EST MESURE NE SE DEVINENT PAS.
+    `proactive-assertions.md:162` makes one thing mandatory for an insight
+    published without a human read: "the model-authored prose is **visibly
+    distinguishable** from cited server data". A surface cannot draw that
+    distinction from a payload that does not carry it, and maintaining its own
+    list of field names in a component is how the two drift.
+
+    Derived, never declared: an agent that submits its own `authorship` is
+    refused (`authorship_declared`), because provenance asserted by the author of
+    the prose is the same defect as confidence declared by it.
+
+    `declaredConfidence` IS THE MODEL'S OWN WORD, KEPT AND DEMOTED. It is not
+    dropped -- an author's own estimate of its claim is worth recording, and
+    silently deleting it would hide that the model said something -- but it is
+    carried here, under a name that says who wrote it, and NOTHING reads it as
+    the confidence of the insight. The reading a surface prints is
+    `derivedConfidence`, which this pure function cannot compute (it needs the
+    project's rows) and which `publish` attaches from
+    `core.insight_confidence.derive_insight_confidence`.
+    """
+
+    insight = payload.get("insight") if isinstance(payload.get("insight"), dict) else {}
+    # An empty `recommendedAction` or `limitations` is not model-authored prose:
+    # naming a field the reader will never see would make the block advisory
+    # rather than exact, and a surface that highlights an absent field is a
+    # surface that has to guess again.
+    authored = [field for field in MODEL_AUTHORED_FIELDS if insight.get(field.split(".", 1)[1])]
+    declared = insight.get("confidence")
+    return {
+        "modelAuthored": authored,
+        "confidence": CONFIDENCE_PROVENANCE,
+        "declaredConfidence": str(declared) if declared else None,
+        # ONE SHAPE, ALWAYS. The key exists before the measurement does, so a
+        # surface never has to tell "not measured yet" from "this build forgot to
+        # send it" -- and an agent that fabricates a value here fails the equality
+        # check in `_schema_shape` as `authorship_declared`.
+        "derivedConfidence": None,
+        "evidenceRefs": list(payload.get("evidenceRefs") or []),
+    }
+
+
+def authorship_of(payload: dict) -> dict:
+    """The provenance block ONE payload travels with, wherever it is projected.
+
+    Two read paths project a published insight: the Daily Insights routes
+    (`daily_insights_api._with_authorship`) and the Project Overview envelope
+    (`project_overview._query_daily_insights`). Both hand a reader
+    `insight.confidence` -- a word the MODEL declared, whose only check is enum
+    membership -- and only the first one said so. The Overview projected the bare
+    word and dropped the block this module exists to attach, which is exactly the
+    ambiguity story 53.4 removed on the other path.
+
+    One function, called by both, because a second copy of the rule is how one
+    surface keeps it and the other quietly stops. A payload persisted WITH its own
+    `authorship` is rendered as persisted; one written before story 53.4 gets the
+    derived block. Nothing is fabricated either way.
+
+    AND THAT IS WHY THE SERVER'S READING TRAVELS INSIDE THIS BLOCK. The derived
+    confidence needs the project's rows, which are gone by read time; it is
+    measured once at publication and persisted on the payload, so both read paths
+    get it here without a second measurement -- and a payload published before
+    the derivation existed carries `derivedConfidence: None`, which every surface
+    draws as `unmeasurable`. An old insight is not a low-confidence one.
+    """
+
+    stored = payload.get("authorship")
+    if isinstance(stored, dict):
+        return stored
+    return authorship_block(payload)
+
+
+# ---------------------------------------------------------------------------
 # JSON schema (draft-07 flavored dict; kept dependency-free / self-validated).
 # ---------------------------------------------------------------------------
 
@@ -76,7 +252,7 @@ PUBLISHED_INSIGHT_SCHEMA: dict = {
     "title": "toorow published daily insight",
     "type": "object",
     "additionalProperties": False,
-    "required": ["schemaVersion", "slot", "insight", "period", "card"],
+    "required": ["schemaVersion", "slot", "insight", "period", "card", "evidenceRefs"],
     "properties": {
         "schemaVersion": {"type": "string", "const": SCHEMA_VERSION},
         "slot": {"type": "integer", "minimum": 0, "maximum": MAX_INSIGHTS_PER_DAY - 1},
@@ -130,10 +306,84 @@ PUBLISHED_INSIGHT_SCHEMA: dict = {
                 },
             },
         },
-        "evidenceRefs": {"type": "array", "items": {"type": "string"}},
+        # STORY 53.4 -- une preuve a une FORME, sinon il n'y a rien contre quoi la
+        # resoudre. `kind:value` sur DEUX genres, tous deux mesures par le
+        # serveur pour CE projet et CETTE fenetre :
+        #   metric:<nom>      le serveur a mesure cette metrique sur cette fenetre
+        #   dimension:<nom>   ... cette dimension
+        # `card:<gabarit>` etait un troisieme genre et il est RETIRE : la gate 4
+        # exige deja que `card.template` soit dans `available_templates`, donc un
+        # insight qui ne citait que le gabarit qu'il rend satisfaisait la gate 5
+        # par tautologie -- une obligation qui ne demande rien. La preuve pointe
+        # une donnee, jamais la forme qui l'affiche.
+        # Le motif est verifie pour que la barriere puisse dire << forme
+        # inconnue >> avant de dire << ne resout pas >> : un ref malforme est un
+        # defaut d'ecriture, un ref bien forme qui ne resout pas est une
+        # affirmation sans appui. Les deux se refusent, pour des raisons
+        # differentes, et confondre les deux est ce qui rendait l'ancien message
+        # illisible.
+        "evidenceRefs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "pattern": EVIDENCE_REF_PATTERN},
+        },
         "sourceRefs": {"type": "array", "items": {"type": "string"}},
+        # SERVER-WRITTEN (story 53.4, AC5/AC6). Declared here so an enriched,
+        # persisted payload stays schema-valid and re-validatable; an agent that
+        # submits its own is refused, since provenance asserted by the author of
+        # the prose proves nothing. See `authorship_block`.
+        "authorship": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["modelAuthored", "confidence", "evidenceRefs"],
+            "properties": {
+                "modelAuthored": {"type": "array", "items": {"type": "string"}},
+                "confidence": {"type": "string", "const": CONFIDENCE_PROVENANCE},
+                # The model's own word, kept and DEMOTED (see `authorship_block`).
+                # Nothing reads it as the confidence of the insight.
+                "declaredConfidence": {"type": ["string", "null"]},
+                # The server's reading, attached by `publish` AFTER validation --
+                # like `frozenCard`, it comes from the warehouse and cannot be
+                # recomputed by the gate, so an agent that submits an
+                # `authorship` carrying it is refused as `authorship_declared`
+                # (the block it submits is compared for equality against the
+                # derived one, and this key is not in the derived one).
+                "derivedConfidence": {"type": ["object", "null"]},
+                "evidenceRefs": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+        # SERVER-WRITTEN too, and for a reason the epic stated in advance
+        # (`epic-35 §7`): "le payload JSONB contient l'insight editorial ET
+        # l'envelope de card figee [...] l'insight est un artefact metier durable,
+        # tandis que la galerie Rendus a une retention bornee". That retention is
+        # 30 days (`snapshots._DEFAULT_RETENTION_DAYS`) and the lineage column is
+        # `ON DELETE SET NULL` (migration 061), so without this an insight loses
+        # its CARD on day 31 and keeps only the model-authored prose no gate
+        # inspects -- the evidence purged, the unbacked claim surviving.
+        #
+        # A CARD, NOT A CHART: three parts, because that is what `get_card`
+        # produces and what §6 lists. `envelope` carries the figures, their
+        # provenance and the rendered comment; `widgetUri` says which widget draws
+        # them, and an envelope with no declared renderer is data rather than a
+        # card; `summary` is the model-channel reading -- the part an LLM
+        # transmits and adds to. Sub-shapes stay free: the envelope is AD-1's
+        # form, not this module's.
+        "frozenCard": {
+            "type": "object",
+            "properties": {
+                "envelope": {"type": "object"},
+                "widgetUri": {"type": ["string", "null"]},
+                "summary": {"type": ["string", "null"]},
+            },
+        },
     },
 }
+
+
+#: La forme d'un ref de preuve, compilee une fois, depuis le MEME motif que le
+#: schema declare : le schema le DIT a l'agent, cette constante le FAIT
+#: respecter, et les deux ne peuvent plus diverger.
+_EVIDENCE_REF = re.compile(EVIDENCE_REF_PATTERN)
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +409,29 @@ class ValidationResult:
 
 def _fail(code: str, message: str, field_path: str | None = None) -> ValidationResult:
     return ValidationResult(ok=False, reason_code=code, message=message, field_path=field_path)
+
+
+def enriched_payload_refusal(payload: dict) -> ValidationResult | None:
+    """Refuse an ENRICHED payload that outgrew the published-payload budget.
+
+    `validate_published_insight` has carried a `final_payload_bytes` parameter since
+    35.0 and no production caller ever passed one, so the 512 KB budget of §8 was a
+    gate that had never fired. It matters now: publication embeds the resolved card
+    envelope, which is the one part of the payload the agent does not size.
+
+    Refused, never truncated -- §8 is explicit that no overrun is silently cut, and a
+    half-written envelope would be worse than an absent one: it would still look like
+    evidence.
+    """
+
+    measured = len(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+    if measured <= MAX_PAYLOAD_BYTES:
+        return None
+    return _fail(
+        "payload_too_large",
+        f"published payload {measured}B exceeds {MAX_PAYLOAD_BYTES}B budget",
+        "$",
+    )
 
 
 def canonical_payload_hash(payload: dict) -> str:
@@ -243,6 +516,33 @@ def _shape_errors(payload: dict) -> ValidationResult | None:
             "schema_shape", f"card.mode must be one of {sorted(ALLOWED_CARD_MODES)}", "card.mode"
         )
 
+    # `authorship` is DERIVED by the server, never declared by the author of the
+    # prose it describes. A payload may carry it -- that is how an already
+    # published, enriched payload re-validates -- but only if it is exactly what
+    # the server computes. An agent that writes its own provenance is refused for
+    # the same reason a self-declared confidence proves nothing.
+    if "authorship" in payload and payload["authorship"] != authorship_block(payload):
+        return _fail(
+            "authorship_declared",
+            "authorship is written by the server, never by the agent; "
+            "remove it and the server will attach the derived block",
+            "authorship",
+        )
+
+    # `frozenCard` is the RESOLVED envelope, and it is the server's to write for the
+    # same reason the evidence refs are: an agent that supplies the numbers its own
+    # prose cites has cited itself. Unlike `authorship` it cannot be recomputed here
+    # -- it comes from the warehouse -- so there is nothing to compare against and
+    # the refusal is unconditional at submission. `publish` attaches it after this
+    # gate has run.
+    if "frozenCard" in payload:
+        return _fail(
+            "frozen_card_declared",
+            "frozenCard is the envelope the server resolved and froze, never one the "
+            "agent supplies; remove it and publication will attach it",
+            "frozenCard",
+        )
+
     return None
 
 
@@ -267,11 +567,11 @@ def validate_published_insight(
     server-resolved facts are inputs.
 
     Gate order (reason_code):
-      1. schema_shape / schema_version / *_too_large / budget_*  (structure + budgets)
+      1. schema_shape / schema_version / authorship_declared / *_too_large / budget_*
       2. project_scope / idempotency                              (access + slot)
       3. mode_not_enabled / primitive_not_allowed / binding_not_allowed
       4. template_unknown / metric_unavailable / dimension_unavailable
-      5. evidence_unresolved
+      5. evidence_missing / evidence_malformed / evidence_unresolved
       6. stale_data / period_invalid
       7. ratio_semantic
       8. hash_mismatch
@@ -390,7 +690,69 @@ def validate_published_insight(
             )
 
     # --- Gate 5: evidence refs resolve inside server data -----------------
-    for ref in payload.get("evidenceRefs") or []:
+    #
+    # THE CAVEAT THIS GATE CARRIED IS CLOSED (story 53.4, CAV-07). It used to say,
+    # correctly, that requiring evidence here would switch publication OFF --
+    # `core.main._resolve_evidence_refs` returned an EMPTY SET unconditionally,
+    # so with no refs the answer was `evidence_missing` and with any ref
+    # `evidence_unresolved`. The resolver now returns the metrics, dimensions and
+    # card templates the SERVER measured for this project and window, so both
+    # halves land together, which is the ordering the story insists on.
+    #
+    # WHY MANDATORY AND NOT MERELY CHECKED. What a reader reads next to a real,
+    # figure-bearing card is `summary`, `whyItMatters` and `recommendedAction` --
+    # a thousand characters each of model-authored prose that no gate inspects --
+    # and `insight.confidence`, DECLARED by the model (its only check is enum
+    # membership). An unbacked causal claim published in that position borrows
+    # the card's credibility. `overview.md:189` asks for the opposite: any
+    # available signal must be persisted and EVIDENCE-BACKED.
+    #
+    # ET L'OBLIGATION N'EST PLUS SATISFIABLE PAR TAUTOLOGIE. `card:<gabarit>`
+    # etait un genre de preuve legal, et la gate 4 ci-dessus exige DEJA que
+    # `card.template` appartienne a `available_templates` : un insight qui ne
+    # citait que le gabarit qu'il rend franchissait donc cette gate sans pointer
+    # aucune donnee. Une obligation qu'on satisfait en se citant soi-meme ne
+    # demande rien. Le genre est retire (`EVIDENCE_KINDS`), et un `card:` reste
+    # refuse avec sa propre phrase plutot qu'un << malforme >> sec.
+    #
+    # TROIS REFUS DISTINCTS, PARCE QUE CE SONT TROIS FAUTES DIFFERENTES. Le
+    # schema declaratif (`PUBLISHED_INSIGHT_SCHEMA`) porte `required` et
+    # `minItems: 1`, mais il est un CONTRAT LU, pas un validateur execute -- ce
+    # fichier verifie ses formes a la main, gate par gate. Les inscrire ici est
+    # donc ce qui les rend vraies :
+    #   evidence_missing     rien n'est cite -> l'insight n'est adosse a rien
+    #   evidence_malformed   la citation n'a pas la forme `kind:value` -> defaut
+    #                        d'ecriture, l'agent peut le corriger seul
+    #   evidence_unresolved  bien forme, mais ne designe rien que le serveur ait
+    #                        produit -> affirmation sans appui
+    # Confondre les trois est ce qui rendait le message illisible : << ne resout
+    # pas >> ne dit pas a l'agent s'il a mal ecrit ou trop affirme.
+    refs = payload.get("evidenceRefs")
+    if not isinstance(refs, list) or not refs:
+        return _fail(
+            "evidence_missing",
+            "evidenceRefs must cite at least one server-measured fact "
+            "(metric:<name> or dimension:<name>)",
+            "evidenceRefs",
+        )
+    for ref in refs:
+        if not isinstance(ref, str) or not _EVIDENCE_REF.match(ref):
+            # A `card:` ref gets its own sentence: it was a legal kind until story
+            # 53.4 and it is the mistake an agent is most likely to repeat, so
+            # "malformed" alone would read as a typo rather than as the rule.
+            if isinstance(ref, str) and ref.startswith("card:"):
+                return _fail(
+                    "evidence_malformed",
+                    f"evidence ref {ref!r} names a card template, which is the FORM that "
+                    "displays data, not data: gate 4 already requires the template, so "
+                    "citing it proves nothing. Cite 'metric:<name>' or 'dimension:<name>'",
+                    "evidenceRefs",
+                )
+            return _fail(
+                "evidence_malformed",
+                f"evidence ref {ref!r} must be 'metric:<name>' or 'dimension:<name>'",
+                "evidenceRefs",
+            )
         if ref not in resolvable_evidence:
             return _fail(
                 "evidence_unresolved",

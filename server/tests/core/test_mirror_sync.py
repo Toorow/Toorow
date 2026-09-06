@@ -434,7 +434,10 @@ def test_sync_all_context_tables_together(tmp_path):
         call_order.append(table)
         cols = col_names
         rows = [dict(zip(col_names, row)) for row in pg_rows]
-        return cols, rows
+        # Third element: the DECLARED Postgres types. An empty map means "no
+        # declaration available", which keeps the old inference path -- exactly
+        # what a mock that knows no types should ask for.
+        return cols, rows, {}
 
     with (
         patch("core.mirror_sync._fetch_from_postgres", side_effect=_patched_fetch),
@@ -510,7 +513,7 @@ def test_postgres_is_sole_writer(tmp_path):
 
     with (
         patch("core.mirror_sync._fetch_from_postgres",
-              return_value=(sentinel_cols, sentinel_rows)),
+              return_value=(sentinel_cols, sentinel_rows, {})),
         patch.dict(os.environ, {"TOOROW_DUCKDB_PATH": db_path}),
     ):
         from core import mirror_sync
@@ -572,3 +575,165 @@ def test_existing_tables_not_broken(tmp_path):
             result = mirror_sync.sync_tables([table])
             assert table in result["synced"], f"Pre-11.3 table '{table}' must still sync"
             assert result["synced"][table] == 1, f"Expected 1 row for pre-11.3 table '{table}'"
+
+
+def test_an_all_null_text_column_stays_text_in_the_mirror(tmp_path):
+    """The mirror must carry the DECLARED type, not one inferred from the values.
+
+    Before this, `_write_to_duckdb` built a pandas DataFrame from the rows and
+    let DuckDB infer. A nullable TEXT column that happens to hold only NULLs for
+    a tenant became INTEGER in the warehouse, and every reader and fixture that
+    put a string in it failed with "Could not convert string 'EUR' to INT32".
+
+    Reachable in production, not theoretical: Story 48.3 dropped the 'EUR' and
+    'Europe/Paris' defaults on app.project_preferences on purpose -- a reporting
+    currency is chosen, never defaulted -- so a Project that had not chosen yet
+    made both columns all-NULL. The class is every nullable column empty for a
+    tenant, and the failure surfaces in the warehouse, far from its cause.
+    """
+    import duckdb
+    from core import mirror_sync
+
+    db_path = str(tmp_path / "typed.duckdb")
+    cols = ["project_id", "canonical_currency", "reporting_timezone"]
+    rows = [{"project_id": "proj_EXAMPLE", "canonical_currency": None, "reporting_timezone": None}]
+    types = {
+        "project_id": "VARCHAR",
+        "canonical_currency": "VARCHAR",
+        "reporting_timezone": "VARCHAR",
+    }
+
+    mirror_sync._write_to_duckdb("project_preferences", cols, rows, db_path, types)
+
+    conn = duckdb.connect(db_path)
+    observed = dict(
+        conn.execute(
+            "SELECT column_name, data_type FROM information_schema.columns "
+            "WHERE table_schema = 'mirror' AND table_name = 'project_preferences'"
+        ).fetchall()
+    )
+    conn.close()
+    assert observed["canonical_currency"] == "VARCHAR", observed
+    assert observed["reporting_timezone"] == "VARCHAR", observed
+
+    # And the value a caller would then write must land, which is the whole
+    # point: the type assertion above is only interesting because of this.
+    conn = duckdb.connect(db_path)
+    conn.execute(
+        "UPDATE mirror.project_preferences SET canonical_currency = 'EUR' "
+        "WHERE project_id = 'proj_EXAMPLE'"
+    )
+    stored = conn.execute("SELECT canonical_currency FROM mirror.project_preferences").fetchone()
+    conn.close()
+    assert stored == ("EUR",)
+
+
+# ---------------------------------------------------------------------------
+# Story 64.9 (AI-232): the governed node joins the warehouse.
+#
+# The gap these tests pin: before 64.9 the mirror carried the CLIENT's own
+# correspondence table (`reference_tables`) and not the GOVERNED node behind it,
+# so a dbt model could resolve a client vocabulary but never a governed identity.
+# ---------------------------------------------------------------------------
+
+_MASTER_DATA_MIRROR = ["master_data_nodes_dim", "master_data_aliases_dim"]
+
+
+def test_master_data_entries_are_registered_everywhere():
+    """An entry absent from any one of the four registries never syncs (64.9).
+
+    Four, not one: `_DEFAULT_TABLES` selects it, `_ALLOWED_TABLES` admits it,
+    `_CURATED_SQL` gives it its projection, `_GUARDED_RELATIONS` lets the sync
+    survive a deploy that precedes migration 233.
+    """
+    from core import mirror_sync
+
+    for table in _MASTER_DATA_MIRROR:
+        assert table in mirror_sync._DEFAULT_TABLES, f"_DEFAULT_TABLES misses {table}"
+        assert table in mirror_sync._ALLOWED_TABLES, f"_ALLOWED_TABLES misses {table}"
+        assert table in mirror_sync._CURATED_SQL, f"_CURATED_SQL misses {table}"
+        assert table in mirror_sync._GUARDED_RELATIONS, f"_GUARDED_RELATIONS misses {table}"
+
+
+def test_master_data_mirror_names_carry_no_view_suffix():
+    """The mirror name is the clean one; only the SQL behind it names the view.
+
+    The file's own rule -- "the mirror entry names stay clean (no _v suffix
+    leaking into dbt)". A `_v` in the entry name would put the projection's
+    implementation into every dbt `source()`.
+    """
+    from core import mirror_sync
+
+    for table in _MASTER_DATA_MIRROR:
+        assert not table.endswith("_v"), f"{table} leaks the view suffix into dbt"
+        assert mirror_sync._GUARDED_RELATIONS[table].endswith("_v")
+        assert mirror_sync._CURATED_SQL[table] == (
+            f"SELECT * FROM {mirror_sync._GUARDED_RELATIONS[table]}"
+        )
+
+
+def test_master_data_views_project_scalars_only():
+    """Migration 233 must not project a JSONB column (64.9).
+
+    `master_data_aliases.evidence` is JSONB. The fee/tax precedent mirrors
+    RELATIONALLY, never a raw object or array, and a JSONB column reaching DuckDB
+    is the drift that rule exists to stop. Read from the migration text so the
+    assertion cannot pass against a view that was later widened.
+    """
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    sql = (
+        root / "infra" / "nango" / "migrations"
+        / "233_a_governed_node_is_joinable_in_the_warehouse.sql"
+    ).read_text(encoding="utf-8")
+
+    body = sql[sql.index("CREATE OR REPLACE VIEW app.master_data_aliases_dim_v"):]
+    select_list = body[: body.index("FROM app.master_data_aliases")]
+    assert "evidence" not in select_list, "JSONB `evidence` must not be mirrored"
+
+
+def test_master_data_views_exclude_retired_and_archived_rows():
+    """An archived node or a retired alias must not resolve a value (64.9).
+
+    Nothing is deleted upstream -- an old Result pins a version and must stay
+    reproducible -- so the WHERE clause is the ONLY thing that retires an
+    identity. Without it the mirror would keep resolving values through nodes
+    their owner has withdrawn.
+    """
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    sql = (
+        root / "infra" / "nango" / "migrations"
+        / "233_a_governed_node_is_joinable_in_the_warehouse.sql"
+    ).read_text(encoding="utf-8")
+
+    nodes = sql[sql.index("CREATE OR REPLACE VIEW app.master_data_nodes_dim_v"):]
+    assert "WHERE archived_at IS NULL" in nodes[: nodes.index("COMMENT ON VIEW")]
+
+    aliases = sql[sql.index("CREATE OR REPLACE VIEW app.master_data_aliases_dim_v"):]
+    assert "WHERE retired_at IS NULL" in aliases[: aliases.index("COMMENT ON VIEW")]
+
+
+def test_master_data_alias_view_carries_relation_and_conflict_unresolved():
+    """The matching policy belongs to 64.10, at build time -- not to this view.
+
+    `relation` distinguishes exact from close, and SKOS is explicit that a close
+    match is not transitive; `conflict_state` records a contradiction the server
+    refuses to resolve by write order. A view that dropped either would force the
+    macro to guess, or to treat every alias as an equality.
+    """
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    sql = (
+        root / "infra" / "nango" / "migrations"
+        / "233_a_governed_node_is_joinable_in_the_warehouse.sql"
+    ).read_text(encoding="utf-8")
+
+    body = sql[sql.index("CREATE OR REPLACE VIEW app.master_data_aliases_dim_v"):]
+    select_list = body[: body.index("FROM app.master_data_aliases")]
+    for column in ("relation", "conflict_state", "effective_from", "effective_to",
+                   "confidence", "namespace", "normalized_value", "raw_value"):
+        assert column in select_list, f"the resolver needs {column}"

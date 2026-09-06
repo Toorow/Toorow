@@ -1,0 +1,55 @@
+version: 2
+
+# Story 69.1: staging managed_feed -- le consommateur du mart
+# `managed_feed_superseding` (audit R1). La maille est declaree par la version
+# de mapping EPINGLEE (mirror.managed_feed_grain) : une ligne par
+# (datastream_id, grain_key), le chargement gagnant seul.
+
+models:
+  - name: stg_managed_feed_facts
+    description: >
+      Les faits managed_feed qui font foi : chaque landing `managed_feed_<ds>`
+      jointe sur `managed_feed_superseding` ne garde que les lignes du
+      chargement gagnant par grain_key (MAX(execution_id), ULID monotone --
+      l'analogue de `pull_id DESC` chez les connecteurs). Grain declare par la
+      version de mapping epinglee (miroir `managed_feed_grain`, migration 227).
+      Union large des colonnes de donnee (chaque flux garde ses colonnes
+      typees, NULL type ailleurs) ; `loaded_at` est un NULL explicite et
+      honnete (AD-9) tant que le writer ne tamponne pas l'heure de chargement.
+      Vide sans erreur pour un projet sans managed feed (AC4).
+    tests:
+      # AI-05 : une ligne par (datastream_id, grain_key) -- le chargement
+      # gagnant est unique par cle, et la cle est unique dans un chargement.
+      - unique:
+          name: stg_managed_feed_facts_grain_unique
+          arguments:
+            column_name: "datastream_id || '|' || grain_key"
+    columns:
+      - name: project_id
+        description: Provenance de scope, apposee par le writer a l'import.
+        tests:
+          - not_null
+      - name: datastream_id
+        description: Le flux fichier (miroir managed_feed_grain).
+        tests:
+          - not_null
+      - name: grain_key
+        description: >
+          Cle de maille composee comme dans le mart (COALESCE + CHR(31)) sur
+          les colonnes de grain du mapping epingle.
+        tests:
+          - not_null
+      - name: execution_id
+        description: >
+          Le chargement qui fait foi (dse_<ULID> monotone) -- l'analogue de
+          pull_id chez les connecteurs.
+        tests:
+          - not_null
+      - name: plan_version_id
+        description: Version de plan epinglee a l'import (provenance).
+      - name: mapping_version_id
+        description: Version de mapping epinglee a l'import (provenance).
+      - name: loaded_at
+        description: >
+          NULL explicite et honnete (AD-9) : le chemin fichier ne tamponne pas
+          d'heure de chargement. Present et requetable, jamais fabrique.

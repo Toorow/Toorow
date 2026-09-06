@@ -10,6 +10,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import KnowledgeBasePage from "../KnowledgeBasePage";
 
+const CAPS = { can_write: true, version_history: true, usage: false };
+
 const TOPIC = {
   id: "top_01JABCDEF",
   project_id: "p1",
@@ -20,6 +22,7 @@ const TOPIC = {
   created_at: "2026-07-20T10:00:00+00:00",
   updated_at: "2026-07-24T10:00:00+00:00",
   version_number: 2,
+  capabilities: CAPS,
 };
 
 const PLATFORM_TOPIC = {
@@ -55,7 +58,7 @@ afterEach(() => {
 describe("KnowledgeBasePage — data source", () => {
   it("reads GET /api/context/topics and never /api/knowledge", async () => {
     const calls = stubFetch((url) => {
-      if (url.includes("/api/context/topics")) return resp(200, { topics: [TOPIC] });
+      if (url.includes("/api/context/topics")) return resp(200, { capabilities: CAPS, topics: [TOPIC] });
       return resp(500, { code: "unexpected", message: `unexpected call: ${url}` });
     });
 
@@ -74,7 +77,7 @@ describe("KnowledgeBasePage — data source", () => {
 
   it("renders the version number and author from the payload", async () => {
     stubFetch((url) =>
-      url.includes("/api/context/topics") ? resp(200, { topics: [TOPIC] }) : resp(404, {}),
+      url.includes("/api/context/topics") ? resp(200, { capabilities: CAPS, topics: [TOPIC] }) : resp(404, {}),
     );
     render(<KnowledgeBasePage projectId="p1" />);
 
@@ -88,7 +91,7 @@ describe("KnowledgeBasePage — data source", () => {
   it("flags a platform-scope row (project_id null) with a Platform badge", async () => {
     stubFetch((url) =>
       url.includes("/api/context/topics")
-        ? resp(200, { topics: [PLATFORM_TOPIC] })
+        ? resp(200, { capabilities: CAPS, topics: [PLATFORM_TOPIC] })
         : resp(404, {}),
     );
     render(<KnowledgeBasePage projectId="p1" />);
@@ -101,7 +104,7 @@ describe("KnowledgeBasePage — data source", () => {
 describe("KnowledgeBasePage — honest empty and error states", () => {
   it("says the base is empty and offers a working Add action when the fetch returns zero topics", async () => {
     stubFetch((url) =>
-      url.includes("/api/context/topics") ? resp(200, { topics: [] }) : resp(404, {}),
+      url.includes("/api/context/topics") ? resp(200, { capabilities: CAPS, topics: [] }) : resp(404, {}),
     );
     render(<KnowledgeBasePage projectId="p1" />);
 
@@ -135,9 +138,9 @@ describe("KnowledgeBasePage — create/edit preserves draft on failure", () => {
     const user = userEvent.setup();
     stubFetch((url, init) => {
       if (url.includes("/api/context/topics") && (!init.method || init.method === "GET")) {
-        return resp(200, { topics: [] });
+        return resp(200, { capabilities: CAPS, topics: [] });
       }
-      if (url === "/api/context/topics" && init.method === "POST") {
+      if (url.startsWith("/api/context/topics?") && init.method === "POST") {
         return resp(422, { code: "invalid_param", message: "Le titre du topic ne peut pas être vide." });
       }
       return resp(404, {});
@@ -168,9 +171,9 @@ describe("KnowledgeBasePage — create/edit preserves draft on failure", () => {
     let createCalls = 0;
     stubFetch((url, init) => {
       if (url.includes("/api/context/topics") && (!init.method || init.method === "GET")) {
-        return resp(200, { topics: [] });
+        return resp(200, { capabilities: CAPS, topics: [] });
       }
-      if (url === "/api/context/topics" && init.method === "POST") {
+      if (url.startsWith("/api/context/topics?") && init.method === "POST") {
         createCalls += 1;
         return resp(422, { code: "invalid_param", message: "Le titre du topic ne peut pas être vide." });
       }
@@ -197,7 +200,7 @@ describe("KnowledgeBasePage — create/edit preserves draft on failure", () => {
     const user = userEvent.setup();
     stubFetch((url, init) => {
       if (url.includes("/api/context/topics?") && (!init.method || init.method === "GET")) {
-        return resp(200, { topics: [TOPIC] });
+        return resp(200, { capabilities: CAPS, topics: [TOPIC] });
       }
       if (url.includes(`/api/context/topics/${TOPIC.id}`) && init.method === "PATCH") {
         return resp(200, { ...TOPIC, title: "Updated title", version_number: 3 });
@@ -227,9 +230,9 @@ describe("KnowledgeBasePage — owner (Story 44.11)", () => {
     let createBody: unknown = null;
     stubFetch((url, init) => {
       if (url.includes("/api/context/topics") && (!init.method || init.method === "GET")) {
-        return resp(200, { topics: [] });
+        return resp(200, { capabilities: CAPS, topics: [] });
       }
-      if (url === "/api/context/topics" && init.method === "POST") {
+      if (url.startsWith("/api/context/topics?") && init.method === "POST") {
         createBody = JSON.parse(String(init.body));
         return resp(201, { ...TOPIC, title: "New entry", owner: "owner@toorow.com" });
       }
@@ -253,9 +256,9 @@ describe("KnowledgeBasePage — owner (Story 44.11)", () => {
     let createBody: unknown = null;
     stubFetch((url, init) => {
       if (url.includes("/api/context/topics") && (!init.method || init.method === "GET")) {
-        return resp(200, { topics: [] });
+        return resp(200, { capabilities: CAPS, topics: [] });
       }
-      if (url === "/api/context/topics" && init.method === "POST") {
+      if (url.startsWith("/api/context/topics?") && init.method === "POST") {
         createBody = JSON.parse(String(init.body));
         return resp(201, { ...TOPIC, title: "No owner entry" });
       }
@@ -277,7 +280,7 @@ describe("KnowledgeBasePage — owner (Story 44.11)", () => {
     const user = userEvent.setup();
     const owned = { ...TOPIC, owner: "prefilled@toorow.com" };
     stubFetch((url) =>
-      url.includes("/api/context/topics") ? resp(200, { topics: [owned] }) : resp(404, {}),
+      url.includes("/api/context/topics") ? resp(200, { capabilities: CAPS, topics: [owned] }) : resp(404, {}),
     );
     render(<KnowledgeBasePage projectId="p1" />);
     await waitFor(() => expect(screen.getByText(TOPIC.title)).toBeInTheDocument());
@@ -287,12 +290,325 @@ describe("KnowledgeBasePage — owner (Story 44.11)", () => {
   });
 });
 
+describe("KnowledgeBasePage — governed business context", () => {
+  it("creates the business link only after the topic save is acknowledged", async () => {
+    const user = userEvent.setup();
+    const refresh = vi.fn().mockResolvedValue(undefined);
+    const calls = stubFetch((url, init) => {
+      if (url.includes("/api/context/topics") && (!init.method || init.method === "GET")) {
+        return resp(200, { capabilities: CAPS, topics: [] });
+      }
+      if (url.startsWith("/api/context/topics?") && init.method === "POST") {
+        return resp(201, { ...TOPIC, id: "top_NEW", title: "Market policy", version_number: 1 });
+      }
+      if (url.includes("/api/context/business-links") && init.method === "POST") {
+        return resp(201, { id: "blink_1" });
+      }
+      return resp(404, {});
+    });
+    const businessContext = {
+      selected: null,
+      domains: [{ id: "bd_market", name: "Markets", status: "active", version_number: 1 }],
+      classifications: [],
+      links: [],
+      refresh,
+    } as any;
+    render(<KnowledgeBasePage projectId="p1" businessContext={businessContext} />);
+
+    await user.click(await screen.findByRole("button", { name: /Add knowledge entry/i }));
+    await user.type(screen.getByLabelText("Title"), "Market policy");
+    await user.selectOptions(
+      screen.getByTestId("knowledge-editor-business-context"),
+      "business_domain:bd_market",
+    );
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await screen.findByText(/saved and linked to its governed business context/i);
+    const topicIndex = calls.findIndex((call) => call.url.startsWith("/api/context/topics?") && call.init.method === "POST");
+    const linkIndex = calls.findIndex((call) => call.url.includes("/api/context/business-links") && call.init.method === "POST");
+    expect(linkIndex).toBeGreaterThan(topicIndex);
+    expect(JSON.parse(String(calls[linkIndex].init.body))).toMatchObject({
+      taxonomy_type: "business_domain",
+      taxonomy_id: "bd_market",
+      target_type: "topic",
+      target_id: "top_NEW",
+    });
+    expect(refresh).toHaveBeenCalled();
+  });
+});
+
+describe("KnowledgeBasePage — archiving asks before it happens", () => {
+  it("names the entry and names the way back before archiving anything", async () => {
+    const user = userEvent.setup();
+    const calls = stubFetch((url, init) => {
+      if (url.includes("/api/context/topics?") && (!init.method || init.method === "GET")) {
+        return resp(200, { capabilities: CAPS, topics: [TOPIC] });
+      }
+      return resp(404, {});
+    });
+
+    render(<KnowledgeBasePage projectId="p1" />);
+    await waitFor(() => expect(screen.getByText(TOPIC.title)).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: "Archive" }));
+
+    const dialog = await screen.findByTestId("knowledge-archive-confirm");
+    expect(dialog).toHaveTextContent(TOPIC.title);
+    // Since 2026-08-18 an archive IS reversible, so the copy names the gesture
+    // that reverses it instead of claiming finality it no longer has.
+    expect(dialog).toHaveTextContent(/Show archived/i);
+    expect(dialog).toHaveTextContent(/restore it/i);
+    expect(dialog).not.toHaveTextContent(/no way back/i);
+    expect(calls.some((call) => call.url.includes("/archive"))).toBe(false);
+
+    await user.click(screen.getByTestId("knowledge-archive-confirm-cancel"));
+    expect(calls.some((call) => call.url.includes("/archive"))).toBe(false);
+    expect(screen.getByText(TOPIC.title)).toBeInTheDocument();
+  });
+
+  it("archives only once the confirmation is accepted", async () => {
+    const user = userEvent.setup();
+    const calls = stubFetch((url, init) => {
+      if (url.includes("/api/context/topics?") && (!init.method || init.method === "GET")) {
+        return resp(200, { capabilities: CAPS, topics: [TOPIC] });
+      }
+      if (url.includes(`/api/context/topics/${TOPIC.id}/archive`) && init.method === "POST") {
+        return resp(200, { ...TOPIC, status: "archived", version_number: 3 });
+      }
+      return resp(404, {});
+    });
+
+    render(<KnowledgeBasePage projectId="p1" />);
+    await waitFor(() => expect(screen.getByText(TOPIC.title)).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: "Archive" }));
+    await user.click(await screen.findByTestId("knowledge-archive-confirm-accept"));
+
+    await waitFor(() => expect(screen.queryByText(TOPIC.title)).not.toBeInTheDocument());
+    expect(calls.filter((call) => call.url.includes("/archive")).length).toBe(1);
+  });
+});
+
+describe("KnowledgeBasePage — the archive has a way back (2026-08-18)", () => {
+  const ARCHIVED = {
+    ...TOPIC,
+    id: "top_archived",
+    title: "Retired attribution window",
+    status: "archived",
+    version_number: 4,
+  };
+
+  it("hides archived entries until Show archived is turned on, then reads ?status=all", async () => {
+    const user = userEvent.setup();
+    const calls = stubFetch((url, init) => {
+      if (url.includes("/api/context/topics?") && (!init.method || init.method === "GET")) {
+        return url.includes("status=all")
+          ? resp(200, { capabilities: CAPS, topics: [TOPIC, ARCHIVED] })
+          : resp(200, { capabilities: CAPS, topics: [TOPIC] });
+      }
+      return resp(404, {});
+    });
+
+    render(<KnowledgeBasePage projectId="p1" />);
+    await waitFor(() => expect(screen.getByText(TOPIC.title)).toBeInTheDocument());
+    expect(screen.queryByText(ARCHIVED.title)).not.toBeInTheDocument();
+    expect(calls.some((call) => call.url.includes("status=all"))).toBe(false);
+
+    await user.click(screen.getByTestId("knowledge-show-archived"));
+
+    await waitFor(() => expect(screen.getByText(ARCHIVED.title)).toBeInTheDocument());
+    expect(calls.some((call) => call.url.includes("status=all"))).toBe(true);
+    // The archived row is marked, and does not pretend to be editable.
+    expect(screen.getByTestId(`knowledge-card-archived-${ARCHIVED.id}`)).toBeInTheDocument();
+    expect(screen.getByText("Archived")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Restore" })).toBeInTheDocument();
+    // Only the ACTIVE row keeps Edit/Archive — the server refuses a PATCH on
+    // an archived row, so the console does not offer one.
+    expect(screen.getAllByRole("button", { name: "Edit entry" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Archive" })).toHaveLength(1);
+  });
+
+  it("asks before restoring, and cancelling sends nothing", async () => {
+    const user = userEvent.setup();
+    const calls = stubFetch((url, init) => {
+      if (url.includes("/api/context/topics?") && (!init.method || init.method === "GET")) {
+        return resp(200, { capabilities: CAPS, topics: url.includes("status=all") ? [ARCHIVED] : [] });
+      }
+      return resp(404, {});
+    });
+
+    render(<KnowledgeBasePage projectId="p1" />);
+    await waitFor(() => expect(screen.getByTestId("knowledge-empty")).toBeInTheDocument());
+    await user.click(screen.getByTestId("knowledge-show-archived"));
+    await user.click(await screen.findByRole("button", { name: "Restore" }));
+
+    const dialog = await screen.findByTestId("knowledge-restore-confirm");
+    expect(dialog).toHaveTextContent(ARCHIVED.title);
+    expect(calls.some((call) => call.url.includes("/restore"))).toBe(false);
+
+    await user.click(screen.getByTestId("knowledge-restore-confirm-cancel"));
+    expect(calls.some((call) => call.url.includes("/restore"))).toBe(false);
+    expect(screen.getByText(ARCHIVED.title)).toBeInTheDocument();
+  });
+
+  it("posts the restore route with the row's version once the confirmation is accepted", async () => {
+    const user = userEvent.setup();
+    const calls = stubFetch((url, init) => {
+      if (url.includes("/api/context/topics?") && (!init.method || init.method === "GET")) {
+        return resp(200, { capabilities: CAPS, topics: url.includes("status=all") ? [ARCHIVED] : [] });
+      }
+      if (url.includes(`/api/context/topics/${ARCHIVED.id}/restore`) && init.method === "POST") {
+        return resp(200, { ...ARCHIVED, status: "active", version_number: 5 });
+      }
+      return resp(404, {});
+    });
+
+    render(<KnowledgeBasePage projectId="p1" />);
+    await waitFor(() => expect(screen.getByTestId("knowledge-empty")).toBeInTheDocument());
+    await user.click(screen.getByTestId("knowledge-show-archived"));
+    await user.click(await screen.findByRole("button", { name: "Restore" }));
+    await user.click(await screen.findByTestId("knowledge-restore-confirm-accept"));
+
+    const restore = calls.filter((call) => call.url.includes("/restore"));
+    expect(restore).toHaveLength(1);
+    expect(restore[0].url).toContain("project_id=p1");
+    expect(JSON.parse(String(restore[0].init.body))).toEqual({ expected_version: 4 });
+    // The row comes back active in place: the badge and the Restore action go.
+    await waitFor(() =>
+      expect(screen.queryByTestId(`knowledge-card-archived-${ARCHIVED.id}`)).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("button", { name: "Edit entry" })).toBeInTheDocument();
+    expect(screen.getByText("v5")).toBeInTheDocument();
+  });
+
+  it("shows the server's exact refusal on the card when the restore fails", async () => {
+    const user = userEvent.setup();
+    stubFetch((url, init) => {
+      if (url.includes("/api/context/topics?") && (!init.method || init.method === "GET")) {
+        return resp(200, { capabilities: CAPS, topics: url.includes("status=all") ? [ARCHIVED] : [] });
+      }
+      if (url.includes(`/api/context/topics/${ARCHIVED.id}/restore`) && init.method === "POST") {
+        return resp(409, {
+          code: "not_archived",
+          message: "This topic is not archived, so there is nothing to restore.",
+        });
+      }
+      return resp(404, {});
+    });
+
+    render(<KnowledgeBasePage projectId="p1" />);
+    await waitFor(() => expect(screen.getByTestId("knowledge-empty")).toBeInTheDocument());
+    await user.click(screen.getByTestId("knowledge-show-archived"));
+    await user.click(await screen.findByRole("button", { name: "Restore" }));
+    await user.click(await screen.findByTestId("knowledge-restore-confirm-accept"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId(`knowledge-archive-error-${ARCHIVED.id}`)).toHaveTextContent(
+        "This topic is not archived, so there is nothing to restore.",
+      ),
+    );
+  });
+
+  it("keeps the archived row visible in place when archiving with Show archived on", async () => {
+    const user = userEvent.setup();
+    stubFetch((url, init) => {
+      if (url.includes("/api/context/topics?") && (!init.method || init.method === "GET")) {
+        return resp(200, { capabilities: CAPS, topics: [TOPIC] });
+      }
+      if (url.includes(`/api/context/topics/${TOPIC.id}/archive`) && init.method === "POST") {
+        return resp(200, { ...TOPIC, status: "archived", version_number: 3 });
+      }
+      return resp(404, {});
+    });
+
+    render(<KnowledgeBasePage projectId="p1" />);
+    await waitFor(() => expect(screen.getByText(TOPIC.title)).toBeInTheDocument());
+    await user.click(screen.getByTestId("knowledge-show-archived"));
+    await user.click(await screen.findByRole("button", { name: "Archive" }));
+    await user.click(await screen.findByTestId("knowledge-archive-confirm-accept"));
+
+    // It does not vanish: it becomes the archived row the person can restore.
+    await waitFor(() =>
+      expect(screen.getByTestId(`knowledge-card-archived-${TOPIC.id}`)).toBeInTheDocument(),
+    );
+    expect(screen.getByRole("button", { name: "Restore" })).toBeInTheDocument();
+  });
+});
+
+describe("KnowledgeBasePage — the schema-context generation reaches the server", () => {
+  it("posts project_id in the body and reports the counts the generator returned", async () => {
+    const user = userEvent.setup();
+    const calls = stubFetch((url, init) => {
+      if (url.includes("/api/context/topics?") && (!init.method || init.method === "GET")) {
+        return resp(200, { capabilities: CAPS, topics: [TOPIC] });
+      }
+      if (url.includes("/api/admin/context/generate-schema-context") && init.method === "POST") {
+        return resp(200, { processed: 12, updated: 4, skipped: 8, errors: [] });
+      }
+      return resp(404, {});
+    });
+
+    render(<KnowledgeBasePage projectId="p1" />);
+    await waitFor(() => expect(screen.getByText(TOPIC.title)).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: /Generate schema context/i }));
+
+    const generate = calls.find((call) => call.url.includes("/api/admin/context/generate-schema-context"));
+    expect(generate).toBeDefined();
+    // The handler reads project_id from the JSON body; a query-string-only call 422s.
+    expect(JSON.parse(String(generate?.init.body))).toEqual({ project_id: "p1" });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("knowledge-schema-notice")).toHaveTextContent(
+        "Read 12 warehouse tables: 4 entries written, 8 already up to date.",
+      );
+    });
+  });
+
+  it("names the gesture that repairs when the route refuses the identity", async () => {
+    const user = userEvent.setup();
+    stubFetch((url, init) => {
+      if (url.includes("/api/context/topics?") && (!init.method || init.method === "GET")) {
+        return resp(200, { capabilities: CAPS, topics: [TOPIC] });
+      }
+      if (url.includes("/api/admin/context/generate-schema-context") && init.method === "POST") {
+        return resp(403, { code: "forbidden", message: "Administrator access required" });
+      }
+      return resp(404, {});
+    });
+
+    render(<KnowledgeBasePage projectId="p1" />);
+    await waitFor(() => expect(screen.getByText(TOPIC.title)).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: /Generate schema context/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("knowledge-schema-notice")).toHaveTextContent(
+        "Ask a platform administrator to generate the schema context for this project.",
+      );
+    });
+  });
+
+  it("is disabled for a read-only identity rather than sending a refused write", async () => {
+    stubFetch((url, init) =>
+      url.includes("/api/context/topics?") && (!init.method || init.method === "GET")
+        ? resp(200, { capabilities: { ...CAPS, can_write: false }, topics: [TOPIC] })
+        : resp(404, {}),
+    );
+
+    render(<KnowledgeBasePage projectId="p1" />);
+    await waitFor(() => expect(screen.getByText(TOPIC.title)).toBeInTheDocument());
+
+    expect(screen.getByRole("button", { name: /Generate schema context/i })).toBeDisabled();
+  });
+});
+
 describe("KnowledgeBasePage — archive failures are not silent", () => {
   it("shows the server's exact message on the failing card when archive fails", async () => {
     const user = userEvent.setup();
     stubFetch((url, init) => {
       if (url.includes("/api/context/topics?") && (!init.method || init.method === "GET")) {
-        return resp(200, { topics: [TOPIC] });
+        return resp(200, { capabilities: CAPS, topics: [TOPIC] });
       }
       if (url.includes(`/api/context/topics/${TOPIC.id}/archive`) && init.method === "POST") {
         return resp(409, { code: "conflict", message: "Ce topic est référencé ailleurs." });
@@ -304,6 +620,7 @@ describe("KnowledgeBasePage — archive failures are not silent", () => {
     await waitFor(() => expect(screen.getByText(TOPIC.title)).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: "Archive" }));
+    await user.click(await screen.findByTestId("knowledge-archive-confirm-accept"));
 
     await waitFor(() => {
       expect(screen.getByTestId(`knowledge-archive-error-${TOPIC.id}`)).toHaveTextContent(
@@ -318,7 +635,7 @@ describe("KnowledgeBasePage — archive failures are not silent", () => {
     const user = userEvent.setup();
     stubFetch((url, init) => {
       if (url.includes("/api/context/topics?") && (!init.method || init.method === "GET")) {
-        return resp(200, { topics: [TOPIC] });
+        return resp(200, { capabilities: CAPS, topics: [TOPIC] });
       }
       if (url.includes(`/api/context/topics/${TOPIC.id}/archive`) && init.method === "POST") {
         return Promise.reject(new Error("network down"));
@@ -330,11 +647,65 @@ describe("KnowledgeBasePage — archive failures are not silent", () => {
     await waitFor(() => expect(screen.getByText(TOPIC.title)).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: "Archive" }));
+    await user.click(await screen.findByTestId("knowledge-archive-confirm-accept"));
 
     await waitFor(() => {
       expect(screen.getByTestId(`knowledge-archive-error-${TOPIC.id}`)).toHaveTextContent(
         "network down",
       );
     });
+  });
+});
+
+describe("KnowledgeBasePage — optimistic concurrency", () => {
+  it("reloads the authoritative version after a conflict while preserving the draft", async () => {
+    const user = userEvent.setup();
+    let patchCalls = 0;
+    let retriedExpectedVersion: number | null = null;
+    stubFetch((url, init) => {
+      if (url.includes("/api/context/topics?") && (!init.method || init.method === "GET")) {
+        return resp(200, { capabilities: CAPS, topics: [TOPIC] });
+      }
+      if (url.includes(`/api/context/topics/${TOPIC.id}?`) && (!init.method || init.method === "GET")) {
+        return resp(200, { ...TOPIC, title: "Server title", version_number: 3 });
+      }
+      if (url.includes(`/api/context/topics/${TOPIC.id}?`) && init.method === "PATCH") {
+        patchCalls += 1;
+        const body = JSON.parse(String(init.body)) as { expected_version: number; title: string };
+        if (patchCalls === 1) {
+          return resp(409, { code: "version_conflict", message: "Topic changed elsewhere." });
+        }
+        retriedExpectedVersion = body.expected_version;
+        return resp(200, { ...TOPIC, title: body.title, version_number: 4 });
+      }
+      return resp(404, {});
+    });
+
+    render(<KnowledgeBasePage projectId="p1" />);
+    await screen.findByText(TOPIC.title);
+    await user.click(screen.getByRole("button", { name: "Edit entry" }));
+    const title = screen.getByDisplayValue(TOPIC.title);
+    await user.clear(title);
+    await user.type(title, "My preserved draft");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText(/Latest version v3 loaded/)).toBeInTheDocument();
+    expect(screen.getByDisplayValue("My preserved draft")).toBeInTheDocument();
+    expect(screen.getByText("Server title")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(retriedExpectedVersion).toBe(3));
+  });
+
+  it("restores focus to the opening control when the editor closes", async () => {
+    const user = userEvent.setup();
+    stubFetch((url) => url.includes("/api/context/topics")
+      ? resp(200, { capabilities: CAPS, topics: [TOPIC] })
+      : resp(404, {}));
+    render(<KnowledgeBasePage projectId="p1" />);
+    const edit = await screen.findByRole("button", { name: "Edit entry" });
+    await user.click(edit);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(edit).toHaveFocus());
   });
 });

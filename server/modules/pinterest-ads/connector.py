@@ -1,7 +1,8 @@
 """Pinterest Ads connector -- Story 26.3 (catalog-first, API v5, async reports).
 
-Exposes a ``mcp_app: FastMCP`` instance that the core loader mounts under the
-``pinterest-ads`` namespace (AD-2). Built to the epic-25 industrial standard
+Exposes a ``mcp_app: FastMCP`` instance as the conformance surface (AD-1
+envelope); since AD-42 the core no longer mounts it — execution uses the
+Datastream-parameterized core tools. Built to the epic-25 industrial standard
 from day one: generated api_catalog.json (OpenAPI 5.28.0 enums: 626 async +
 1 sync-only = 627 official columns + the ``date`` grain dimension, ZERO
 planned), body-code-keyed error_map, flat ad-account topology, three sync
@@ -59,7 +60,9 @@ from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-# Module-level FastMCP instance -- the public surface the loader mounts.
+# Module-level FastMCP instance, kept as the conformance surface (AD-1 envelope,
+# validated by server/tests/conformance/test_envelope.py). Since AD-42 the core
+# no longer mounts it: execution uses the Datastream-parameterized core tools.
 mcp_app = FastMCP("pinterest-ads")
 
 # ---------------------------------------------------------------------------
@@ -261,7 +264,9 @@ def _resolve_ad_account(connection_id: str, ad_account_id: str | None) -> str:
 
         resolved = token_service.resolve_connection_by_nango_id(connection_id)
         if resolved is not None:
-            selected = account_topology.resolve_selected_account(resolved.id)
+            selected = account_topology.resolve_selected_account(
+                resolved.id, connector="pinterest-ads"
+            )
     except (LookupError, ValueError) as exc:
         # Review 26.3 F-9: only the EXPECTED resolution errors fall through to
         # the actionable no-selected-account message below; anything else
@@ -578,34 +583,40 @@ def _canonical_metric_names(metric_field_ids: list[str]) -> list[str]:
 # Raw landing -- LONG format: one row per grain x metric (26.2 pattern).
 # ---------------------------------------------------------------------------
 
-_RAW_CREATE_DDL = """
-CREATE TABLE IF NOT EXISTS raw_pinterest_ads_daily (
-    date              VARCHAR,
-    data_level        VARCHAR,
-    ad_account_id     VARCHAR,
-    campaign_id       VARCHAR,
-    campaign_name     VARCHAR,
-    ad_group_id       VARCHAR,
-    ad_id             VARCHAR,
-    pin_id            VARCHAR,
-    product_group_id  VARCHAR,
-    segments_json     VARCHAR,
-    attributes_json   VARCHAR,
-    metric            VARCHAR,
-    value_num         DOUBLE,
-    pull_id           VARCHAR,
-    loaded_at         VARCHAR,
-    project_id        VARCHAR
-)
-"""
+_RAW_TABLE = "raw_pinterest_ads_daily"
 
-_RAW_INSERT_SQL = """
-INSERT INTO raw_pinterest_ads_daily
-    (date, data_level, ad_account_id, campaign_id, campaign_name, ad_group_id,
-     ad_id, pin_id, product_group_id, segments_json, attributes_json, metric,
-     value_num, pull_id, loaded_at, project_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-"""
+# THE RAW TABLE, DECLARED ONCE. `core.raw_landing` renders the DuckDB DDL and
+# INSERT from this list, and the BigQuery landing is handed the same list, so the
+# two backends cannot end up describing the same table differently.
+#
+# They did. The BigQuery branch carried its own transcription of these columns and
+# renamed `ad_account_id` to `advertiser_id`, invented `ad_group_name` and
+# `pin_promotion_id`, dropped `ad_id` / `pin_id` / `product_group_id` and added a
+# `currency` column the tuple never carried. It also renamed the metric pair to `metric_name` /
+# `metric_value`, which is neither what this table declares nor what
+# `stg_pinterest_ads_daily.sql` reads. Production runs `TOOROW_DB_MODE=bigquery`,
+# so the drifted copy was the live one.
+#
+# `tests/conformance/test_raw_table_has_one_declaration.py` compares this
+# declaration, the landing and the staging model on every run.
+_RAW_COLUMNS = [
+    ("date", "STRING"),
+    ("data_level", "STRING"),
+    ("ad_account_id", "STRING"),
+    ("campaign_id", "STRING"),
+    ("campaign_name", "STRING"),
+    ("ad_group_id", "STRING"),
+    ("ad_id", "STRING"),
+    ("pin_id", "STRING"),
+    ("product_group_id", "STRING"),
+    ("segments_json", "STRING"),
+    ("attributes_json", "STRING"),
+    ("metric", "STRING"),
+    ("value_num", "FLOAT"),
+    ("pull_id", "STRING"),
+    ("loaded_at", "STRING"),
+    ("project_id", "STRING"),
+]
 
 _STRUCTURE_COLUMNS = (
     "date", "ad_account_id", "campaign_id", "campaign_name", "ad_group_id",
@@ -646,7 +657,7 @@ def _insert_raw_rows(
 
     Returns ``(row_count, non_numeric_landed)``.
     """
-    if db_mode != "duckdb":
+    if db_mode not in ("duckdb", "bigquery"):
         raise ValueError(
             f"_insert_raw_rows: unsupported db_mode {db_mode!r} at P-dev"
             " (BigQuery path not yet implemented)"
@@ -718,12 +729,24 @@ def _insert_raw_rows(
                 )
             )
 
-    con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
-    con.execute(_RAW_CREATE_DDL)
-    if values:
-        con.executemany(_RAW_INSERT_SQL, values)
-    con.close()
-    return len(values), non_numeric_landed
+    from core import raw_landing  # noqa: PLC0415 -- AD-2
+
+    if db_mode == "bigquery":
+        raw_landing.land_raw_rows(
+            _RAW_TABLE,
+            [raw_landing.row_from_values(_RAW_COLUMNS, v) for v in values],
+            columns=_RAW_COLUMNS,
+            project_id=project_id,
+            backend="bigquery",
+        )
+        return len(values), non_numeric_landed
+    else:
+        con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
+        con.execute(raw_landing.duckdb_ddl(_RAW_TABLE, _RAW_COLUMNS))
+        if values:
+            con.executemany(raw_landing.duckdb_insert(_RAW_TABLE, _RAW_COLUMNS), values)
+        con.close()
+        return len(values), non_numeric_landed
 
 
 # ---------------------------------------------------------------------------
@@ -1456,11 +1479,11 @@ def _query_bigquery(sql: str, params: dict) -> list[dict]:
     return [dict(zip(cols, row)) for row in result]
 
 
-def _get_mart_table(db_mode: str) -> str:
+def _get_mart_table(db_mode: str, project_id: str | None) -> str:
     if db_mode == "duckdb":
         from core import warehouse_tenancy  # noqa: PLC0415
 
-        return f"{warehouse_tenancy.mart_prefix(None)}fact_daily_kpi"
+        return f"{warehouse_tenancy.mart_prefix(project_id)}fact_daily_kpi"
     dataset = os.environ.get("BQ_MARTS_DATASET", "marts")
     gcp_project = os.environ.get("GCP_PROJECT", "")
     prefix = f"{gcp_project}.{dataset}" if gcp_project else dataset
@@ -1488,7 +1511,7 @@ _MART_QUERY = """
 def _query_mart(date_from: str, date_to: str, project_id: str = "default") -> list[dict]:
     # AD-12: MCP server reads fact_daily_kpi mart only -- never raw_* tables.
     db_mode = _get_db_mode()
-    table = _get_mart_table(db_mode)
+    table = _get_mart_table(db_mode, project_id)
 
     if db_mode == "duckdb":
         sql = _MART_QUERY.format(table=table, p_project="?", p_from="?", p_to="?")

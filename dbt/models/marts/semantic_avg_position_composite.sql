@@ -38,15 +38,21 @@ SELECT
     date,
     'gsc'                              AS connector,
     'country>device'                   AS breakdown_dimension,
-    country || '>' || device           AS breakdown_value,
-    country                            AS country,
+    -- Story 58.5, arbitrage 1: the SAME named bucket the fact composite uses. The
+    -- encoding contract above says this view mirrors `fact_daily_kpi` exactly so a
+    -- caller can align on grain; repairing one concatenation and not the other
+    -- would break that alignment on precisely the rows the repair is about.
+    {{ country_bucket('country', 'country_source') }} || '>' || device
+                                       AS breakdown_value,
+    {{ country_bucket('country', 'country_source') }}
+                                       AS country,
     device                             AS device,
     SUM(average_position * impressions) / NULLIF(SUM(impressions), 0) AS average_position,
     SUM(impressions)                   AS impressions_weight,
     MAX(pull_id)                       AS pull_id,
     MAX(loaded_at)                     AS loaded_at
 FROM {{ ref('stg_gsc_daily') }}
-GROUP BY project_id, date, country, device
+GROUP BY project_id, date, {{ country_bucket('country', 'country_source') }}, device
 
 UNION ALL
 
@@ -64,8 +70,8 @@ SELECT
     'gsc'                              AS connector,
     'query>page'                       AS breakdown_dimension,
     query || '>' || page               AS breakdown_value,
-    CAST(NULL AS VARCHAR)              AS country,
-    CAST(NULL AS VARCHAR)              AS device,
+    CAST(NULL AS {{ toorow_string_type() }})              AS country,
+    CAST(NULL AS {{ toorow_string_type() }})              AS device,
     SUM(average_position * impressions) / NULLIF(SUM(impressions), 0) AS average_position,
     SUM(impressions)                   AS impressions_weight,
     MAX(pull_id)                       AS pull_id,

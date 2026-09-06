@@ -39,4 +39,4 @@ zscores AS (
 SELECT *
 FROM zscores
 WHERE zscore IS NOT NULL
-  AND ABS(zscore) >= COALESCE(TRY_CAST({{ env_var('ANOMALY_Z_THRESHOLD', '3.0') }} AS FLOAT), 3.0)
+  AND ABS(zscore) >= COALESCE({{ toorow_try_cast(env_var('ANOMALY_Z_THRESHOLD', '3.0'), toorow_float_type()) }}, 3.0)

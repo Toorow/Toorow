@@ -22,6 +22,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from tests.conftest import TEST_ORG_ID, purge_fixture_project
+
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
@@ -49,7 +51,37 @@ def _pg_reachable() -> bool:
 
 pg_available = pytest.mark.skipif(not _pg_reachable(), reason="platform Postgres not reachable")
 
-_AUTH = ("core.admin_api._check_auth", (True, "tester@example.com"))
+#: The routes here take a PRODUCTION access decision, so two things must be true
+#: that no fixture used to arrange: the caller must be enrolled as the CANONICAL
+#: person (membership carries `person_<ULID>`, never a raw subject), and
+#: `TOOROW_AUTH_MODE` must not be `disabled` -- in that mode every decision is
+#: refused with `production_identity_required` and the routes answer 404.
+_AUTH_SUBJECT = "tester@example.com"
+_AUTH = ("core.admin_api._check_auth", (True, _AUTH_SUBJECT))
+
+
+@pytest.fixture(autouse=True)
+def _enrolled_production_caller(monkeypatch):
+    global _AUTH
+
+    monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
+    if not os.environ.get("TEST_POSTGRES_DSN"):
+        yield
+        return
+    import psycopg
+
+    from tests.conftest import TEST_ORG_ID, enrol_fixture_identity
+
+    with psycopg.connect(os.environ["TEST_POSTGRES_DSN"]) as conn:
+        with conn.cursor() as cur:
+            person = enrol_fixture_identity(cur, _AUTH_SUBJECT, org_id=TEST_ORG_ID)
+        conn.commit()
+    previous = _AUTH
+    _AUTH = (_AUTH[0], (True, person))
+    try:
+        yield
+    finally:
+        _AUTH = previous
 
 
 # ---------------------------------------------------------------------------
@@ -61,9 +93,8 @@ def _insert_project(project_id: str, conn) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO app.projects (id, name, slug, status, currency, timezone, created_by,
-                org_id)
-            VALUES (%s, %s, %s, 'active', 'EUR', 'Europe/Paris', 'test', 'org_test_fixture')
+            INSERT INTO app.projects (id, name, slug, status, created_by, org_id)
+            VALUES (%s, %s, %s, 'active', 'test', 'org_test_fixture')
             ON CONFLICT DO NOTHING
             """,
             (project_id, f"Test {project_id}", project_id),
@@ -111,7 +142,9 @@ def _cleanup(project_id: str, conn) -> None:
 
         try:
             cur.execute("SAVEPOINT sp_proj")
-            cur.execute("DELETE FROM app.projects WHERE id = %s", (project_id,))
+            # AI-291: le graphe prend le relais si une table gouvernee
+            # ajoutee depuis retient le projet en ON DELETE RESTRICT.
+            purge_fixture_project(cur.connection, project_id)
         except Exception:
             cur.execute("ROLLBACK TO SAVEPOINT sp_proj")
         finally:
@@ -154,8 +187,8 @@ def _delete_request(project_id: str) -> MagicMock:
 @pytest.mark.anyio
 async def test_revoke_connection_marks_revoked(tmp_path):
     """POST /revoke marks connection_ref.status = 'revoked'."""
-    from core.admin_api import _revoke_connection
     from core.db import get_connection
+    from core.project_connections_api import _revoke_connection  # noqa: PLC0415
 
     proj_id = f"proj_{uuid.uuid4().hex[:10]}"
     conn_id = f"conn_{uuid.uuid4().hex[:10]}"
@@ -202,8 +235,8 @@ async def test_revoke_connection_marks_revoked(tmp_path):
 @pytest.mark.anyio
 async def test_revoke_connection_clears_health_cache(tmp_path):
     """POST /revoke calls purge_connection_cache for the connection."""
-    from core.admin_api import _revoke_connection
     from core.db import get_connection
+    from core.project_connections_api import _revoke_connection  # noqa: PLC0415
 
     proj_id = f"proj_{uuid.uuid4().hex[:10]}"
     conn_id = f"conn_{uuid.uuid4().hex[:10]}"
@@ -246,8 +279,8 @@ async def test_revoke_connection_clears_health_cache(tmp_path):
 @pytest.mark.anyio
 async def test_revoke_connection_writes_audit_row(tmp_path):
     """POST /revoke writes an audit row with action='connection.revoked'."""
-    from core.admin_api import _revoke_connection
     from core.db import get_connection
+    from core.project_connections_api import _revoke_connection  # noqa: PLC0415
 
     proj_id = f"proj_{uuid.uuid4().hex[:10]}"
     conn_id = f"conn_{uuid.uuid4().hex[:10]}"
@@ -302,8 +335,8 @@ async def test_revoke_connection_writes_audit_row(tmp_path):
 @pytest.mark.anyio
 async def test_revoke_connection_wrong_project_returns_404(tmp_path):
     """Revoking a connection that belongs to project B via project A returns 404."""
-    from core.admin_api import _revoke_connection
     from core.db import get_connection
+    from core.project_connections_api import _revoke_connection  # noqa: PLC0415
 
     proj_a = f"proj_{uuid.uuid4().hex[:10]}"
     proj_b = f"proj_{uuid.uuid4().hex[:10]}"
@@ -343,8 +376,8 @@ async def test_revoke_connection_wrong_project_returns_404(tmp_path):
 @pytest.mark.anyio
 async def test_key_rotation_writes_tka_row(tmp_path):
     """POST /rotate-key writes a tka_ audit row with action='key_rotated'."""
-    from core.admin_api import _rotate_project_key
     from core.db import get_connection
+    from core.projects_api import _rotate_project_key  # noqa: PLC0415
 
     proj_id = f"proj_{uuid.uuid4().hex[:10]}"
     with get_connection() as db:
@@ -398,8 +431,8 @@ async def test_key_rotation_writes_tka_row(tmp_path):
 @pytest.mark.anyio
 async def test_project_creation_provisions_key(tmp_path):
     """POST /api/projects provisions a key file and writes a tka_ audit row."""
-    from core.admin_api import _create_project
     from core.db import get_connection
+    from core.projects_api import _create_project  # noqa: PLC0415
 
     key_dir = str(tmp_path / "keys")
     slug = f"test-{uuid.uuid4().hex[:8]}"
@@ -409,7 +442,14 @@ async def test_project_creation_provisions_key(tmp_path):
         patch.dict(os.environ, {"TENANT_KEY_DIR": key_dir, "TENANT_KEY_BACKEND": "local"}),
     ):
         req = MagicMock()
-        body_bytes = json.dumps({"name": f"Test {slug}", "slug": slug}).encode()
+        # `org_id` NAMED, not inferred. `_create_project` only deduces the org
+        # when the caller holds exactly ONE, and a caller enrolled by several
+        # fixtures holds more -- it then answers `org_id_required`, correctly.
+        # A test that relies on the caller having a single org is measuring
+        # the order of the suite.
+        body_bytes = json.dumps(
+            {"name": f"Test {slug}", "slug": slug, "org_id": TEST_ORG_ID}
+        ).encode()
         req.body = AsyncMock(return_value=body_bytes)
         resp = await _create_project(req)
 
@@ -449,8 +489,8 @@ async def test_project_creation_provisions_key(tmp_path):
 @pytest.mark.anyio
 async def test_project_archive_deletes_key(tmp_path):
     """DELETE /api/projects/{id} deletes the key file and writes a tka_ row."""
-    from core.admin_api import _create_project, _delete_project
     from core.db import get_connection
+    from core.projects_api import _create_project, _delete_project  # noqa: PLC0415
 
     key_dir = str(tmp_path / "keys")
     slug = f"arch-{uuid.uuid4().hex[:8]}"
@@ -461,7 +501,10 @@ async def test_project_archive_deletes_key(tmp_path):
         patch.dict(os.environ, {"TENANT_KEY_DIR": key_dir, "TENANT_KEY_BACKEND": "local"}),
     ):
         req = MagicMock()
-        body_bytes = json.dumps({"name": f"Archive {slug}", "slug": slug}).encode()
+        # `org_id` named, same reason as the creation test above.
+        body_bytes = json.dumps(
+            {"name": f"Archive {slug}", "slug": slug, "org_id": TEST_ORG_ID}
+        ).encode()
         req.body = AsyncMock(return_value=body_bytes)
         resp = await _create_project(req)
 

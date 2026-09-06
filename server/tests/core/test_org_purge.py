@@ -10,13 +10,69 @@ from __future__ import annotations
 import pytest
 from core import org_purge
 
+from tests.support.statement_router import (
+    StatementInventory,
+    UnknownStatement,
+    describe,
+)
+
+#: EVERY statement `core.org_purge` issues, named, in the order an if/elif
+#: chain would test them (first match wins). Read off the PRODUCT, not off the
+#: chain this replaces: that chain named two of the five -- the two catalog
+#: reads of `_load_graph` (org_purge.py:147 and :158) -- and let the other three
+#: fall into an `else` that answered "no rows" and recorded the text. Those
+#: three are the statements the purge is MADE of: the transaction flag
+#: (org_purge.py:355), the tenant DELETE (:287 and :309) and the cycle-breaking
+#: UPDATE (:186, emitted at :297).
+#:
+#: The tenant statements are matched on their SHAPE, not on a table name: the
+#: table is whatever the injected FK graph says, so a fragment naming one would
+#: only ever match the fixture that invented it.
+_ORG_PURGE = StatementInventory(
+    "_FakeCursor (core.org_purge)",
+    fk_graph="from pg_constraint c",
+    nullable_columns="not a.attisdropped",
+    flag_the_erasure="set local app.rgpd_erasure",
+    detach_back_reference=("update ", "= null where "),
+    delete_tenant_rows="delete from ",
+)
+
+#: The one projection `describe` refuses to derive: `_FK_GRAPH_SQL` selects two
+#: correlated `array_agg` sub-selects, and a router that guessed a column list
+#: out of that would be parsing SQL. Named here, once, exactly where the
+#: derivation stops -- everywhere else the description comes from the statement.
+_NAMED_DESCRIPTION = {
+    "fk_graph": [
+        ("conname",),
+        ("child_table",),
+        ("parent_table",),
+        ("child_cols",),
+        ("parent_cols",),
+    ],
+}
+
+#: Statements that return NO RESULT SET. `description = None` is what psycopg
+#: reserves for exactly these -- a SET, and DML with no RETURNING.
+_NO_RESULT_SET = frozenset(
+    {"flag_the_erasure", "detach_back_reference", "delete_tenant_rows"}
+)
+
 
 class _FakeCursor:
+    """The catalog and the tenant statements -- and a refusal for anything else.
+
+    AI-317: an unrecognized statement is NAMED, never answered. The silence it
+    replaces was load-bearing here: `purge_org_tree` reads `cur.rowcount` after
+    every planned statement, so a DELETE that stopped matching would still have
+    been counted as one erased row and the audit totals would have stayed green.
+    """
+
     def __init__(self, fk_rows, null_rows, executed):
         self._fk_rows = fk_rows
         self._null_rows = null_rows
         self._executed = executed
         self._result: list = []
+        self.description: list[tuple[str]] | None = None
         self.rowcount = 1
 
     def __enter__(self):
@@ -26,13 +82,33 @@ class _FakeCursor:
         return False
 
     def execute(self, sql, params=None):
-        if "pg_constraint" in sql:
-            self._result = self._fk_rows
-        elif "attisdropped" in sql:
-            self._result = self._null_rows
+        statement = _ORG_PURGE.match(sql)
+        if statement in _NO_RESULT_SET:
+            self.description = None
         else:
-            self._executed.append(sql)
-            self._result = []
+            self.description = _NAMED_DESCRIPTION.get(statement) or describe(sql)
+        match statement:
+            case "fk_graph":
+                self._result = self._fk_rows
+                self.rowcount = len(self._fk_rows)
+            case "nullable_columns":
+                self._result = self._null_rows
+                self.rowcount = len(self._null_rows)
+            case "flag_the_erasure":
+                # A SET affects no row and psycopg reports -1. The purge does
+                # not read it here; what the test reads is the ORDER, so the
+                # statement is recorded like the tenant ones.
+                self._executed.append(sql)
+                self._result = []
+                self.rowcount = -1
+            case "detach_back_reference" | "delete_tenant_rows":
+                # One row per planned statement, which is what lets the tests
+                # tell an erased row from a detached reference.
+                self._executed.append(sql)
+                self._result = []
+                self.rowcount = 1
+            case _:  # pragma: no cover - a name added to the inventory, unanswered
+                raise _ORG_PURGE.unknown(sql)
 
     def fetchall(self):
         return self._result
@@ -143,7 +219,21 @@ def test_cycle_is_broken_by_nulling_only_the_nullable_column():
     assert [op.kind for op in plan][: len(breaks)] == ["null"] * len(breaks)
 
 
-def test_cycle_with_no_nullable_column_raises():
+def test_cycle_with_no_nullable_column_is_deleted_not_refused():
+    """A back-reference that cannot be detached is DELETED, not refused.
+
+    This test asserted the opposite until 2026-08-03, and the refusal it pinned
+    made the whole endpoint unreachable: `fk_master_data_nodes_registry_any_scope`
+    is `registry_id NOT NULL ... ON DELETE RESTRICT` (migration 140:194), so
+    `plan_purge` raised on EVERY organization -- measured on an org with zero
+    `master_data_nodes` rows and on an org_id that does not exist. No
+    organization could be erased, which is the RGPD path.
+
+    Deleting is the coherent action and not a widening: a NOT NULL foreign key
+    says the child is meaningless without its parent, and the parent is already
+    queued for deletion on the same path. The statement stays scoped to the
+    tenant by the same predicate every other statement uses.
+    """
     conn = _conn(
         [
             ("fk_a_org", "app.a", ORG, ["org_id"], ["id"]),
@@ -152,8 +242,38 @@ def test_cycle_with_no_nullable_column_raises():
         ],
         {("app.a", "b_id"): False},
     )
-    with pytest.raises(RuntimeError, match="cannot break the cycle"):
-        org_purge.plan_purge(conn, "org_x")
+    plan = org_purge.plan_purge(conn, "org_x")
+
+    cut = [op for op in plan if op.conname == "fk_a_b"]
+    assert len(cut) == 1
+    assert cut[0].kind == "delete"
+    assert cut[0].sql.startswith("DELETE FROM app.a WHERE")
+    # It runs BEFORE the ancestors' deletes -- that ordering is the whole reason
+    # the branch exists, and a plan that emitted it last would trip the FK.
+    assert plan.index(cut[0]) < min(
+        i for i, op in enumerate(plan) if op.kind == "delete" and op.conname != "fk_a_b"
+    )
+
+
+def test_a_detachable_cycle_is_still_detached_not_deleted():
+    """The nullable case must not have been swept up by the change above.
+
+    `datastreams <-> datastream_executions` is broken by NULLing
+    `current_published_execution_id`; turning that into a DELETE would erase
+    executions the org still owns.
+    """
+    conn = _conn(
+        [
+            ("fk_a_org", "app.a", ORG, ["org_id"], ["id"]),
+            ("fk_b_a", "app.b", "app.a", ["a_id"], ["id"]),
+            ("fk_a_b", "app.a", "app.b", ["b_id"], ["id"]),
+        ],
+        {("app.a", "b_id"): True},
+    )
+    plan = org_purge.plan_purge(conn, "org_x")
+    cut = [op for op in plan if op.conname == "fk_a_b"]
+    assert len(cut) == 1
+    assert cut[0].kind == "null"
 
 
 def test_blocking_fk_from_a_preserved_ledger_raises():
@@ -236,7 +356,27 @@ def test_detached_references_are_not_counted_as_erased_rows():
         {("app.datastreams", "current_execution_id"): True},
     )
     result = org_purge.purge_org_tree(conn, "org_x")
-    # The fake cursor reports rowcount=1 for every statement: 2 deletes, 1 detach.
+    # The fake cursor reports rowcount=1 for every tenant statement: 2 deletes,
+    # 1 detach.
     assert result["total_rows"] == 2
     assert result["refs_detached"] == 1
     assert set(result["rows_by_table"]) == {"app.datastreams", "app.datastream_executions"}
+
+
+def test_the_fake_refuses_a_statement_it_was_never_taught():
+    """AI-317: an unknown statement is named, not answered with "no rows".
+
+    The statement below is the plausible one: the endpoint that calls this
+    module looks the organization up before it erases anything. Handed to the
+    old fake it went to the `else`, which recorded it as a purge statement and
+    reported `rowcount = 1` -- one more erased row in the RGPD audit trail, for
+    a read.
+    """
+    cursor = _FakeCursor([], [], [])
+
+    with pytest.raises(UnknownStatement) as raised:
+        cursor.execute("SELECT id FROM app.organizations WHERE id = %s", ("org_x",))
+
+    message = str(raised.value)
+    assert "select id from app.organizations" in message
+    assert "delete_tenant_rows" in message

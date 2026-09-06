@@ -1,7 +1,8 @@
 """Google Search Console connector — Story 6.2.
 
-Exposes a ``mcp_app: FastMCP`` instance that the core loader mounts under the
-``gsc`` namespace (AD-2). This is the third module on the shared base —
+Exposes a ``mcp_app: FastMCP`` instance as the conformance surface (AD-1
+envelope); since AD-42 the core no longer mounts it — execution uses the
+Datastream-parameterized core tools. This is the third module on the shared base —
 the FR2 "drop-a-folder" proof: zero edits to server/core, one mart UNION.
 
 # AD-12: MCP server reads the fact_daily_kpi mart only — no raw_* tables, no CSV.
@@ -27,8 +28,9 @@ from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-# Module-level FastMCP instance — the public surface the loader mounts.
-# The core does: mcp.mount(loaded.connector_module.mcp_app, namespace=loaded.name)
+# Module-level FastMCP instance, kept as the conformance surface (AD-1 envelope,
+# validated by server/tests/conformance/test_envelope.py). Since AD-42 the core
+# no longer mounts it: execution uses the Datastream-parameterized core tools.
 mcp_app = FastMCP("gsc")
 
 # ---------------------------------------------------------------------------
@@ -48,6 +50,31 @@ def _get_db_mode() -> str:
 
 def _get_duckdb_path() -> str:
     return os.environ.get("TOOROW_DUCKDB_PATH", _DEFAULT_DUCKDB_PATH)
+
+
+# ---------------------------------------------------------------------------
+# Provider error refinements -- declared in manifest.json, never in core (AD-2).
+# ---------------------------------------------------------------------------
+
+_ERROR_MAP: dict[str, str] | None = None
+
+
+def _load_error_map() -> dict[str, str]:
+    """Return the manifest's ``error_map`` (status:code -> canonical class), cached.
+
+    Keys are ``"<http_status>:<provider_code>"``, and for Search Console the code
+    is the ``error.errors[].reason`` string of the Google API Console envelope --
+    the only token in the body that is not a copy of the HTTP status.
+    core.pull_errors._extract_provider_codes offers it before error.status and
+    error.code. See the manifest ``_error_map_note`` for the published reference
+    and for the entries that actually change a verdict.
+    """
+    global _ERROR_MAP
+    if _ERROR_MAP is None:
+        manifest_path = Path(__file__).parent / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        _ERROR_MAP = manifest.get("error_map") or {}
+    return _ERROR_MAP
 
 
 def _query_duckdb(sql: str, params: list, duckdb_path: str) -> list[dict]:
@@ -79,7 +106,7 @@ def _query_bigquery(sql: str, params: dict) -> list[dict]:
     return [dict(zip(cols, row)) for row in result]
 
 
-def _get_mart_table(db_mode: str) -> str:
+def _get_mart_table(db_mode: str, project_id: str | None) -> str:
     """Fully-qualified mart table reference per engine.
 
     DuckDB: dbt materialises marts into the main_marts schema.
@@ -89,14 +116,14 @@ def _get_mart_table(db_mode: str) -> str:
     if db_mode == "duckdb":
         from core import warehouse_tenancy  # noqa: PLC0415
 
-        return f"{warehouse_tenancy.mart_prefix(None)}fact_daily_kpi"
+        return f"{warehouse_tenancy.mart_prefix(project_id)}fact_daily_kpi"
     dataset = os.environ.get("BQ_MARTS_DATASET", "marts")
     gcp_project = os.environ.get("GCP_PROJECT", "")
     prefix = f"{gcp_project}.{dataset}" if gcp_project else dataset
     return f"{prefix}.fact_daily_kpi"
 
 
-def _get_semantic_view(db_mode: str, metric: str) -> str:
+def _get_semantic_view(db_mode: str, metric: str, project_id: str | None) -> str:
     """Fully-qualified semantic view reference per engine.
 
     # AD-4: average_position is non-additive; it MUST be read from the semantic
@@ -107,7 +134,7 @@ def _get_semantic_view(db_mode: str, metric: str) -> str:
     if db_mode == "duckdb":
         from core import warehouse_tenancy  # noqa: PLC0415
 
-        return f"{warehouse_tenancy.mart_prefix(None)}{view_name}"
+        return f"{warehouse_tenancy.mart_prefix(project_id)}{view_name}"
     dataset = os.environ.get("BQ_MARTS_DATASET", "marts")
     gcp_project = os.environ.get("GCP_PROJECT", "")
     prefix = f"{gcp_project}.{dataset}" if gcp_project else dataset
@@ -158,8 +185,8 @@ def _query_mart(date_from: str, date_to: str, project_id: str = "default") -> li
     # AD-4: average_position is non-additive; routed to semantic_avg_position view.
     """
     db_mode = _get_db_mode()
-    table = _get_mart_table(db_mode)
-    semantic_view = _get_semantic_view(db_mode, "avg_position")
+    table = _get_mart_table(db_mode, project_id)
+    semantic_view = _get_semantic_view(db_mode, "avg_position", project_id)
 
     if db_mode == "duckdb":
         # Additive metrics: clicks, impressions
@@ -393,12 +420,18 @@ def _insert_raw_rows(
     db_mode: str,
     duckdb_path: str,
 ) -> int:
-    """Insert canonical rows into raw_gsc_daily (DuckDB only at P3-dev).
+    """Insert canonical rows into raw_gsc_daily (DuckDB or BigQuery per TOOROW_DB_MODE).
 
     AD-4: average_position stored RAW per row with impressions as weight.
     NEVER aggregate average_position here — the semantic_avg_position view handles it.
     """
-    if db_mode == "duckdb":
+    if db_mode in ("duckdb", "bigquery"):
+        # BOTH BACKENDS, ONE PATH. `open_raw_writer` resolves DuckDB or
+        # BigQuery from TOOROW_DB_MODE itself, so this branch already covers
+        # bigquery. An `elif db_mode == "bigquery"` used to sit below it,
+        # unreachable because this test captures both modes -- dead code that
+        # had quietly drifted to a different set of column names and would
+        # have become live the day someone narrowed this condition.
         from core import warehouse_write  # noqa: PLC0415
 
         con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
@@ -436,10 +469,7 @@ def _insert_raw_rows(
         con.close()
         return len(values)
     else:
-        raise ValueError(
-            f"_insert_raw_rows: unsupported db_mode {db_mode!r} at P3-dev "
-            "(BigQuery path not yet implemented)"
-        )
+        raise ValueError(f"_insert_raw_rows: unsupported db_mode {db_mode!r}")
 
 
 def _parse_gsc_row(api_row: dict, dimensions: list[str]) -> dict:
@@ -486,11 +516,17 @@ def _parse_gsc_row(api_row: dict, dimensions: list[str]) -> dict:
 
 def pull(
     connection_id: str,
-    site_url: str,
     date_from: str,
     date_to: str,
     project_id: str,
     pull_id: str,
+    # Le site n'est plus un positionnel REQUIS. Il arrive de la selection que
+    # l'operateur a faite dans l'assistant, transmise par le worker sous le nom
+    # que le manifeste declare (`account_topology.pull_parameter`). Requis, il
+    # faisait lever un `TypeError: pull() missing 1 required positional argument`
+    # -- une erreur nue, hors de toute taxonomie -- des que la selection etait
+    # vide, et il empechait tout harnais generique d'appeler ce connecteur.
+    site_url: str | None = None,
     dimensions: list[str] | None = None,
     row_limit: int = 25000,
     dimension_filter: dict | list[dict] | None = None,
@@ -498,8 +534,16 @@ def pull(
     data_state: str | None = None,
     aggregation_type: str | None = None,
     static_fields: dict | None = None,
+    dry_run: bool = False,
 ) -> dict:
     """Fetch GSC Search Analytics data and land rows in raw_gsc_daily.
+
+    ``dry_run=True`` fetches and transforms exactly as a real pull does, then
+    RETURNS the canonical rows instead of landing them: no `_insert_raw_rows`, so
+    nothing reaches raw, staging or the marts. This is what a setup preview needs
+    and it is why a preview does NOT require the execution-isolation work that a
+    CANDIDATE does -- a candidate must land, isolated by execution, and that is the
+    open warehouse problem; a preview must only show.
 
     Full searchanalytics.query coverage: every request-body parameter of the API
     is either exposed here (type, dataState, aggregationType, dimensionFilterGroups)
@@ -636,7 +680,7 @@ def pull(
                 _body = resp.json()
             except Exception:
                 _body = resp.text
-            raise classify_http_error(resp.status_code, _body)
+            raise classify_http_error(resp.status_code, _body, _load_error_map())
 
         payload = resp.json()
         page_rows = payload.get("rows") or []
@@ -673,6 +717,28 @@ def pull(
     # Apply transform() to rename position → average_position and drop ctr
     canonical_rows = transform(raw_rows)
 
+    if dry_run:
+        # Nothing lands. The caller gets the same rows a real pull would have
+        # written, plus the shape it would have written them in.
+        logger.info(
+            "gsc_pull_dry_run: rows=%d pages=%d type=%s (nothing landed)",
+            len(canonical_rows),
+            pages,
+            search_type,
+        )
+        return {
+            "pull_id": None,
+            "dry_run": True,
+            "row_count": len(canonical_rows),
+            "rows": canonical_rows,
+            "schema": sorted({key for row in canonical_rows for key in row}),
+            "date_from": date_from,
+            "date_to": date_to,
+            "pages": pages,
+            "truncated": truncated,
+            "metadata": metadata,
+        }
+
     row_count = _insert_raw_rows(
         canonical_rows, pull_id, loaded_at, project_id, db_mode, duckdb_path
     )
@@ -698,18 +764,28 @@ def pull(
 
 
 def _resolve_site_url(site_url: str | None, profile: str) -> str:
-    """Resolve the GSC property URL: explicit arg wins, else GSC_SITE_URL env.
+    """Resolve the GSC property URL from the operator's SELECTION.
 
-    The queue dispatch passes only (connection_id, date_from, date_to, project_id,
-    pull_id) by keyword — it never passes site_url — so every GSC profile shim
-    relies on this env fallback (mirrors GA4's property_id <- GA4_PROPERTY_ID).
+    Le repli sur `GSC_SITE_URL` est SUPPRIME (2026-07-31). Son ancienne docstring
+    disait la raison de son existence : « the queue dispatch passes only
+    (connection_id, date_from, date_to, project_id, pull_id) by keyword -- it
+    never passes site_url ». Ce n'est plus vrai : le worker transmet desormais le
+    compte choisi sous le nom que le manifeste declare
+    (`account_topology.pull_parameter`), et `core/account_topology.py` declare
+    ces replis d'environnement deprecies depuis la story 25.7.
+
+    Ce que le repli coutait, et pourquoi il ne suffit pas de le laisser la : une
+    variable d'environnement est unique pour tout le deploiement, donc TOUS les
+    Datastreams de TOUS les projets tiraient la meme propriete -- et aucune quand
+    elle n'etait pas posee. Un defaut d'isolement, pas une commodite.
     """
-    if site_url is None:
-        site_url = os.environ.get("GSC_SITE_URL")
     if not site_url:
         raise ValueError(
-            f"GSC_SITE_URL env var required for {profile} "
-            "(set it to your GSC property URL, e.g. 'sc-domain:example.com')"
+            f"GSC site selection is required for {profile}: the operator picks a "
+            "property in the Datastream wizard (discover_accounts lists what the "
+            "token can reach) and the worker passes it as `site_url`. No site was "
+            "selected for this connection, and there is no deployment-wide default "
+            "-- one would pull the same property for every project."
         )
     return site_url
 
@@ -901,11 +977,12 @@ def transform(raw_rows: list[dict]) -> list[dict]:
 # properties). The Sites list endpoint enumerates what the token can reach;
 # core owns selection, access-check, trial extraction, and backfill.
 #
-# DEPRECATION NOTE: The existing GSC_SITE_URL env-var pattern (used by
-# _resolve_site_url) is superseded by the core topology flow once the core
-# account_topology.resolve_selected_account is wired at rollout. Until then
-# the env-var fallback remains functional so existing pull schedules keep
-# working unchanged. Do not remove _resolve_site_url until core topology is live.
+# The GSC_SITE_URL env-var fallback is REMOVED (2026-07-31): _resolve_site_url
+# raises when no site was selected. The core topology flow
+# (account_topology.resolve_selected_account) is the only path -- the worker
+# passes the operator's selection under the name the manifest declares
+# (`pull_parameter: site_url`). An env-var is one value for the whole
+# deployment, so every Datastream of every project pulled the same property.
 #
 # AD-3: token obtained immediately before use via nango_client.get_fresh_token;
 # falls out of scope after the HTTP call. Never stored or logged.
@@ -933,7 +1010,9 @@ def discover_accounts(connection_id: str) -> list[dict]:
     Raises:
         core.quota.RateLimitError on 429 (breaker path, unchanged contract).
         A typed core.pull_errors.ConnectorError on any other non-2xx.
-        401 -> AuthExpiredError (pure-HTTP taxonomy, no error_map needed).
+        401 -> AuthExpiredError; the manifest error_map refines the reasons the
+        pure-HTTP taxonomy gets wrong (a 403 quota reason is transient, not a
+        permission refusal).
 
     AD-3: the token is used immediately as a Bearer header, never stored or logged.
     """
@@ -965,7 +1044,7 @@ def discover_accounts(connection_id: str) -> list[dict]:
             _body = resp.json()
         except Exception:
             _body = resp.text
-        raise classify_http_error(resp.status_code, _body)
+        raise classify_http_error(resp.status_code, _body, _load_error_map())
 
     payload = resp.json()
     site_entries = payload.get("siteEntry") or []
@@ -1181,7 +1260,9 @@ def pull_catalog_daily(
     Parameters match the queue dispatch contract:
         connection_id, date_from, date_to, project_id, pull_id (required),
         selection (optional; None = tier-core default),
-        site_url (optional; falls back to GSC_SITE_URL env var),
+        site_url (optional in the signature, required at runtime: the worker
+        passes the operator's selection; _resolve_site_url raises without one
+        -- the GSC_SITE_URL env fallback was removed 2026-07-31),
         row_limit (optional; default 25000).
     """
     from core import catalog_contract  # noqa: PLC0415

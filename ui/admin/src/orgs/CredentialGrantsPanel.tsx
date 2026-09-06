@@ -10,25 +10,26 @@
  *   4. Pour chaque compte, bouton « Exposer » (POST grants) ou « Révoquer »
  *      (DELETE grants/{org}).
  *
- * AD-9 : 409 (already granted) → Alert severity="info" ; 403 → Alert severity="error".
+ * AD-9 : 409 (already granted) → tone "info" ; 403 → tone "error".
  * AD-5 : la liste des comptes n'est pas re-filtrée côté client.
- * UX-DR10 : copie française accentuée.
+ *
+ * VOCABULAIRE VISUEL (2026-08-02). Onze imports MUI retirés, comportement
+ * inchangé : mêmes appels, mêmes codes HTTP, mêmes `data-testid`, même copie.
+ * Les `<Alert severity>` deviennent `Status as="block"` — voir la note de
+ * `DataAccessGrantsPanel.tsx` pour pourquoi ce n'est pas une primitive neuve.
+ *
+ * THE TYPED IDENTIFIER IS NOT A CONTROL WHEN THE CALLER ALREADY HOLDS ONE.
+ * `shell/pages/OrgSettings.tsx` says so in its own words — the connection is
+ * CHOSEN there, never recalled — and this panel nonetheless rendered the field
+ * and its Load button underneath that chooser, so the screen asked the same
+ * question twice and answered itself with a `cred_…` a person would have to
+ * remember. The field now exists only on a mount that supplies no
+ * `credentialId`; when the parent supplies one it is not rendered at all, and
+ * nothing else about the flow changes.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "../lib/apiFetch";
-import {
-  Alert,
-  Box,
-  Button,
-  CircularProgress,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  TextField,
-  Typography,
-} from "@mui/material";
+import { Button, ConfirmDialog, EmptyState, Field, Input, ObjectId, Spinner, Status, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Timestamp } from "../ui";
 
 // ---------------------------------------------------------------------------
 // Types (AI-54 : calquées sur la réponse réelle de l'API)
@@ -71,10 +72,16 @@ export default function CredentialGrantsPanel({
   apiBase = "",
   apiToken = "",
 }: CredentialGrantsPanelProps) {
-  const [credentialId, setCredentialId] = useState(initialCredentialId ?? "");
-  const [credentialIdInput, setCredentialIdInput] = useState(
-    initialCredentialId ?? ""
-  );
+  /** The caller named the connection, so the person is not asked to. */
+  const chosenByCaller = Boolean(initialCredentialId);
+  /** What a STANDALONE mount typed and loaded. Ignored when the caller chose. */
+  const [typedCredentialId, setTypedCredentialId] = useState("");
+  const [credentialIdInput, setCredentialIdInput] = useState("");
+  // ONE source of truth for which connection is being read. It used to be a
+  // `useState` seeded from the prop, which never re-seeds: choosing a second
+  // connection in `OrgSettings` changed the prop and left this panel showing the
+  // FIRST connection's accounts, with its Expose button posting to it.
+  const credentialId = initialCredentialId || typedCredentialId;
 
   const [accounts, setAccounts] = useState<CredentialAccount[]>([]);
   const [grants, setGrants] = useState<CredentialGrant[]>([]);
@@ -84,6 +91,12 @@ export default function CredentialGrantsPanel({
   // Feedback opérations
   const [opError, setOpError] = useState<string | null>(null);
   const [opInfo, setOpInfo] = useState<string | null>(null);
+  const [pendingRevoke, setPendingRevoke] = useState<CredentialAccount | null>(null);
+  const [revoking, setRevoking] = useState(false);
+
+  /** One `Idempotency-Key` per (credential, account, grantee) command — see
+   *  `handleExpose`. `DELETE .../grants/{org}` needs none: only the POST does. */
+  const exposeKeys = useRef<Record<string, string>>({});
 
   const headers: HeadersInit = {
     "Content-Type": "application/json",
@@ -142,10 +155,14 @@ export default function CredentialGrantsPanel({
     }
   }, [apiBase]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Chargement auto si credentialId fourni en prop
+  // Chargement auto dès qu'une connexion est désignée — par le parent ou par la
+  // saisie d'un montage autonome.
   useEffect(() => {
     if (credentialId) {
       void loadData(credentialId);
+    } else {
+      setAccounts([]);
+      setGrants([]);
     }
   }, [credentialId, loadData]);
 
@@ -168,15 +185,27 @@ export default function CredentialGrantsPanel({
   async function handleExpose(externalAccountId: string) {
     setOpError(null);
     setOpInfo(null);
+    // `_create_account_grant` REFUSES a request without this header (422
+    // `missing_idempotency_key`) — so every click of this button answered 422
+    // until 2026-08-04. The stubbed `fetch` in this panel's own tests demands no
+    // header, so nothing caught it until the button was walked against a real
+    // server. Held per (account, org) so a retry after a 5xx is the same command
+    // and cannot create a second grant; dropped on a 4xx, which is a rejection.
+    const command = `${credentialId}:${externalAccountId}:${orgId}`;
+    exposeKeys.current[command] ??=
+      typeof crypto?.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `idem-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
     try {
       const resp = await apiFetch(
         `${apiBase}/api/credentials/${encodeURIComponent(credentialId)}/accounts/${encodeURIComponent(externalAccountId)}/grants`,
         {
           method: "POST",
-          headers,
+          headers: { ...headers, "Idempotency-Key": exposeKeys.current[command] },
           body: JSON.stringify({ grantee_org_id: orgId }),
         }
       );
+      if (resp.ok || resp.status < 500) delete exposeKeys.current[command];
       if (!resp.ok) {
         const data = await resp.json().catch(() => null);
         if (resp.status === 409) {
@@ -202,6 +231,8 @@ export default function CredentialGrantsPanel({
   // ---------------------------------------------------------------------------
 
   async function handleRevoke(externalAccountId: string) {
+    if (revoking) return;
+    setRevoking(true);
     setOpError(null);
     setOpInfo(null);
     try {
@@ -220,9 +251,12 @@ export default function CredentialGrantsPanel({
         }
         return;
       }
+      setPendingRevoke(null);
       await loadData(credentialId);
     } catch (err) {
       setOpError(err instanceof Error ? err.message : "Unexpected error.");
+    } finally {
+      setRevoking(false);
     }
   }
 
@@ -230,107 +264,132 @@ export default function CredentialGrantsPanel({
   // Rendu
   // ---------------------------------------------------------------------------
 
-  return (
-    <Box>
-      <Typography
-        variant="overline"
-        color="text.secondary"
-        sx={{ display: "block", mb: 1 }}
-      >
-        Auth grants
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Expose accounts from a connection (credential) to this organization.
-        Enter the connection identifier to get started.
-      </Typography>
+  /** The dismiss control the two MUI `Alert`s carried as `onClose`. */
+  const dismiss = (onClick: () => void, what: string) => (
+    <Button variant="ghost" size="xs" onClick={onClick} aria-label={`Dismiss the ${what}`}>
+      Dismiss
+    </Button>
+  );
 
-      {/* Saisie du credential ID */}
-      <Box sx={{ display: "flex", gap: 2, mb: 3 }}>
-        <TextField
-          label="Connection identifier (credential)"
-          value={credentialIdInput}
-          onChange={(e) => setCredentialIdInput(e.target.value)}
-          size="small"
-          sx={{ flex: 1 }}
-          data-testid="credential-id-input"
-          slotProps={{
-            htmlInput: {
-              "aria-label": "Connection identifier",
-            },
-          }}
-        />
-        <Button
-          variant="outlined"
-          onClick={() => {
-            const trimmed = credentialIdInput.trim();
-            if (trimmed) {
-              setCredentialId(trimmed);
-            }
-          }}
-          disabled={!credentialIdInput.trim() || loading}
-          data-testid="credential-load-button"
-          sx={{ textTransform: "none" }}
-        >
-          Load
-        </Button>
-      </Box>
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1.5">
+        <p className="m-0 text-label font-label text-text-secondary uppercase tracking-wide">
+          Auth grants
+        </p>
+        <p className="m-0 text-ui text-text-secondary">
+          {chosenByCaller
+            ? "Each account of this Authorization is exposed to this organization, or "
+              + "revoked, on its own row. Exposure never reveals token material."
+            : "Expose accounts from an Authorization to this organization. "
+              + "Enter the Authorization identifier to get started."}
+        </p>
+      </div>
+
+      {/* Saisie du credential ID — seulement quand personne ne l'a désignée.
+          Un écran qui offre déjà un sélecteur de connexion ne redemande pas le
+          même fait sous la forme d'un identifiant à retenir. */}
+      {!chosenByCaller && (
+        <div className="flex items-end gap-3">
+          <div className="flex-1">
+            <Field label="Connection identifier (credential)">
+              {(field) => (
+                <Input
+                  {...field}
+                  value={credentialIdInput}
+                  onChange={(e) => setCredentialIdInput(e.target.value)}
+                  data-testid="credential-id-input"
+                  aria-label="Connection identifier"
+                />
+              )}
+            </Field>
+          </div>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              const trimmed = credentialIdInput.trim();
+              if (trimmed) {
+                setTypedCredentialId(trimmed);
+              }
+            }}
+            disabled={!credentialIdInput.trim() || loading}
+            data-testid="credential-load-button"
+          >
+            Load
+          </Button>
+        </div>
+      )}
 
       {/* Erreur chargement */}
       {loadError && (
-        <Alert severity="error" sx={{ mb: 2 }} data-testid="grants-load-error">
-          {loadError}
-        </Alert>
+        <Status
+          as="block"
+          tone="error"
+          title="The exposed accounts could not be read"
+          data-testid="grants-load-error"
+          action={<Button size="sm" onClick={() => void loadData(credentialId)}>Try again</Button>}
+        >
+          {loadError} — nothing is listed rather than an empty table, which would read as
+          &ldquo;no account is exposed&rdquo;.
+        </Status>
       )}
 
       {/* Feedback opérations */}
       {opInfo && (
-        <Alert
-          severity="info"
-          sx={{ mb: 2 }}
-          onClose={() => setOpInfo(null)}
+        <Status
+          as="block"
+          tone="info"
+          action={dismiss(() => setOpInfo(null), "notice")}
           data-testid="grants-op-info"
         >
           {opInfo}
-        </Alert>
+        </Status>
       )}
       {opError && (
-        <Alert
-          severity="error"
-          sx={{ mb: 2 }}
-          onClose={() => setOpError(null)}
+        <Status
+          as="block"
+          tone="error"
+          action={dismiss(() => setOpError(null), "error")}
           data-testid="grants-op-error"
         >
           {opError}
-        </Alert>
+        </Status>
       )}
 
       {/* Chargement */}
-      {loading && (
-        <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2 }}>
-          <CircularProgress size={18} />
-          <Typography variant="body2" color="text.secondary">
-            Loading accounts…
-          </Typography>
-        </Box>
-      )}
+      {loading && <Spinner label="Loading accounts…" showLabel />}
 
-      {/* Table des comptes */}
+      {/* Liste vide — ce qui manque, et le geste qui la remplit. La table
+          `app.credential_accounts` n'est écrite que par la découverte
+          (`account_topology.reconcile_discovered_accounts`), déclenchée en se
+          connectant ou en vérifiant un compte : c'est ce geste-là qui est nommé,
+          aucun autre n'existe. */}
       {!loading && credentialId && accounts.length === 0 && !loadError && (
-        <Typography variant="body2" color="text.secondary">
-          No accounts found for this connection.
-        </Typography>
+        <div data-testid="credential-accounts-empty">
+          <EmptyState
+            title="No account discovered on this Authorization"
+            description={
+              "Accounts appear here once the provider has been asked what this Authorization "
+              + "reaches. Reconnect this source from Data > Sources, or verify an account "
+              + "there — nothing can be exposed before the connection names what it holds."
+            }
+          />
+        </div>
       )}
 
       {!loading && accounts.length > 0 && (
-        <Table size="small" data-testid="accounts-table">
-          <TableHead>
+        <Table data-testid="accounts-table">
+          <TableHeader>
             <TableRow>
-              <TableCell>Account</TableCell>
-              <TableCell>Label</TableCell>
-              <TableCell>Discovered</TableCell>
-              <TableCell align="right">Action</TableCell>
+              {/* One column, because a label and the id it names are one object.
+                  Two columns printed the raw external id at reading weight and
+                  the only human word about the account beside it, in a cell that
+                  was empty as often as not. */}
+              <TableHead>Account</TableHead>
+              <TableHead>Discovered</TableHead>
+              <TableHead numeric>Action</TableHead>
             </TableRow>
-          </TableHead>
+          </TableHeader>
           <TableBody>
             {accounts.map((acct) => {
               const grant = existingGrant(acct.external_account_id);
@@ -340,43 +399,38 @@ export default function CredentialGrantsPanel({
                   data-testid={`account-row-${acct.external_account_id}`}
                 >
                   <TableCell>
-                    <Typography
-                      variant="body2"
-                      sx={{ fontFamily: "var(--font-mono, monospace)", fontSize: "12px" }}
-                    >
-                      {acct.external_account_id}
-                    </Typography>
+                    {/* The name the provider gave leads; the identifier is kept
+                        underneath, demoted rather than hidden. The payload
+                        carries no connector for an account
+                        (`credential_accounts_api.py:315`), so none is drawn. */}
+                    {acct.label ? (
+                      <span className="block text-ui text-text">{acct.label}</span>
+                    ) : null}
+                    <ObjectId value={acct.external_account_id} title="Account identifier" />
                   </TableCell>
                   <TableCell>
-                    <Typography variant="body2">
-                      {acct.label ?? "—"}
-                    </Typography>
+                    <Timestamp
+                      className="text-text-secondary"
+                      value={acct.discovered_at}
+                      absentMeaning="No discovery time recorded"
+                    />
                   </TableCell>
-                  <TableCell>
-                    <Typography variant="body2" color="text.secondary">
-                      {acct.discovered_at
-                        ? new Date(acct.discovered_at).toLocaleDateString("fr-FR")
-                        : "—"}
-                    </Typography>
-                  </TableCell>
-                  <TableCell align="right">
+                  <TableCell numeric>
                     {grant ? (
                       <Button
-                        size="small"
-                        color="error"
-                        onClick={() => handleRevoke(acct.external_account_id)}
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => setPendingRevoke(acct)}
                         data-testid={`revoke-grant-${acct.external_account_id}`}
-                        sx={{ textTransform: "none" }}
                       >
                         Revoke
                       </Button>
                     ) : (
                       <Button
-                        size="small"
-                        variant="outlined"
+                        variant="secondary"
+                        size="sm"
                         onClick={() => handleExpose(acct.external_account_id)}
                         data-testid={`expose-grant-${acct.external_account_id}`}
-                        sx={{ textTransform: "none" }}
                       >
                         Expose
                       </Button>
@@ -388,6 +442,31 @@ export default function CredentialGrantsPanel({
           </TableBody>
         </Table>
       )}
-    </Box>
+      <ConfirmDialog
+        open={pendingRevoke !== null}
+        onOpenChange={(open) => { if (!open) setPendingRevoke(null); }}
+        title="Revoke this account exposure?"
+        description="This organization will stop being able to use the exposed source account."
+        evidence={{
+          // THE ACCOUNT'S WORD, THEN ITS ADDRESS -- two rows, two jobs. The
+          // `?? pendingRevoke?.external_account_id` this row carried made the
+          // first row a copy of the second whenever the provider served no
+          // label, so the dialog asked a person to revoke `act_<id>` twice and
+          // never once named the account. An unlabelled account now reads as
+          // `Unavailable` here and stays identified by the row below it.
+          Account: pendingRevoke?.label ?? null,
+          "Account identifier": pendingRevoke?.external_account_id ?? null,
+          Organization: orgId,
+        }}
+        evidenceLabel="Exposure that will be revoked"
+        confirmLabel="Revoke exposure"
+        destructive
+        busy={revoking}
+        error={opError}
+        onConfirm={() => pendingRevoke
+          ? void handleRevoke(pendingRevoke.external_account_id)
+          : undefined}
+      />
+    </div>
   );
 }

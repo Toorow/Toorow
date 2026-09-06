@@ -26,7 +26,7 @@ vi.mock("../shell/AuthGate", () => ({
 
 const scope = vi.hoisted(() => ({
   state: "ready" as
-    "loading" | "error" | "empty" | "project_required" | "ready",
+    "loading" | "error" | "empty" | "project_required" | "denied" | "ready",
   reads: 0,
 }));
 
@@ -154,7 +154,8 @@ describe('App entry routing — state "empty"', () => {
   it.each([
     ["invitation_required", "An invitation is required"],
     ["setup_required", "This instance is not claimed"],
-    ["identity_activation_required", "Identity activation is required"],
+    // `identity_activation_required` left this table on 2026-08-24 (67-17) with
+    // the screen: the server cannot answer it any more.
   ])(
     "does not offer creation when entry state is %s",
     async (state, heading) => {
@@ -238,13 +239,15 @@ describe('App entry routing — state "loading"', () => {
 
     render(<App />);
 
-    expect(
-      await screen.findByRole("heading", {
-        level: 1,
-        name: "Loading your workspace",
-      }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveAttribute("aria-busy", "true");
+    const status = screen.getByRole("status", { name: "Opening toorow" });
+    expect(status).toHaveAttribute("aria-busy", "true");
+    expect(status).toHaveClass("entry-boot-shell");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading")).not.toBeInTheDocument();
+    expect(screen.queryByText(/workspace/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(status.querySelector("input, select, textarea")).toBeNull();
     expect(screen.queryByTestId("app-shell")).not.toBeInTheDocument();
   });
 });
@@ -262,13 +265,31 @@ describe('App entry routing — state "error"', () => {
     expect(
       await screen.findByRole("heading", {
         level: 1,
-        name: "We could not load your workspace",
+        name: "We could not load your organizations and projects",
       }),
     ).toBeInTheDocument();
     expect(screen.getByRole("alert")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Try again" }),
     ).toBeInTheDocument();
+    expect(screen.queryByTestId("app-shell")).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Explicit unresolved scope -> denied without rewriting to an authorized route
+// ---------------------------------------------------------------------------
+
+describe('App entry routing — state "denied"', () => {
+  it("keeps the requested scope and renders a non-disclosing denied state", async () => {
+    scope.state = "denied";
+    const requested = "/org/foreign-org/project/foreign-project/data/datastreams";
+    window.history.replaceState({}, "", requested);
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { level: 1, name: "This project route cannot be opened" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe(requested);
     expect(screen.queryByTestId("app-shell")).not.toBeInTheDocument();
   });
 });

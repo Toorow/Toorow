@@ -49,7 +49,9 @@ from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-# Module-level FastMCP instance — the public surface the loader mounts.
+# Module-level FastMCP instance, kept as the conformance surface (AD-1 envelope,
+# validated by server/tests/conformance/test_envelope.py). Since AD-42 the core
+# no longer mounts it: execution uses the Datastream-parameterized core tools.
 mcp_app = FastMCP("square")
 
 # ---------------------------------------------------------------------------
@@ -101,12 +103,12 @@ def _query_bigquery(sql: str, params: dict) -> list[dict]:
     return [dict(zip(cols, row)) for row in result]
 
 
-def _get_mart_table(db_mode: str) -> str:
+def _get_mart_table(db_mode: str, project_id: str | None) -> str:
     """Fully-qualified mart table reference per engine (mirrors stripe)."""
     if db_mode == "duckdb":
         from core import warehouse_tenancy  # noqa: PLC0415
 
-        return f"{warehouse_tenancy.mart_prefix(None)}fact_daily_kpi"
+        return f"{warehouse_tenancy.mart_prefix(project_id)}fact_daily_kpi"
     dataset = os.environ.get("BQ_MARTS_DATASET", "marts")
     gcp_project = os.environ.get("GCP_PROJECT", "")
     prefix = f"{gcp_project}.{dataset}" if gcp_project else dataset
@@ -138,7 +140,7 @@ def _query_mart(date_from: str, date_to: str, project_id: str = "default") -> li
     # AD-12: MCP server reads marts only — never raw_* tables or CSV.
     """
     db_mode = _get_db_mode()
-    table = _get_mart_table(db_mode)
+    table = _get_mart_table(db_mode, project_id)
 
     if db_mode == "duckdb":
         sql = _MART_QUERY.format(table=table, p_project="?", p_from="?", p_to="?")
@@ -508,7 +510,7 @@ def _insert_raw_rows(
     db_mode: str,
     duckdb_path: str,
 ) -> int:
-    """Insert canonical rows into raw_square_payments (DuckDB only at P-dev).
+    """Insert canonical rows into raw_square_payments (DuckDB or BigQuery per TOOROW_DB_MODE).
 
     Same self-contained pattern as stripe/meta-ads/shopify _insert_raw_rows: the connector
     owns its raw table DDL and never imports from a non-package seeds/ folder.
@@ -516,7 +518,13 @@ def _insert_raw_rows(
     # refunds and fees are stored in their OWN columns (dedicated, positive). They are NEVER
     # subtracted from revenue here (decision de story, meme discipline que Stripe 15.7).
     """
-    if db_mode == "duckdb":
+    if db_mode in ("duckdb", "bigquery"):
+        # BOTH BACKENDS, ONE PATH. `open_raw_writer` resolves DuckDB or
+        # BigQuery from TOOROW_DB_MODE itself, so this branch already covers
+        # bigquery. An `elif db_mode == "bigquery"` used to sit below it,
+        # unreachable because this test captures both modes -- dead code that
+        # had quietly drifted to a different set of column names and would
+        # have become live the day someone narrowed this condition.
         from core import warehouse_write  # noqa: PLC0415
 
         con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
@@ -552,10 +560,7 @@ def _insert_raw_rows(
         con.close()
         return len(values)
     else:
-        raise ValueError(
-            f"_insert_raw_rows: unsupported db_mode {db_mode!r} at P-dev "
-            "(BigQuery path not yet implemented)"
-        )
+        raise ValueError(f"_insert_raw_rows: unsupported db_mode {db_mode!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -965,18 +970,55 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 
 
 def _insert_catalog_rows(rows: list[dict], pull_id: str, loaded_at: str, project_id: str, db_mode: str, duckdb_path: str) -> int:  # noqa: E501
-    """Land projected rows into raw_square_catalog_daily (DuckDB only at P-dev)."""
-    if db_mode != "duckdb":
+    """Land projected rows into raw_square_catalog_daily (DuckDB and BigQuery)."""
+    if db_mode not in ("duckdb", "bigquery"):
         raise ValueError(f"_insert_catalog_rows: unsupported db_mode {db_mode!r}")
     from core import warehouse_write  # noqa: PLC0415
 
     con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
     con.execute(_CATALOG_RAW_CREATE_DDL)
     values = [(r.get("date", ""), r.get("payment_id", ""), r.get("field_id", ""), r.get("row_type", ""), str(r["value"]) if r.get("value") is not None else None, pull_id, loaded_at, project_id) for r in rows]  # noqa: E501
-    if values:
-        con.executemany(_CATALOG_RAW_INSERT_SQL, values)
-    con.close()
-    return len(values)
+    if db_mode == "duckdb":
+        if values:
+            con.executemany(_CATALOG_RAW_INSERT_SQL, values)
+        con.close()
+        return len(values)
+    elif db_mode == "bigquery":
+        from core.raw_landing import land_raw_rows  # noqa: PLC0415
+
+        raw_rows = [
+            {
+                "date": v[0],
+                "payment_id": v[1],
+                "field_id": v[2],
+                "row_type": v[3],
+                "value": v[4],
+                "pull_id": v[5],
+                "loaded_at": v[6],
+                "project_id": v[7],
+            }
+            for v in values
+        ]
+        columns = [
+            ("date", "STRING"),
+            ("payment_id", "STRING"),
+            ("field_id", "STRING"),
+            ("row_type", "STRING"),
+            ("value", "STRING"),
+            ("pull_id", "STRING"),
+            ("loaded_at", "STRING"),
+            ("project_id", "STRING"),
+        ]
+        land_raw_rows(
+            "raw_square_catalog_daily",
+            raw_rows,
+            columns=columns,
+            project_id=project_id,
+            backend="bigquery",
+        )
+        return len(values)
+    else:
+        raise ValueError(f"_insert_catalog_rows: unsupported db_mode {db_mode!r}")
 
 
 def pull_catalog_daily(

@@ -25,7 +25,14 @@ os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
 
 import jsonschema  # noqa: E402
+import pytest  # noqa: E402
 from core import cards as cards_module  # noqa: E402
+
+from tests.support.statement_router import (  # noqa: E402
+    StatementInventory,
+    UnknownStatement,
+    describe,
+)
 
 _SCHEMA_PATH = Path(__file__).parent.parent / "conformance" / "schemas" / "envelope.schema.json"
 
@@ -39,6 +46,51 @@ def _schema() -> dict:
 # ---------------------------------------------------------------------------
 
 
+# EVERY STATEMENT a connectors card issues through `core.db.get_connection`,
+# named -- and nothing else. The old fake dispatched on three fragments and
+# answered `[]` to anything else, so four statements it had never been taught got
+# a plausible answer instead of a failure (AI-317):
+#
+#   * `SELECT org_id FROM app.projects` (answerable_topics.py:146), run twice per
+#     card because Story 52.1 resolves the Project catalog and Story 52.3 its
+#     knowledge pins through the same connection this fixture patches. It is read
+#     with `fetchone()`, which the old fake did not even define -- the
+#     AttributeError was swallowed by the product's best-effort `except` and the
+#     card degraded for a reason that had nothing to do with the product;
+#   * the two reads that lookup opens: the stored topic heads
+#     (answerable_topics.py:158) and the knowledge pins
+#     (answerable_topics.py:756);
+#   * the freshness evaluator's window query (health_enrichment.py:83), which
+#     `_evaluate_freshness` runs at the exit of EVERY card since AI-273. The old
+#     fake answered it with the CONNECTION INVENTORY rows -- its first branch
+#     tested `connection_ref` + `connection_health`, and that query names both
+#     tables. `_worst_health` accepts only rows of arity 3 or 6, so the inventory
+#     4-tuples were dropped and the card read "not evaluated" for entirely the
+#     wrong reason.
+#
+# Declaration order is first match wins, and it carries one real ambiguity:
+# `connections_for_project` embeds `(SELECT org_id FROM app.projects WHERE id =
+# %s)` as its own scope predicate, so `org_for_project` is declared LAST -- ahead
+# of it, it would swallow the inventory query whole.
+_CONNECTORS = StatementInventory(
+    "_DispatchCursor (connectors card)",
+    health_for_window=("from app.connection_ref r", "h.populate_failed_pull_id"),
+    connections_for_project=("from app.connection_ref r", "r.owner_org_id"),
+    last_extract_by_connection=(
+        "select distinct on (pj.connection_ref_id)",
+        "from app.pull_jobs pj",
+    ),
+    flows_by_connection=("from app.datastreams ds", "ds.enabled = true"),
+    stored_topics="from app.answerable_topics t",
+    knowledge_pins="from app.answerable_topic_knowledge_bindings b",
+    org_for_project="select org_id from app.projects",
+)
+
+#: The org the fixture's connections hang from. `app.connection_ref` is scoped by
+#: `owner_org_id`, so a project that returns connections is a project with an org.
+_OWNER_ORG_ID = "org_EXAMPLE"
+
+
 class _DispatchCursor:
     """A cursor whose fetchall() returns rows keyed by which query was executed."""
 
@@ -47,6 +99,7 @@ class _DispatchCursor:
         self._extract = extract_rows
         self._datastreams = datastream_rows
         self._last = None
+        self._sql = None
 
     def __enter__(self):
         return self
@@ -54,19 +107,76 @@ class _DispatchCursor:
     def __exit__(self, *a):
         return False
 
+    @property
+    def description(self):
+        """psycopg's ``description``, DERIVED from the last statement.
+
+        A property rather than a stored column list: no path this card takes
+        reads it today, and a column tuple nothing reads is the copy that goes
+        stale first. `describe` refuses a projection it cannot read -- the
+        `DISTINCT ON (...)` ledger query, the `COALESCE(...)` pin query -- and
+        refusing is the right answer there too: a fake that guessed a column list
+        would be holding a second copy of the product's SELECT.
+        """
+        return describe(self._sql)
+
     def execute(self, sql, params=None):
-        s = sql.lower()
-        if "connection_ref" in s and "connection_health" in s:
-            self._last = self._connections
-        elif "pull_jobs" in s:
-            self._last = self._extract
-        elif "app.datastreams ds" in s or "from app.datastreams" in s:
-            self._last = self._datastreams
-        else:
-            self._last = []
+        self._sql = sql
+        match _CONNECTORS.match(sql):
+            case "connections_for_project":
+                self._last = self._connections
+            case "last_extract_by_connection":
+                self._last = self._extract
+            case "flows_by_connection":
+                self._last = self._datastreams
+            case "health_for_window":
+                # The evaluator asks which connections this project PULLED
+                # THROUGH over the card's window: `pull_jobs` joined to
+                # `datastreams`, bounded by date_from/date_to. This fixture
+                # declares no pull job over any window -- its ledger rows carry a
+                # data date but no window, and no datastream links them to a job
+                # -- so zero rows is the honest answer. `_worst_health` then
+                # returns None and the card keeps `stale_since_evaluated: False`,
+                # which is what these tests already observed, now for a reason.
+                self._last = []
+            case "org_for_project":
+                # The project exists and belongs to an org: exactly the fact the
+                # inventory query's own scope predicate assumes when this fixture
+                # answers it with connections.
+                self._last = [(_OWNER_ORG_ID,)]
+            case "stored_topics" | "knowledge_pins":
+                # This project authored no topic and pinned no knowledge, so the
+                # catalog resolves to the platform defaults and the card reports
+                # `no_knowledge_declared`.
+                self._last = []
+            case _ as statement:  # pragma: no cover - a named route left unanswered
+                raise AssertionError(f"_DispatchCursor: no row shape for {statement}")
 
     def fetchall(self):
         return self._last or []
+
+    def fetchone(self):
+        rows = self._last or []
+        return rows[0] if rows else None
+
+
+def test_the_fake_refuses_a_statement_it_was_never_taught():
+    """AI-317: an untaught statement must NAME itself, not answer no rows.
+
+    The old `else` answered `[]`, which is a legitimate answer to every read this
+    card makes -- no connection, no pull, no datastream, no topic. A moved query
+    would have gone on getting it, and every assertion downstream would have been
+    about a path the test no longer exercised.
+    """
+    cursor = _DispatchCursor([], [], [])
+    with pytest.raises(UnknownStatement) as raised:
+        cursor.execute(
+            "SELECT pj.id, pj.error_code FROM app.pull_jobs pj "
+            "WHERE pj.connection_ref_id = ANY(%s) AND pj.state = 'error'"
+        )
+    message = str(raised.value)
+    assert "pj.error_code" in message
+    assert "last_extract_by_connection" in message
 
 
 class _MockConn:
@@ -113,7 +223,7 @@ def test_connectors_registered_as_context_card():
     assert tpl.widget_uri == "ui://core/card-connectors"
     assert tpl.is_context
     assert tpl.kind == cards_module.CARD_KIND_CONTEXT
-    assert tpl.answers_question == ("Quels connecteurs sont disponibles et qu'alimentent-ils ?")
+    assert tpl.answers_question == ("Which connectors are available and what do they feed?")
 
 
 def test_connectors_not_auto_suggested():
@@ -185,7 +295,7 @@ def test_get_card_connectors_full_envelope():
 
     comp = data["composition"]
     assert comp[0]["type"] == "table"
-    assert comp[0]["title"] == "Connecteurs"
+    assert comp[0]["title"] == "Connectors"
     cols = comp[0]["data"]["columns"]
     assert [c["key"] for c in cols] == ["connector", "status", "last_extract", "flows"]
 
@@ -193,8 +303,8 @@ def test_get_card_connectors_full_envelope():
     assert len(rows) == 2
     by_conn = {r["connector"]: r for r in rows}
     # French-first status labels.
-    assert by_conn["google-ads"]["status"] == "Opérationnel"
-    assert by_conn["google-analytics"]["status"] == "Obsolète"
+    assert by_conn["google-ads"]["status"] == "Operational"
+    assert by_conn["google-analytics"]["status"] == "Stale"
     assert by_conn["google-ads"]["last_extract"] == "2026-07-13"
     assert "google-ads/spend_daily" in by_conn["google-ads"]["flows"]
 
@@ -231,7 +341,7 @@ def test_get_card_connectors_status_labels_all():
         )
     rows = envelope["data"]["composition"][0]["data"]["rows"]
     labels = {r["connector"]: r["status"] for r in rows}
-    assert labels["prov-a"] == "Révoqué"
+    assert labels["prov-a"] == "Revoked"
     assert labels["prov-b"] == "En erreur"
     assert labels["prov-c"] == "Inconnu"
 
@@ -246,7 +356,14 @@ def test_get_card_connectors_project_scoping():
 
     class _CapturingCursor(_DispatchCursor):
         def execute(self, sql, params=None):
-            if "connection_ref" in sql.lower() and "connection_health" in sql.lower():
+            # `owner_org_id`, not the two table names. Since AI-273 the card
+            # evaluates its own freshness before returning, and that evaluator
+            # joins the same two tables -- so the looser predicate captured its
+            # params LAST and this test read `('projA', <window>)` where it
+            # expects the inventory's own `('projA',)`. The inventory query is
+            # the one scoped by org through the project; the other is scoped by
+            # the pull jobs of a window.
+            if "owner_org_id" in sql.lower() and "connection_health" in sql.lower():
                 captured["conn_params"] = params
             super().execute(sql, params)
 
@@ -276,7 +393,13 @@ def test_last_extract_orders_by_data_window_end_not_completed_at():
 
     class _CapturingCursor(_DispatchCursor):
         def execute(self, sql, params=None):
-            if "pull_jobs" in sql.lower():
+            # `distinct on` and not `pull_jobs` alone. Since AI-273 the card
+            # evaluates its own freshness before returning, and that evaluator's
+            # query names `app.pull_jobs` too -- so the looser predicate captured
+            # it LAST and this test asserted an ORDER BY belonging to a different
+            # question. The ledger query is the one that picks one row per
+            # connection, which is what `DISTINCT ON` says and the other does not.
+            if "distinct on" in sql.lower() and "pull_jobs" in sql.lower():
                 captured["ledger_sql"] = sql
             super().execute(sql, params)
 
@@ -320,7 +443,7 @@ def test_get_card_connectors_db_down_designed_empty():
     assert comp[0]["data"]["rows"] == []
     # Comment is the designed empty-inventory line, never blank.
     assert comp[1]["data"]["text"].strip()
-    assert "indisponible" in summary
+    assert "unavailable" in summary
 
 
 def test_get_card_connectors_envelope_schema_valid():

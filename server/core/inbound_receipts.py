@@ -48,11 +48,25 @@ operation seam, ASCII-only source.
 from __future__ import annotations
 
 import hashlib
+import hmac
+import json
 from typing import Any
 
 from ulid import ULID
 
+from core.audit import declare_action
 from core.operations import MutationResult, OperationSpec, execute_operation
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12). Celles-ci n'etaient declarees NULLE PART : la valeur
+# etait retapee en dur ici, parce que la liste centrale de `core/audit.py`
+# etait trop loin pour valoir le detour. Mesure ce jour-la sur le journal
+# vivant : 29 des 64 actions reellement ecrites -- 45 % -- etaient dans ce
+# cas, et rien ne pouvait distinguer une action d'une faute de frappe.
+ACTION_INBOUND_RECEIPT_RECORDED = declare_action("inbound.receipt.recorded")
+ACTION_INBOUND_RECEIPT_STATE_ADVANCED = declare_action("inbound.receipt.state_advanced")
+
 
 # ---------------------------------------------------------------------------
 # Valid state machine.
@@ -66,8 +80,14 @@ RECEIPT_STATES: frozenset[str] = frozenset(
 #: Terminal states: a receipt in one of these has reached its final outcome.
 _TERMINAL_STATES: frozenset[str] = frozenset({"LANDED", "REJECTED", "FAILED"})
 
+#: Only these forward transitions are legal. Terminal states have no outgoing edge.
+_ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
+    "RECEIVED": frozenset({"PROCESSING", "REJECTED", "FAILED"}),
+    "PROCESSING": frozenset({"LANDED", "REJECTED", "FAILED"}),
+}
+
 #: Valid channel values (source-agnostic declared data).
-RECEIPT_CHANNELS: frozenset[str] = frozenset({"email", "webhook"})
+RECEIPT_CHANNELS: frozenset[str] = frozenset({"email", "webhook", "upload"})
 
 # ---------------------------------------------------------------------------
 # Exceptions.
@@ -84,6 +104,10 @@ class InboundReceiptNotFound(RuntimeError):
 
 class InboundReceiptStateError(RuntimeError):
     """A state transition was attempted that is not permitted (e.g. from terminal)."""
+
+
+class InboundReceiptFingerprintMismatch(RuntimeError):
+    """A provider replay key was reused for different canonical delivery bytes."""
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +128,66 @@ def hash_recipient(recipient: str) -> str:
         # h is a 64-character lowercase hex string
     """
     return hashlib.sha256(recipient.encode("utf-8")).hexdigest()
+
+
+def canonical_receipt_fingerprint(
+    *,
+    datastream_id: str,
+    credential_id: str | None,
+    channel: str,
+    recipient_hash: str | None,
+    attachments: list[dict[str, Any]],
+) -> str:
+    """Hash normalized receipt identity plus ordered attachment evidence.
+
+    Caller-controlled filenames are represented only by a digest. Attachment
+    content is represented by its sha256 digest and ordinal; raw bytes and
+    delivery capabilities never enter operation or audit payloads.
+    """
+    normalized: list[dict[str, Any]] = []
+    for ordinal, attachment in enumerate(attachments):
+        if not isinstance(attachment, dict):
+            raise InboundReceiptValidationError("attachments must contain objects")
+        content_sha256 = attachment.get("content_sha256")
+        if not isinstance(content_sha256, str) or not _is_sha256(content_sha256):
+            raise InboundReceiptValidationError(
+                "each attachment requires a lowercase sha256 content digest"
+            )
+        raw_ordinal = attachment.get("ordinal", ordinal)
+        if not isinstance(raw_ordinal, int) or raw_ordinal != ordinal:
+            raise InboundReceiptValidationError(
+                "attachment ordinals must be contiguous and ordered"
+            )
+        filename = str(attachment.get("filename") or "attachment")
+        content_type = str(attachment.get("content_type") or "").strip().lower()
+        size = attachment.get("size")
+        if not isinstance(size, int) or size < 0:
+            raise InboundReceiptValidationError(
+                "each attachment requires a non-negative byte size"
+            )
+        normalized.append(
+            {
+                "ordinal": ordinal,
+                "content_sha256": content_sha256,
+                "filename_sha256": hashlib.sha256(filename.encode("utf-8")).hexdigest(),
+                "content_type": content_type,
+                "size": size,
+            }
+        )
+    canonical = {
+        "datastream_id": datastream_id.strip(),
+        "credential_id": credential_id,
+        "channel": channel.strip().lower(),
+        "recipient_hash": recipient_hash,
+        "attachments": normalized,
+    }
+    return hashlib.sha256(
+        json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def _is_sha256(value: str) -> bool:
+    return len(value) == 64 and all(char in "0123456789abcdef" for char in value)
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +245,7 @@ def _safe_read_model(row_dict: dict[str, Any]) -> dict[str, Any]:
         "channel": row_dict.get("channel"),
         "provider_event_id": row_dict.get("provider_event_id"),
         "recipient_hash": row_dict.get("recipient_hash"),
+        "receipt_fingerprint": row_dict.get("receipt_fingerprint"),
         "attachment_count": row_dict.get("attachment_count", 0),
         "total_bytes": row_dict.get("total_bytes"),
         "quarantine_uri": row_dict.get("quarantine_uri"),
@@ -175,14 +260,15 @@ def _safe_read_model(row_dict: dict[str, Any]) -> dict[str, Any]:
 
 _SELECT_COLS = (
     "id, datastream_id, credential_id, channel, provider_event_id, "
-    "recipient_hash, attachment_count, total_bytes, quarantine_uri, "
-    "state, import_ledger_id, error_code, error_detail, created_at, updated_at"
+    "recipient_hash, receipt_fingerprint, attachment_count, total_bytes, "
+    "quarantine_uri, state, import_ledger_id, error_code, error_detail, "
+    "created_at, updated_at"
 )
 
 _COL_NAMES = [
     "id", "datastream_id", "credential_id", "channel", "provider_event_id",
-    "recipient_hash", "attachment_count", "total_bytes", "quarantine_uri",
-    "state", "import_ledger_id", "error_code", "error_detail",
+    "recipient_hash", "receipt_fingerprint", "attachment_count", "total_bytes",
+    "quarantine_uri", "state", "import_ledger_id", "error_code", "error_detail",
     "created_at", "updated_at",
 ]
 
@@ -224,6 +310,34 @@ def _load_receipt_row(
 # ---------------------------------------------------------------------------
 
 
+def assert_provider_event_fingerprint(
+    conn,
+    *,
+    datastream_id: str,
+    provider_event_id: str,
+    receipt_fingerprint: str,
+) -> None:
+    """Reject a known provider-event replay with different canonical evidence.
+
+    This read guard runs before quarantine creation on the public path. The
+    unique constraint plus the same comparison inside ``record_receipt`` remain
+    authoritative under races.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT receipt_fingerprint FROM app.inbound_receipts "
+            "WHERE datastream_id = %s AND provider_event_id = %s",
+            (datastream_id, provider_event_id),
+        )
+        row = cur.fetchone()
+    if row is not None and not hmac.compare_digest(
+        str(row[0] or ""), receipt_fingerprint
+    ):
+        raise InboundReceiptFingerprintMismatch(
+            "provider event is already bound to another receipt fingerprint"
+        )
+
+
 def record_receipt(
     conn,
     *,
@@ -232,9 +346,18 @@ def record_receipt(
     channel: str,
     provider_event_id: str,
     recipient_hash: str | None,
+    receipt_fingerprint: str,
     attachment_count: int = 0,
     total_bytes: int | None = None,
     quarantine_uri: str | None = None,
+    #: WHO SENT IT, hashed exactly like `recipient_hash` beside it and never in
+    #: clear (migration 214, story 57.3). A receipt that records who a delivery
+    #: was addressed to but not who sent it cannot answer, later, why an import
+    #: was refused -- and the replay path (`core.inbound_reprocess`) has no other
+    #: source: it never sees the manifest. Both default to None, which reads as
+    #: "unknown sender" and is refused by a declared allowlist, never waived.
+    sender_hash: str | None = None,
+    sender_domain_hash: str | None = None,
     actor: str,
     host_context: dict[str, Any],
     trace_id: str | None,
@@ -302,10 +425,18 @@ def record_receipt(
             "attachment_count must be a non-negative integer"
         )
     if recipient_hash is not None:
-        if not isinstance(recipient_hash, str) or len(recipient_hash) != 64:
+        if not isinstance(recipient_hash, str) or not _is_sha256(recipient_hash):
             raise InboundReceiptValidationError(
-                "recipient_hash must be a 64-character hex string or None"
+                "recipient_hash must be a lowercase sha256 digest or None"
             )
+    if not isinstance(receipt_fingerprint, str) or not _is_sha256(receipt_fingerprint):
+        raise InboundReceiptValidationError(
+            "receipt_fingerprint must be a lowercase sha256 digest"
+        )
+    if total_bytes is not None and (
+        not isinstance(total_bytes, int) or total_bytes < 0
+    ):
+        raise InboundReceiptValidationError("total_bytes must be non-negative or None")
 
     datastream_id = datastream_id.strip()
     provider_event_id = provider_event_id.strip()
@@ -320,7 +451,7 @@ def record_receipt(
     # mutation closure (mirrors inbound_credentials.py pattern).
     # ------------------------------------------------------------------
     spec = OperationSpec(
-        command_type="inbound.receipt.recorded",
+        command_type=ACTION_INBOUND_RECEIPT_RECORDED,
         actor=actor,
         effective_org_id=org_id,
         resource_path=(
@@ -342,7 +473,10 @@ def record_receipt(
             "channel": channel,
             "provider_event_id": provider_event_id,
             "recipient_hash": recipient_hash,
+            "receipt_fingerprint": receipt_fingerprint,
             "attachment_count": attachment_count,
+            "total_bytes": total_bytes,
+            "quarantine_uri": quarantine_uri,
         },
         provider_references={},
         confirmation_mode="server",
@@ -355,6 +489,9 @@ def record_receipt(
     # Capture closure variables.
     _credential_id = credential_id
     _recipient_hash = recipient_hash
+    _sender_hash = sender_hash
+    _sender_domain_hash = sender_domain_hash
+    _receipt_fingerprint = receipt_fingerprint
     _total_bytes = total_bytes
     _quarantine_uri = quarantine_uri
     _attachment_count = attachment_count
@@ -368,9 +505,11 @@ def record_receipt(
             cur.execute(
                 "INSERT INTO app.inbound_receipts "
                 "(id, datastream_id, credential_id, channel, provider_event_id, "
-                "recipient_hash, attachment_count, total_bytes, quarantine_uri, "
-                "state, operation_id) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'RECEIVED', %s) "
+                "recipient_hash, sender_hash, sender_domain_hash, "
+                "receipt_fingerprint, attachment_count, total_bytes, "
+                "quarantine_uri, state, operation_id) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
+                "'RECEIVED', %s) "
                 "ON CONFLICT (datastream_id, provider_event_id) DO NOTHING",
                 (
                     receipt_id,
@@ -379,6 +518,9 @@ def record_receipt(
                     channel,
                     provider_event_id,
                     _recipient_hash,
+                    _sender_hash,
+                    _sender_domain_hash,
+                    _receipt_fingerprint,
                     _attachment_count,
                     _total_bytes,
                     _quarantine_uri,
@@ -401,6 +543,7 @@ def record_receipt(
                     "channel": channel,
                     "provider_event_id": provider_event_id,
                     "recipient_hash": _recipient_hash,
+                    "receipt_fingerprint": _receipt_fingerprint,
                     "attachment_count": _attachment_count,
                     "total_bytes": _total_bytes,
                     "quarantine_uri": _quarantine_uri,
@@ -443,6 +586,13 @@ def record_receipt(
                     "record_receipt race: existing row not found after conflict"
                 )
             row_dict = _row_to_dict(existing_row)
+            if not hmac.compare_digest(
+                str(row_dict.get("receipt_fingerprint") or ""),
+                _receipt_fingerprint,
+            ):
+                raise InboundReceiptFingerprintMismatch(
+                    "provider event is already bound to another receipt fingerprint"
+                )
             result = {**row_dict, "deduplicated": True}
             return MutationResult(
                 outcome="succeeded",
@@ -466,8 +616,26 @@ def record_receipt(
 
     op_result = execute_operation(conn, spec, mutation=mutation)
     data = op_result.result or {}
+    if op_result.replayed:
+        replay_receipt_id = data.get("id")
+        if not isinstance(replay_receipt_id, str) or not replay_receipt_id:
+            raise InboundReceiptValidationError(
+                "receipt operation replay has no durable receipt identifier"
+            )
+        current = _load_receipt_row(
+            conn, receipt_id=replay_receipt_id, datastream_id=datastream_id
+        )
+        if current is None:
+            raise InboundReceiptNotFound(
+                "receipt operation replay has no durable receipt row"
+            )
+        data = {**current, "deduplicated": True}
     safe = _safe_read_model(data)
-    return {**safe, "deduplicated": bool(data.get("deduplicated", False))}
+    return {
+        **safe,
+        "deduplicated": bool(op_result.replayed or data.get("deduplicated", False)),
+        "operation_outcome": op_result.outcome,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -488,25 +656,9 @@ def mark_state(
     import_ledger_id: str | None = None,
     error_code: str | None = None,
     error_detail: str | None = None,
+    scan_recovery: bool = False,
 ) -> dict[str, Any]:
-    """Advance the state of an inbound receipt.
-
-    Sets ``import_ledger_id`` when transitioning to LANDED.
-    Clears or sets ``error_code`` / ``error_detail`` as appropriate for
-    FAILED / REJECTED transitions.
-
-    Raises ``InboundReceiptValidationError`` for unknown ``state`` values
-    (fail-closed: no silent pass-through).
-    Raises ``InboundReceiptNotFound`` when the row is absent or belongs to a
-    different Datastream.
-
-    The identity columns (datastream_id, channel, provider_event_id,
-    recipient_hash) are frozen by the immutability trigger; this function
-    only touches the mutable lifecycle columns.
-    """
-    # ------------------------------------------------------------------
-    # Input validation.
-    # ------------------------------------------------------------------
+    """Advance a receipt through the forward-only lifecycle graph atomically."""
     if not isinstance(receipt_id, str) or not receipt_id.strip():
         raise InboundReceiptValidationError("receipt_id is required")
     if not isinstance(datastream_id, str) or not datastream_id.strip():
@@ -519,114 +671,183 @@ def mark_state(
         raise InboundReceiptValidationError("actor is required")
     if not isinstance(idempotency_key, str) or not idempotency_key.strip():
         raise InboundReceiptValidationError("idempotency_key is required")
+    if scan_recovery and state != "PROCESSING":
+        raise InboundReceiptValidationError(
+            "scan_recovery is valid only for a PROCESSING transition"
+        )
+    if state == "LANDED" and (
+        not isinstance(import_ledger_id, str) or not import_ledger_id.strip()
+    ):
+        raise InboundReceiptValidationError(
+            "LANDED requires a non-empty import_ledger_id"
+        )
+    if state != "LANDED" and import_ledger_id is not None:
+        raise InboundReceiptValidationError(
+            "import_ledger_id is only valid for LANDED"
+        )
+    if state not in {"FAILED", "REJECTED"} and (
+        error_code is not None or error_detail is not None
+    ):
+        raise InboundReceiptValidationError(
+            "error evidence is only valid for FAILED or REJECTED"
+        )
+    if error_code is not None and (
+        not isinstance(error_code, str) or len(error_code) > 128
+    ):
+        raise InboundReceiptValidationError("error_code must be at most 128 characters")
+    if error_detail is not None and (
+        not isinstance(error_detail, str) or len(error_detail) > 2048
+    ):
+        raise InboundReceiptValidationError(
+            "error_detail must be at most 2048 characters"
+        )
 
     receipt_id = receipt_id.strip()
     datastream_id = datastream_id.strip()
     actor = actor.strip()
-
-    # Load the existing row to get the current state for audit purposes.
-    current = _load_receipt_row(conn, receipt_id=receipt_id, datastream_id=datastream_id)
-    if current is None:
-        raise InboundReceiptNotFound(
-            "receipt not found for this datastream"
-        )
-
-    prior_state = current.get("state", "RECEIVED")
-
+    import_ledger_id = import_ledger_id.strip() if import_ledger_id else None
+    error_detail_hash = (
+        hashlib.sha256(error_detail.encode("utf-8")).hexdigest()
+        if error_detail is not None
+        else None
+    )
+    # Early nondisclosing absence check; the mutation still locks and rechecks
+    # atomically, and this observation never enters the idempotency payload.
+    if _load_receipt_row(
+        conn, receipt_id=receipt_id, datastream_id=datastream_id
+    ) is None:
+        raise InboundReceiptNotFound("receipt not found for this datastream")
     org_id = _resolve_org_id(conn, datastream_id=datastream_id)
 
     spec = OperationSpec(
-        command_type="inbound.receipt.state_advanced",
+        command_type=ACTION_INBOUND_RECEIPT_STATE_ADVANCED,
         actor=actor,
         effective_org_id=org_id,
-        resource_path=(
-            f"datastream:{datastream_id}",
-            f"receipt:{receipt_id}",
-        ),
+        resource_path=(f"datastream:{datastream_id}", f"receipt:{receipt_id}"),
         idempotency_key=idempotency_key,
         host_context=host_context,
         versions={
-            "policy": "inbound-receipt-v1",
-            "catalog": "inbound-receipt-v1",
+            "policy": "inbound-receipt-v2",
+            "catalog": "inbound-receipt-v2",
             "tool": "rest-v1",
         },
+        # Stable caller intent only. The locked prior state is audit evidence,
+        # not part of the retry hash.
         request_payload={
             "receipt_id": receipt_id,
             "datastream_id": datastream_id,
-            "from_state": prior_state,
             "target_state": state,
             "import_ledger_id": import_ledger_id,
             "error_code": error_code,
+            "error_detail_hash": error_detail_hash,
+            "scan_recovery": scan_recovery,
         },
         provider_references={},
         confirmation_mode="server",
-        confirmation_reference=(
-            f"inbound-receipt:{receipt_id}:state:{state}"
-        ),
+        confirmation_reference=f"inbound-receipt:{receipt_id}:state:{state}",
         trace_id=trace_id,
     )
-
-    _import_ledger_id = import_ledger_id
-    _error_code = error_code
-    _error_detail = error_detail
-    _target_state = state
 
     def mutation(operation_conn, operation_id: str) -> MutationResult:  # noqa: ANN001
         from core.operations import _canonical_hash  # noqa: PLC0415
 
         with operation_conn.cursor() as cur:
             cur.execute(
-                "UPDATE app.inbound_receipts "
-                "SET state = %s, "
-                "import_ledger_id = COALESCE(%s, import_ledger_id), "
-                "error_code = %s, "
-                "error_detail = %s, "
-                "operation_id = %s, "
-                "updated_at = NOW() "
-                "WHERE id = %s AND datastream_id = %s",
+                f"SELECT {_SELECT_COLS} FROM app.inbound_receipts "
+                "WHERE id = %s AND datastream_id = %s FOR UPDATE",
+                (receipt_id, datastream_id),
+            )
+            locked_row = cur.fetchone()
+            if locked_row is None:
+                raise InboundReceiptNotFound("receipt not found for this datastream")
+            locked = _row_to_dict(locked_row)
+            prior_state = str(locked.get("state"))
+            recovery_transition = (
+                scan_recovery
+                and prior_state == "FAILED"
+                and state == "PROCESSING"
+            )
+            if prior_state in _TERMINAL_STATES and not recovery_transition:
+                raise InboundReceiptStateError(
+                    f"terminal receipt state {prior_state} is immutable"
+                )
+            if not recovery_transition and state not in _ALLOWED_TRANSITIONS.get(
+                prior_state, frozenset()
+            ):
+                raise InboundReceiptStateError(
+                    f"transition {prior_state} -> {state} is not permitted"
+                )
+
+            next_import_id = import_ledger_id if state == "LANDED" else None
+            next_error_code = error_code if state in {"FAILED", "REJECTED"} else None
+            next_error_detail = error_detail if state in {"FAILED", "REJECTED"} else None
+            cur.execute(
+                "UPDATE app.inbound_receipts SET state = %s, import_ledger_id = %s, "
+                "error_code = %s, error_detail = %s, operation_id = %s, "
+                "updated_at = clock_timestamp() WHERE id = %s AND datastream_id = %s "
+                "AND state = %s RETURNING " + _SELECT_COLS,
                 (
-                    _target_state,
-                    _import_ledger_id,
-                    _error_code,
-                    _error_detail,
+                    state,
+                    next_import_id,
+                    next_error_code,
+                    next_error_detail,
                     operation_id,
                     receipt_id,
                     datastream_id,
+                    prior_state,
                 ),
             )
-
-            # Read back authoritative row after update.
-            cur.execute(
-                f"SELECT {_SELECT_COLS} FROM app.inbound_receipts "
-                "WHERE id = %s AND datastream_id = %s",
-                (receipt_id, datastream_id),
-            )
             updated_row = cur.fetchone()
-
-        if updated_row is None:  # pragma: no cover -- row vanished after update
-            raise InboundReceiptNotFound(
-                "receipt row vanished during mark_state transition"
-            )
+        if updated_row is None:
+            raise InboundReceiptStateError("receipt state changed concurrently")
 
         row_dict = _row_to_dict(updated_row)
-        result = {**row_dict}
         return MutationResult(
             outcome="succeeded",
-            before_hash=_canonical_hash({"state": prior_state}),
-            after_hash=_canonical_hash({"id": receipt_id, "state": _target_state}),
-            result=result,
+            before_hash=_canonical_hash(
+                {
+                    "receipt_id": receipt_id,
+                    "state": prior_state,
+                    "import_ledger_id": locked.get("import_ledger_id"),
+                }
+            ),
+            after_hash=_canonical_hash(
+                {
+                    "receipt_id": receipt_id,
+                    "state": state,
+                    "import_ledger_id": next_import_id,
+                    "error_code": next_error_code,
+                    "error_detail_hash": error_detail_hash,
+                }
+            ),
+            result=row_dict,
             outbox_payload={
                 "datastream_id": datastream_id,
                 "receipt_id": receipt_id,
                 "from_state": prior_state,
-                "state": _target_state,
-                "import_ledger_id": _import_ledger_id,
+                "state": state,
+                "import_ledger_id": next_import_id,
+                "error_code": next_error_code,
+                "error_detail_hash": error_detail_hash,
             },
         )
 
     op_result = execute_operation(conn, spec, mutation=mutation)
-    data = op_result.result or {}
-    return _safe_read_model(data)
+    return _safe_read_model(op_result.result or {})
+
+
+def get_receipt_by_provider_event(
+    conn, *, datastream_id: str, provider_event_id: str
+) -> dict[str, Any] | None:
+    """Return one scoped durable receipt for replay reconciliation."""
+    with conn.cursor() as cur:
+        cur.execute(
+            f"SELECT {_SELECT_COLS} FROM app.inbound_receipts "
+            "WHERE datastream_id = %s AND provider_event_id = %s",
+            (datastream_id, provider_event_id),
+        )
+        row = cur.fetchone()
+    return _safe_read_model(_row_to_dict(row)) if row else None
 
 
 # ---------------------------------------------------------------------------

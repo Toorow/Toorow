@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,19 @@ import duckdb
 import yaml
 
 EVALS_DIR = Path(__file__).parent
+
+if str(EVALS_DIR) not in sys.path:
+    sys.path.insert(0, str(EVALS_DIR))
+
+# The governed route the corpus expects is DECLARED IN ONE PLACE -- the seeder
+# that writes it. Retyping the ids here is how a corpus comes to expect a route
+# nothing creates, which scores `missing_path` and reads as a product defect.
+from seed_eval_platform import (  # noqa: E402
+    EVAL_BUSINESS_DOMAIN_ID,
+    EVAL_REPORT_TARGET_ID,
+    EVAL_REPORT_TARGET_TYPE,
+)
+
 FIXTURES_DIR = EVALS_DIR / "fixtures"
 FIXTURES_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -158,7 +172,17 @@ RAW_QUESTIONS: list[dict[str, Any]] = [
     },
     {
         "id": "daily_report_freshness_edge",
-        "question": "Quel est le volume de sessions GA4 enregistré le dernier jour disponible (2026-07-15) ?",
+        # THE TEXT SAID SOMETHING FALSE, and the comment below already knew it
+        # (2026-08-23): 2026-07-15 is NOT "le dernier jour disponible" -- GA4 stops
+        # at 07-14. A question that asserts a premise its own fixture refutes
+        # teaches a reader the wrong thing about the corpus. It now asks what it
+        # actually tests: the day PAST the edge, whose honest answer is nothing.
+        # Its twin below asks the edge itself, and the pair is what proves the
+        # boundary; one empty answer alone proves only that something is empty.
+        "question": (
+            "Quel est le volume de sessions GA4 le 2026-07-15, c'est-a-dire le "
+            "jour qui suit le dernier jour couvert ?"
+        ),
         "as_of": "2026-07-15",
         "surface": "daily_report",
         "difficulty": "easy",
@@ -166,7 +190,19 @@ RAW_QUESTIONS: list[dict[str, Any]] = [
         "reference_queries": [
             {
                 "role": "canonical_correct",
-                "note": "GA4 sessions on exact as_of date",
+                # MEASURED 2026-08-17 (AI-213 re-pin): on the anchored corpus this
+                # returns ZERO rows, so the fixture is []. The GA4 generator's window
+                # is [anchor - 90, anchor - 1] and its anchor is 2026-07-15, so the
+                # last GA4 day in the mart is 2026-07-14 -- the question's premise
+                # ("le dernier jour disponible (2026-07-15)") no longer holds. The
+                # pre-anchor warehouse answered it only because it had accumulated
+                # loads from other windows. Realigning the corpus as_of_anchor with
+                # the GA4 anchor is the open arbitrage named in AI-213; it is NOT
+                # taken here, and the fixture states the measured truth meanwhile.
+                "note": (
+                    "GA4 sessions on exact as_of date -- EMPTY on the anchored corpus: "
+                    "GA4 rows stop at 2026-07-14 (anchor 2026-07-15, exclusive)"
+                ),
                 "reference_sql": (
                     "SELECT date, SUM(value) AS sessions "
                     "FROM marts.fact_daily_kpi "
@@ -185,6 +221,47 @@ RAW_QUESTIONS: list[dict[str, Any]] = [
             }
         ],
         "updated_at": "2026-07-20T00:00:00Z",
+    },
+    {
+        "id": "daily_report_freshness_last_day",
+        # THE OTHER HALF OF THE EDGE (2026-08-23). Its twin above asks the day
+        # AFTER the last covered one and is pinned to an empty answer. Alone, an
+        # empty answer proves only that something is empty -- it cannot tell a
+        # correct boundary from a broken read. This one asks the LAST COVERED day
+        # and expects its rows, so the pair says where the data stops.
+        "question": (
+            "Quel est le volume de sessions GA4 enregistre le dernier jour "
+            "couvert (2026-07-14) ?"
+        ),
+        "as_of": "2026-07-15",
+        "surface": "daily_report",
+        "difficulty": "easy",
+        "tags": ["ga4", "freshness", "single_day"],
+        "reference_queries": [
+            {
+                "role": "canonical_correct",
+                "note": (
+                    "GA4 sessions on the last covered day -- the non-empty half of "
+                    "the freshness boundary"
+                ),
+                "reference_sql": (
+                    "SELECT date, SUM(value) AS sessions "
+                    "FROM marts.fact_daily_kpi "
+                    "WHERE project_id = 'default' AND connector = 'google-analytics' "
+                    "AND metric = 'sessions' AND breakdown_dimension = 'country' "
+                    "AND date = '2026-07-14' GROUP BY date"
+                ),
+                "fixture_name": "daily_report_freshness_last_day.json",
+            }
+        ],
+        "expected_citations": [
+            {
+                "source_system": "google-analytics",
+                "source_field": "fact_daily_kpi",
+                "pull_id_required": True,
+            }
+        ],
+        "updated_at": "2026-08-23T00:00:00Z",
     },
     {
         "id": "daily_report_empty_date_range",
@@ -244,7 +321,7 @@ RAW_QUESTIONS: list[dict[str, Any]] = [
     },
     {
         "id": "daily_report_provenance_pull_id_check",
-        "question": "Quel est le total de conversions GA4 sur les 30 derniers jours avec vérification de provenance ?",
+        "question": "Quel est le total de conversions GA4 sur les 30 derniers jours avec verification de provenance ?",
         "as_of": "2026-07-15",
         "surface": "daily_report",
         "difficulty": "easy",
@@ -653,6 +730,172 @@ RAW_QUESTIONS: list[dict[str, Any]] = [
             }
         ],
         "updated_at": "2026-07-20T00:00:00Z",
+    },
+    {
+        # THE QUESTION EPICS 68-69 EXIST TO ANSWER, and until AI-303 seeded the
+        # entity spine the corpus could not ask it: `entity_key_match_verdicts_dim`
+        # and the two master-data relations were ABSENT from the seeded warehouse
+        # and `semantic_fact_by_entity_attribute` built over ZERO rows, so any
+        # entry here would have been red or would have had its fixture invented --
+        # which `no-demo-content-in-product` forbids. Since 3ef0f71f the lot is
+        # replayed from a CAPTURE of the real chain (catalogue file -> declared
+        # entity -> published rule -> cross), so the fixture below is a measured
+        # answer, not a written one.
+        #
+        # WHAT IT GUARDS THAT NOTHING ELSE DOES. The user asks in HIS words --
+        # "views by content type" -- and `content_type` deliberately never
+        # descends into `fact_daily_kpi` (FR8: denormalising it would let a
+        # reclassification in October rewrite August's numbers). The only place
+        # the two meet is this view, and the only proof that the meeting still
+        # happens is a number: short 210, long 105.
+        "id": "expert_report_entity_views_by_content_type",
+        "question": (
+            "What are my video views by content type, under the classification "
+            "rule I published?"
+        ),
+        # The spine's facts are dated 2026-08-01/02 (the capture's own window) and
+        # the corpus anchor is 2026-07-15. That is not a contradiction to reconcile
+        # here: the derived attribute is stamped with a RULE VERSION, not a date --
+        # story 69.3 -- so this cross does not read the corpus anchor at all. The
+        # field stays at the corpus anchor because every other question shares it.
+        "as_of": "2026-07-15",
+        "surface": "expert_report",
+        "difficulty": "hard",
+        "tags": ["entity-spine", "managed-feed", "mdm", "derived-attribute", "cross-read"],
+        "reference_queries": [
+            {
+                "role": "canonical_correct",
+                # MEASURED 2026-08-24 on the rebuilt local warehouse: long 105,
+                # short 210. `attribute_origin = 'derived'` is PINNED on purpose --
+                # an attribute a user's file CARRIES and one his rules DERIVE are
+                # not argued the same way, and a question that summed both would
+                # stop being able to say which to correct. If content_type ever
+                # arrives carried instead of derived this goes red, which is the
+                # signal wanted.
+                "note": (
+                    "Views by user-owned classification, crossed at read time: the "
+                    "attribute never descends into fact_daily_kpi (FR8), so this "
+                    "view is the only place the question has an answer"
+                ),
+                "reference_sql": (
+                    "SELECT attribute_value AS content_type, SUM(value) AS views "
+                    "FROM marts.semantic_fact_by_entity_attribute "
+                    "WHERE attribute = 'content_type' AND attribute_origin = 'derived' "
+                    "AND metric = 'views' "
+                    "GROUP BY attribute_value ORDER BY attribute_value"
+                ),
+                "fixture_name": "expert_report_entity_views_by_content_type.json",
+            },
+            {
+                "role": "supplementary",
+                # THE CITABILITY, PINNED AS A NUMBER RATHER THAN DECLARED. Story
+                # 69.5 AC1 asks the answer to name its execution id and its rule
+                # version; `expected_citations` cannot carry that here (see below),
+                # so the property is asserted where it cannot rot: every crossed
+                # row must name BOTH. 4 rows, 4 executions, 4 rule versions --
+                # a chain that stopped stamping either turns this red.
+                "note": (
+                    "Every crossed row names the execution that landed it and the "
+                    "rule version that classified it -- counted, not asserted"
+                ),
+                "reference_sql": (
+                    "SELECT COUNT(*) AS crossed_rows, "
+                    "COUNT(pull_id) AS rows_naming_an_execution, "
+                    "COUNT(rule_set_version_id) AS rows_naming_a_rule_version "
+                    "FROM marts.semantic_fact_by_entity_attribute "
+                    "WHERE attribute = 'content_type' AND attribute_origin = 'derived' "
+                    "AND metric = 'views'"
+                ),
+                "fixture_name": (
+                    "expert_report_entity_views_by_content_type__citability.json"
+                ),
+            },
+        ],
+        # EMPTY, AND FOR A REASON THAT IS NOT "no citations expected". A managed
+        # FILE feed has no connector name: its rows carry the DATASTREAM id in
+        # `connector` (`ds_...`), minted by `datastreams.new_datastream_id` as a
+        # fresh ULID on every capture. Pinning it here would embed an identity the
+        # next capture invalidates, and nothing would go red -- this question
+        # resolves no `tool_invocation` (the seam replays `fact_daily_kpi` only),
+        # so a citation written here is never compared to anything. The provenance
+        # is guarded by the supplementary query above instead, which a re-capture
+        # cannot silently invalidate.
+        "expected_citations": [],
+        "updated_at": "2026-08-24T00:00:00Z",
+    },
+    {
+        # THE ONLY QUESTION OF THE CORPUS THAT TRAVERSES A GOVERNED ROUTE (AI-305).
+        #
+        # WHY IT HAD TO BE A `get_report` QUESTION, and why declaring routes on the
+        # questions that already existed would have made a SECOND mute dimension.
+        # `report_mcp.py` resolves `meta.business_context_paths` inside `get_report`
+        # and nowhere else; every other encoded tool of this corpus is
+        # `get_daily_report`, whose envelope carries no such key. A route declared
+        # there scores `unverifiable` -- evidence the surface cannot produce.
+        #
+        # WHAT IT MEASURES THAT NOTHING ELSE DOES. Three things have to hold at
+        # once for this question to be green, and each of them was broken until
+        # 2026-08-24: the run carries a DECLARED evaluation identity (as
+        # `anonymous` the resolver answers `production_identity_required` and the
+        # envelope says `business_context_state: denied`); the identity is a MEMBER
+        # with a capability; and a governed link ties this report to a business
+        # domain. Seeded by `seed_eval_platform.py`, into a disposable database only.
+        #
+        # ITS GROUND TRUTH IS THE MART, NOT THE REPORT. The report is the SURFACE
+        # under test, so taking its own answer as the reference would be the
+        # instrument agreeing with itself. The reference SQL below is the same
+        # sessions aggregate `daily_report_ga4_sessions_30d` pins -- so a report
+        # that silently re-grains, double-counts across breakdowns or drops a day
+        # goes red here even though its business route resolves perfectly.
+        "id": "expert_report_governed_route_ga4_overview",
+        "question": (
+            "Show me the Google Analytics daily overview report for the last 30 days, "
+            "and which business domain it answers for."
+        ),
+        "as_of": "2026-07-15",
+        "surface": "expert_report",
+        "difficulty": "medium",
+        "tags": ["ga4", "sessions", "report", "business-path", "governed-route"],
+        # The report this question opens. Its presence is what resolves the
+        # question to `get_report` instead of `get_daily_report` -- see
+        # `derive_tool_invocation`. It names a report definition SHIPPED by the
+        # google-analytics module, so no row has to exist for the report itself.
+        "report_ref": EVAL_REPORT_TARGET_ID,
+        # Imported from the seeder rather than retyped: a corpus that named a
+        # domain the seeder does not create would score `missing_path` and read as
+        # a product defect.
+        "expected_business_routes": [
+            {
+                "domain_id": EVAL_BUSINESS_DOMAIN_ID,
+                "target_type": EVAL_REPORT_TARGET_TYPE,
+                "target_id": EVAL_REPORT_TARGET_ID,
+            }
+        ],
+        "reference_queries": [
+            {
+                "role": "canonical_correct",
+                "note": (
+                    "GA4 sessions on the report's own window, pinned at the country "
+                    "grain -- the mart's answer, so the report cannot be its own proof"
+                ),
+                "reference_sql": (
+                    "SELECT SUM(value) AS total_sessions "
+                    "FROM marts.fact_daily_kpi "
+                    "WHERE project_id = 'default' AND connector = 'google-analytics' "
+                    "AND metric = 'sessions' AND breakdown_dimension = 'country' "
+                    "AND date BETWEEN '2026-06-16' AND '2026-07-15'"
+                ),
+                "fixture_name": "expert_report_governed_route_ga4_overview.json",
+            }
+        ],
+        "expected_citations": [
+            {
+                "source_system": "google-analytics",
+                "source_field": "fact_daily_kpi",
+                "pull_id_required": True,
+            }
+        ],
+        "updated_at": "2026-08-24T00:00:00Z",
     },
     # -----------------------------------------------------------------------
     # Group 3: card (8 questions) & card_catalog (2 questions)
@@ -1211,7 +1454,19 @@ RAW_QUESTIONS: list[dict[str, Any]] = [
         "reference_queries": [
             {
                 "role": "canonical_correct",
-                "note": "Meta cost replayed as of June 15 2026",
+                # MEASURED 2026-08-17 (AI-213 re-pin): ZERO rows on the anchored
+                # corpus, so the fixture is []. meta-ads covers exactly 40 days --
+                # 2026-03-01..2026-03-10 (the media-plan seed) and 2026-06-20..
+                # 2026-07-19 (the 30-day generator window ending on the anchor) --
+                # so 2026-06-02..2026-06-15 falls in the gap between them. The
+                # pre-anchor warehouse answered it out of an older, wall-clock
+                # window. Moving the question inside the corpus, or widening the
+                # meta-ads seed, is a corpus decision and is deliberately not taken
+                # here.
+                "note": (
+                    "Meta cost replayed as of June 15 2026 -- EMPTY on the anchored "
+                    "corpus: meta-ads covers 2026-03-01..03-10 and 2026-06-20..07-19"
+                ),
                 "reference_sql": (
                     "SELECT date, SUM(value) AS cost "
                     "FROM marts.fact_daily_kpi "
@@ -1821,6 +2076,36 @@ def derive_tool_invocation(question: dict[str, Any]) -> dict[str, Any] | None:
     round_m = _ROUND_RE.search(sql)
     round_to = int(round_m.group(1)) if round_m else None
 
+    selector = {
+        "kind": kind,
+        "connector": connector,
+        "metric": metric,
+        "breakdown_dimension": breakdown,
+        "round": round_to,
+    }
+
+    # A QUESTION THAT NAMES A REPORT RESOLVES TO `get_report`, and the SELECTOR IS
+    # THE SAME ONE. Measured 2026-08-24 against the seeded warehouse: `get_report`
+    # puts the raw `fact_daily_kpi` rows on its envelope with the identical shape
+    # (date, connector, metric, breakdown_dimension, breakdown_value, value,
+    # pull_id, loaded_at), so `select_from_envelope` reads it unchanged. Inventing
+    # a second selector vocabulary for the same rows would have been a second
+    # thing to keep true. `get_report` takes no `as_of` and no `connectors`: its
+    # window is the two date arguments, and its connector set comes from the
+    # report definition -- so the replay-surface `as_of` below does NOT apply here.
+    report_ref = question.get("report_ref")
+    if report_ref:
+        return {
+            "tool": "get_report",
+            "args": {
+                "project_id": project,
+                "report_id": report_ref,
+                "date_from": start,
+                "date_to": end,
+            },
+            "result_selector": selector,
+        }
+
     args: dict[str, Any] = {
         "project_id": project,
         "connectors": [connector],
@@ -1831,13 +2116,6 @@ def derive_tool_invocation(question: dict[str, Any]) -> dict[str, Any] | None:
     if question.get("surface") in _ASOF_SURFACES:
         args["as_of"] = f"{question['as_of']}T23:59:59Z"
 
-    selector = {
-        "kind": kind,
-        "connector": connector,
-        "metric": metric,
-        "breakdown_dimension": breakdown,
-        "round": round_to,
-    }
     return {"tool": "get_daily_report", "args": args, "result_selector": selector}
 
 

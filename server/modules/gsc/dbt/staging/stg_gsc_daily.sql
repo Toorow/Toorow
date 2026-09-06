@@ -13,12 +13,27 @@
 --
 -- Device dimension vocabulary: raw values from GSC are already normalized to
 -- lowercase (connector.py _DEVICE_CANONICAL_MAP: MOBILE->mobile, etc.) at ingest.
+--
+-- Country dimension vocabulary (Story 37.7 repair): GSC returns ISO 3166-1
+-- ALPHA-3 in lower case ('fra', 'gbr', 'deu') -- api_catalog.json declares it and
+-- connector.py passes the API key through untouched. The canonical vocabulary is
+-- alpha-2, so this model normalizes through the shared normalize_dimension macro
+-- exactly like stg_ga4_standard_daily, and preserves the provider spelling as
+-- country_source (AD-6). Until this was done, every GSC country reached the marts
+-- as 'fra' -- a value dim_country never matches, i.e. Unknown for every market.
+--
+-- WHY upper(country): normalize_dimension resolves by an EXACT, case-sensitive
+-- membership test, and the seed carries its spellings upper-cased
+-- (test_vocabulary_dim_country_carries_uppercase_spelling_for_sql_lookup). GSC's
+-- lower-case alpha-3 must therefore be folded before the lookup; the Python reader
+-- (core.country_vocabulary) already case-folds, so both readers agree.
 {{ config(materialized='view') }}
 
 SELECT
     date,
     page,
-    country,
+    country AS country_source,
+    {{ normalize_dimension('upper(country)', ref('dim_country'), 'aliases', 'iso_code') }} AS country,
     device,
     clicks,
     impressions,

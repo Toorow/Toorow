@@ -1,0 +1,304 @@
+{
+  "corpus_meta": {
+    "as_of_anchor": "2026-07-15",
+    "schema_version": "1",
+    "seeds_commit": "a6b3c60"
+  },
+  "per_question": {
+    "as_of_ga4_sessions_historical_replay": {
+      "accuracy": "PASS",
+      "adherence": "PASS",
+      "citations": "PASS"
+    },
+    "as_of_gsc_clicks_historical": {
+      "accuracy": "PASS",
+      "adherence": "PASS",
+      "citations": "PASS"
+    },
+    "as_of_gsc_impressions_replay": {
+      "accuracy": "PASS",
+      "adherence": "PASS",
+      "citations": "PASS"
+    },
+    "as_of_meta_cost_replay": {
+      "accuracy": "PASS",
+      "adherence": "PASS",
+      "citations": "N/A"
+    },
+    "as_of_notebook_execution_window": {
+      "accuracy": "PASS",
+      "adherence": "PASS",
+      "citations": "PASS"
+    },
+    "card_attribution_campaign": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "card_attribution_session_source": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "card_catalog_connectors_explicit_only": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "card_catalog_list_all_templates": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "card_connectors_context": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "card_conversions_cpa_cross_source": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "card_dedup_context": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "card_journey_entry_top_pages": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "card_keywords_gsc_clicks_impressions": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "card_kpi_summary_ga4_sessions": {
+      "accuracy": "PASS",
+      "adherence": "PASS",
+      "citations": "PASS"
+    },
+    "card_kpi_summary_meta_cost": {
+      "accuracy": "PASS",
+      "adherence": "PASS",
+      "citations": "PASS"
+    },
+    "card_usertypes_new_returning": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "daily_report_cross_connector_sessions_conversions": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "daily_report_empty_date_range": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "daily_report_freshness_edge": {
+      "accuracy": "PASS",
+      "adherence": "PASS",
+      "citations": "N/A"
+    },
+    "daily_report_freshness_last_day": {
+      "accuracy": "PASS",
+      "adherence": "PASS",
+      "citations": "PASS"
+    },
+    "daily_report_ga4_sessions_30d": {
+      "accuracy": "PASS",
+      "adherence": "PASS",
+      "citations": "PASS"
+    },
+    "daily_report_ga4_users_30d": {
+      "accuracy": "PASS",
+      "adherence": "PASS",
+      "citations": "PASS"
+    },
+    "daily_report_gsc_clicks_30d": {
+      "accuracy": "PASS",
+      "adherence": "PASS",
+      "citations": "PASS"
+    },
+    "daily_report_gsc_impressions_30d": {
+      "accuracy": "PASS",
+      "adherence": "PASS",
+      "citations": "PASS"
+    },
+    "daily_report_meta_cost_30d": {
+      "accuracy": "PASS",
+      "adherence": "PASS",
+      "citations": "PASS"
+    },
+    "daily_report_project_not_found": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "daily_report_provenance_pull_id_check": {
+      "accuracy": "PASS",
+      "adherence": "PASS",
+      "citations": "PASS"
+    },
+    "dq_baseline_deviation_check": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "dq_connector_disabled_check": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "dq_ga4_anomaly_day_75": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "dq_provenance_gap_null_pull_id": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "dq_stale_data_detection": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "expert_report_as_of_override_replay": {
+      "accuracy": "PASS",
+      "adherence": "PASS",
+      "citations": "PASS"
+    },
+    "expert_report_cross_connector_attribution": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "expert_report_entity_views_by_content_type": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "expert_report_ga4_landing_pages": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "expert_report_ga4_user_acquisition_channels": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "expert_report_governed_route_ga4_overview": {
+      "accuracy": "PASS",
+      "adherence": "PASS",
+      "citations": "PASS"
+    },
+    "expert_report_gsc_position_movements": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "expert_report_gsc_top_pages_by_clicks": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "expert_report_meta_adset_performance": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "expert_report_meta_campaign_breakdown": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "expert_report_meta_conversion_performance": {
+      "accuracy": "PASS",
+      "adherence": "PASS",
+      "citations": "PASS"
+    },
+    "expert_report_post_deploy_regressions": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "grain_trap_cross_source_conversions_dedup": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "grain_trap_ga4_conversions_attribution": {
+      "accuracy": "PASS",
+      "adherence": "PASS",
+      "citations": "N/A"
+    },
+    "grain_trap_ga4_sessions_multi_breakdown": {
+      "accuracy": "PASS",
+      "adherence": "PASS",
+      "citations": "N/A"
+    },
+    "grain_trap_gsc_average_position": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "grain_trap_klaviyo_campaign_vs_flow": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "grain_trap_linkedin_campaign_vs_group": {
+      "accuracy": "PASS",
+      "adherence": "PASS",
+      "citations": "N/A"
+    },
+    "grain_trap_meta_ctr_ratio": {
+      "accuracy": "skipped",
+      "adherence": "unavailable",
+      "citations": "N/A"
+    },
+    "grain_trap_meta_data_level_double_count": {
+      "accuracy": "PASS",
+      "adherence": "PASS",
+      "citations": "N/A"
+    }
+  },
+  "schema_version": 2,
+  "summary": {
+    "accuracy_score": 1.0,
+    "accuracy_tallies": {
+      "FAIL": 0,
+      "N/A": 0,
+      "PASS": 22,
+      "done": 0,
+      "skipped": 31,
+      "unavailable": 0
+    },
+    "adherence_score": 1.0,
+    "adherence_tallies": {
+      "FAIL": 0,
+      "N/A": 0,
+      "PASS": 22,
+      "done": 0,
+      "skipped": 0,
+      "unavailable": 31
+    },
+    "citation_score": 1.0,
+    "citations_tallies": {
+      "FAIL": 0,
+      "N/A": 37,
+      "PASS": 16,
+      "done": 0,
+      "skipped": 0,
+      "unavailable": 0
+    }
+  }
+}

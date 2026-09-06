@@ -8,13 +8,14 @@ What these tests pin:
   - A 401 UNAUTHENTICATED response routes through core.pull_errors.classify_http_error
     and raises auth_expired (user_action=reconnect, retryable=False) with the parsed
     Google error body preserved as evidence.
-  - A 403 PERMISSION_DENIED response raises permission_denied via the pure-HTTP class.
-  - The manifest declares NO error_map (Google error.code == numeric HTTP status, so a
-    refinement map would be redundant/unreachable) but DOES carry the _error_map_note
-    that justifies the absence per the playbook.
+  - A 403 PERMISSION_DENIED response raises permission_denied (the class the map
+    confirms rather than changes -- the refinements live on the quota reasons).
+  - The manifest declares a filled error_map AND the _error_map_note that names the
+    provider reference it came from (playbook step 4).
 
-These assert the EXISTING typed raise sites (classify_http_error(status, body), no map)
-are correct and unchanged -- Story 25.7 adds no code-level error refinement for GA4.
+Updated 2026-08-17: the third assertion used to pin the ABSENCE of an error_map. See
+test_error_taxonomy_google_analytics.py for why that absence ended and for the map's
+own behaviour; the two raise-path proofs below are unchanged.
 """
 
 from __future__ import annotations
@@ -62,7 +63,6 @@ def test_pull_401_raises_auth_expired_with_payload_preserved(connector, tmp_path
     the parsed Google error body survives as evidence on the typed error (pure-HTTP
     classification -- GA4 needs no error_map to reach auth_expired on 401).
     """
-    monkeypatch.setenv("GA4_PROPERTY_ID", "TEST123")
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "ga4_401.duckdb"))
 
@@ -88,6 +88,7 @@ def test_pull_401_raises_auth_expired_with_payload_preserved(connector, tmp_path
                 date_to="2026-01-07",
                 project_id="jean-ga4",
                 pull_id="pull_ga4_401",
+                property_id="TEST123",
             )
 
     err = exc_info.value
@@ -103,7 +104,6 @@ def test_pull_401_raises_auth_expired_with_payload_preserved(connector, tmp_path
 @respx.mock
 def test_pull_403_raises_permission_denied(connector, tmp_path, monkeypatch):
     """A 403 PERMISSION_DENIED runReport response raises permission_denied (pure-HTTP)."""
-    monkeypatch.setenv("GA4_PROPERTY_ID", "TEST123")
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "ga4_403.duckdb"))
 
@@ -128,6 +128,7 @@ def test_pull_403_raises_permission_denied(connector, tmp_path, monkeypatch):
                 date_to="2026-01-07",
                 project_id="jean-ga4",
                 pull_id="pull_ga4_403",
+                property_id="TEST123",
             )
 
     err = exc_info.value
@@ -137,21 +138,29 @@ def test_pull_403_raises_permission_denied(connector, tmp_path, monkeypatch):
     assert err.provider_payload["error"]["status"] == "PERMISSION_DENIED"
 
 
-def test_manifest_declares_no_error_map_but_justifies_it():
-    """Story 25.7: GA4 manifest carries NO error_map but DOES carry _error_map_note.
+def test_manifest_declares_a_filled_error_map_and_justifies_it():
+    """The absence this test used to pin was ended on 2026-08-17.
 
-    Google error.code == numeric HTTP status, so any refinement key would be either
-    redundant with the pure-HTTP classification or unreachable by the generic
-    extractor; the absence must be explicitly justified (playbook step 4).
+    It asserted ``"error_map" not in manifest``, and the rationale it quoted was
+    true of the CLASSIFIER, not of GA4: core only extracted ``error.code``, which
+    Google sets to the numeric HTTP status, so the only writable key was
+    ``"403:403"`` and it refined nothing. ``_extract_provider_codes`` now offers
+    ``error.errors[].reason`` and the ``error.status`` enum first, so the tokens
+    that discriminate are keyable and the map exists. The note stays mandatory
+    (playbook step 4) -- it is where the provider reference is named.
+
+    The behaviour of the map itself is pinned in
+    ``test_error_taxonomy_google_analytics.py``; this only keeps the manifest
+    honest next to the two raise-path tests above.
     """
     manifest = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
-    assert "error_map" not in manifest, (
-        "google-analytics must NOT declare an error_map (Google error.code is the "
-        "numeric HTTP status -- refinement would be redundant/unreachable)."
+    error_map = manifest.get("error_map")
+    assert isinstance(error_map, dict) and error_map, (
+        "google-analytics must declare a filled error_map (playbook step 4)."
     )
     note = manifest.get("_error_map_note")
     assert isinstance(note, str) and note.strip(), (
-        "manifest must carry an _error_map_note justifying the absent error_map."
+        "manifest must carry an _error_map_note naming the provider reference."
     )
-    # The justification must name the reason (numeric code == HTTP status).
-    assert "code" in note and "status" in note.lower()
+    # The justification must still name what the keys are read from.
+    assert "reason" in note and "status" in note.lower()

@@ -126,9 +126,9 @@ def test_invitation_expiry_is_bounded(hours):
 
 
 def test_migration_062_contains_immutable_invitation_contract():
-    from pathlib import Path
+    from tests.conftest import REPO_ROOT
 
-    sql = Path("infra/nango/migrations/062_scoped_invitations.sql").read_text()
+    sql = (REPO_ROOT / "infra/nango/migrations/062_scoped_invitations.sql").read_text()
     assert "CREATE TABLE IF NOT EXISTS app.invitations" in sql
     assert "invited_identity_hash" in sql
     assert "bearer_hash" in sql
@@ -137,10 +137,10 @@ def test_migration_062_contains_immutable_invitation_contract():
 
 
 def test_migration_066_hardens_immutable_binding_to_bearer_expiry_operation():
-    from pathlib import Path
+    from tests.conftest import REPO_ROOT
 
-    sql = Path(
-        "infra/nango/migrations/066_epic36_invitation_binding_hardening.sql"
+    sql = (
+        REPO_ROOT / "infra/nango/migrations/066_epic36_invitation_binding_hardening.sql"
     ).read_text()
     assert "CREATE OR REPLACE FUNCTION app.protect_invitation_binding" in sql
     for column in ("bearer_hash", "expires_at", "operation_id"):

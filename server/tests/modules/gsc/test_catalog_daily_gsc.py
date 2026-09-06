@@ -125,7 +125,6 @@ def test_catalog_daily_dimensions_from_selection(connector, tmp_path, monkeypatc
     """AC2: dimensions param sent to the API is built from selection; 'date' leads always."""
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "gsc_cat_dims.duckdb"))
-    monkeypatch.setenv("GSC_SITE_URL", _SITE_URL)
 
     route = respx.post(_GSC_API_URL).mock(return_value=httpx.Response(200, json=_GSC_RESPONSE))
 
@@ -149,6 +148,7 @@ def test_catalog_daily_dimensions_from_selection(connector, tmp_path, monkeypatc
             project_id="jean-gsc",
             pull_id="pull_cat_dims",
             selection=selection,
+            site_url=_SITE_URL,
         )
 
     assert route.called
@@ -166,7 +166,6 @@ def test_catalog_daily_date_always_leads_even_if_not_in_selection(connector, tmp
     """AC2: if 'date' is absent from the selection's dimensions, it is still prepended."""
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "gsc_cat_nodate.duckdb"))
-    monkeypatch.setenv("GSC_SITE_URL", _SITE_URL)
 
     route = respx.post(_GSC_API_URL).mock(return_value=httpx.Response(200, json={"rows": []}))
 
@@ -184,6 +183,7 @@ def test_catalog_daily_date_always_leads_even_if_not_in_selection(connector, tmp
             project_id="jean-gsc",
             pull_id="pull_cat_nodate",
             selection=selection,
+            site_url=_SITE_URL,
         )
 
     body = json.loads(route.calls.last.request.read())
@@ -196,7 +196,6 @@ def test_catalog_daily_search_type_maps_to_type_param(connector, tmp_path, monke
     not to the dimensions list."""
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "gsc_cat_st.duckdb"))
-    monkeypatch.setenv("GSC_SITE_URL", _SITE_URL)
 
     route = respx.post(_GSC_API_URL).mock(return_value=httpx.Response(200, json={"rows": []}))
 
@@ -219,6 +218,7 @@ def test_catalog_daily_search_type_maps_to_type_param(connector, tmp_path, monke
             project_id="jean-gsc",
             pull_id="pull_cat_st",
             selection=selection,
+            site_url=_SITE_URL,
         )
 
     body = json.loads(route.calls.last.request.read())
@@ -241,7 +241,6 @@ def test_catalog_daily_projects_only_selected_metrics(connector, tmp_path, monke
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     db_path = str(tmp_path / "gsc_cat_proj.duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", db_path)
-    monkeypatch.setenv("GSC_SITE_URL", _SITE_URL)
 
     # API returns all 4 metrics — the connector must project down to only clicks
     respx.post(_GSC_API_URL).mock(return_value=httpx.Response(200, json=_GSC_RESPONSE))
@@ -260,6 +259,7 @@ def test_catalog_daily_projects_only_selected_metrics(connector, tmp_path, monke
             project_id="jean-gsc",
             pull_id="pull_cat_proj",
             selection=selection,
+            site_url=_SITE_URL,
         )
 
     assert result["row_count"] == 2
@@ -286,7 +286,6 @@ def test_catalog_daily_ctr_never_stored(connector, tmp_path, monkeypatch):
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     db_path = str(tmp_path / "gsc_cat_ctr.duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", db_path)
-    monkeypatch.setenv("GSC_SITE_URL", _SITE_URL)
 
     respx.post(_GSC_API_URL).mock(return_value=httpx.Response(200, json=_GSC_RESPONSE))
 
@@ -311,6 +310,7 @@ def test_catalog_daily_ctr_never_stored(connector, tmp_path, monkeypatch):
             project_id="jean-gsc",
             pull_id="pull_cat_ctr",
             selection=selection,
+            site_url=_SITE_URL,
         )
 
     import duckdb
@@ -327,7 +327,6 @@ def test_catalog_daily_all_metrics_kept_when_all_selected(connector, tmp_path, m
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     db_path = str(tmp_path / "gsc_cat_all.duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", db_path)
-    monkeypatch.setenv("GSC_SITE_URL", _SITE_URL)
 
     respx.post(_GSC_API_URL).mock(return_value=httpx.Response(200, json=_GSC_RESPONSE))
 
@@ -351,6 +350,7 @@ def test_catalog_daily_all_metrics_kept_when_all_selected(connector, tmp_path, m
             project_id="jean-gsc",
             pull_id="pull_cat_all_metrics",
             selection=selection,
+            site_url=_SITE_URL,
         )
 
     import duckdb
@@ -376,7 +376,6 @@ def test_catalog_daily_all_metrics_kept_when_all_selected(connector, tmp_path, m
 
 def test_catalog_daily_refuses_search_appearance_with_other_dims(connector, monkeypatch):
     """AC4: searchAppearance + any other grouping dim → InvalidRequestError, no API call."""
-    monkeypatch.setenv("GSC_SITE_URL", _SITE_URL)
 
     from core.pull_errors import InvalidRequestError
 
@@ -401,6 +400,7 @@ def test_catalog_daily_refuses_search_appearance_with_other_dims(connector, monk
                 project_id="jean-gsc",
                 pull_id="pull_cat_sa_bad",
                 selection=selection,
+                site_url=_SITE_URL,
             )
 
     assert (
@@ -412,7 +412,6 @@ def test_catalog_daily_refuses_search_appearance_with_other_dims(connector, monk
 
 def test_catalog_daily_refuses_hour_dimension(connector, monkeypatch):
     """AC4: 'hour' in selection → InvalidRequestError (excluded from catalog_daily)."""
-    monkeypatch.setenv("GSC_SITE_URL", _SITE_URL)
 
     from core.pull_errors import InvalidRequestError
 
@@ -431,6 +430,7 @@ def test_catalog_daily_refuses_hour_dimension(connector, monkeypatch):
                 project_id="jean-gsc",
                 pull_id="pull_cat_hour_bad",
                 selection=selection,
+                site_url=_SITE_URL,
             )
 
     assert "hour" in str(exc_info.value).lower()
@@ -444,7 +444,6 @@ def test_catalog_daily_search_appearance_alone_triggers_per_day_loop(
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     db_path = str(tmp_path / "gsc_cat_sa_loop.duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", db_path)
-    monkeypatch.setenv("GSC_SITE_URL", _SITE_URL)
 
     bodies: list[dict] = []
 
@@ -485,6 +484,7 @@ def test_catalog_daily_search_appearance_alone_triggers_per_day_loop(
             project_id="jean-gsc",
             pull_id="pull_cat_sa_loop",
             selection=selection,
+            site_url=_SITE_URL,
         )
 
     # Two days → 2 API calls, each with dimensions=["searchAppearance"]
@@ -597,7 +597,6 @@ def test_catalog_daily_default_selection_falls_back_to_tier_core(connector, tmp_
     """When selection=None, pull_catalog_daily resolves the tier-core default (no crash)."""
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "gsc_cat_default.duckdb"))
-    monkeypatch.setenv("GSC_SITE_URL", _SITE_URL)
 
     route = respx.post(_GSC_API_URL).mock(return_value=httpx.Response(200, json=_GSC_RESPONSE))
 
@@ -609,6 +608,7 @@ def test_catalog_daily_default_selection_falls_back_to_tier_core(connector, tmp_
             project_id="jean-gsc",
             pull_id="pull_cat_default",
             selection=None,  # falls back to tier-core default
+            site_url=_SITE_URL,
         )
 
     assert route.called

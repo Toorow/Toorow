@@ -5,39 +5,51 @@
  *   - success is determined ONLY by Nango's postMessage on its own origin;
  *   - a popup that merely CLOSES is a cancellation: no POST /api/connections,
  *     no onSuccess, and the user is told nothing was connected;
- *   - a failed /api/modules/available says so instead of offering an invented
+ *   - a failed /api/connectors/available says so instead of offering an invented
  *     provider list, and an empty API answer renders as empty;
  *   - a build with no VITE_NANGO_BASE_URL refuses to open a popup at all
  *     (the old code shipped a localhost:3003 default to production).
  */
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { ThemeProvider } from "@mui/material";
-import { adminTheme } from "../theme";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import ConnectButton from "../ConnectButton";
+import { Toaster } from "../ui";
 
 const NANGO_BASE = "https://nango.example.test";
 const NANGO_ORIGIN = "https://nango.example.test";
 
 function renderWithTheme(ui: React.ReactElement) {
-  return render(<ThemeProvider theme={adminTheme}>{ui}</ThemeProvider>);
+  // No MUI ThemeProvider: the subject no longer renders a MUI component, so
+  // wrapping it in one would be theming nothing.
+  //
+  // The `Toaster` IS needed, and it is not scaffolding: the component reports
+  // every OAuth outcome through `notify()`, which renders into the toaster the
+  // way `App.tsx` mounts one for the whole console. Without it the messages are
+  // dispatched to nowhere and seven assertions look like product failures.
+  return render(
+    <>
+      {ui}
+      <Toaster />
+    </>,
+  );
 }
 
-/** The two modules the stubbed /api/modules/available returns. */
-const MODULES = [
+/** The two Connectors the stubbed /api/connectors/available returns. */
+const CONNECTORS = [
   { name: "google-analytics", display_name: "Google Analytics 4" },
   { name: "meta-ads", display_name: "Meta Ads" },
 ];
 
-/** fetch mock: modules list resolves with `modules`; connections POST succeeds. */
-function stubFetch(modules: unknown = { modules: MODULES }) {
-  const fetchMock = vi.fn().mockImplementation((url: string) => {
-    if (String(url).includes("/api/modules/available")) {
-      if (modules instanceof Error) return Promise.reject(modules);
+/** fetch mock: the Connector list resolves; connections POST succeeds. */
+function stubFetch(connectors: unknown = { connectors: CONNECTORS }) {
+  const fetchMock = vi.fn((url: string, _init?: RequestInit) => {
+    if (String(url).includes("/api/connectors/available")) {
+      if (connectors instanceof Error) return Promise.reject(connectors);
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: async () => modules,
-        text: async () => JSON.stringify(modules),
+        json: async () => connectors,
+        text: async () => JSON.stringify(connectors),
       });
     }
     return Promise.resolve({
@@ -51,19 +63,48 @@ function stubFetch(modules: unknown = { modules: MODULES }) {
   return fetchMock;
 }
 
-/** Open the provider menu and pick Google Analytics. */
+/**
+ * Open the provider menu and pick Google Analytics.
+ *
+ * `userEvent`, not `fireEvent.click`, and the reason is the menu itself: the
+ * trigger is a Radix `DropdownMenu`, which opens on POINTERDOWN. jsdom's
+ * `fireEvent.click` dispatches a click and no pointer events at all, so the menu
+ * never opened and fourteen tests failed against a component that works in a
+ * browser. `userEvent` plays the whole sequence a real pointer does.
+ *
+ * `pointerEventsCheck: 0` because Radix sets `pointer-events: none` on the body
+ * while a menu is open, and userEvent refuses to click through it — a guard that
+ * is right in a browser and wrong in jsdom, which does not run the layout that
+ * would lift it on the menu itself.
+ */
+const user = userEvent.setup({ pointerEventsCheck: 0 });
+
 async function openMenuAndPickGa() {
-  fireEvent.click(screen.getByTestId("connect-source-button"));
+  await user.click(screen.getByTestId("connect-source-button"));
   await waitFor(() => {
     expect(screen.getByTestId("connect-provider-google-analytics")).toBeInTheDocument();
   });
-  fireEvent.click(screen.getByTestId("connect-provider-google-analytics"));
+  await user.click(screen.getByTestId("connect-provider-google-analytics"));
 }
 
-/** A fake popup whose `closed` flag the test drives. */
-let activePopup: Window;
-function fakePopup() {
-  const popup = { closed: false } as Window;
+/**
+ * A fake popup whose `closed` flag the test drives.
+ *
+ * `closed` is what every cancellation case here has to flip, and it is READ-ONLY
+ * on `Window` — so `{ closed: false } as Window` produced a popup the tests
+ * could not close. The stub keeps its own mutable type and is widened once,
+ * where the DOM genuinely demands a message source, rather than being declared a
+ * Window it never was.
+ */
+interface PopupStub {
+  closed: boolean;
+}
+
+const asMessageSource = (popup: PopupStub) => popup as unknown as MessageEventSource;
+
+let activePopup: PopupStub;
+function fakePopup(): PopupStub {
+  const popup: PopupStub = { closed: false };
   activePopup = popup;
   vi.stubGlobal("open", vi.fn().mockReturnValue(popup));
   return popup;
@@ -73,20 +114,18 @@ function fakePopup() {
 function postNango(
   eventType: string,
   data?: Record<string, unknown>,
-  source: Window = activePopup
+  source: PopupStub = activePopup
 ) {
   window.dispatchEvent(
     new MessageEvent("message", {
       data: { eventType, data },
       origin: NANGO_ORIGIN,
-      source,
+      source: asMessageSource(source),
     })
   );
 }
-function connectionsCalls(fetchMock: ReturnType<typeof vi.fn>) {
-  return fetchMock.mock.calls.filter(
-    (call: unknown[]) => String((call as [string])[0]) === "/api/connections"
-  );
+function connectionsCalls(fetchMock: ReturnType<typeof stubFetch>) {
+  return fetchMock.mock.calls.filter(([url]) => String(url) === "/api/connections");
 }
 
 beforeEach(() => {
@@ -111,10 +150,10 @@ describe("ConnectButton — provider list", () => {
     expect(screen.getByRole("button", { name: /Connect Source/i })).toBeInTheDocument();
   });
 
-  it("lists exactly the modules the API returned", async () => {
+  it("lists exactly the Connectors the API returned", async () => {
     stubFetch();
     renderWithTheme(<ConnectButton projectId="p1" onSuccess={vi.fn()} />);
-    fireEvent.click(screen.getByTestId("connect-source-button"));
+    await user.click(screen.getByTestId("connect-source-button"));
     await waitFor(() => {
       expect(screen.getByTestId("connect-provider-google-analytics")).toBeInTheDocument();
     });
@@ -127,7 +166,7 @@ describe("ConnectButton — provider list", () => {
   it("says the list failed to load instead of offering invented providers", async () => {
     stubFetch(new Error("offline"));
     renderWithTheme(<ConnectButton projectId="p1" onSuccess={vi.fn()} />);
-    fireEvent.click(screen.getByTestId("connect-source-button"));
+    await user.click(screen.getByTestId("connect-source-button"));
     await waitFor(() => {
       expect(screen.getByTestId("connect-providers-error")).toBeInTheDocument();
     });
@@ -136,13 +175,13 @@ describe("ConnectButton — provider list", () => {
   });
 
   it("renders an empty API answer as empty", async () => {
-    stubFetch({ modules: [] });
+    stubFetch({ connectors: [] });
     renderWithTheme(<ConnectButton projectId="p1" onSuccess={vi.fn()} />);
-    fireEvent.click(screen.getByTestId("connect-source-button"));
+    await user.click(screen.getByTestId("connect-source-button"));
     await waitFor(() => {
       expect(screen.getByTestId("connect-providers-empty")).toBeInTheDocument();
     });
-    expect(screen.getByText(/No connector module is installed/i)).toBeInTheDocument();
+    expect(screen.getByText(/No connector is installed/i)).toBeInTheDocument();
   });
 });
 
@@ -165,8 +204,8 @@ describe("ConnectButton — OAuth outcome", () => {
     await waitFor(() => expect(connectionsCalls(fetchMock)).toHaveLength(1), {
       timeout: 3000,
     });
-    const [, init] = connectionsCalls(fetchMock)[0] as [string, RequestInit];
-    const body = JSON.parse(init.body as string);
+    const [, init] = connectionsCalls(fetchMock)[0];
+    const body = JSON.parse(String(init?.body));
     expect(body.provider).toBe("google-analytics");
     expect(body.project_id).toBe("p1");
     expect(body.nango_connection_id).toMatch(/^google-a-/);
@@ -250,8 +289,8 @@ describe("ConnectButton — OAuth outcome", () => {
     await waitFor(() => expect(connectionsCalls(fetchMock)).toHaveLength(1), {
       timeout: 3000,
     });
-    const [, init] = connectionsCalls(fetchMock)[0] as [string, RequestInit];
-    expect(JSON.parse(init.body as string).project_id).toBe("my-project");
+    const [, init] = connectionsCalls(fetchMock)[0];
+    expect(JSON.parse(String(init?.body)).project_id).toBe("my-project");
   });
 
   it("shows loading state while waiting for the provider", async () => {
@@ -268,7 +307,7 @@ describe("ConnectButton — OAuth outcome", () => {
     }, { timeout: 4000 });
   });
 
-  it("shows a MUI Snackbar (not window.alert) when the popup is blocked (G-08)", async () => {
+  it("shows a toast (not window.alert) when the popup is blocked (G-08)", async () => {
     vi.stubGlobal("open", vi.fn().mockReturnValue(null));
     stubFetch();
     const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
@@ -287,7 +326,7 @@ describe("ConnectButton — OAuth outcome", () => {
     renderWithTheme(<ConnectButton projectId="p1" onSuccess={vi.fn()} />);
     await openMenuAndPickGa();
 
-    postNango("AUTHORIZATION_SUCEEDED", undefined, { closed: false } as Window);
+    postNango("AUTHORIZATION_SUCEEDED", undefined, { closed: false });
     postNango("AUTHORIZATION_SUCEEDED", { connection_id: "another-connection" }, popup);
     popup.closed = true;
 
@@ -349,7 +388,7 @@ describe("ConnectButton — project and reconnect invariants", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
+    await user.click(screen.getByRole("button", { name: "Reconnect" }));
     const openedUrl = String((window.open as ReturnType<typeof vi.fn>).mock.calls[0][0]);
     expect(openedUrl).toContain("/oauth/connect/meta-ads");
     expect(openedUrl).toContain("connection_id=existing-nango-id");

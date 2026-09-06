@@ -2,9 +2,9 @@
 
 Couvre :
   - Parsing _parse_reporting_row() : valeurs presentes, absentes (NULL honnete AD-9),
-    dates manquantes.
+    dates missinges.
   - transform() : mapping canonique via le manifest (AD-4).
-  - pull() : pagination bornee, erreur quota 429 -> RateLimitError, valeurs manquantes
+  - pull() : pagination bornee, erreur quota 429 -> RateLimitError, valeurs missinges
     -> NULL (jamais 0, AD-9).
   - get_klaviyo_report() : shape de l'envelope AD-1.
   - Regle de non-agregation : attributed_revenue et attributed_conversions ne
@@ -299,7 +299,7 @@ class TestNonAggregationRule:
 
 
 # ---------------------------------------------------------------------------
-# Tests de pull() : rate limit, valeurs manquantes
+# Tests de pull() : rate limit, valeurs missinges
 # ---------------------------------------------------------------------------
 
 
@@ -985,10 +985,20 @@ async def test_klaviyo_seam_fastmcp_inprocess(tmp_path):
 
 @pytest.mark.anyio
 async def test_klaviyo_core_loader_mounts_namespace(tmp_path):
-    """F-3 (AI-56) : prouve que build_asgi_app() decouvre et monte le namespace
-    klaviyo via le loader core (scan_and_load_modules). Verifie que l'outil
-    klaviyo_get_klaviyo_report (ou klaviyo-get_klaviyo_report) est present dans
-    la liste des outils montes.
+    """F-3 (AI-56) : le loader core DECOUVRE klaviyo -- et ne lui donne pas d'outil.
+
+    Ce cas verifiait que `klaviyo_get_klaviyo_report` etait dans la liste des
+    outils. AD-42 (`docs/product-architecture/mcp-tool-surface.md`) a retire le
+    montage sous espace de noms : un outil par connecteur faisait croitre le
+    catalogue MCP avec un catalogue de connecteurs borne par rien, et 39 d'entre
+    eux occupaient la fenetre de contexte de tout hote avant sa premiere question.
+
+    La DECOUVERTE, elle, est intacte, et elle est prouvee la ou le canal de
+    reponse est lu correctement :
+    `tests/integration/test_module_loading.py::test_list_connectors_includes_klaviyo`
+    (le payload de `list_connectors` passe par le budget du canal modele et peut
+    voyager dans `_meta`). Ce cas-ci garde l'autre moitie : aucun outil monte ne
+    porte le nom du fournisseur.
     """
     import duckdb
     from fastmcp.client import Client, FastMCPTransport
@@ -1023,14 +1033,10 @@ async def test_klaviyo_core_loader_mounts_namespace(tmp_path):
             tools = await client.list_tools()
 
     tool_names = [t.name for t in tools]
-    # FastMCP namespace separator : underscore (pattern identique a google-analytics_get_ga4_report)
     klaviyo_tools = [n for n in tool_names if "klaviyo" in n.lower()]
-    assert klaviyo_tools, (
-        f"Aucun outil klaviyo trouve dans les outils montes par core.main.mcp: {tool_names}"
-    )
-    # L'outil principal doit etre discoverable.
-    assert any("get_klaviyo_report" in n for n in klaviyo_tools), (
-        f"get_klaviyo_report absent des outils klaviyo montes: {klaviyo_tools}"
+    assert klaviyo_tools == [], (
+        f"un outil MCP porte le nom du fournisseur: {klaviyo_tools} -- AD-42. "
+        "Ce que le projet collecte se lit par list_datastreams / get_datastream_report."
     )
 
 

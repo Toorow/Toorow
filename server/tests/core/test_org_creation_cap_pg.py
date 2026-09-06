@@ -63,8 +63,17 @@ def _drop_orgs(identity: str) -> None:
             )
             org_ids = [r[0] for r in cur.fetchall()]
             cur.execute("DELETE FROM app.org_members WHERE identity = %s", (identity,))
-            for org_id in org_ids:
-                cur.execute("DELETE FROM app.organizations WHERE id = %s", (org_id,))
+        # THROUGH THE PRODUCT'S PURGE. A bare `DELETE FROM app.organizations`
+        # raises `ForeignKeyViolation` since migration 130's
+        # `trg_organizations_seed_business_domains` began seeding
+        # `app.mdm_business_domains` (ON DELETE RESTRICT) into every new org --
+        # and this helper is the one that clears the one-org-per-person cap, so
+        # its failure turned the NEXT creation into a `409` that says nothing
+        # about the cap it was meant to exercise.
+        from tests.conftest import purge_fixture_org  # noqa: PLC0415
+
+        for org_id in org_ids:
+            purge_fixture_org(conn, org_id)
         conn.commit()
 
 
@@ -78,7 +87,7 @@ def onboarder():
 
 
 async def _create(name: str) -> tuple[int, dict]:
-    from core.admin_api import _create_org
+    from core.organizations_api import _create_org  # noqa: PLC0415
 
     slug = f"{name.lower().replace(' ', '-')}-{uuid.uuid4().hex[:8]}"
     with (

@@ -31,6 +31,7 @@ os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
 
+import core.first_value_api as first_value_api  # AD-43 : le handler vit chez son sujet
 from core import first_value_instrumentation as fvi  # noqa: E402
 
 _PEPPER = "w" * 40
@@ -301,7 +302,6 @@ def test_journeys_endpoint_returns_only_authorized_journeys(monkeypatch):
     from core import admin_api
 
     monkeypatch.setattr(admin_api, "_check_auth", AsyncMock(return_value=(True, "u@x.com")))
-    monkeypatch.setattr(pa, "epic36_production_access_enabled", lambda: True)
 
     decision = MagicMock()
     decision.allowed = True
@@ -317,7 +317,7 @@ def test_journeys_endpoint_returns_only_authorized_journeys(monkeypatch):
     conn.__exit__.return_value = False
     monkeypatch.setattr(db, "get_connection", lambda: conn)
 
-    resp = _run(admin_api._get_first_value_journeys(_request(_RAW_PROJECT)))
+    resp = _run(first_value_api._get_first_value_journeys(_request(_RAW_PROJECT)))
     assert resp.status_code == 200
     import json as _json
 
@@ -335,7 +335,6 @@ def test_journeys_endpoint_existence_hides_on_denial(monkeypatch):
     from core import admin_api
 
     monkeypatch.setattr(admin_api, "_check_auth", AsyncMock(return_value=(True, "u@x.com")))
-    monkeypatch.setattr(pa, "epic36_production_access_enabled", lambda: True)
 
     decision = MagicMock()
     decision.allowed = False  # access DENIED
@@ -350,7 +349,7 @@ def test_journeys_endpoint_existence_hides_on_denial(monkeypatch):
     conn.__exit__.return_value = False
     monkeypatch.setattr(db, "get_connection", lambda: conn)
 
-    resp = _run(admin_api._get_first_value_journeys(_request(_RAW_PROJECT)))
+    resp = _run(first_value_api._get_first_value_journeys(_request(_RAW_PROJECT)))
     assert resp.status_code == 404
     sentinel.assert_not_called()
 
@@ -359,7 +358,7 @@ def test_journeys_endpoint_requires_auth(monkeypatch):
     from core import admin_api
 
     monkeypatch.setattr(admin_api, "_check_auth", AsyncMock(return_value=(False, "")))
-    resp = _run(admin_api._get_first_value_journeys(_request(_RAW_PROJECT)))
+    resp = _run(first_value_api._get_first_value_journeys(_request(_RAW_PROJECT)))
     assert resp.status_code == 401
 
 

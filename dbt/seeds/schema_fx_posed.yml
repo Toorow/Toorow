@@ -1,0 +1,104 @@
+version: 2
+
+# Story 67.13 -- the FX cutover fixture declares itself HERE and not in
+# dbt/seeds/schema.yml. That file is frozen by
+# tests/conformance/test_epic41_verification_overlay_additive.py
+# (`_SHARED_CONFIG_FILES`): a story adds its seed entries in its OWN schema file,
+# which is what schema_fx_rate_date.yml / schema_country_absence.yml already do.
+#
+# WHY A FIXTURE AND NOT A MIRROR ROW. `toorow_fx_posed_resolution` reads
+# source('mirror', 'fx_posed_rates') in production, and a fixture cannot write
+# into the mirror. Seeding a posed rate into `create_mirror` instead would move
+# every converted total of the local warehouse, which is exactly what
+# `test_fx_at_read_totals_unchanged` and `test_epic39_totals_bit_identical` exist
+# to pin: the cutover must be a NO-OP for a Project that has posted no rate. So
+# the engine is judged here, on relations passed into the macro's
+# `rates_relation` / `conditions_relation` seams, and the marts are judged there,
+# on emptiness. Consumed by dbt/tests/test_fx_posed_rate_governs.sql and by no
+# model; no production total can be perturbed by it.
+
+seeds:
+  - name: fx_posed_rates_fixture
+    description: >
+      The five cases the warehouse half of the posed-rate resolution is judged on,
+      one Project per case so that no case can rescue or spoil another: `plain`
+      (an unconditional rate wins over the seed), `specific` (a connector-
+      conditional rate outranks the unconditional rate it refines, and falls back
+      to it for a connector it does not name), `tie` (two equally specific rules
+      match and NO rate is served), `unresolved` (a rate conditioned on `country`,
+      which a staging row cannot answer, refuses instead of falling through to the
+      unconditional rate beside it), and `window` (a day outside
+      [valid_from, valid_to] resolves nothing at all).
+      Shape and column order follow app.fx_posed_rates_v (migration 305).
+    columns:
+      - name: project_id
+        description: "One Project per case; the case name is also the id prefix."
+        tests:
+          - not_null
+      - name: observation_id
+        description: "Identity of the posed rate, and the join key of the conditions fixture."
+        tests:
+          - not_null
+          - unique
+      - name: rate
+        description: "The number the rule serves when it wins."
+        tests:
+          - not_null
+      - name: effective_date
+        description: >
+          The day the rate was DECLARED -- what `fx_as_of_date` carries on the
+          posed arm, and never `valid_from`, which is where the window opens
+          (story 58.7's repair, read on the governed side).
+        tests:
+          - not_null
+      - name: valid_from
+        description: "First day the rate holds. The window is the only temporal authority (Wording A)."
+        tests:
+          - not_null
+      - name: valid_to
+        description: "Last day the rate holds, inclusive."
+        tests:
+          - not_null
+      - name: condition_key_count
+        description: >
+          The SPECIFICITY. 0 is the unconditional rate, which is the fallback
+          rather than a rival; a tie is two matching rules sharing the highest
+          value.
+        tests:
+          - not_null
+      - name: scenario
+        description: >
+          Which fact this row stands for. The test keys its anti-vacuity guard on
+          these values: without them every assertion is a zero-row pass.
+        tests:
+          - not_null
+          - accepted_values:
+              name: fx_posed_rates_fixture_scenario_accepted
+              arguments:
+                values: ["plain", "specific", "tie", "unresolved", "window"]
+
+  - name: fx_posed_rate_conditions_fixture
+    description: >
+      The conditions of the fixture above, flattened one row per key x value --
+      the shape app.fx_posed_rate_conditions_v lands (migration 305), which is the
+      shape app.fee_tax_rule_conditions_v has carried since migration 119. An
+      unconditional rate has NO ROW here, which is what makes the consuming LEFT
+      JOIN read it as unconstrained.
+      `country` appears deliberately: it is an admitted FX condition key
+      (core.fx_fixed_rates.CONDITION_KEYS) that a staging row cannot answer, so it
+      is the UNRESOLVED case rather than an invalid one.
+    columns:
+      - name: observation_id
+        tests:
+          - not_null
+      - name: condition_key
+        description: "One of connector / country / market / datastream."
+        tests:
+          - not_null
+          - accepted_values:
+              name: fx_posed_rate_conditions_fixture_key_accepted
+              arguments:
+                values: ["connector", "country", "market", "datastream"]
+      - name: condition_value
+        tests:
+          - not_null

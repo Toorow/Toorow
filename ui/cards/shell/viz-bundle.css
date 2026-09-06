@@ -1,0 +1,32 @@
+/*
+ * Story 50.5 -- the Tailwind entry for the two shared-runtime BUNDLES.
+ *
+ * WHY IT IS HERE AND NOT UNDER `src/viz/`. AC18's falsifiable form is two greps:
+ * `ls ui/cards/shell/src/viz/**\/*.css` must list nothing, and
+ * `grep -rn "^import .*\.css" ui/cards/shell/src/viz` must be empty. This file is
+ * outside `src/viz/` and is referenced by the two HTML bundle entries, never by a
+ * TypeScript module, so both greps stay true AND the bundles carry real styles.
+ * The alternative -- a stylesheet imported from a runtime module -- is exactly
+ * what the runtime is forbidden to grow (CLAUDE.md anti-drift rule 8).
+ *
+ * IT INTRODUCES NO CLASS AND NO COLOUR. It imports Tailwind and the generated
+ * token layer, and stops. The generated sheet is
+ * `ui/admin/src/styles/theme.css`, written by
+ * `scripts/generate_theme_css.py` from `ui/tokens/tokens.json` -- one source, one
+ * carrier, both surfaces. A branded org overrides `--color-primary`,
+ * `--viz-brand-secondary` and `--viz-brand-accent` on any ancestor and
+ * `readCssVizTheme()` follows.
+ */
+@import "../../admin/src/styles/theme.css";
+
+/* The page itself follows the tokens, so a recipient on a dark OS reads light
+ * text on a dark page and not on the browser's white default. `.dark` is set on
+ * the root by `src/viz/entries/shareTheme.ts` from `prefers-color-scheme`
+ * (G14-T05, 2026-09-04); the tokens under `:root.dark` come from theme.css. */
+@layer base {
+  html {
+    background-color: var(--color-background);
+    color: var(--color-text);
+    color-scheme: light dark;
+  }
+}

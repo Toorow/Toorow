@@ -170,10 +170,13 @@ def test_transform_skips_rows_without_date_column():
 # ---------------------------------------------------------------------------
 
 
-def test_pull_csv_inline_counts():
+def test_pull_csv_inline_counts(monkeypatch):
     mod = _import_connector()
-    # TOOROW_DUCKDB_PATH unset -> rows counted but not persisted
-    os.environ.pop("TOOROW_DUCKDB_PATH", None)
+    # TOOROW_DUCKDB_PATH unset -> rows counted but not persisted.
+    # `monkeypatch.delenv` and never `os.environ.pop`: pytest restores the value
+    # at the end of the test, where a bare pop hands the next module a warehouse
+    # path it never chose (AI-291).
+    monkeypatch.delenv("TOOROW_DUCKDB_PATH", raising=False)
 
     result = mod.pull(
         connection_id="",
@@ -196,9 +199,9 @@ def test_pull_csv_inline_counts():
     assert result["pull_id"] == "pull_TEST_001"
 
 
-def test_pull_rejects_bad_date():
+def test_pull_rejects_bad_date(monkeypatch):
     mod = _import_connector()
-    os.environ.pop("TOOROW_DUCKDB_PATH", None)
+    monkeypatch.delenv("TOOROW_DUCKDB_PATH", raising=False)
 
     result = mod.pull(
         connection_id="",
@@ -218,9 +221,9 @@ def test_pull_rejects_bad_date():
     assert result["rows_written"] == 1
 
 
-def test_pull_date_window_filter():
+def test_pull_date_window_filter(monkeypatch):
     mod = _import_connector()
-    os.environ.pop("TOOROW_DUCKDB_PATH", None)
+    monkeypatch.delenv("TOOROW_DUCKDB_PATH", raising=False)
 
     result = mod.pull(
         connection_id="",
@@ -265,7 +268,7 @@ def _public_ip_getaddrinfo(host, port, *args, **kwargs):
     return [(_socket.AF_INET, _socket.SOCK_STREAM, 0, "", ("8.8.8.8", 0))]
 
 
-def test_pull_url_csv(tmp_path):
+def test_pull_url_csv(tmp_path, monkeypatch):
     """pull() source='url' fetches CSV and lands rows (httpx mocked via respx)."""
     try:
         import httpx  # noqa: PLC0415
@@ -276,7 +279,7 @@ def test_pull_url_csv(tmp_path):
     from unittest.mock import patch
 
     mod = _import_connector()
-    os.environ.pop("TOOROW_DUCKDB_PATH", None)
+    monkeypatch.delenv("TOOROW_DUCKDB_PATH", raising=False)
 
     csv_content = "date,impressions\n2026-07-01,1000\n2026-07-02,1200\n"
 
@@ -305,7 +308,7 @@ def test_pull_url_csv(tmp_path):
     assert result["rejected_rows"] == 0
 
 
-def test_pull_url_json():
+def test_pull_url_json(monkeypatch):
     """pull() source='url' fetches JSON rows and lands them."""
     try:
         import httpx  # noqa: PLC0415
@@ -317,7 +320,7 @@ def test_pull_url_json():
     from unittest.mock import patch
 
     mod = _import_connector()
-    os.environ.pop("TOOROW_DUCKDB_PATH", None)
+    monkeypatch.delenv("TOOROW_DUCKDB_PATH", raising=False)
 
     payload = [
         {"date": "2026-07-01", "cost": 50.0},
@@ -444,11 +447,10 @@ class TestSSRFProtection:
             # Should not raise
             mod._validate_url_ssrf("https://example.com/data.csv")
 
-    def test_pull_metadata_url_refused(self):
+    def test_pull_metadata_url_refused(self, monkeypatch):
         """pull() with source='url' pointing to metadata IP returns an error, no fetch."""
         mod = self._connector()
-        import os as _os
-        _os.environ.pop("TOOROW_DUCKDB_PATH", None)
+        monkeypatch.delenv("TOOROW_DUCKDB_PATH", raising=False)
 
         with pytest.raises(ValueError, match="privee|loopback|locale"):
             mod.pull(
@@ -469,10 +471,10 @@ class TestSSRFProtection:
 # ---------------------------------------------------------------------------
 
 
-def test_r3_date_normalization_europe_paris():
+def test_r3_date_normalization_europe_paris(monkeypatch):
     """R3: dates in DD/MM/YYYY Europe/Paris normalized to UTC ISO."""
     mod = _import_connector()
-    os.environ.pop("TOOROW_DUCKDB_PATH", None)
+    monkeypatch.delenv("TOOROW_DUCKDB_PATH", raising=False)
 
     result = mod.pull(
         connection_id="",

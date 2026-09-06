@@ -39,6 +39,43 @@ describe("Conversions card — fixture renders without throwing", () => {
     expect(screen.getByTestId("gauge")).toBeInTheDocument();
   });
 
+  // -------------------------------------------------------------------------
+  // CAV-08 / story 53.5 — the fixture must not resurrect the deleted constant.
+  //
+  // main.tsx renders FIXTURE_ENVELOPE whenever no envelope is injected, so what
+  // this fixture declares IS what an un-injected card shows. It carried
+  // target: 50.0 / target_source: "default" -- the platform objective the server
+  // deleted in 34cd021 -- and with value 30 / down_good the gauge painted a green
+  // verdict against a number nobody chose.
+  // -------------------------------------------------------------------------
+  it("declares no objective in the fixture (the platform constant is gone)", () => {
+    const gauge = FIXTURE_ENVELOPE.data.composition?.find((b) => b.type === "gauge");
+    expect(gauge).toBeDefined();
+    expect(gauge!.data!.target).toBeNull();
+    expect(gauge!.data!.target_source).toBe("unset");
+  });
+
+  it("renders no verdict and states the absence of an objective", () => {
+    render(<App envelope={FIXTURE_ENVELOPE} />);
+    expect(screen.getByTestId("composition-block-gauge")).toHaveAttribute("data-target-state", "unset");
+    expect(screen.getByTestId("gauge")).toHaveAttribute("data-verdict", "none");
+    expect(screen.getByTestId("gauge-no-target")).toBeInTheDocument();
+  });
+
+  it("prints no target figure anywhere in the gauge", () => {
+    render(<App envelope={FIXTURE_ENVELOPE} />);
+    const svg = screen.getByTestId("gauge").querySelector("svg");
+    expect(svg?.textContent).toContain("30"); // the measured value is still served
+    expect(svg?.textContent).not.toContain("50"); // the objective nobody chose is not
+  });
+
+  it("does not reassert the deleted objective in the rendered comment", () => {
+    render(<App envelope={FIXTURE_ENVELOPE} />);
+    const comment = screen.getByTestId("composition-comment");
+    expect(comment).not.toHaveTextContent("objectif de 50");
+    expect(comment).toHaveTextContent("Aucun objectif de CPA");
+  });
+
   it("renders table with source rows from block.data (including Autres row)", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
     expect(screen.getByTestId("data-table")).toBeInTheDocument();
@@ -67,7 +104,7 @@ describe("Conversions card — empty/malformed block.data renders empty state", 
           {
             type: "gauge",
             binding: {},
-            data: { value: null, target: 50, target_source: "default", unit: "EUR", direction: "down_good", label: "CPA" },
+            data: { value: null, target: 50, target_source: "binding", unit: "EUR", direction: "down_good", label: "CPA" },
           },
         ],
       },

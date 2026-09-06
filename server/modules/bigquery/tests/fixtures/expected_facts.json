@@ -1,0 +1,30 @@
+[
+  {
+    "date": "2026-07-01",
+    "metric": "cost",
+    "value": 1.42,
+    "breakdown_dimension": "",
+    "breakdown_value": ""
+  },
+  {
+    "date": "2026-07-01",
+    "metric": "credits",
+    "value": -0.1,
+    "breakdown_dimension": "",
+    "breakdown_value": ""
+  },
+  {
+    "date": "2026-07-02",
+    "metric": "cost",
+    "value": 0.31,
+    "breakdown_dimension": "",
+    "breakdown_value": ""
+  },
+  {
+    "date": "2026-07-02",
+    "metric": "credits",
+    "value": 0.0,
+    "breakdown_dimension": "",
+    "breakdown_value": ""
+  }
+]

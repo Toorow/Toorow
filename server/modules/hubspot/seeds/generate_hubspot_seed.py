@@ -83,6 +83,15 @@ COLUMNS_DEALS = [
 FIXTURE_END_DATE = date(2026, 7, 10)
 FIXTURE_DAYS = 30
 
+# AI-213 (2026-08-17, AI-66 motif) : ancre du corpus de seed. Un defaut
+# date.today() rendait le corpus machine-jour-local, donc le mart et les
+# fixtures d'evals underivables. Meme seam env que google-analytics ;
+# la valeur par defaut est l'ancre partagee du corpus (2026-07-19), distincte
+# de FIXTURE_END_DATE qui reste l'ancre des fixtures de conformance du module.
+DEFAULT_SEED_END_DATE: date = date.fromisoformat(
+    os.environ.get("TOOROW_SEED_END_DATE", "2026-07-19")
+)
+
 # Pull ID de fixture (deterministe).
 FIXTURE_PULL_ID = "pull_15_5_fixture_2026_07_10"
 
@@ -117,7 +126,8 @@ def generate_rows(
     days:
         Nombre de jours a generer (defaut 30).
     end_date:
-        Dernier jour de la fenetre (inclus). Defaut : date.today() pour le runtime.
+        Dernier jour de la fenetre (inclus). Defaut : DEFAULT_SEED_END_DATE
+        (AI-213 : ancre, jamais date.today()).
         Pour les fixtures/CI utiliser FIXTURE_END_DATE (2026-07-10).
     rng:
         Generateur aleatoire. Defaut : Random(15_5_2026) (graine fixe deterministe).
@@ -127,7 +137,7 @@ def generate_rows(
         Binding projet (defaut: 'default').
     """
     if end_date is None:
-        end_date = date.today()
+        end_date = DEFAULT_SEED_END_DATE
     if rng is None:
         rng = random.Random(15_5_2026)
     if pull_id is None:
@@ -211,7 +221,7 @@ def main() -> None:
     parser.add_argument(
         "--end-date",
         default=None,
-        help="Date de fin ISO-8601. Utiliser 2026-07-10 pour regenerer les fixtures CI.",
+        help="ISO-8601 end date. Use 2026-07-10 to regenerate the CI fixtures.",
     )
     args = parser.parse_args()
 

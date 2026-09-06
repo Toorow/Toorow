@@ -29,6 +29,11 @@ from core.operations import (
     OperationSpec,
     execute_operation,
 )
+from core.project_provenance import (
+    decide_currency,
+    decide_timezone,
+    insert_project_preferences,
+)
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,49}$")
 _CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
@@ -85,8 +90,10 @@ def _bounded_text(name: str, value: str, *, maximum: int = 100) -> str:
     if not isinstance(value, str):
         raise SelfHostedClaimValidationError(f"{name} must be a string")
     normalized = value.strip()
-    if not normalized or len(normalized) > maximum or any(
-        not char.isprintable() for char in normalized
+    if (
+        not normalized
+        or len(normalized) > maximum
+        or any(not char.isprintable() for char in normalized)
     ):
         raise SelfHostedClaimValidationError(f"{name} is invalid")
     return normalized
@@ -105,9 +112,7 @@ def _canonical_hash(value: dict[str, str]) -> str:
 
 def _require_self_hosted(deployment_mode: str) -> None:
     if deployment_mode != "self_hosted":
-        raise SelfHostedClaimValidationError(
-            "instance claim is available only in self_hosted mode"
-        )
+        raise SelfHostedClaimValidationError("instance claim is available only in self_hosted mode")
 
 
 def _has_existing_non_seed_organization(cur) -> bool:
@@ -151,9 +156,7 @@ def provision_bootstrap_capability(
         or expires_at <= now
         or expires_at > now + _MAX_BOOTSTRAP_LIFETIME
     ):
-        raise SelfHostedClaimValidationError(
-            "bootstrap expiry must be within the next seven days"
-        )
+        raise SelfHostedClaimValidationError("bootstrap expiry must be within the next seven days")
     capability_id = f"iboot_{ULID()}"
     transaction = getattr(conn, "transaction", None)
     if not callable(transaction):
@@ -316,8 +319,9 @@ def claim_self_hosted_instance(
     project_slug: str,
     idempotency_key: str,
     confirmation: ConsumedEntryConfirmation,
-    currency: str = "EUR",
-    timezone_name: str = "Europe/Paris",
+    currency: str | None = None,
+    timezone_name: str | None = None,
+    timezone_suggestion: str | None = None,
     host_context: dict | None = None,
     versions: dict | None = None,
     trace_id: str | None = None,
@@ -334,13 +338,27 @@ def claim_self_hosted_instance(
     project_name = _bounded_text("project_name", project_name)
     project_slug = _slug("project_slug", project_slug)
     idempotency_key = _bounded_text("idempotency_key", idempotency_key, maximum=255)
-    if not _CURRENCY_RE.fullmatch(currency):
+    # AI-77/AI-81: see core.project_provenance. `None` means nobody chose, and it
+    # must reach the decision as None so a fallback is never labelled as a choice.
+    currency_decision = decide_currency(currency)
+    # The browser zone is a SUGGESTION, never a choice. `decide` refuses one
+    # that does not name its source, so the evidence travels with it and the
+    # row can say WHY it holds this zone.
+    timezone_decision = decide_timezone(
+        timezone_name,
+        suggestion=(timezone_suggestion or None),
+        suggestion_evidence=(
+            "browser IANA zone reported at sign-up" if timezone_suggestion else None
+        ),
+    )
+    if not _CURRENCY_RE.fullmatch(currency_decision.value):
         raise SelfHostedClaimValidationError("currency must be an ISO 4217 code")
     try:
-        ZoneInfo(timezone_name)
+        ZoneInfo(timezone_decision.value)
     except (ZoneInfoNotFoundError, TypeError) as exc:
         raise SelfHostedClaimValidationError("timezone_name is invalid") from exc
 
+    # Records what the claimant actually reviewed: an absent choice stays absent.
     confirmed_payload = {
         "organization_name": org_name,
         "organization_slug": org_slug,
@@ -358,16 +376,13 @@ def claim_self_hosted_instance(
         or confirmation.idempotency_key_hash
         != hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()
     ):
-        raise SelfHostedClaimValidationError(
-            "a matching consumed server confirmation is required"
-        )
+        raise SelfHostedClaimValidationError("a matching consumed server confirmation is required")
 
     claim_id = f"iclaim_{ULID()}"
     instance_member_id = f"imem_{ULID()}"
     org_id = f"org_{ULID()}"
     org_member_id = f"omem_{ULID()}"
     project_id = f"proj_{ULID()}"
-    project_member_id = f"pmem_{ULID()}"
     transaction = getattr(conn, "transaction", None)
     if not callable(transaction):
         raise SelfHostedClaimUnavailable("transactional claim storage unavailable")
@@ -399,10 +414,7 @@ def claim_self_hosted_instance(
             # only those exact seed ids are ignored. Any other organization is
             # an unreconciled brownfield tenant and blocks first-owner creation;
             # otherwise instance_claims remains the authoritative state.
-            cur.execute(
-                "LOCK TABLE app.organizations, app.projects "
-                "IN SHARE ROW EXCLUSIVE MODE"
-            )
+            cur.execute("LOCK TABLE app.organizations, app.projects IN SHARE ROW EXCLUSIVE MODE")
             if _has_existing_non_seed_organization(cur):
                 raise SelfHostedClaimUnavailable("instance claim unavailable")
 
@@ -456,37 +468,29 @@ def claim_self_hosted_instance(
             cur.execute(
                 """
                 INSERT INTO app.projects
-                    (id, name, slug, status, currency, timezone, created_by, org_id)
-                VALUES (%s, %s, %s, 'active', %s, %s, %s, %s)
+                    (id, name, slug, status, created_by, org_id)
+                VALUES (%s, %s, %s, 'active', %s, %s)
                 """,
-                (
-                    project_id,
-                    project_name,
-                    project_slug,
-                    currency,
-                    timezone_name,
-                    person_id,
-                    org_id,
-                ),
+                (project_id, project_name, project_slug, person_id, org_id),
             )
-            cur.execute(
-                """
-                INSERT INTO app.project_members
-                    (id, project_id, identity, role)
-                VALUES (%s, %s, %s, 'owner')
-                """,
-                (project_member_id, project_id, person_id),
+            # Same correction as the hosted entry path: migration 131 dropped
+            # `app.projects.currency/timezone` and Story 46.3 made
+            # `app.project_preferences` the sole Project-default source.
+            # AI-77/AI-81: origin is decided by core.project_provenance, so a
+            # claim path can no longer label a fallback as a suggestion.
+            insert_project_preferences(
+                cur,
+                project_id,
+                currency_decision,
+                timezone_decision,
             )
-            from core.setup_responsibilities import bootstrap_journey_from_acceptance
+            from core.getting_started import bootstrap_project_journey
 
-            journey_id = bootstrap_journey_from_acceptance(
+            journey_id = bootstrap_project_journey(
                 mutation_conn,
-                invitation_id=None,
                 org_id=org_id,
                 project_id=project_id,
-                operator_identity=person_id,
-                toorow_admin_identity=person_id,
-                accepted_at=datetime.now(timezone.utc),
+                actor_identity=person_id,
             )
             cur.execute(
                 """

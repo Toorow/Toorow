@@ -1,7 +1,8 @@
 """Microsoft Ads connector -- Story 26.4 (Bing Ads Reporting v13 REST, async).
 
-Exposes a ``mcp_app: FastMCP`` instance that the core loader mounts under the
-``microsoft-ads`` namespace (AD-2). Built to the epic-25 industrial standard:
+Exposes a ``mcp_app: FastMCP`` instance as the conformance surface (AD-1
+envelope); since AD-42 the core no longer mounts it — execution uses the
+Datastream-parameterized core tools. Built to the epic-25 industrial standard:
 generated api_catalog.json (192 distinct columns across the 8 integrally
 covered report types + 40 excluded report surfaces, ZERO planned), body-code
 keyed error_map, Customer -> Account topology, and a catalog_driven profile
@@ -68,7 +69,9 @@ from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-# Module-level FastMCP instance -- the public surface the loader mounts.
+# Module-level FastMCP instance, kept as the conformance surface (AD-1 envelope,
+# validated by server/tests/conformance/test_envelope.py). Since AD-42 the core
+# no longer mounts it: execution uses the Datastream-parameterized core tools.
 mcp_app = FastMCP("microsoft-ads")
 
 # ---------------------------------------------------------------------------
@@ -388,7 +391,9 @@ def _resolve_account_selection(
 
         resolved = token_service.resolve_connection_by_nango_id(connection_id)
         if resolved is not None:
-            selected = account_topology.resolve_selected_account(resolved.id)
+            selected = account_topology.resolve_selected_account(
+                resolved.id, connector="microsoft-ads"
+            )
     except Exception as exc:  # noqa: BLE001 -- fail closed with a clear message
         logger.warning("microsoft_ads_account_resolution_failed: %s", type(exc).__name__)
 
@@ -476,6 +481,33 @@ _CATALOG_STRUCTURE_FIELDS: dict[str, tuple[str, ...]] = {
 _COLUMN_CHARSET = re.compile(r"^[A-Za-z0-9]+$")
 
 _REPORT_TIME_ZONE = "GreenwichMeanTimeDublinEdinburghLisbonLondon"
+
+# Story 39.7: this connector's declared time context -- mirrors manifest.json
+# source_capabilities.time_context. The zone is FIXED because the connector
+# PINS ReportTimeZone in every SubmitGenerateReport body (build_submit_request
+# below): Microsoft buckets the daily rows in exactly that zone, whatever the
+# account's own setting. The Microsoft ReportTimeZone enum value
+# 'GreenwichMeanTimeDublinEdinburghLisbonLondon' is the Windows zone
+# "(UTC) Dublin, Edinburgh, Lisbon, London" (GMT Standard Time), whose IANA
+# equivalent is Europe/London -- that is the declared fixed_zone. No live read
+# is needed (locus='fixed'): resolve_capture returns the declared zone.
+_TIME_CONTEXT = {
+    "locus": "fixed",
+    "fallback": "gap",
+    "fixed_zone": "Europe/London",
+}
+
+
+def _observed_report_timezone() -> str | None:
+    """The zone a pull OBSERVED, for the worker to record (AI-161, Story 39.7).
+
+    Fixed by declaration (the connector pins ReportTimeZone on every request),
+    resolved through the GENERIC contract (core owns validate/fallback/gap),
+    never hardcoded at the call site.
+    """
+    from core import report_timezone as _rtz  # noqa: PLC0415
+
+    return _rtz.resolve_capture(_TIME_CONTEXT, None)["report_timezone"]
 
 
 # ---------------------------------------------------------------------------
@@ -906,42 +938,48 @@ def _canonical_metric_names(metric_field_ids: list[str]) -> list[str]:
 # Raw landing -- LONG format: one row per grain x metric (story 26.2 pattern).
 # ---------------------------------------------------------------------------
 
-_RAW_CREATE_DDL = """
-CREATE TABLE IF NOT EXISTS raw_microsoft_ads_daily (
-    date                  VARCHAR,
-    data_level            VARCHAR,
-    account_id            VARCHAR,
-    campaign_id           VARCHAR,
-    campaign_name         VARCHAR,
-    ad_group_id           VARCHAR,
-    ad_group_name         VARCHAR,
-    ad_id                 VARCHAR,
-    keyword_id            VARCHAR,
-    keyword               VARCHAR,
-    search_query          VARCHAR,
-    segments_json         VARCHAR,
-    attributes_json       VARCHAR,
-    metric                VARCHAR,
-    value_num             DOUBLE,
-    cost_source_currency  VARCHAR,
-    pull_id               VARCHAR,
-    loaded_at             VARCHAR,
-    project_id            VARCHAR
-)
-"""
+_RAW_TABLE = "raw_microsoft_ads_daily"
 
-# Story 26.6 Part A: attributes_json holds the DESCRIPTIVE-MUTABLE entity
-# status/type attributes (latest-wins), kept OUT of segments_json so a status
-# change on a re-pull of the same day never forks the dbt supersede grain.
-
-_RAW_INSERT_SQL = """
-INSERT INTO raw_microsoft_ads_daily
-    (date, data_level, account_id, campaign_id, campaign_name, ad_group_id,
-     ad_group_name, ad_id, keyword_id, keyword, search_query, segments_json,
-     attributes_json, metric, value_num, cost_source_currency, pull_id,
-     loaded_at, project_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-"""
+# THE RAW TABLE, DECLARED ONCE. `core.raw_landing` renders the DuckDB DDL and
+# INSERT from this list, and the BigQuery landing is handed the same list.
+#
+# The two used to be written separately and had drifted badly: the BigQuery
+# branch transcribed EIGHTEEN names for the nineteen-value tuple built below, so
+# every value from index 9 landed under the wrong column -- `keyword` arriving as
+# `search_term`, `search_query` as `segments_json`, and the metric names as
+# `metric_name` / `metric_value` / `currency` where the DDL and
+# `stg_microsoft_ads_daily.sql` both read `metric` / `value_num` /
+# `cost_source_currency`. Production runs `TOOROW_DB_MODE=bigquery`, so that was
+# the live path.
+#
+# `tests/conformance/test_raw_table_has_one_declaration.py` compares this
+# declaration, the landing and the staging model on every run.
+_RAW_COLUMNS = [
+    ("date", "STRING"),
+    ("data_level", "STRING"),
+    ("account_id", "STRING"),
+    ("campaign_id", "STRING"),
+    ("campaign_name", "STRING"),
+    ("ad_group_id", "STRING"),
+    ("ad_group_name", "STRING"),
+    ("ad_id", "STRING"),
+    ("keyword_id", "STRING"),
+    ("keyword", "STRING"),
+    ("search_query", "STRING"),
+    ("segments_json", "STRING"),
+    ("attributes_json", "STRING"),
+    ("metric", "STRING"),
+    ("value_num", "FLOAT"),
+    ("cost_source_currency", "STRING"),
+    ("pull_id", "STRING"),
+    ("loaded_at", "STRING"),
+    ("project_id", "STRING"),
+    # Story 39.7: report-timezone provenance (CAPTURE only, E39-AD2 -- never a
+    # day-grain conversion, HG-4). The zone is FIXED by declaration (the
+    # connector pins ReportTimeZone on every report request), resolved through
+    # core.report_timezone.resolve_capture. Additive: no existing total moves.
+    ("report_timezone", "STRING"),
+]
 
 # Canonical (post-transform) keys that land in dedicated grain columns.
 _STRUCTURE_COLUMNS = (
@@ -1013,12 +1051,18 @@ def _insert_raw_rows(
     reinjected into the row's segments_json keyed by the catalog field_id,
     a warning is logged and the ``non_numeric_landed`` counter reports it.
     """
-    if db_mode != "duckdb":
+    if db_mode not in ("duckdb", "bigquery"):
         raise ValueError(
             f"_insert_raw_rows: unsupported db_mode {db_mode!r} at P-dev "
             "(BigQuery path not yet implemented)"
         )
     from core import warehouse_write  # noqa: PLC0415
+
+    # Story 39.7: resolve the report timezone through the GENERIC time-context
+    # capture contract (core owns validate/fallback/gap). locus='fixed' -- the
+    # connector pins ReportTimeZone on every request, so the zone is the
+    # declared fixed_zone, resolved once for the whole batch.
+    report_timezone = _observed_report_timezone()
 
     # Reverse canonical-name -> catalog field_id map (F-3: the segments_json
     # key for a reinjected non-numeric value is the FIELD ID, the stable
@@ -1093,6 +1137,7 @@ def _insert_raw_rows(
                     pull_id,
                     loaded_at,
                     project_id,
+                    report_timezone,
                 )
             )
 
@@ -1104,12 +1149,32 @@ def _insert_raw_rows(
             "NOT emitted for them", pull_id, non_numeric_landed,
         )
 
-    con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
-    con.execute(_RAW_CREATE_DDL)
-    if values:
-        con.executemany(_RAW_INSERT_SQL, values)
-    con.close()
-    return len(values), non_numeric_landed
+    from core import raw_landing  # noqa: PLC0415 -- AD-2
+
+    if db_mode == "bigquery":
+        raw_landing.land_raw_rows(
+            _RAW_TABLE,
+            [raw_landing.row_from_values(_RAW_COLUMNS, v) for v in values],
+            columns=_RAW_COLUMNS,
+            project_id=project_id,
+            backend="bigquery",
+        )
+        return len(values), non_numeric_landed
+    else:
+        con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
+        con.execute(raw_landing.duckdb_ddl(_RAW_TABLE, _RAW_COLUMNS))
+        # Story 39.7 migration guard: additive report_timezone provenance column
+        # on tables created before 39.7. Idempotent; NULL default (fail-closed
+        # TIMEZONE_GAP, never a silent 'UTC'). E39-NFR06: additive column, no
+        # existing total moves.
+        con.execute(
+            "ALTER TABLE raw_microsoft_ads_daily ADD COLUMN IF NOT EXISTS "
+            "report_timezone VARCHAR"
+        )
+        if values:
+            con.executemany(raw_landing.duckdb_insert(_RAW_TABLE, _RAW_COLUMNS), values)
+        con.close()
+        return len(values), non_numeric_landed
 
 
 # ---------------------------------------------------------------------------
@@ -1253,6 +1318,10 @@ def _run_report(
         "status": "completed",
         "report_ref": outcome.get("report_ref"),
         "non_numeric_landed": non_numeric_landed,
+        # AI-161 (Story 39.7): the zone this pull reported under, returned so
+        # the worker records it as boundary evidence. Fixed by declaration
+        # (ReportTimeZone is pinned on every request).
+        "report_timezone": _observed_report_timezone(),
     }
 
 
@@ -1807,11 +1876,11 @@ def _query_bigquery(sql: str, params: dict) -> list[dict]:
     return [dict(zip(cols, row)) for row in result]
 
 
-def _get_mart_table(db_mode: str) -> str:
+def _get_mart_table(db_mode: str, project_id: str | None) -> str:
     if db_mode == "duckdb":
         from core import warehouse_tenancy  # noqa: PLC0415
 
-        return f"{warehouse_tenancy.mart_prefix(None)}fact_daily_kpi"
+        return f"{warehouse_tenancy.mart_prefix(project_id)}fact_daily_kpi"
     dataset = os.environ.get("BQ_MARTS_DATASET", "marts")
     gcp_project = os.environ.get("GCP_PROJECT", "")
     prefix = f"{gcp_project}.{dataset}" if gcp_project else dataset
@@ -1838,7 +1907,7 @@ _MART_QUERY = """
 def _query_mart(date_from: str, date_to: str, project_id: str = "default") -> list[dict]:
     # AD-12: MCP server reads marts only -- never raw_* tables or CSV.
     db_mode = _get_db_mode()
-    table = _get_mart_table(db_mode)
+    table = _get_mart_table(db_mode, project_id)
 
     if db_mode == "duckdb":
         sql = _MART_QUERY.format(table=table, p_project="?", p_from="?", p_to="?")

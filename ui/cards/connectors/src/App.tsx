@@ -14,11 +14,9 @@
  * All other blocks (comment, unknown) are delegated to CardComposition.
  */
 
-import CardShell, { CardComposition } from "@toorow/card-shell";
+import CardShell, { CardComposition, variationConventions } from "@toorow/card-shell";
 import type { CardEnvelope, CompositionBlock, DataTableColumn } from "@toorow/card-shell";
-import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
-import { useTheme, alpha } from "@mui/material/styles";
+import { Box, Typography, alpha, useTheme } from "@toorow/shell";
 
 /** Local mirror of TableBlockData for the connectors card (not re-exported from card-shell). */
 interface ConnectorTableData {
@@ -27,7 +25,7 @@ interface ConnectorTableData {
 }
 
 // ---------------------------------------------------------------------------
-// Status dot metadata — French labels -> MUI theme palette (token-backed, card rule c).
+// Status dot metadata — French labels -> theme palette (token-backed, card rule c).
 // ---------------------------------------------------------------------------
 
 /** Connector status kinds — drives the palette slot chosen from the theme. */
@@ -121,13 +119,13 @@ function ConnectorsTable({
         sx={{ py: 4, textAlign: "center", color: "text.secondary" }}
         data-testid="connectors-table-empty"
         role="status"
-        aria-label={title ?? "Connecteurs"}
+        aria-label={title ?? "Connectors"}
       >
         <Typography variant="body2" sx={{ mb: 0.5 }}>
-          Aucun connecteur configuré.
+          No Connector configured.
         </Typography>
         <Typography variant="caption" color="text.disabled">
-          Configurez un datastream pour voir les connecteurs disponibles.
+          Configure a Datastream to see the Connectors it makes available.
         </Typography>
       </Box>
     );
@@ -136,7 +134,7 @@ function ConnectorsTable({
   return (
     <Box
       role="table"
-      aria-label={title ?? "Connecteurs"}
+      aria-label={title ?? "Connectors"}
       data-testid="connectors-table"
       sx={{ width: "100%", overflow: "hidden", borderRadius: 1 }}
     >
@@ -259,10 +257,10 @@ function ConnectorsBody({
           role="status"
         >
           <Typography variant="body2" sx={{ mb: 0.5 }}>
-            Aucun connecteur configuré.
+            No Connector configured.
           </Typography>
           <Typography variant="caption" color="text.disabled">
-            Configurez un datastream pour voir les connecteurs disponibles.
+            Configure a Datastream to see the Connectors it makes available.
           </Typography>
         </Box>
         {/* Non-table blocks still render (e.g. a comment block alone) */}
@@ -335,6 +333,8 @@ export default function App({ envelope, adminConsoleUrl = "/admin" }: AppProps) 
       metricDefinitions={data.metric_definitions}
       adminConsoleUrl={adminConsoleUrl}
       feedbackProps={feedbackProps}
+      // ONE placement for the variation legend: the card footer (arbitrage 5).
+      variationConventions={variationConventions(data.composition, data)}
     >
       <ConnectorsBody blocks={blocks} data={data} />
     </CardShell>

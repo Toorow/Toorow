@@ -41,7 +41,11 @@ CREATE TABLE IF NOT EXISTS raw_microsoft_ads_daily (
     cost_source_currency  VARCHAR,
     pull_id               VARCHAR,
     loaded_at             VARCHAR,
-    project_id            VARCHAR
+    project_id            VARCHAR,
+    -- Story 39.7: the seed table mirrors the landing table column for column.
+    -- report_timezone is the per-row report-timezone provenance; the seed
+    -- INSERT below leaves it NULL, the honest value for fixture rows.
+    report_timezone       VARCHAR
 )
 """
 

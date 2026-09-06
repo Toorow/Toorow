@@ -30,11 +30,18 @@ def test_quota_headers_and_complexity_stop_further_pagination(connector):
     assert quota["policy_values"] == {"limit": 5000, "window": 60}
     assert quota["rate_limit_values"]["remaining"] == 0
     assert connector.PLAN_BUDGETS["enterprise"]["concurrency"] == 250
-    with pytest.raises(connector.MondayGraphQLError) as exc:
-        connector.ensure_budget(quota)
-    assert exc.value.code == "rate_limited"
+    # `RateLimitError` et non `MondayGraphQLError` : c'est le type que le worker
+    # attrape pour requeuer et armer le disjoncteur (cf. le meme changement dans
+    # test_connector_monday.py). Le budget de complexite est la seconde porte, et
+    # elle doit lever la meme chose que la premiere.
+    from core.quota import RateLimitError
 
-    with pytest.raises(connector.MondayGraphQLError):
+    with pytest.raises(RateLimitError) as exc:
+        connector.ensure_budget(quota)
+    assert exc.value.platform == "monday"
+    assert exc.value.retry_after == 12
+
+    with pytest.raises(RateLimitError):
         connector.ensure_budget({"complexity": {"after": 0, "reset_in_x_seconds": 60}})
 
 

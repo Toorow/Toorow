@@ -71,7 +71,25 @@ GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 GOOGLE_REVOKE_ENDPOINT = "https://oauth2.googleapis.com/revoke"
 
 # The full Google stack consent, granted in ONE screen (Story 18.2 vision).
-# EXACT scope names pinned per AI-53. GA4 Data API + GSC + Ads + Sheets (read).
+# EXACT scope names pinned per AI-53.
+#
+# AI-94 (2026-07-31): this tuple IS the door. A module declaring
+# auth_type='google_direct' whose scope is absent here is installed, catalogued,
+# tested -- and impossible to connect, for anyone, ever. Three were:
+# google-ad-manager, google-business-profile, youtube-analytics.
+#
+# It stayed invisible because the only test pinning this tuple compared it to
+# GOOGLE_SCOPE_CONNECTORS, another hand-written constant. A connector missing
+# from BOTH is missing consistently, so the guard could not fail. The reference
+# is now the installed manifests on disk:
+# tests/conformance/test_google_consent.py.
+#
+# ADDING A SCOPE IS NOT FREE: existing authorizations do not carry it. The set a
+# person actually granted lives in connection_ref.granted_scopes, and
+# connection_tools reads THAT, never this tuple -- so an old connection keeps
+# opening exactly what it opened, and the new connector appears only after a
+# re-consent. That degradation is silent by design here; making it visible is
+# the console's job, not this constant's.
 GOOGLE_STACK_SCOPES: tuple[str, ...] = (
     "https://www.googleapis.com/auth/analytics.readonly",
     "https://www.googleapis.com/auth/webmasters.readonly",
@@ -80,6 +98,16 @@ GOOGLE_STACK_SCOPES: tuple[str, ...] = (
     "https://www.googleapis.com/auth/dfareporting",
     "https://www.googleapis.com/auth/display-video",
     "https://www.googleapis.com/auth/doubleclicksearch",
+    # AI-285 -- BigQuery EST une source Google, donc elle se lit par le
+    # consentement comme les autres. Elle lisait avec les identifiants du
+    # deploiement, ce qu'un client ne peut ni revoquer depuis son compte Google
+    # ni voir dans son ecran de consentement.
+    "https://www.googleapis.com/auth/bigquery.readonly",
+    # AI-94 -- les trois connecteurs qui n'avaient aucune porte d'entree.
+    "https://www.googleapis.com/auth/dfp",
+    "https://www.googleapis.com/auth/business.manage",
+    "https://www.googleapis.com/auth/yt-analytics.readonly",
+    "https://www.googleapis.com/auth/youtube.readonly",
 )
 
 # openid/email are NOT requested: this flow authorizes DATA access, not identity
@@ -216,7 +244,7 @@ def _state_secret() -> bytes:
         raise GoogleOAuthConfigError(
             f"configuration OAuth Google incomplete : la variable {_STATE_SECRET_ENV} "
             "est obligatoire en mode de production (TOOROW_AUTH_MODE=oauth/static). "
-            "Positionnez cette variable dans Secret Manager avant de demarrer le serveur."
+            "Set this variable in Secret Manager before starting the server."
         )
 
     api_secret = os.environ.get("API_SECRET_KEY", "").strip()
@@ -354,7 +382,7 @@ def build_authorize_url(
 ) -> str:
     """Build the single multi-scope Google consent URL.
 
-    Uses Authorization Code + ``access_type=offline`` + ``prompt=consent`` (to
+    Uses Authorization Code + ``access_type=offline`` + ``prompt="select_account consent"`` (to
     force a refresh_token every time -- see the refresh-token handling in
     ``exchange_code``) + ``include_granted_scopes=true`` (incremental auth).
 
@@ -376,7 +404,25 @@ def build_authorize_url(
         "response_type": "code",
         "scope": " ".join(scopes),
         "access_type": "offline",
-        "prompt": "consent",
+        # `select_account` AND `consent`, in that order.
+        #
+        # `consent` alone forces the AUTHORIZATION screen and nothing else:
+        # Google reuses whatever session the browser already holds, and with it
+        # that session's default YouTube channel. So an operator who manages
+        # several channels -- or who is signed in as themselves while connecting
+        # a CLIENT's account -- was never offered the choice, and the same
+        # account came back every time. Measured 2026-08-11: Jean never saw a
+        # picker, on any of three consents.
+        #
+        # `select_account` is the parameter that shows it: the account chooser,
+        # and for YouTube scopes the brand-channel picker under it. Both values
+        # are kept -- `consent` is what still guarantees a refresh_token on every
+        # pass (`exchange_code` refuses to persist a grant without one).
+        #
+        # This is also what makes SEVERAL authorizations reachable in one
+        # Project: an agency holds one Google account per client, and without a
+        # chooser the second consent silently re-granted the first.
+        "prompt": "select_account consent",
         "include_granted_scopes": "true",
         "state": state,
     }
@@ -493,7 +539,7 @@ def _parse_token_response(data: dict) -> GoogleTokenResponse:
         # re-consent (or revoke prior grant at myaccount.google.com). Honest,
         # actionable French message -- never a masked "connected".
         raise GoogleOAuthError(
-            "Google n'a pas renvoye de refresh_token : le consentement doit etre "
+            "Google returned no refresh_token: consent must be "
             "reaccorde. Reconnectez le compte Google (un nouvel ecran de "
             "consentement est requis)."
         )

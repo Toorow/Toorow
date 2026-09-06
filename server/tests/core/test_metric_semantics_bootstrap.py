@@ -585,8 +585,9 @@ def _create_test_org(slug: str | None = None) -> str:
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO app.organizations (id, name, slug, status, created_at) "
-                "VALUES (%s, %s, %s, 'active', now())",
+                "INSERT INTO app.organizations "
+                "(id, name, slug, status, created_at, created_by) "
+                "VALUES (%s, %s, %s, 'active', now(), 'test-fixture')",
                 (org_id, f"Test org {slug}", slug),
             )
         conn.commit()
@@ -594,11 +595,15 @@ def _create_test_org(slug: str | None = None) -> str:
 
 
 def _delete_test_org(org_id: str) -> None:
+    """Through the product's purge: migration 130 seeds `app.mdm_business_domains`
+    into every new organization and that table references it ON DELETE RESTRICT,
+    so a bare DELETE raises `ForeignKeyViolation` in the teardown."""
     from core.db import get_connection
 
+    from tests.conftest import purge_fixture_org
+
     with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM app.organizations WHERE id = %s", (org_id,))
+        purge_fixture_org(conn, org_id)
         conn.commit()
 
 

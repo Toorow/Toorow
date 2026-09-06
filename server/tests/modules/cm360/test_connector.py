@@ -38,7 +38,12 @@ def test_discovery_preserves_profile_account_subaccount_and_advertiser(connector
     ]
     result = connector.discover_accounts("conn", _client=client, _token="secret")
     assert result[0] | {} == {
-        "id": "cm360_selection_1",
+        # The opaque id core stores and hands back at pull time. It carries BOTH
+        # identifiers a CM360 report needs, because the scope keeps exactly one
+        # string: the advertiser to filter on and the user profile that routes the
+        # URL. It was 'cm360_selection_1' -- a loop counter that carried neither.
+        "id": "adv1@p1",
+        "label": "Advertiser",
         "profile_id": "p1",
         "account_id": "a1",
         "subaccount_id": "s1",
@@ -249,16 +254,18 @@ def test_saved_report_selection_uses_async_path_and_lands(monkeypatch, connector
         "project",
         "pull",
         "standard_daily",
-        {
-            "profile_id": "p1",
-            "advertiser_id": "adv1",
-            "saved_report_id": "report1",
-        },
+        # The account arrives as the opaque id, through the parameter the manifest
+        # declares. `saved_report_id` stays in `selection`: it designates a report
+        # already defined in the CM360 UI -- a reporting choice, not an account.
+        "adv1@p1",
+        {"saved_report_id": "report1"},
         _client=MagicMock(),
         _token="token",
     )
     assert result["row_count"] == 1
     assert landed["rows"][0]["metrics"]["impressions"] == "10"
+    assert landed["context"]["advertiser_id"] == "adv1"
+    assert landed["context"]["profile_id"] == "p1"
 
 
 def test_profile_dispatch_uses_queue_signature(monkeypatch, connector):
@@ -268,16 +275,19 @@ def test_profile_dispatch_uses_queue_signature(monkeypatch, connector):
         "_pull_profile",
         lambda *args, **kwargs: calls.append((args, kwargs)) or {"row_count": 0},
     )
-    selection = {"profile_id": "p", "advertiser_id": "a"}
-    connector.pull_standard_daily("c", "from", "to", "project", "pull", selection)
-    connector.pull_floodlight_daily("c", "from", "to", "project", "pull", selection)
-    connector.pull_reach("c", "from", "to", "project", "pull", selection)
+    # The 6th positional is the ACCOUNT now, not the report selection. This test
+    # used to pass a selection dict there and assert it arrived -- which stayed
+    # green through the change while asserting the wrong thing, because both are
+    # just "whatever sits at index 6".
+    connector.pull_standard_daily("c", "from", "to", "project", "pull", "adv1@p1")
+    connector.pull_floodlight_daily("c", "from", "to", "project", "pull", "adv1@p1")
+    connector.pull_reach("c", "from", "to", "project", "pull", "adv1@p1")
     assert [call[0][5] for call in calls] == [
         "standard_daily",
         "floodlight_daily",
         "reach",
     ]
-    assert all(call[0][6] is selection for call in calls)
+    assert [call[0][6] for call in calls] == ["adv1@p1"] * 3
 
 
 def test_daily_project_quota_fails_closed(connector):

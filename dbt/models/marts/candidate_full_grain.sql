@@ -89,16 +89,24 @@ SELECT
     -- their own columns -- NOT a breakdown_dimension/breakdown_value pair.
     date,
     device_category,
-    country,
+    -- Story 58.5, arbitrage 1: the THIRD face of the same latent defect, in the
+    -- same directory. A GA4 row the source gave no country for made this typed
+    -- column NULL (its own not_null test) AND made `grain_key` NULL by
+    -- concatenation (a second not_null, plus the uniqueness key). The declared
+    -- bucket is what keeps the full grain a grain: an absent country is a value of
+    -- the grain, not a hole in it.
+    {{ country_bucket('country', 'country_source') }}
+                                                  AS country,
     -- Deterministic grain_key: canonical '|'-joined ordered grain values. This is
     -- the AI-05 uniqueness key (candidate_full_grain_grain_unique) -- no two rows
     -- share it.
-    project_id || '|' || date || '|' || device_category || '|' || country
+    project_id || '|' || date || '|' || device_category || '|'
+        || {{ country_bucket('country', 'country_source') }}
                                                   AS grain_key,
     -- Every selected source measure kept at full grain (not aggregated away).
-    CAST(sessions AS DOUBLE)                       AS sessions,
-    CAST(active_users AS DOUBLE)                   AS active_users,
-    CAST(conversions AS DOUBLE)                    AS conversions,
+    CAST(sessions AS {{ toorow_float_type() }})                       AS sessions,
+    CAST(active_users AS {{ toorow_float_type() }})                   AS active_users,
+    CAST(conversions AS {{ toorow_float_type() }})                    AS conversions,
     -- Provenance columns queryable on the relation (AC1). Story 12.5 backfill:
     -- execution_id, mapping_version_id, and plan_version_id are read from dbt
     -- VARIABLES set by the publication-triggered build (a dse_<ULID> execution
@@ -110,12 +118,12 @@ SELECT
     -- provenance columns filled in; the content hash covers grain + measures ONLY,
     -- so backfilling provenance does not change it. Only pull_id and loaded_at were
     -- always real (carried from the raw load batch via stg_ga4_standard_daily).
-    CAST({{ _execution_id_literal }} AS VARCHAR)
+    CAST({{ _execution_id_literal }} AS {{ toorow_string_type() }})
                                                   AS execution_id,
     pull_id,
-    CAST({{ _mapping_version_id_literal }} AS VARCHAR)
+    CAST({{ _mapping_version_id_literal }} AS {{ toorow_string_type() }})
                                                   AS mapping_version_id,
-    CAST({{ _plan_version_id_literal }} AS VARCHAR)
+    CAST({{ _plan_version_id_literal }} AS {{ toorow_string_type() }})
                                                   AS plan_version_id,
     loaded_at
 FROM {{ ref('stg_ga4_standard_daily') }}

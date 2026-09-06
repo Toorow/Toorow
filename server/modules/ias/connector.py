@@ -2,8 +2,9 @@
 
 IAS Signal / IAS Reporting API -- ad verification and media-quality measurement
 (viewability, invalid traffic / IVT, brand safety & suitability). Exposes a
-module-level ``mcp_app: FastMCP`` the core loader mounts under the ``ias``
-namespace (AD-2).
+module-level ``mcp_app: FastMCP`` as the conformance surface (AD-1 envelope);
+since AD-42 the core no longer mounts it, execution uses the
+Datastream-parameterized core tools.
 
 AD-2: module name never hardcoded in core/.
 AD-3: token obtained immediately before use, never stored or logged.
@@ -32,7 +33,9 @@ from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-# Module-level FastMCP instance -- core loader mounts this under the 'ias' namespace.
+# Module-level FastMCP instance, kept as the conformance surface (AD-1 envelope,
+# validated by server/tests/conformance/test_envelope.py). Since AD-42 the core
+# no longer mounts it: execution uses the Datastream-parameterized core tools.
 mcp_app = FastMCP("ias")
 
 # IAS Reporting API base (confirmed: https://api.integralplatform.com).
@@ -61,9 +64,9 @@ def _get_duckdb_path() -> str:
 
 # ---------------------------------------------------------------------------
 # error_map (taxonomy 25.2): read from manifest.json, passed to
-# classify_http_error. IAS declares no numeric provider codes, so the map is
-# empty and the pure-HTTP taxonomy classifies every actionable case (see the
-# manifest _error_map_note). Cached at module level.
+# classify_http_error. IAS publishes no numbered provider table; its enumerated
+# vocabulary is the OAuth one its UAA token endpoint emits (RFC 6749 5.2 /
+# RFC 6750 3.1) -- see the manifest _error_map_note. Cached at module level.
 # ---------------------------------------------------------------------------
 
 _ERROR_MAP: dict | None = None
@@ -138,17 +141,17 @@ def _insert_raw_rows(
     project_id: str,
     report_profile: str,
 ) -> int:
-    """Insert canonical (post-transform) rows into raw_ias_daily (DuckDB)."""
+    """Insert canonical (post-transform) rows into raw_ias_daily (DuckDB and BigQuery)."""
     db_mode = _get_db_mode()
-    if db_mode != "duckdb":
+    if db_mode not in ("duckdb", "bigquery"):
         raise ValueError(f"_insert_raw_rows: unsupported db_mode {db_mode!r}")
 
-    import duckdb  # noqa: PLC0415
+    from core import warehouse_write  # noqa: PLC0415
 
     duckdb_path = _get_duckdb_path()
     loaded_at = datetime.now(tz=timezone.utc).isoformat().replace("+00:00", "Z")
 
-    con = duckdb.connect(duckdb_path)
+    con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
     con.execute(_RAW_CREATE_DDL)
     values = [
         (
@@ -168,10 +171,57 @@ def _insert_raw_rows(
         )
         for r in rows
     ]
-    if values:
-        con.executemany(_RAW_INSERT_SQL, values)
-    con.close()
-    return len(values)
+    if db_mode == "duckdb":
+        if values:
+            con.executemany(_RAW_INSERT_SQL, values)
+        con.close()
+        return len(values)
+    elif db_mode == "bigquery":
+        from core.raw_landing import land_raw_rows  # noqa: PLC0415
+
+        raw_rows = [
+            {
+                "date": v[0],
+                "campaign_id": v[1],
+                "campaign_name": v[2],
+                "measured_impressions": v[3],
+                "viewable_impressions": v[4],
+                "eligible_impressions": v[5],
+                "invalid_traffic_ads": v[6],
+                "brand_safety_passed_ads": v[7],
+                "brand_safety_failed_ads": v[8],
+                "report_profile": v[9],
+                "pull_id": v[10],
+                "loaded_at": v[11],
+                "project_id": v[12],
+            }
+            for v in values
+        ]
+        columns = [
+            ("date", "STRING"),
+            ("campaign_id", "STRING"),
+            ("campaign_name", "STRING"),
+            ("measured_impressions", "INTEGER"),
+            ("viewable_impressions", "INTEGER"),
+            ("eligible_impressions", "INTEGER"),
+            ("invalid_traffic_ads", "INTEGER"),
+            ("brand_safety_passed_ads", "INTEGER"),
+            ("brand_safety_failed_ads", "INTEGER"),
+            ("report_profile", "STRING"),
+            ("pull_id", "STRING"),
+            ("loaded_at", "STRING"),
+            ("project_id", "STRING"),
+        ]
+        land_raw_rows(
+            "raw_ias_daily",
+            raw_rows,
+            columns=columns,
+            project_id=project_id,
+            backend="bigquery",
+        )
+        return len(values)
+    else:
+        raise ValueError(f"_insert_raw_rows: unsupported db_mode {db_mode!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -183,8 +233,6 @@ def _insert_raw_rows(
 
 
 def _resolve_team_id(team_id: str | None, profile: str) -> str:
-    if team_id is None:
-        team_id = os.environ.get("IAS_TEAM_ID")
     if not team_id:
         raise ValueError(
             f"IAS team id required for {profile} "
@@ -199,15 +247,57 @@ def _resolve_team_id(team_id: str | None, profile: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+
+def _resolve_profile_spec(
+    report_profile: str | None,
+    metrics: list[str] | None,
+    dimensions: list[str] | None,
+) -> tuple[str, list[str], list[str]]:
+    """Complete the report spec from the DECLARED profiles (AD-2, manifest only).
+
+    Le worker n'appelle qu'avec le contrat de dispatch a cinq arguments. Sans
+    cette resolution, `pull()` exigeait `metrics`, `dimensions` et
+    `report_profile` en positionnels et levait un `TypeError` a chaque tentative
+    -- pour les trois profils, donc ce connecteur ne pouvait pas tourner.
+
+    Rien n'est devine : un profil inconnu est REFUSE en nommant ceux qui
+    existent, plutot que de retomber sur un defaut silencieux.
+    """
+    manifest = json.loads((Path(__file__).parent / "manifest.json").read_text(encoding="utf-8"))
+    profiles = manifest.get("report_profiles") or []
+    if not profiles:
+        raise ValueError("ias: manifest.json declares no report_profiles")
+    if report_profile is None:
+        profile = profiles[0]
+    else:
+        profile = next((p for p in profiles if p.get("id") == report_profile), None)
+        if profile is None:
+            raise ValueError(
+                f"ias: unknown report profile {report_profile!r}; manifest declares "
+                f"{[p.get('id') for p in profiles]}"
+            )
+    return (
+        str(profile.get("id")),
+        list(metrics if metrics is not None else (profile.get("metrics") or [])),
+        list(dimensions if dimensions is not None else (profile.get("dimensions") or [])),
+    )
+
+
 def pull(
     connection_id: str,
     date_from: str,
     date_to: str,
     project_id: str,
     pull_id: str,
-    metrics: list[str],
-    dimensions: list[str],
-    report_profile: str,
+    # Ces trois etaient REQUIS et le contrat de dispatch ne les passe jamais :
+    # `pull()` levait donc un TypeError a chaque appel du worker. Ils sont
+    # desormais optionnels et resolus depuis le profil DECLARE au manifeste
+    # (`_resolve_profile_spec`), seule source (AD-2). Les shims
+    # `pull_<profile_id>` restent le chemin normal ; ceci rend `pull()` appelable
+    # selon le contrat documente, y compris par un harnais generique.
+    metrics: list[str] | None = None,
+    dimensions: list[str] | None = None,
+    report_profile: str | None = None,
     team_id: str | None = None,
     platform: str = _DEFAULT_PLATFORM,
     campaign_ids: str = "all",
@@ -237,6 +327,12 @@ def pull(
     5xx -> provider_transient). Raises RateLimitError on HTTP 429.
     """
     from core import nango_client  # noqa: PLC0415 -- AD-2
+
+    # Resolution depuis le manifeste quand l'appelant ne precise rien : c'est le
+    # cas du worker, qui ne connait que le contrat de dispatch a cinq arguments.
+    report_profile, metrics, dimensions = _resolve_profile_spec(
+        report_profile, metrics, dimensions
+    )
 
     team_id = _resolve_team_id(team_id, f"pull_{report_profile}")
 
@@ -288,7 +384,9 @@ def pull(
             _body = resp.json()
         except Exception:
             _body = resp.text
-        raise classify_http_error(resp.status_code, _body, _load_error_map())
+        raise classify_http_error(
+            resp.status_code, _body, _load_error_map()
+        )
 
     payload = resp.json()
     # ASSUMED envelope: rows live under 'rows' (fallback 'data'); confirmed live.
@@ -484,7 +582,9 @@ def discover_accounts(connection_id: str) -> list[dict]:
             _body = resp.json()
         except Exception:
             _body = resp.text
-        raise classify_http_error(resp.status_code, _body, _load_error_map())
+        raise classify_http_error(
+            resp.status_code, _body, _load_error_map()
+        )
 
     payload = resp.json()
     teams = payload.get("teams") if isinstance(payload, dict) else payload
@@ -523,11 +623,11 @@ _MART_QUERY = """
 """
 
 
-def _get_mart_table(db_mode: str) -> str:
+def _get_mart_table(db_mode: str, project_id: str | None) -> str:
     if db_mode == "duckdb":
         from core import warehouse_tenancy  # noqa: PLC0415
 
-        return f"{warehouse_tenancy.mart_prefix(None)}fact_daily_kpi"
+        return f"{warehouse_tenancy.mart_prefix(project_id)}fact_daily_kpi"
     dataset = os.environ.get("BQ_MARTS_DATASET", "marts")
     gcp_project = os.environ.get("GCP_PROJECT", "")
     prefix = f"{gcp_project}.{dataset}" if gcp_project else dataset
@@ -536,7 +636,7 @@ def _get_mart_table(db_mode: str) -> str:
 
 def _query_mart(date_from: str, date_to: str, project_id: str) -> list[dict]:
     db_mode = _get_db_mode()
-    table = _get_mart_table(db_mode)
+    table = _get_mart_table(db_mode, project_id)
     if db_mode == "duckdb":
         import duckdb  # noqa: PLC0415
 
@@ -647,3 +747,75 @@ try:
     _register_raw("raw_ias_daily", provider="ias")
 except Exception:
     pass  # best-effort; verification logs a warning if the table name is missing
+
+
+# ---------------------------------------------------------------------------
+# Profile shims -- generated from the manifest, like gsc's `_make_profile_pull`.
+#
+# POURQUOI ILS MANQUAIENT, ET CE QUE CA COUTAIT. `core.main.get_module_pull_fn`
+# rend `pull_<profile_id>` quand le shim existe, et retombe sur `pull()` sinon.
+# IAS declarait TROIS profils de rapport et n'avait AUCUN shim, donc le worker
+# appelait `pull()` -- qui exigeait `metrics`, `dimensions` et `report_profile`
+# en positionnels requis, trois arguments que le contrat de dispatch ne passe
+# jamais (`connection_id, date_from, date_to, project_id, pull_id` + le compte
+# selectionne). Resultat : `TypeError` a chaque tentative, pour les trois
+# profils. Mesure du 2026-07-31 -- ce connecteur ne pouvait pas tourner.
+#
+# Les metriques et dimensions ne sont pas recopiees ici : elles sont LUES du
+# manifeste, seule source (AD-2). Un profil ajoute au manifeste obtient donc son
+# shim sans toucher ce fichier.
+# ---------------------------------------------------------------------------
+
+
+def _make_profile_pull(profile_id: str):
+    """Build the ``pull_<profile_id>`` shim for one declared report profile."""
+
+    def _profile_pull(
+        connection_id: str,
+        date_from: str,
+        date_to: str,
+        project_id: str,
+        pull_id: str,
+        team_id: str | None = None,
+        platform: str = _DEFAULT_PLATFORM,
+        campaign_ids: str = "all",
+    ) -> dict:
+        manifest = json.loads(
+            (Path(__file__).parent / "manifest.json").read_text(encoding="utf-8")
+        )
+        profile = next(
+            (p for p in manifest.get("report_profiles", []) if p.get("id") == profile_id),
+            None,
+        )
+        if profile is None:
+            raise ValueError(
+                f"ias: report profile {profile_id!r} is no longer declared in "
+                "manifest.json -- the shim and the manifest have diverged"
+            )
+        return pull(
+            connection_id=connection_id,
+            date_from=date_from,
+            date_to=date_to,
+            project_id=project_id,
+            pull_id=pull_id,
+            metrics=list(profile.get("metrics") or []),
+            dimensions=list(profile.get("dimensions") or []),
+            report_profile=profile_id,
+            team_id=team_id,
+            platform=platform,
+            campaign_ids=campaign_ids,
+        )
+
+    _profile_pull.__name__ = f"pull_{profile_id}"
+    _profile_pull.__qualname__ = f"pull_{profile_id}"
+    _profile_pull.__doc__ = (
+        f"Profile pull for the ``{profile_id}`` IAS report profile.\n\n"
+        "Metrics and dimensions are read from manifest.json at call time -- never\n"
+        "duplicated here. Returns the same dict shape as ``pull``."
+    )
+    return _profile_pull
+
+
+pull_viewability_daily = _make_profile_pull("viewability_daily")
+pull_brand_safety_daily = _make_profile_pull("brand_safety_daily")
+pull_invalid_traffic_daily = _make_profile_pull("invalid_traffic_daily")

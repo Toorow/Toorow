@@ -32,7 +32,7 @@ export class ErrorBoundary extends Component<Props, State> {
           data-testid="widget-error-boundary"
           style={{ padding: "16px", color: "#d32f2f" }}
         >
-          Une erreur est survenue lors de l&apos;affichage du rapport.
+          This report could not be displayed.
         </div>
       );
     }

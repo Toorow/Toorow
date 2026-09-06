@@ -14,6 +14,7 @@ so the delivery is genuinely signature-verified before the write is attempted.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import hmac
 import json
@@ -26,7 +27,8 @@ from starlette.testclient import TestClient
 
 _SIGNING_SECRET = "test-signing-key-DO-NOT-USE-IN-PROD"
 _DOMAIN = "ingest.toorow.com"
-_ROUTING_TOKEN = "abc123"
+_ROUTING_TOKEN = "email_capability_0123456789abcdef0123456789"
+_WEBHOOK_TOKEN = "webhook_capability_0123456789abcdef012345"
 _GOOD_RECIPIENT = f"ds_{_ROUTING_TOKEN}@{_DOMAIN}"
 _EMAIL_PATH = "/v1/webhooks/inbound-email"
 _FILE_PATH = "/v1/webhooks/inbound-file"
@@ -44,6 +46,56 @@ def _mailgun_env(monkeypatch):
     # Default: no quarantine backend configured. Individual tests opt in.
     monkeypatch.delenv("INBOUND_QUARANTINE_BUCKET", raising=False)
     monkeypatch.delenv("INBOUND_QUARANTINE_LOCAL_ROOT", raising=False)
+
+    class _Conn:
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
+    monkeypatch.setattr(
+        "core.db.get_connection", lambda: contextlib.nullcontext(_Conn())
+    )
+    monkeypatch.setattr(
+        "core.inbound_credentials.resolve_for_delivery",
+        lambda _conn, *, raw_token: {
+            "allowed": True,
+            "scope": {
+                "datastream_id": "ds-public-test",
+                "credential_id": "dic_public_test",
+                "channel": "webhook" if raw_token == _WEBHOOK_TOKEN else "email",
+            },
+        },
+    )
+    monkeypatch.setattr(
+        "core.inbound_receipts.assert_provider_event_fingerprint",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "core.inbound_receipts.get_receipt_by_provider_event",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "core.inbound_receipts.record_receipt",
+        lambda _conn, **kwargs: {
+            "receipt_id": "inbrx_01JZAAABBBCCCDDDEEEFFF00999",
+            "created_at": "2026-08-01T10:00:00+00:00",
+            "operation_outcome": "succeeded",
+        },
+    )
+    monkeypatch.setattr(
+        "inbound.receipt._resolve_org_id",
+        lambda _conn, *, datastream_id: "org-public-test",
+    )
+    monkeypatch.setattr(
+        "core.inbound_raw_imports.record_raw_import",
+        lambda _conn, **kwargs: {
+            "raw_import_id": f"inbraw_{kwargs['ordinal']}",
+            "state": "RECEIVED",
+            "deduplicated": False,
+        },
+    )
 
 
 def _client() -> TestClient:
@@ -80,15 +132,35 @@ def _walk_files(root: str) -> list[str]:
     return out
 
 
+def _read_file_bytes(path: str) -> bytes:
+    # AI-135: quarantine addresses embed two 64-char SHA-256 components, so objects
+    # land past 260 chars under pytest's temp root. The store writes them through
+    # the same \\?\ prefix (core.inbound_quarantine._fs_path); without it a plain
+    # open() on Windows (LongPathsEnabled=0) fails with FileNotFoundError at OPEN
+    # time -- an environment red that masquerades as quarantine logic.
+    p = os.path.abspath(path)
+    if os.name == "nt" and not p.startswith("\\\\?\\"):
+        p = "\\\\?\\" + p
+    with open(p, "rb") as fh:
+        return fh.read()
+
+
+def _read_manifests(root: str) -> list[dict]:
+    manifests = []
+    for path in _walk_files(root):
+        if os.path.basename(path) == "_manifest.json":
+            manifests.append(json.loads(_read_file_bytes(path).decode("utf-8")))
+    return manifests
+
+
 def _read_manifest(root: str) -> tuple[str, dict]:
     manifest_path = None
     for path in _walk_files(root):
         if os.path.basename(path) == "_manifest.json":
+            assert manifest_path is None, "expected single manifest"
             manifest_path = path
-            break
-    assert manifest_path is not None, "no _manifest.json written under quarantine root"
-    with open(manifest_path, "rb") as fh:
-        return manifest_path, json.loads(fh.read().decode("utf-8"))
+    assert manifest_path is not None, "manifest file missing"
+    return manifest_path, json.loads(_read_file_bytes(manifest_path).decode("utf-8"))
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +182,7 @@ class TestQuarantineWrite:
         assert resp.status_code == 202
         body = resp.json()
         assert body["status"] == "accepted"
-        assert body["correlation_id"].startswith("inbrx_")
+        assert body["receipt_id"].startswith("inbrx_")
 
         # Manifest matches the fixed schema.
         _manifest_path, manifest = _read_manifest(root)
@@ -142,7 +214,11 @@ class TestQuarantineWrite:
         root = str(tmp_path / "q")
         monkeypatch.setenv("INBOUND_QUARANTINE_LOCAL_ROOT", root)
         files = [("attachment-1", ("data.csv", b"a,b\n", "text/csv"))]
-        resp = _client().post(_FILE_PATH, data=_signed_form(), files=files)
+        resp = _client().post(
+            _FILE_PATH,
+            data=_signed_form(recipient=_WEBHOOK_TOKEN),
+            files=files,
+        )
         assert resp.status_code == 202
         _path, manifest = _read_manifest(root)
         assert manifest["channel"] == "webhook"
@@ -161,13 +237,128 @@ class TestQuarantineWrite:
         recipient_needle = _GOOD_RECIPIENT.encode("utf-8")
         for path in _walk_files(root):
             # File CONTENTS must not contain the raw token/recipient.
-            with open(path, "rb") as fh:
-                content = fh.read()
+            content = _read_file_bytes(path)
             assert token_needle not in content, f"raw token leaked in {path}"
             assert recipient_needle not in content, f"raw recipient leaked in {path}"
             # Nor may the PATH itself (partition is the token HASH, not the token).
             assert _ROUTING_TOKEN not in path
             assert _GOOD_RECIPIENT not in path
+
+
+    def test_duplicate_reserved_filenames_get_distinct_safe_object_keys(
+        self, monkeypatch, tmp_path
+    ):
+        root = str(tmp_path / "q")
+        monkeypatch.setenv("INBOUND_QUARANTINE_LOCAL_ROOT", root)
+        files = [
+            ("attachment-1", ("_manifest.json", b"first", "application/json")),
+            ("attachment-2", ("_manifest.json", b"second", "application/json")),
+        ]
+
+        response = _client().post(_EMAIL_PATH, data=_signed_form(), files=files)
+
+        assert response.status_code == 202
+        _path, manifest = _read_manifest(root)
+        attachment_uris = [item["quarantine_uri"] for item in manifest["attachments"]]
+        assert len(set(attachment_uris)) == 2
+        assert all(not uri.endswith("/_manifest.json") for uri in attachment_uris)
+        # Three immutable objects plus one immutable safe-metadata sidecar each.
+        assert len(_walk_files(root)) == 6
+
+    def test_same_bytes_from_distinct_events_keep_distinct_evidence(
+        self, monkeypatch, tmp_path
+    ):
+        root = str(tmp_path / "q")
+        monkeypatch.setenv("INBOUND_QUARANTINE_LOCAL_ROOT", root)
+        raw_calls = []
+        monkeypatch.setattr(
+            "core.inbound_raw_imports.record_raw_import",
+            lambda _conn, **kwargs: (
+                raw_calls.append(kwargs)
+                or {"raw_import_id": f"inbraw_{len(raw_calls)}"}
+            ),
+        )
+        files = [("attachment-1", ("data.csv", b"same", "text/csv"))]
+
+        first = _client().post(
+            _EMAIL_PATH, data=_signed_form(token="event-one"), files=files
+        )
+        second = _client().post(
+            _EMAIL_PATH, data=_signed_form(token="event-two"), files=files
+        )
+
+        assert first.status_code == second.status_code == 202
+        manifests = {item["provider_event_id"]: item for item in _read_manifests(root)}
+        first_uri = manifests["event-one"]["attachments"][0]["quarantine_uri"]
+        second_uri = manifests["event-two"]["attachments"][0]["quarantine_uri"]
+        assert first_uri != second_uri
+        assert raw_calls[0]["quarantine_uri"] != raw_calls[1]["quarantine_uri"]
+        assert raw_calls[0]["content_hash"] == raw_calls[1]["content_hash"]
+
+    def test_replay_after_retention_config_change_reuses_original_policy(
+        self, monkeypatch, tmp_path
+    ):
+        root = str(tmp_path / "q")
+        monkeypatch.setenv("INBOUND_QUARANTINE_LOCAL_ROOT", root)
+        monkeypatch.setenv("INBOUND_QUARANTINE_RETENTION_DAYS", "45")
+        raw_calls = []
+        monkeypatch.setattr(
+            "core.inbound_raw_imports.record_raw_import",
+            lambda _conn, **kwargs: (
+                raw_calls.append(kwargs)
+                or {"raw_import_id": "inbraw_original"}
+            ),
+        )
+        form = _signed_form(token="stable-retention-event")
+        files = [("attachment-1", ("data.csv", b"same", "text/csv"))]
+        first = _client().post(_EMAIL_PATH, data=form, files=files)
+        assert first.status_code == 202
+        original_manifest = _read_manifests(root)[0]
+        original = raw_calls[0]
+
+        monkeypatch.setenv("INBOUND_QUARANTINE_RETENTION_DAYS", "90")
+        monkeypatch.setattr(
+            "core.inbound_receipts.get_receipt_by_provider_event",
+            lambda *args, **kwargs: {
+                "receipt_id": first.json()["receipt_id"],
+                "created_at": "2026-08-01T10:00:00+00:00",
+            },
+        )
+        monkeypatch.setattr(
+            "core.inbound_raw_imports.list_raw_imports_for_receipt",
+            lambda *args, **kwargs: [{
+                "raw_import_id": "inbraw_original", "ordinal": 0,
+                "filename": "data.csv", "media_type_declared": "text/csv",
+                "size_bytes": 4, "content_hash": original["content_hash"],
+                "quarantine_uri": original["quarantine_uri"],
+                "retention_policy_version": "quarantine-retention-v1",
+                "retention_days": 45,
+            }],
+        )
+        second = _client().post(_EMAIL_PATH, data=form, files=files)
+
+        assert second.status_code == 202
+        assert second.json()["outcome"] == "replayed"
+        assert len(raw_calls) == 1
+        replay_manifest = _read_manifests(root)[0]
+        assert replay_manifest["retention_policy"] == {
+            "version": "quarantine-retention-v1", "days": 45
+        }
+        assert replay_manifest == original_manifest
+
+    def test_identical_redelivery_reuses_immutable_objects(self, monkeypatch, tmp_path):
+        root = str(tmp_path / "q")
+        monkeypatch.setenv("INBOUND_QUARANTINE_LOCAL_ROOT", root)
+        form = _signed_form(token="stable-replay-event")
+        files = [("attachment-1", ("data.csv", b"a,b\n1,2\n", "text/csv"))]
+
+        first = _client().post(_EMAIL_PATH, data=form, files=files)
+        first_paths = set(_walk_files(root))
+        second = _client().post(_EMAIL_PATH, data=form, files=files)
+
+        assert first.status_code == second.status_code == 202
+        assert first.json()["receipt_id"] == second.json()["receipt_id"]
+        assert set(_walk_files(root)) == first_paths
 
 
 # ---------------------------------------------------------------------------
@@ -185,10 +376,10 @@ class TestQuarantineGate:
 
         files = [("attachment-1", ("data.csv", b"a,b\n", "text/csv"))]
         resp = _client().post(_EMAIL_PATH, data=_signed_form(), files=files)
-        assert resp.status_code == 202
-        assert resp.json()["status"] == "accepted"
+        assert resp.status_code == 500
+        assert resp.json() == {"code": "internal", "message": "internal"}
 
-        # Nothing was written to our witness dir (unchanged acknowledge-only).
+        # Nothing was written: an unready runtime never acknowledges delivery.
         assert _walk_files(str(witness)) == []
 
 

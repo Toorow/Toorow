@@ -16,13 +16,14 @@
  *
  * État vide : items vide → rend null (le footer disparaît proprement).
  *
- * Strings françaises (UX-DR10).
+ * The NUMBERS follow the Render's pinned formatter (story 76-8) — a card never
+ * shows two decimal conventions at once.
  */
 
-import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
-import { useTheme } from "@mui/material/styles";
 import { getVizPalette } from "./vizTheme";
+import { verdictColor, verdictTone } from "./verdictTone";
+import { NO_VALUE, formatPercent, formatValue } from "./viz/theme/formatters";
+import { Box, Typography, useTheme } from "@toorow/shell";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -48,19 +49,15 @@ export interface KpiDeltaFooterProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Formate une valeur héros : number → toLocaleString fr-FR, string → tel quel, null → « — ». */
+/**
+ * The hero value: a number goes through the Render's pinned formatter
+ * (`viz/theme/formatters`), a string the caller already composed is rendered as
+ * it stands, and an absence says « — ».
+ */
 function fmtHero(v: string | number | null): string {
-  if (v === null || v === undefined) return "—";
-  if (typeof v === "number") return v.toLocaleString("fr-FR");
+  if (v === null || v === undefined) return NO_VALUE;
+  if (typeof v === "number") return formatValue(v);
   return v;
-}
-
-/** Formate un pourcentage de delta en 1 décimale fr-FR. */
-function fmtPct(v: number): string {
-  return v.toLocaleString("fr-FR", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  });
 }
 
 interface DeltaDisplay {
@@ -79,22 +76,16 @@ function resolveDeltaPct(
 ): DeltaDisplay {
   // AD-9 : delta_pct null = indéfini, aucune flèche
   if (delta_pct === null || delta_pct === undefined) {
-    return { arrow: null, text: "—", colorKey: null };
+    return { arrow: null, text: NO_VALUE, colorKey: null };
   }
 
   const isPositive = delta_pct > 0;
-  const isNeutralDir = direction === "neutral";
+  // ONE function decides every verdict colour (story 76-8, round 2).
+  const verdict = verdictTone(delta_pct, direction);
+  const colorKey: "success" | "error" | "secondary" =
+    verdict === "favourable" ? "success" : verdict === "unfavourable" ? "error" : "secondary";
 
-  let colorKey: "success" | "error" | "secondary";
-  if (isNeutralDir) {
-    colorKey = "secondary";
-  } else {
-    const isGood = direction === "up_good" ? isPositive : !isPositive;
-    colorKey = isGood ? "success" : "error";
-  }
-
-  const sign = isPositive ? "+" : "";
-  const text = `${sign}${fmtPct(delta_pct)} %`;
+  const text = formatPercent(delta_pct, { signed: true });
   const arrow: "↑" | "↓" = isPositive ? "↑" : "↓";
 
   return { arrow, text, colorKey };
@@ -120,9 +111,11 @@ export default function KpiDeltaFooter({
     return null;
   }
 
+
+  // One decision, one colour map: see `verdictTone.ts`.
   function resolveColor(colorKey: "success" | "error" | "secondary" | null): string {
-    if (colorKey === "success") return theme.palette.success.main;
-    if (colorKey === "error") return theme.palette.error.main;
+    if (colorKey === "success") return verdictColor(theme, "favourable", theme.palette.text.secondary);
+    if (colorKey === "error") return verdictColor(theme, "unfavourable", theme.palette.text.secondary);
     return theme.palette.text.secondary;
   }
 

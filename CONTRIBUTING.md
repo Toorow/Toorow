@@ -115,7 +115,13 @@ dbt test --select google_analytics --profiles-dir profiles
 > (`run_local_loop.py`) creates it automatically from `profiles.yml.example`.
 > If running dbt manually, create it first or use `run_local_loop.py`.
 
-### Verify the GA4 tool reads from the mart
+### Verify a Datastream reads from the mart
+
+There is no `google-analytics_get_ga4_report` tool, and there is no tool named
+after any other connector either: AD-42 retired the namespaced mount, because a
+tool per connector makes the MCP catalog grow with a catalogue that is bounded by
+nothing. What a project collects is named by its Datastreams — see
+[`docs/product-architecture/mcp-tool-surface.md`](docs/product-architecture/mcp-tool-surface.md).
 
 ```bash
 uv run python - <<'PY'
@@ -127,12 +133,24 @@ from core.main import mcp
 
 async def main():
     async with Client(FastMCPTransport(mcp)) as c:
-        res = await c.call_tool("google-analytics_get_ga4_report", {})
-        import json; print(json.dumps(res.structured_content or res.data, indent=2, default=str))
+        listed = await c.call_tool("list_datastreams", {})
+        streams = (listed.structured_content or listed.data)["data"]["datastreams"]
+        print([s["name"] for s in streams])
+        if streams:
+            res = await c.call_tool("get_datastream_report", {"datastream": streams[0]["id"]})
+            import json; print(json.dumps(res.structured_content or res.data, indent=2, default=str))
 
 asyncio.run(main())
 PY
-# Expected: AD-1 envelope with meta.provenance = "pull_<ULID>" and non-empty data.metrics
+# Expected: AD-1 envelope with meta.provenance.pull_id = "pull_<ULID>" and non-empty data.metrics.
+# An empty `list_datastreams` is an answer too: the project collects nothing yet,
+# and its `next_step` says what to do about it.
+```
+
+To measure what the catalog itself costs a caller before it asks anything:
+
+```bash
+python scripts/mcp_tool_surface_report.py
 ```
 
 ### Switching to real BigQuery

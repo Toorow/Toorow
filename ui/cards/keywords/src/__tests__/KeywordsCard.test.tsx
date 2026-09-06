@@ -17,7 +17,7 @@ import type { CardEnvelope } from "@toorow/card-shell";
 describe("Keywords card — fixture renders without throwing", () => {
   it("renders the card title", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
-    expect(screen.getByTestId("card-title")).toHaveTextContent("Mots-clés");
+    expect(screen.getByTestId("card-title")).toHaveTextContent("Keywords");
   });
 
   it("renders the kpi_row block with hero values from block.data", () => {
@@ -98,8 +98,8 @@ describe("Keywords card — rank movers bar chart (F-6)", () => {
 describe("Keywords card — stale and partial fixture scenarios (F-10)", () => {
   it("renders non-blank state with stale fixture", () => {
     render(<App envelope={FIXTURE_ENVELOPE_STALE} />);
-    expect(screen.getByTestId("card-title")).toHaveTextContent("Mots-clés");
-    expect(screen.getByTestId("card-freshness-badge")).toHaveTextContent("MAJ 2026-07-11");
+    expect(screen.getByTestId("card-title")).toHaveTextContent("Keywords");
+    expect(screen.getByTestId("card-freshness-badge")).toHaveTextContent("Updated 2026-07-11");
   });
 
   it("renders partial fixture (3-day period, null deltas) without crash", () => {
@@ -234,7 +234,7 @@ describe("Keywords card — empty/malformed block.data renders empty state", () 
           {
             type: "gauge",
             binding: {},
-            data: { value: null, target: 50, target_source: "default", unit: "EUR", direction: "down_good", label: "CPA" },
+            data: { value: null, target: 50, target_source: "binding", unit: "EUR", direction: "down_good", label: "CPA" },
           },
         ],
       },

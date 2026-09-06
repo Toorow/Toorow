@@ -4,7 +4,7 @@
  * Covers:
  *  - resolveMarkerShape: server-enriched field wins; fallback to static dict; unknown -> pin.
  *  - resolveCategory: same priority logic as resolveMarkerShape.
- *  - categoryPaletteKey: maps known categories to expected MUI palette keys.
+ *  - categoryPaletteKey: maps known categories to expected theme palette keys.
  *  - filterEvents: category + platform filters work independently and combined.
  *  - uniqueCategories / uniquePlatforms: deduplicate correctly.
  *  - dateToX: maps dates to x positions within the domain correctly.

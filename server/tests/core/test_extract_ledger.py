@@ -5,7 +5,10 @@ Covers:
   - Pre-8.2 fallback (pulls with datastream_id IS NULL matched by connection_ref_id)
   - completeness_ratio per day when expected_rows known
   - REST ledger endpoint: auth, project scoping, date validation (French errors)
-  - REST refetch endpoint: enqueues with datastream_id, contiguous grouping, invalid dates
+  - `_group_dates_into_windows`: the arithmetic that turns picked days into windows
+
+The refetch ROUTE is tested in `tests/core/test_admin_api_refetch.py` and only
+there (story 58.4, arbitrage 8): a route and a registry are two subjects.
 
 All tests use mock psycopg connections (no live DB required).
 Async handlers tested via asyncio.get_event_loop().run_until_complete() (project pattern).
@@ -25,9 +28,13 @@ import pytest
 
 # Columns returned by the batch pull query in extract_ledger.py.
 # Story 25.2: error_detail added between enqueued_at and verdict (matches SQL order).
+# Story 58.1: execution_id added after state -- the run that produced the window.
+# THE DOUBLE FOLLOWS THE REAL SQL ORDER, deliberately: this fixture builds the
+# rows AND declares their column names, so a divergence would be invisible here
+# and a 500 in production.
 _PULL_COLS = [
     "job_id", "pull_id", "datastream_id", "connection_ref_id",
-    "date_from", "date_to", "state", "completed_at", "enqueued_at",
+    "date_from", "date_to", "state", "execution_id", "completed_at", "enqueued_at",
     "error_detail",
     "verdict", "actual_rows", "expected_rows", "completeness_ratio",
 ]
@@ -44,6 +51,7 @@ def _make_pull(
     date_from="2026-07-10",
     date_to="2026-07-12",
     state="done",
+    execution_id="dse_001",
     completed_at=None,
     enqueued_at=None,
     error_detail=None,
@@ -54,7 +62,7 @@ def _make_pull(
 ):
     return (
         job_id, pull_id, datastream_id, connection_ref_id,
-        date_from, date_to, state,
+        date_from, date_to, state, execution_id,
         completed_at or _NOW,
         enqueued_at or _NOW,
         error_detail,
@@ -238,6 +246,78 @@ class TestGetExtractLedgerStatus:
         assert result[0]["error_class"] is None
         assert result[0]["user_action"] is None
 
+    def test_a_prevented_day_carries_the_connector_sentence_to_the_screen(self):
+        """AI-307: the day-grain answer is `never_fetched`, and it is not enough.
+
+        A prevented window reports `never_fetched` by design -- the day was not
+        fetched -- so a screen reading the status alone says « was never asked
+        for » about a day the provider was asked for and refused. The window's
+        own sentence is the only thing on this payload that names a gesture, and
+        it had exactly one reader when the state shipped (the MCP diagnosis):
+        `grep -rn "prevented_message" ui/ web/` returned 0 on 2026-08-21. It is
+        carried onto the day so the day grid can say it too.
+        """
+        import json
+
+        from core.extract_ledger import get_extract_ledger
+
+        pull = _make_pull(
+            date_from="2026-07-10", date_to="2026-07-10",
+            state="prevented", verdict=None,
+            error_detail=json.dumps({
+                "prevented_reason": "reviews_access_pending",
+                "prevented_message": (
+                    "Request the reviews allowlist for this project, then re-ask "
+                    "these dates."
+                ),
+            }),
+            actual_rows=None, expected_rows=None, completeness_ratio=None,
+        )
+        conn = _make_conn_for_ledger(pull_rows=[pull])
+        day = get_extract_ledger("ds_001", "2026-07-10", "2026-07-10", conn)[0]
+
+        assert day["status"] == "never_fetched"
+        assert day["job_state"] == "prevented"
+        assert day["prevented_reason"] == "reviews_access_pending"
+        assert "Request the reviews allowlist" in day["prevented_message"]
+        # NEVER a count: a prevented window took none, and `0` is a count.
+        assert day["row_count"] is None
+
+    def test_a_prevented_day_that_carried_no_sentence_says_so_rather_than_guessing(self):
+        """An absence a screen can name, never a half-parsed instruction."""
+        from core.extract_ledger import get_extract_ledger
+
+        pull = _make_pull(
+            date_from="2026-07-10", date_to="2026-07-10",
+            state="prevented", verdict=None,
+            error_detail="legacy plain text, written before AI-307",
+            actual_rows=None, expected_rows=None, completeness_ratio=None,
+        )
+        conn = _make_conn_for_ledger(pull_rows=[pull])
+        day = get_extract_ledger("ds_001", "2026-07-10", "2026-07-10", conn)[0]
+
+        assert day["job_state"] == "prevented"
+        assert day["prevented_reason"] is None
+        assert day["prevented_message"] is None
+
+    def test_a_day_that_was_not_prevented_carries_no_prevented_keys(self):
+        """Additive and state-scoped, exactly like `error_class` above.
+
+        A null pair on every ordinary day is a pair every screen has to test
+        before trusting, which is how a `null` ends up rendered.
+        """
+        from core.extract_ledger import get_extract_ledger
+
+        for state, verdict in (("done", "ok"), ("failed", None), ("cancelled", None)):
+            pull = _make_pull(
+                date_from="2026-07-10", date_to="2026-07-10",
+                state=state, verdict=verdict,
+            )
+            conn = _make_conn_for_ledger(pull_rows=[pull])
+            day = get_extract_ledger("ds_001", "2026-07-10", "2026-07-10", conn)[0]
+            assert "prevented_reason" not in day, state
+            assert "prevented_message" not in day, state
+
     def test_non_failed_day_has_no_error_class_key(self):
         """error_class/user_action are additive to failed days only (not on 'ok')."""
         from core.extract_ledger import get_extract_ledger
@@ -296,8 +376,21 @@ class TestGetExtractLedgerStatus:
         assert result[0]["status"] == "ok"
 
     def test_multi_day_window(self):
-        """A pull covering a multi-day window resolves status for each covered day."""
-        from core.extract_ledger import get_extract_ledger
+        """A pull covering a multi-day window resolves status for each covered day.
+
+        Story 58.1, arbitrage 9 -- CHANGED, not preserved. This was the file's only
+        multi-day fixture and it asserted the three statuses while saying nothing
+        about the three row counts, so `actual_rows=450` was published on each of
+        the three days and no test could see it. `pull_verifications.actual_rows`
+        is counted per `pull_id` (`verification._count_raw_rows`), which makes it
+        the volume of the WINDOW; a 30-day backfill showed its own total thirty
+        times, on `/ledger` and on `CoverageStrip`. The day now says nothing and
+        NAMES why, instead of saying something false.
+        """
+        from core.extract_ledger import (
+            ROW_COUNT_MEASURED_PER_WINDOW,
+            get_extract_ledger,
+        )
 
         # One pull covering 2026-07-10..2026-07-12
         pull = _make_pull(
@@ -313,6 +406,109 @@ class TestGetExtractLedgerStatus:
             assert entry["status"] == "ok"
         assert result[0]["date"] == "2026-07-10"
         assert result[2]["date"] == "2026-07-12"
+
+        assert [entry["row_count"] for entry in result] == [None, None, None], (
+            "the window's row total was copied onto each of its days -- a backfill "
+            "then reports its own total once per day it covered"
+        )
+        assert {entry["row_count_reason"] for entry in result} == {
+            ROW_COUNT_MEASURED_PER_WINDOW
+        }
+
+        # The trio shares a grain, so it shares the absence. Silencing only
+        # `row_count` would leave `expected_rows: 450` and a ratio of 1.0 sitting
+        # on each of three days -- a window's ratio read as a day's ratio, which
+        # is the same defect under two names nobody had flagged.
+        assert [entry["expected_rows"] for entry in result] == [None, None, None]
+        assert [entry["completeness_ratio"] for entry in result] == [None, None, None]
+
+    def test_a_single_day_pull_keeps_its_expectation_and_its_ratio(self):
+        """The trio is silenced together and published together."""
+        from core.extract_ledger import get_extract_ledger
+
+        pull = _make_pull(
+            date_from="2026-07-10", date_to="2026-07-10",
+            state="done", verdict="partial",
+            actual_rows=90, expected_rows=100, completeness_ratio=0.9,
+        )
+        conn = _make_conn_for_ledger(pull_rows=[pull])
+        result = get_extract_ledger("ds_001", "2026-07-10", "2026-07-10", conn)
+
+        assert result[0]["row_count"] == 90
+        assert result[0]["expected_rows"] == 100
+        assert result[0]["completeness_ratio"] == 0.9
+        assert result[0]["row_count_reason"] is None
+
+    def test_a_single_day_pull_still_publishes_the_volume_it_measured(self):
+        """The repair is not a blanket silence: a nightly pull IS its day."""
+        from core.extract_ledger import get_extract_ledger
+
+        pull = _make_pull(
+            date_from="2026-07-10", date_to="2026-07-10",
+            state="done", verdict="ok", actual_rows=150,
+        )
+        conn = _make_conn_for_ledger(pull_rows=[pull])
+        result = get_extract_ledger("ds_001", "2026-07-10", "2026-07-10", conn)
+
+        assert result[0]["row_count"] == 150
+        assert result[0]["row_count_reason"] is None
+
+    def test_a_day_with_no_verification_says_why_it_has_no_volume(self):
+        """Two absences, two reasons: nothing measured, versus measured too coarsely."""
+        from core.extract_ledger import ROW_COUNT_NOT_VERIFIED, get_extract_ledger
+
+        pull = _make_pull(
+            date_from="2026-07-10", date_to="2026-07-10",
+            state="done", verdict=None,
+            actual_rows=None, expected_rows=None, completeness_ratio=None,
+        )
+        conn = _make_conn_for_ledger(pull_rows=[pull])
+        result = get_extract_ledger("ds_001", "2026-07-10", "2026-07-10", conn)
+
+        assert result[0]["row_count"] is None
+        assert result[0]["row_count_reason"] == ROW_COUNT_NOT_VERIFIED
+
+    def test_a_day_carries_the_window_state_and_the_run_that_produced_it(self):
+        """Story 58.1, arbitrage 7: `cancelled` reports `never_fetched` to the ledger.
+
+        That is the right day-grain answer and the wrong sentence for a person --
+        a window somebody STOPPED reads as one nobody ever asked for. Both words
+        travel, so a screen can say which it is.
+        """
+        from core import pull_job_states
+        from core.extract_ledger import get_extract_ledger
+
+        pull = _make_pull(
+            date_from="2026-07-10", date_to="2026-07-10",
+            state=pull_job_states.CANCELLED, execution_id="dse_42",
+            verdict=None, actual_rows=None,
+        )
+        conn = _make_conn_for_ledger(pull_rows=[pull])
+        result = get_extract_ledger("ds_001", "2026-07-10", "2026-07-10", conn)
+
+        assert result[0]["status"] == pull_job_states.LEDGER_NEVER_FETCHED
+        assert result[0]["job_state"] == pull_job_states.CANCELLED
+        assert result[0]["execution_id"] == "dse_42"
+        assert result[0]["extract_count"] == 1
+
+    def test_a_day_counts_every_extract_that_covers_it(self):
+        """Two pulls over one day is a re-pull, and the row says so."""
+        from core.extract_ledger import get_extract_ledger
+
+        first = _make_pull(
+            job_id="job_1", pull_id="pull_1",
+            date_from="2026-07-10", date_to="2026-07-10", verdict="partial",
+        )
+        second = _make_pull(
+            job_id="job_2", pull_id="pull_2",
+            date_from="2026-07-10", date_to="2026-07-10", verdict="ok",
+        )
+        conn = _make_conn_for_ledger(pull_rows=[second, first])
+        result = get_extract_ledger("ds_001", "2026-07-10", "2026-07-10", conn)
+
+        assert result[0]["extract_count"] == 2
+        # DESC-sorted: the latest covering pull still decides the day.
+        assert result[0]["pull_id"] == "pull_2"
 
     def test_mixed_day_statuses(self):
         """Days with different pull statuses in the same window."""
@@ -438,31 +634,31 @@ class TestGetExtractLedgerStatus:
 class TestGroupDatesIntoWindows:
 
     def test_empty(self):
-        from core.admin_api import _group_dates_into_windows
+        from core.datastream_collection_api import _group_dates_into_windows
         assert _group_dates_into_windows([]) == []
 
     def test_single_date(self):
-        from core.admin_api import _group_dates_into_windows
+        from core.datastream_collection_api import _group_dates_into_windows
         result = _group_dates_into_windows(["2026-07-10"])
         assert result == [("2026-07-10", "2026-07-10")]
 
     def test_contiguous_dates_merge(self):
-        from core.admin_api import _group_dates_into_windows
+        from core.datastream_collection_api import _group_dates_into_windows
         result = _group_dates_into_windows(["2026-07-10", "2026-07-11", "2026-07-12"])
         assert result == [("2026-07-10", "2026-07-12")]
 
     def test_non_contiguous_split(self):
-        from core.admin_api import _group_dates_into_windows
+        from core.datastream_collection_api import _group_dates_into_windows
         result = _group_dates_into_windows(["2026-07-10", "2026-07-11", "2026-07-13"])
         assert result == [("2026-07-10", "2026-07-11"), ("2026-07-13", "2026-07-13")]
 
     def test_deduplicates(self):
-        from core.admin_api import _group_dates_into_windows
+        from core.datastream_collection_api import _group_dates_into_windows
         result = _group_dates_into_windows(["2026-07-10", "2026-07-10", "2026-07-11"])
         assert result == [("2026-07-10", "2026-07-11")]
 
     def test_unordered_input(self):
-        from core.admin_api import _group_dates_into_windows
+        from core.datastream_collection_api import _group_dates_into_windows
         result = _group_dates_into_windows(["2026-07-12", "2026-07-10", "2026-07-11"])
         assert result == [("2026-07-10", "2026-07-12")]
 
@@ -522,7 +718,7 @@ def _run(coro):
 class TestGetDatastreamLedgerEndpoint:
 
     def test_401_when_unauthorized(self):
-        from core.admin_api import _get_datastream_ledger
+        from core.datastream_collection_api import _get_datastream_ledger
 
         req = _make_request(path_params={"id": "ds_001"})
         with _auth_fail():
@@ -532,7 +728,7 @@ class TestGetDatastreamLedgerEndpoint:
     def test_400_when_missing_project_id(self):
         import json
 
-        from core.admin_api import _get_datastream_ledger
+        from core.datastream_collection_api import _get_datastream_ledger
 
         req = _make_request(
             path_params={"id": "ds_001"},
@@ -547,7 +743,7 @@ class TestGetDatastreamLedgerEndpoint:
     def test_400_on_invalid_from_date(self):
         import json
 
-        from core.admin_api import _get_datastream_ledger
+        from core.datastream_collection_api import _get_datastream_ledger
 
         req = _make_request(
             path_params={"id": "ds_001"},
@@ -557,12 +753,17 @@ class TestGetDatastreamLedgerEndpoint:
             resp = _run(_get_datastream_ledger(req))
         assert resp.status_code == 400
         body = json.loads(resp.body)
-        assert "invalide" in body["message"]
+        # Rouge depuis `43e7c57c` (traduction de la copie produit) : ce test
+        # attendait le mot francais << invalide >>, le serveur repond desormais en
+        # anglais. Son voisin de la ligne 712 avait ete rendu tolerant a la meme
+        # occasion, celui-ci a ete oublie. On asserte ce qui ne depend pas de la
+        # langue -- le parametre fautif et le format attendu.
+        assert "from" in body["message"] and "YYYY-MM-DD" in body["message"], body["message"]
 
     def test_400_on_invalid_to_date(self):
         import json
 
-        from core.admin_api import _get_datastream_ledger
+        from core.datastream_collection_api import _get_datastream_ledger
 
         req = _make_request(
             path_params={"id": "ds_001"},
@@ -575,7 +776,7 @@ class TestGetDatastreamLedgerEndpoint:
         assert "YYYY-MM-DD" in body["message"]
 
     def test_404_when_datastream_not_found(self):
-        from core.admin_api import _get_datastream_ledger
+        from core.datastream_collection_api import _get_datastream_ledger
 
         req = _make_request(
             path_params={"id": "ds_notfound"},
@@ -599,7 +800,7 @@ class TestGetDatastreamLedgerEndpoint:
         """Happy path: 200 response with 'ledger' key containing list."""
         import json
 
-        from core.admin_api import _get_datastream_ledger
+        from core.datastream_collection_api import _get_datastream_ledger
 
         req = _make_request(
             path_params={"id": "ds_001"},
@@ -651,248 +852,10 @@ class TestGetDatastreamLedgerEndpoint:
 
 
 # ---- Refetch endpoint ----
-
-class TestRefetchDatastreamEndpoint:
-
-    def test_401_when_unauthorized(self):
-        from core.admin_api import _refetch_datastream
-
-        req = _make_request(path_params={"id": "ds_001"}, body_bytes=b"{}")
-        with _auth_fail():
-            resp = _run(_refetch_datastream(req))
-        assert resp.status_code == 401
-
-    def test_400_missing_project_id(self):
-        import json
-
-        from core.admin_api import _refetch_datastream
-
-        req = _make_request(
-            path_params={"id": "ds_001"},
-            body_bytes=json.dumps({"dates": ["2026-07-10"]}).encode(),
-        )
-        with _auth_ok():
-            resp = _run(_refetch_datastream(req))
-        assert resp.status_code == 400
-        body = json.loads(resp.body)
-        assert "project_id" in body["message"]
-
-    def test_400_no_dates_or_from_to(self):
-        import json
-
-        from core.admin_api import _refetch_datastream
-
-        req = _make_request(
-            path_params={"id": "ds_001"},
-            body_bytes=json.dumps({"project_id": "proj_a"}).encode(),
-        )
-        with _auth_ok():
-            resp = _run(_refetch_datastream(req))
-        assert resp.status_code == 400
-        body = json.loads(resp.body)
-        assert "dates" in body["message"].lower() or "from" in body["message"].lower()
-
-    def test_400_invalid_date_in_dates_array(self):
-        import json
-
-        from core.admin_api import _refetch_datastream
-
-        req = _make_request(
-            path_params={"id": "ds_001"},
-            body_bytes=json.dumps({
-                "project_id": "proj_a",
-                "dates": ["not-a-date"],
-            }).encode(),
-        )
-        with _auth_ok():
-            resp = _run(_refetch_datastream(req))
-        assert resp.status_code == 400
-        body = json.loads(resp.body)
-        # French error message contains "invalide"
-        assert "invalide" in body["message"].lower() or "YYYY-MM-DD" in body["message"]
-
-    def test_400_invalid_from_date(self):
-        import json
-
-        from core.admin_api import _refetch_datastream
-
-        req = _make_request(
-            path_params={"id": "ds_001"},
-            body_bytes=json.dumps({
-                "project_id": "proj_a",
-                "from": "bad",
-                "to": "2026-07-12",
-            }).encode(),
-        )
-        with _auth_ok():
-            resp = _run(_refetch_datastream(req))
-        assert resp.status_code == 400
-
-    def test_400_from_after_to(self):
-        import json
-
-        from core.admin_api import _refetch_datastream
-
-        req = _make_request(
-            path_params={"id": "ds_001"},
-            body_bytes=json.dumps({
-                "project_id": "proj_a",
-                "from": "2026-07-15",
-                "to": "2026-07-10",
-            }).encode(),
-        )
-        with _auth_ok():
-            resp = _run(_refetch_datastream(req))
-        assert resp.status_code == 400
-
-    def test_202_enqueues_pull_with_datastream_id(self):
-        """Happy path: enqueues a pull job and returns 202 with jobs list."""
-        import json
-
-        from core.admin_api import _refetch_datastream
-
-        mock_ds = {
-            "id": "ds_001",
-            "project_id": "proj_a",
-            "name": "Test DS",
-            "module_name": "google-analytics",
-            "connection_ref_id": "conn_001",
-            "enabled": True,
-            "refetch_days": 3,
-        }
-        mock_job = {
-            "job_id": "job_new",
-            "pull_id": "pull_new",
-            "state": "queued",
-        }
-
-        req = _make_request(
-            path_params={"id": "ds_001"},
-            body_bytes=json.dumps({
-                "project_id": "proj_a",
-                "dates": ["2026-07-10", "2026-07-11"],
-            }).encode(),
-        )
-
-        with patch("core.admin_api._check_auth", new=AsyncMock(return_value=(True, "u"))), \
-             patch("core.db.get_connection") as mock_conn_ctx, \
-             patch("core.datastreams.get_datastream", return_value=mock_ds), \
-             patch("core.admin_api._enforce_datastream_project_scope", return_value=None), \
-             patch("core.admin_api.write_audit_row"), \
-             patch("core.queue.enqueue_pull", return_value=mock_job) as mock_enqueue:
-
-            mock_conn = MagicMock()
-            mock_conn_ctx.return_value.__enter__ = lambda s: mock_conn
-            mock_conn_ctx.return_value.__exit__ = MagicMock(return_value=False)
-
-            resp = _run(_refetch_datastream(req))
-
-        assert resp.status_code == 202
-        body = json.loads(resp.body)
-        assert "jobs" in body
-        # Contiguous dates 2026-07-10 and 2026-07-11 should be merged into one window.
-        assert len(body["jobs"]) == 1
-        # Verify enqueue_pull was called with datastream_id.
-        mock_enqueue.assert_called_once()
-        call_kwargs = mock_enqueue.call_args[1]
-        assert call_kwargs.get("datastream_id") == "ds_001"
-        assert mock_enqueue.call_args[0][1] == "2026-07-10"  # date_from
-        assert mock_enqueue.call_args[0][2] == "2026-07-11"  # date_to
-
-    def test_202_non_contiguous_dates_produce_multiple_jobs(self):
-        """Non-contiguous dates should produce separate pull jobs."""
-        import json
-
-        from core.admin_api import _refetch_datastream
-
-        mock_ds = {
-            "id": "ds_001",
-            "project_id": "proj_a",
-            "name": "Test DS",
-            "module_name": "google-analytics",
-            "connection_ref_id": "conn_001",
-            "enabled": True,
-            "refetch_days": 3,
-        }
-
-        call_num = [0]
-
-        def _mock_enqueue(conn_ref_id, d_from, d_to, *, requested_by, datastream_id=None):
-            call_num[0] += 1
-            return {
-                "job_id": f"job_{call_num[0]}",
-                "pull_id": f"pull_{call_num[0]}",
-                "state": "queued",
-            }
-
-        req = _make_request(
-            path_params={"id": "ds_001"},
-            body_bytes=json.dumps({
-                "project_id": "proj_a",
-                "dates": ["2026-07-10", "2026-07-12"],  # gap on 2026-07-11
-            }).encode(),
-        )
-
-        with patch("core.admin_api._check_auth", new=AsyncMock(return_value=(True, "u"))), \
-             patch("core.db.get_connection") as mock_conn_ctx, \
-             patch("core.datastreams.get_datastream", return_value=mock_ds), \
-             patch("core.admin_api._enforce_datastream_project_scope", return_value=None), \
-             patch("core.admin_api.write_audit_row"), \
-             patch("core.queue.enqueue_pull", side_effect=_mock_enqueue):
-
-            mock_conn = MagicMock()
-            mock_conn_ctx.return_value.__enter__ = lambda s: mock_conn
-            mock_conn_ctx.return_value.__exit__ = MagicMock(return_value=False)
-
-            resp = _run(_refetch_datastream(req))
-
-        assert resp.status_code == 202
-        body = json.loads(resp.body)
-        # Two non-contiguous windows -> two jobs.
-        assert len(body["jobs"]) == 2
-
-    def test_202_via_from_to_range(self):
-        """from/to body syntax should also work and enqueue one pull."""
-        import json
-
-        from core.admin_api import _refetch_datastream
-
-        mock_ds = {
-            "id": "ds_001",
-            "project_id": "proj_a",
-            "name": "Test DS",
-            "module_name": "google-analytics",
-            "connection_ref_id": "conn_001",
-            "enabled": True,
-            "refetch_days": 3,
-        }
-        mock_job = {"job_id": "job_1", "pull_id": "pull_1", "state": "queued"}
-
-        req = _make_request(
-            path_params={"id": "ds_001"},
-            body_bytes=json.dumps({
-                "project_id": "proj_a",
-                "from": "2026-07-10",
-                "to": "2026-07-12",
-            }).encode(),
-        )
-
-        with patch("core.admin_api._check_auth", new=AsyncMock(return_value=(True, "u"))), \
-             patch("core.db.get_connection") as mock_conn_ctx, \
-             patch("core.datastreams.get_datastream", return_value=mock_ds), \
-             patch("core.admin_api._enforce_datastream_project_scope", return_value=None), \
-             patch("core.admin_api.write_audit_row"), \
-             patch("core.queue.enqueue_pull", return_value=mock_job) as mock_enqueue:
-
-            mock_conn = MagicMock()
-            mock_conn_ctx.return_value.__enter__ = lambda s: mock_conn
-            mock_conn_ctx.return_value.__exit__ = MagicMock(return_value=False)
-
-            resp = _run(_refetch_datastream(req))
-
-        assert resp.status_code == 202
-        body = json.loads(resp.body)
-        # 3 contiguous days merge into 1 window.
-        assert len(body["jobs"]) == 1
-        call_kwargs = mock_enqueue.call_args[1]
-        assert call_kwargs.get("datastream_id") == "ds_001"
+#
+# MOVED OUT, story 58.4 (arbitrage 8). Every case of
+# `POST .../datastreams/{datastream_id}/refetch` now lives in
+# `tests/core/test_admin_api_refetch.py`, which is the only home for the route.
+# This file tests the extract REGISTRY -- the status matrix, the pre-8.2
+# fallback, the per-window row-count rule and `_group_dates_into_windows` -- and
+# a route half hidden under a registry file name is coverage nobody can find.

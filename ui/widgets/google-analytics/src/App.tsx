@@ -28,12 +28,9 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import WidgetShell from "@toorow/shell";
 import type { WidgetMeta } from "@toorow/shell";
-import Box from "@mui/material/Box";
-import Chip from "@mui/material/Chip";
-import Stack from "@mui/material/Stack";
-import Typography from "@mui/material/Typography";
 
 import KpiTileRow from "./KpiTileRow";
 import CalendarHeatmap, { type ContextEvent } from "./CalendarHeatmap";
@@ -57,16 +54,54 @@ import {
 } from "./ViewTools";
 import type { Granularity } from "./ViewTools";
 import { type DailyReportEnvelope, type Row, type ContextEventMeta } from "./types";
+import { METRICS, METRIC_LABELS, provenanceList } from "./types";
+import { VariationLegend, sourceSystemLabel } from "./format";
+import type { VariationConvention, VerdictDirection } from "./format";
 import {
   filterEvents,
   uniqueCategories,
   uniquePlatforms,
   type EventCategory,
 } from "./eventMarkers";
+import { Box, Chip, Stack, Typography } from "@toorow/shell";
 
 interface AppProps {
   envelope: DailyReportEnvelope;
   adminConsoleUrl?: string;
+}
+
+/** "Updated YYYY-MM-DD" — the same wording, in the same place, as on a card. */
+function freshnessLabel(lastPull: string | null | undefined): string | null {
+  if (!lastPull) return null;
+  const d = new Date(lastPull);
+  if (Number.isNaN(d.getTime())) return null;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `Updated ${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+}
+
+/**
+ * A TECHNICAL IDENTIFIER IS MARKED AS ONE, and it is a real `<code>`.
+ *
+ * `ScreensDoNotPrintIdentifiersAsProse` reads every front tree and refuses an
+ * identifier rendered AS PROSE: it is legitimate when it is actionable (a
+ * control that opens the object) or marked technical (`<code>`, `font-mono`). A
+ * monospaced `<span>` says nothing to the DOM; `<code>` says it. The colour
+ * comes from opacity, not from a literal outside the tokens.
+ */
+const MONO_STYLE: CSSProperties = {
+  marginLeft: 6,
+  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+  fontSize: "0.85em",
+  opacity: 0.65,
+  wordBreak: "break-all",
+};
+
+function TechnicalId({ value }: { value: string }) {
+  return (
+    <code className="font-mono" style={MONO_STYLE}>
+      {value}
+    </code>
+  );
 }
 
 export default function App({ envelope, adminConsoleUrl = "/admin" }: AppProps) {
@@ -205,6 +240,22 @@ export default function App({ envelope, adminConsoleUrl = "/admin" }: AppProps) 
   // Empty state copy (UX-DR10).
   const hasData = displayRows.length > 0;
 
+  // Freshness and provenance, on the cards' convention (story 76-8): an
+  // "Updated YYYY-MM-DD" badge, then the human label of the source system
+  // followed by its token in monospace, and the run identifier never alone.
+  const freshnessBadge = freshnessLabel(meta.freshness?.last_pull);
+  const provenance = provenanceList(meta.provenance);
+
+  // The colour conventions this report has in force, read from the declared
+  // member definitions and never inferred from a metric name. The tiles paint a
+  // verdict; ONE legend, in the widget's own footer, says what the paint means.
+  const legendConventions: VariationConvention[] = METRICS.filter((m) =>
+    displayRows.some((r) => r.metric === m),
+  ).map((metric) => ({
+    direction: (data?.metric_definitions?.[metric]?.direction ?? "up_good") as VerdictDirection,
+    subject: METRIC_LABELS[metric] ?? metric,
+  }));
+
   // G-10: feedbackContext — sourced from envelope meta + data.
   const metaExt = envelope.meta as unknown as {
     project_id?: string | null;
@@ -233,7 +284,56 @@ export default function App({ envelope, adminConsoleUrl = "/admin" }: AppProps) 
         ref={widgetRootRef}
         sx={{ display: "flex", flexDirection: "column", gap: 2, p: 1 }}
       >
-        <Typography variant="h6">Rapport quotidien</Typography>
+        {/* THE CARDS' OWN HEADER (story 76-8). The daily report showed a
+            dominant value and its change — the v5-01 hierarchy — but neither the
+            freshness nor the provenance every card carries: one read « 40 467
+            sessions » without knowing WHEN it was measured or WHERE it came
+            from. */}
+        <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1 }}>
+          <Typography variant="h6" sx={{ flex: 1, minWidth: 0 }}>
+            Rapport quotidien
+          </Typography>
+          {freshnessBadge && (
+            <Box
+              component="span"
+              data-testid="widget-freshness-badge"
+              sx={{
+                flexShrink: 0,
+                fontSize: "0.65rem",
+                color: "text.secondary",
+                border: "1px solid",
+                borderColor: "divider",
+                borderRadius: 1,
+                px: 0.75,
+                py: 0.25,
+                lineHeight: 1.4,
+              }}
+            >
+              {freshnessBadge}
+            </Box>
+          )}
+        </Box>
+        {provenance.length > 0 && (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            data-testid="widget-provenance"
+            sx={{ mt: -1.5 }}
+          >
+            {provenance.map((entry, idx) => (
+              <Box component="span" key={`${entry.source_system}-${idx}`} sx={{ mr: 1.5 }}>
+                {sourceSystemLabel(entry.source_system)}
+                <TechnicalId value={entry.source_system} />
+                {entry.pull_id ? (
+                  <>
+                    {" · Run"}
+                    <TechnicalId value={entry.pull_id} />
+                  </>
+                ) : null}
+              </Box>
+            ))}
+          </Typography>
+        )}
 
         {/* Story 1.7 T6.4 — View Tools toolbar (above heatmap) */}
         <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
@@ -346,7 +446,7 @@ export default function App({ envelope, adminConsoleUrl = "/admin" }: AppProps) 
           />
         ) : (
           <Typography variant="body2" color="text.secondary">
-            Aucune donnée pour la sélection actuelle.
+            No data for the current selection.
           </Typography>
         )}
 
@@ -383,6 +483,19 @@ export default function App({ envelope, adminConsoleUrl = "/admin" }: AppProps) 
             meta={envelope.meta}
             onClose={() => setSelectedDay(null)}
           />
+        )}
+
+        {/* ONE placement, the widget's own footer — the card rule applied to a
+            surface that has no card shell (story 76-8, round 2). */}
+        {legendConventions.length > 0 && (
+          <Box sx={{ pt: 1 }}>
+            <VariationLegend
+              conventions={legendConventions}
+              comparison="the previous period"
+              arrows={false}
+              testId="widget-variation-legend"
+            />
+          </Box>
         )}
       </Box>
     </WidgetShell>

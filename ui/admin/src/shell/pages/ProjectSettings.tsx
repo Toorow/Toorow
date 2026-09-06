@@ -1,821 +1,1341 @@
-/**
- * ProjectSettings — the focused "Project settings" screen for the v3 admin shell.
- *
- * Reached from the TopBar scope-actions menu ("Project settings", TopBar.tsx) for
- * the currently-scoped project. Rendered inside the shell <main> (ApplicationShell
- * renders the frame/sidebar/topbar); this component is the page body only.
- *
- * ⚠️ SPEC-DERIVED, NO MOCKUP.
- * There is no validated visual mockup for project settings. This screen is a
- * faithful v3-shell port of the REAL, already-shipped settings implementation
- * (ui/admin/src/ProjectSettingsPage.tsx, MUI) plus the Epic 21 multi-tenant
- * contract (org owns projects; a project has a display name, a default currency,
- * a verification source, and a geographic mode). Every field, endpoint and
- * behavior below is REUSED from that real implementation — nothing is invented.
- * When a mockup lands, reconcile this port against it.
- *
- * Sections (all from the real implementation):
- *   1. Project identity   — id (read-only, mono), display name, default currency
- *   2. Verification source — type (none / GA4 / Stripe / custom), datastream id,
- *                            and (GA4 only) the lead event name
- *   3. Geographic mode     — Global vs Local markets + tracked-country selection
- *
- * Backend (REAL, wired — identical to ProjectSettingsPage):
- *   GET   /api/projects/{projectId}
- *           -> { id, name, slug, currency?, timezone?,
- *                verification_source_type?, verification_source_id?,
- *                lead_event_name?, geographic_mode?, local_market_country_codes? }
- *   GET   /api/vocabularies/countries       -> { countries: [{ code, display_name }] }
- *           (verified: server/core/admin_api.py registers "/api/vocabularies/
- *            countries" -> _list_countries. There is NO /api/reference/* route
- *            anywhere in server/core — the previous /api/reference/countries URL
- *            404'd on every call, so the market picker was structurally empty and
- *            said nothing about it. OrgSettings.tsx already used the right URL.)
- *   PATCH /api/projects/{projectId}
- *           body { verification_source_type, verification_source_id,
- *                  lead_event_name }        (identity-only saves send name/currency)
- *   POST  /api/projects/{projectId}/geography/preview
- *           header Idempotency-Key
- *           body  { geographic_mode, local_market_country_codes }
- *           -> { id, impact: { affected_datastream_count, blocking_gap_count,
- *                              backfill_required, datastreams[] } }
- *   POST  /api/projects/{projectId}/geography/previews/{previewId}/confirm
- *           body  { backfill_decision: "defer" | "request" }
- *   A geography change ALWAYS goes preview -> confirm (with the backfill decision
- *   when backfill_required); identity/verification changes PATCH directly.
- *
- * Failure handling: a load or save failure is SAID. The project fetch failing
- * renders an explicit error instead of an empty form; the country list failing
- * renders an explicit error instead of an empty picker (an empty picker reads as
- * "no countries exist"); and an empty list returned by the API is rendered as
- * empty, which is a truth.
- *
- * Styling: application.css (global, via the shell) for base classes/tokens +
- * project-settings.css for this page's specifics. Colors come exclusively from
- * the application.css CSS variables — no hex. Identifiers use JetBrains Mono
- * (.mono, defined in application.css).
- */
-import { useCallback, useEffect, useMemo, useState } from "react";
-import "../application.css";
-import "./project-settings.css";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { RunInsights } from "../../daily-insights/InsightShare";
 import { apiFetch } from "../../lib/apiFetch";
+import AiSettingsPanel from "../../settings/AiSettingsPanel";
+import { Badge, Button, CapabilityCoverage, CapabilityImpactMatrix, capabilityLabel, EmptyState, Field, Input, ObjectId, PageFrame, PageHeader, Panel, PanelHeader, ReferenceSelect, SectionHeader, Stack, stateLabel, stateTone, Status, Tabs, TabsContent, TabsList, TabsTrigger, Textarea, type ImpactMatrixRow } from "../../ui";
 
-/* ---- Data model (REUSED verbatim from ProjectSettingsPage.tsx) ------------- */
+export type SettingsSection = "general" | "capabilities" | "changes" | "ai";
 
-interface ProjectPrefs {
+/** A semantic owner reference. The router resolves it; no screen builds a URL. */
+export type OwnerReference = {
+  surface: string;
+  workspace: string | null;
+  section: string | null;
+  global_surface: string | null;
+  global_section: string | null;
+  /** The collection lens inside the section, when the reference names one.
+   *
+   *  Story 58.9: `Add a check` opens `controls-quality/data-quality`, and a
+   *  reference that stopped at the section landed on `conflicts` — the section's
+   *  declared default — which is a different collection. Optional: every
+   *  server-composed reference predates it and carries none. */
+  lens?: string | null;
+  object_type: string | null;
+  object_id: string | null;
+  tab: string | null;
+  action: string | null;
+  version_id: string | null;
+  evidence_id: string | null;
+};
+
+type DefaultValue = {
+  active: string | null;
+  pending: string | null;
+  origin: string;
+  confirmation_status: string;
+  owner_reference: OwnerReference;
+};
+
+type Coverage = {
+  applicable: number;
+  complete: number;
+  partial: number;
+  unavailable: number;
+  excluded: number;
+  pending: number;
+  label: string;
+  percentage: number | null;
+};
+
+type Capability = {
+  key: string;
+  availability: "always_present" | "optional";
+  dependencies: string[];
+  active: { state: string; version_id: string | null };
+  pending: {
+    state?: string;
+    change_set_id?: string;
+    prepared_payload_hash?: string;
+  } | null;
+  coverage: Coverage;
+  exceptions: Array<{
+    id?: string;
+    reason?: string;
+    reason_code?: string;
+    severity?: string;
+    kind?: string;
+    owner_kind?: string;
+    datastream_id?: string | null;
+    owner_reference?: OwnerReference;
+  }>;
+  blockers: Array<{
+    code?: string;
+    message?: string;
+    datastream_id?: string;
+    owner_reference?: OwnerReference;
+  }>;
+  owner_links: Array<{ owner: string; owner_reference: OwnerReference }>;
+};
+
+type ChangeSet = {
   id: string;
-  name: string;
-  slug: string;
-  currency?: string;
-  timezone?: string;
-  verification_source_type?: string | null;
-  verification_source_id?: string | null;
-  lead_event_name?: string | null;
-  geographic_mode?: "global" | "local_markets";
-  local_market_country_codes?: string[];
+  state: string;
+  summary?: string;
+  prepared_payload_hash?: string;
+  blockers?: Array<{
+    code?: string;
+    message?: string;
+    datastream_id?: string;
+    owner_reference?: OwnerReference;
+  }>;
+  /** Server-composed: the six counts per capability plus one row per proposal. */
+  impact_summary?: {
+    coverage?: Record<string, Coverage>;
+    matrix?: ImpactMatrixRow[];
+  };
+  confirmation_id?: string;
+};
+
+type SettingsEnvelope = {
+  project: {
+    id: string;
+    name: string;
+    description: string | null;
+    organization: { id: string; name: string };
+    can_edit: boolean;
+    can_manage: boolean;
+    business_domains: Array<{ id: string; name: string }>;
+    defaults: {
+      reporting_currency: DefaultValue;
+      reporting_timezone: DefaultValue;
+      verification_source: DefaultValue;
+    };
+    /** `proactive-assertions.md` decision 2: the project-scoped capability that
+     *  decides whether anything may leave the platform at all. It is not one of
+     *  the six compiled capabilities — it compiles into no Datastream — so it
+     *  travels beside the defaults, in the store it lives in. */
+    external_sharing: {
+      state: "allowed" | "forbidden";
+      decided_by: string | null;
+      decided_at: string | null;
+      is_platform_default: boolean;
+      can_change: boolean;
+    };
+  };
+  capabilities: Capability[];
+  changes: ChangeSet[];
+};
+
+// The capability labels live in `ui/CapabilityCoverage`, next to the component
+// that draws them. This screen held a second private copy; the two disagreed on
+// two of the six ("Reporting Timezone" vs "Reporting timezone"), so the same
+// capability read differently depending on which card you looked at.
+const DEFAULT_LABELS: Array<[keyof SettingsEnvelope["project"]["defaults"], string]> = [
+  ["reporting_currency", "Reporting currency"],
+  ["reporting_timezone", "Reporting timezone"],
+  ["verification_source", "Verification source"],
+];
+
+async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await apiFetch(url, {
+    credentials: "same-origin",
+    ...init,
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(body || `Request failed (${response.status})`);
+  }
+  return response.json() as Promise<T>;
 }
 
-interface CountryOption {
-  code: string;
-  display_name: string;
-}
+/**
+ * The governed vocabulary each default is picked from, when it has one.
+ *
+ * Story 48.3 AC1: the reporting currency uses "a searchable validated ISO 4217
+ * selector" and the reporting timezone "a searchable validated IANA identifier
+ * selector; neither is a free-text or hard-coded subset". Both were plain text
+ * inputs, so the only feedback on a typo arrived much later and nothing on the
+ * screen said which values were even legal.
+ *
+ * `verification_source` has no such vocabulary and stays a text field. Listing it
+ * here as `null` is deliberate: it records that the absence was checked rather
+ * than that the case was forgotten.
+ */
+const DEFAULT_VOCABULARY: Record<
+  keyof SettingsEnvelope["project"]["defaults"],
+  { endpoint: string; label: string } | null
+> = {
+  reporting_currency: { endpoint: "/api/reference/currencies", label: "currencies" },
+  reporting_timezone: { endpoint: "/api/reference/timezones", label: "timezones" },
+  verification_source: null,
+};
 
-interface GeographicPreviewImpactDatastream {
-  datastream_id: string;
-  datastream_name?: string;
-  compatibility: "compatible" | "blocked";
-  coverage_state: string;
-  earliest_available_country_date?: string | null;
-  max_provider_backfill_days?: number | null;
-  estimated_volume?: { upper_bound_rows?: number };
-  estimated_cost?: Record<string, unknown>;
-  blocking_gaps?: Array<{ code: string; message: string }>;
-}
-
-interface GeographicPreviewImpact {
-  affected_datastream_count: number;
-  blocking_gap_count: number;
-  backfill_required: boolean;
-  datastreams: GeographicPreviewImpactDatastream[];
-}
-
-interface GeographicPreviewResponse {
-  id: string;
-  impact: GeographicPreviewImpact;
-}
-
-/** Verification-source types — REUSED from ProjectSettingsPage (English copy). */
-const VS_TYPE_OPTIONS = [
-  { value: "", label: "No verification source" },
-  { value: "ga4", label: "Google Analytics 4 (GA4)" },
-  { value: "stripe", label: "Stripe (Billing & Subscriptions)" },
-  { value: "custom", label: "Custom connection" },
-] as const;
-
-type GeoMode = "global" | "local_markets";
-type BackfillDecision = "defer" | "request";
-
-export interface ProjectSettingsProps {
-  /** The scoped project whose settings are edited. Falls back to a placeholder
-   *  so the screen renders finished when the shell hasn't wired a scope yet. */
-  projectId?: string;
-}
-
-export default function ProjectSettings({ projectId }: ProjectSettingsProps) {
-  // A stable, non-empty id so the screen renders finished with no scope wired.
-  const resolvedProjectId = projectId?.trim() || "project-current";
-
-  const [prefs, setPrefs] = useState<ProjectPrefs | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // Editable field state (mirrors the real page's local state).
-  const [name, setName] = useState<string>("");
-  const [currency, setCurrency] = useState<string>("");
-  const [vsType, setVsType] = useState<string>("");
-  const [vsId, setVsId] = useState<string>("");
-  const [leadEventName, setLeadEventName] = useState<string>("");
-  const [geoMode, setGeoMode] = useState<GeoMode>("global");
-  const [countryCodes, setCountryCodes] = useState<string[]>([]);
-
-  const [countryOptions, setCountryOptions] = useState<CountryOption[]>([]);
-  const [countriesLoading, setCountriesLoading] = useState(false);
-  const [countriesError, setCountriesError] = useState<string | null>(null);
-  /** True once a country-list request has been ISSUED — so a failed load is not
-   *  retried in a loop by the lazy-load effect, and so "no options" can be told
-   *  apart from "not asked yet". */
-  const [countriesRequested, setCountriesRequested] = useState(false);
-  const [countryQuery, setCountryQuery] = useState<string>("");
-
+function DefaultCard({
+  label,
+  value,
+  canEdit,
+  vocabulary,
+  onPrepare,
+  onOpenOwner,
+}: {
+  label: string;
+  value: DefaultValue;
+  canEdit: boolean;
+  vocabulary: { endpoint: string; label: string } | null;
+  onPrepare: (value: string) => Promise<void>;
+  onOpenOwner?: (owner: OwnerReference) => void;
+}) {
+  const [draft, setDraft] = useState(value.pending ?? value.active ?? "");
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState(false);
 
-  const [geographicPreview, setGeographicPreview] = useState<GeographicPreviewResponse | null>(null);
-  const [backfillDecision, setBackfillDecision] = useState<BackfillDecision>("defer");
-
-  const clearSaveState = useCallback(() => {
-    setSaveSuccess(false);
-    setSaveError(null);
-  }, []);
-
-  const applyUpdatedPrefs = useCallback((updated: ProjectPrefs) => {
-    setPrefs(updated);
-    setName(updated.name ?? "");
-    setCurrency(updated.currency ?? "");
-    setVsType(updated.verification_source_type ?? "");
-    setVsId(updated.verification_source_id ?? "");
-    setLeadEventName(updated.lead_event_name ?? "");
-    setGeoMode(updated.geographic_mode ?? "global");
-    setCountryCodes(updated.local_market_country_codes ?? []);
-  }, []);
-
-  const loadPrefs = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const resp = await apiFetch(`/api/projects/${encodeURIComponent(resolvedProjectId)}`, {
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-      });
-      if (!resp.ok) {
-        const errData = (await resp.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(errData?.message ?? `HTTP ${resp.status}`);
-      }
-      const data = (await resp.json()) as ProjectPrefs;
-      applyUpdatedPrefs(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load project settings.");
-    } finally {
-      setLoading(false);
-    }
-  }, [resolvedProjectId, applyUpdatedPrefs]);
-
-  const loadCountries = useCallback(async () => {
-    setCountriesRequested(true);
-    setCountriesLoading(true);
-    setCountriesError(null);
-    try {
-      const resp = await apiFetch(`/api/vocabularies/countries`, {
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = (await resp.json()) as { countries?: CountryOption[] };
-      setCountryOptions(data.countries ?? []);
-    } catch (err) {
-      setCountriesError(err instanceof Error ? err.message : "Could not load the country list.");
-      setCountryOptions([]);
-    } finally {
-      setCountriesLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadPrefs();
-  }, [loadPrefs]);
-
-  // Load the country list lazily once local markets is selected.
-  useEffect(() => {
-    if (geoMode === "local_markets" && !countriesRequested) {
-      void loadCountries();
-    }
-  }, [geoMode, countriesRequested, loadCountries]);
-
-  const countryLabel = useCallback(
-    (option: CountryOption) => `${option.display_name} (${option.code})`,
-    [],
-  );
-
-  /** Selected countries resolved to their option (so a code with no loaded
-   *  option still renders as a removable chip). */
-  const selectedCountries = useMemo<CountryOption[]>(
-    () =>
-      countryCodes.map((code) => countryOptions.find((c) => c.code === code) ?? { code, display_name: code }),
-    [countryCodes, countryOptions],
-  );
-
-  /** Options offered by the country autocomplete: not-yet-selected, matching the
-   *  typed query on code or name. */
-  const countrySuggestions = useMemo<CountryOption[]>(() => {
-    const q = countryQuery.trim().toLowerCase();
-    return countryOptions
-      .filter((o) => !countryCodes.includes(o.code))
-      .filter((o) => q === "" || o.code.toLowerCase().includes(q) || o.display_name.toLowerCase().includes(q))
-      .slice(0, 8);
-  }, [countryOptions, countryCodes, countryQuery]);
-
-  const addCountry = useCallback((code: string) => {
-    setCountryCodes((prev) => (prev.includes(code) ? prev : [...prev, code].sort()));
-    setCountryQuery("");
-    clearSaveState();
-  }, [clearSaveState]);
-
-  const removeCountry = useCallback((code: string) => {
-    setCountryCodes((prev) => prev.filter((c) => c !== code));
-    clearSaveState();
-  }, [clearSaveState]);
-
-  /** Did the geography (mode or set of countries) change vs. what's persisted?
-   *  A geography change routes through preview -> confirm, everything else PATCHes. */
-  const geographyChanged = useMemo(() => {
-    const persisted = [...(prefs?.local_market_country_codes ?? [])].sort();
-    const selected = [...countryCodes].sort();
-    return (
-      geoMode !== (prefs?.geographic_mode ?? "global") ||
-      selected.join(",") !== persisted.join(",")
-    );
-  }, [prefs, geoMode, countryCodes]);
-
-  const handleSave = useCallback(async () => {
-    if (geoMode === "local_markets" && countryCodes.length === 0) {
-      setSaveSuccess(false);
-      setSaveError("Select at least one local market.");
-      return;
-    }
-
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!draft.trim()) return;
     setSaving(true);
-    setSaveError(null);
-    setSaveSuccess(false);
-
     try {
-      if (geographyChanged) {
-        const resp = await apiFetch(
-          `/api/projects/${encodeURIComponent(resolvedProjectId)}/geography/preview`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Idempotency-Key": globalThis.crypto?.randomUUID?.() ?? `geography-${Date.now()}`,
-            },
-            body: JSON.stringify({
-              geographic_mode: geoMode,
-              local_market_country_codes: countryCodes,
-            }),
-          },
-        );
-        if (!resp.ok) {
-          const errData = (await resp.json().catch(() => null)) as { message?: string } | null;
-          throw new Error(errData?.message ?? `HTTP ${resp.status}`);
-        }
-        const preview = (await resp.json()) as GeographicPreviewResponse;
-        setBackfillDecision("defer");
-        setGeographicPreview(preview);
-        return; // confirmation continues in confirmGeographicChange
-      }
-
-      const resp = await apiFetch(`/api/projects/${encodeURIComponent(resolvedProjectId)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim() || null,
-          currency: currency.trim() || null,
-          verification_source_type: vsType || null,
-          verification_source_id: vsId.trim() || null,
-          lead_event_name: vsType === "ga4" ? leadEventName.trim() || null : null,
-        }),
-      });
-      if (!resp.ok) {
-        const errData = (await resp.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(errData?.message ?? `HTTP ${resp.status}`);
-      }
-      const updated = (await resp.json()) as ProjectPrefs;
-      applyUpdatedPrefs(updated);
-      setSaveSuccess(true);
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Could not save the project settings.");
+      await onPrepare(draft.trim());
     } finally {
       setSaving(false);
     }
-  }, [
-    geoMode,
-    countryCodes,
-    geographyChanged,
-    resolvedProjectId,
-    name,
-    currency,
-    vsType,
-    vsId,
-    leadEventName,
-    applyUpdatedPrefs,
-  ]);
+  };
 
-  const confirmGeographicChange = useCallback(async () => {
-    if (!geographicPreview) return;
-    setSaving(true);
-    setSaveError(null);
-    try {
-      const resp = await apiFetch(
-        `/api/projects/${encodeURIComponent(resolvedProjectId)}/geography/previews/${encodeURIComponent(geographicPreview.id)}/confirm`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ backfill_decision: backfillDecision }),
-        },
-      );
-      if (!resp.ok) {
-        const errData = (await resp.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(errData?.message ?? `HTTP ${resp.status}`);
-      }
-      const updated = (await resp.json()) as ProjectPrefs;
-      applyUpdatedPrefs(updated);
-      setGeographicPreview(null);
-      setSaveSuccess(true);
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Could not confirm the geography change.");
-    } finally {
-      setSaving(false);
-    }
-  }, [geographicPreview, resolvedProjectId, backfillDecision, applyUpdatedPrefs]);
-
-  const blockingGaps = geographicPreview?.impact.blocking_gap_count ?? 0;
-
+  const confirmed = value.confirmation_status === "confirmed";
   return (
-    <div className="full-main projectsettings">
-      <header className="page-header">
+    // Same column rule as `CapabilityCard`: three of these sit side by side and
+    // one of them carries an `Origin:` line the other two do not, so their
+    // `Prepare change` buttons landed on three different lines.
+    <Panel className="h-full">
+      <form className="flex h-full flex-col gap-4" onSubmit={submit}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="m-0 text-h3 font-h3 text-text">{label}</h3>
+            <p className="mt-1 mb-0 text-ui text-text-secondary">
+              {/* An organization suggestion is NOT an active value. Saying
+                  "Active: EUR" for a value nobody confirmed is the screen half of
+                  the column default this story removed from the schema. */}
+              {/* "this foundation is not in force yet" said nothing a person
+                  could act on — Jean, 2026-08-05: *"c'est quoi ça ?"*.
+                  "Foundation" is not in the glossary and names no object here.
+                  What is true and useful is that NOTHING is set, and that the
+                  field below is how it gets set. */}
+              {confirmed && value.active
+                ? `Active: ${value.active}`
+                : "Not set — no value is in force for this Project yet"}
+            </p>
+          </div>
+          <Badge tone={confirmed ? "success" : "warning"}>
+            {confirmed ? "Confirmed" : "Unconfirmed"}
+          </Badge>
+        </div>
+        {value.pending ? (
+          <Status tone="warning">
+            <span>Suggested: {value.pending}</span>
+            <span className="block text-caption text-text-secondary">
+              A suggestion has no effect until it is confirmed in a Project Configuration Version.
+            </span>
+          </Status>
+        ) : null}
+        {/* `app.project_preferences` holds no row until something is prepared,
+            so the LEFT JOIN feeding this returns null and the line rendered as
+            a bare "Origin:" with nothing after it — then the next element's
+            label, which read as its value. A field with no value is not a
+            field: it does not render. */}
+        {value.origin ? (
+          <p className="m-0 text-caption text-text-secondary">Origin: {value.origin}</p>
+        ) : null}
+        <Field
+          label={`New ${label.toLowerCase()}`}
+          hint="Preparing creates a governed Change Set; it does not activate the value."
+        >
+          {(props) =>
+            vocabulary ? (
+              <ReferenceSelect
+                {...props}
+                endpoint={vocabulary.endpoint}
+                vocabularyLabel={vocabulary.label}
+                value={draft || null}
+                disabled={!canEdit || saving}
+                onChange={setDraft}
+              />
+            ) : (
+              <Input
+                {...props}
+                value={draft}
+                disabled={!canEdit || saving}
+                onChange={(event) => setDraft(event.target.value)}
+              />
+            )
+          }
+        </Field>
+        <div className="mt-auto flex items-center justify-between gap-3 border-t border-divider-base pt-4">
+          <button
+            type="button"
+            className="text-ui font-semibold text-primary hover:underline"
+            onClick={() => onOpenOwner?.(value.owner_reference)}
+          >
+            Open owner
+          </button>
+          <Button type="submit" disabled={!canEdit || saving || !draft.trim()}>
+            {saving ? "Preparing…" : "Prepare change"}
+          </Button>
+        </div>
+      </form>
+    </Panel>
+  );
+}
+
+function CapabilityCard({
+  capability,
+  projectId,
+  canEdit,
+  onPrepare,
+  onOpenOwner,
+}: {
+  capability: Capability;
+  projectId: string;
+  canEdit: boolean;
+  onPrepare: (enabled: boolean) => Promise<void>;
+  onOpenOwner?: (owner: OwnerReference) => void;
+}) {
+  const label = capabilityLabel(capability.key);
+  const enabled = capability.active.state !== "disabled";
+  const nextEnabled = !enabled;
+  const isCountry = capability.key === "country";
+  const isTaxFees = capability.key === "tax_fees";
+  const action = nextEnabled
+    ? isCountry ? "Activate" : "Enable"
+    : isCountry ? "Deactivate" : "Disable";
+  // The long note is NOT part of the header row. Inside it, a wrapping flex put
+  // the action under the paragraph on Country and at the top right on Tax &
+  // Fees — one control, three positions in one grid, decided by how much prose
+  // the capability happens to carry. The row now holds the title, its posture
+  // and its action, and nothing that can grow; the note sits under the row, at
+  // the same place on every card.
+  const note = isTaxFees && enabled
+    ? /* `Active: enabled` on this card does NOT mean the ladder is live.
+         Migration 148 makes `tax_fees_active` true only when all four hold:
+         the capability is not disabled, its pinned configuration version is
+         the Project's active one, a tax_fee Rule Set version is published,
+         AND a Money Policy version is published. This envelope proves the
+         first and can prove the second; it carries neither published
+         version, so the card names what it cannot see instead of showing a
+         green state it has not measured. */
+      <>
+        Enabled here is not the same as effective. The ladder also requires a published
+        Tax &amp; Fee Rule Set version and a published Money Policy version, and this
+        page cannot see either — open the Governance owner below to read the published
+        ladder, its version and whether any rule leaves Rest of world or Unknown
+        undecided. Rules are never authored from this card.
+      </>
+    : isCountry
+      ? <>
+          Every applicable compatible Datastream is compiled automatically. Country hierarchy
+          editing stays with its exact Governance owner.
+        </>
+      : null;
+  return (
+    // A column, not a stack of blocks: the owner links are a FOOTER and are
+    // pushed to the bottom edge, so two cards side by side end on the same line
+    // however much prose sits above them.
+    <Panel data-testid={`capability-${capability.key}`} className="flex h-full flex-col gap-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="m-0 text-h3 font-h3 text-text">{label}</h3>
+            <Badge tone={capability.availability === "always_present" ? "info" : "neutral"}>
+              {capability.availability === "always_present" ? "Always present" : "Optional"}
+            </Badge>
+          </div>
+          {/* Two versions exist and they are not the same object. What this
+              envelope carries is the PROJECT CONFIGURATION VERSION
+              (`project_settings.py:376-386`, `app.project_capabilities`) — not
+              the version of the rule set that decides the capability's content.
+              Labelling it "Version" let a reader conclude they were looking at
+              the live rule version, which the card has never known (41.7, AC8). */}
+          <p className="mt-1 mb-0 text-ui text-text-secondary">
+            {enabled ? (
+              <>
+                Active: {capability.active.state} · Project configuration version:{" "}
+                {capability.active.version_id ?? "Unversioned"}
+              </>
+            ) : "Not active"}
+          </p>
+          {capability.pending ? (
+            <p className="mt-1 mb-0 font-mono text-caption text-text-secondary">
+              Pending: {capability.pending.state ?? "change"} · {capability.pending.prepared_payload_hash ?? capability.pending.change_set_id}
+            </p>
+          ) : null}
+        </div>
+        {capability.availability === "optional" ? (
+          <div className="shrink-0">
+            <Button
+              type="button"
+              variant={nextEnabled ? "default" : "secondary"}
+              disabled={!canEdit}
+              onClick={() => void onPrepare(nextEnabled)}
+            >
+              {action} {label}
+            </Button>
+          </div>
+        ) : null}
+      </div>
+      {note ? <p className="m-0 max-w-[64ch] text-ui text-text-secondary">{note}</p> : null}
+      <CapabilityCoverage coverage={capability.coverage} />
+      <CapabilityDatastreams projectId={projectId} capabilityKey={capability.key} />
+      <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <h1>Project settings</h1>
-          <p>
-            Preferences for the scoped project: its identity, the source of truth used to verify
-            conversions, and the geographic dimension of its reporting.
+          <p className="m-0 text-caption text-text-secondary">Exceptions</p>
+          {/* `text-lg` is Tailwind's own 18px — the only step on this card that
+              did not come from the token scale, and it landed between h3 and
+              metric so the two counts read at a size nothing else in the console
+              uses. A count IS a metric. */}
+          <p className="mt-1 mb-0 font-numeric text-metric font-metric text-text">
+            {capability.exceptions.length}
           </p>
         </div>
-      </header>
-
-      {loading ? (
-        <div className="ps-loading" role="status">
-          <span className="signal running" aria-hidden="true" />
-          <span>Loading project settings…</span>
+        <div>
+          <p className="m-0 text-caption text-text-secondary">Blockers</p>
+          <p className="mt-1 mb-0 font-numeric text-metric font-metric text-text">
+            {capability.blockers.length}
+          </p>
         </div>
-      ) : error && !prefs ? (
-        <div className="ps-inline-error" role="alert">
-          <span className="signal-label error">
-            <span className="signal-mark" />
-            Could not load project settings
-          </span>
-          <p>{error}</p>
-        </div>
-      ) : (
-        <div className="ps-sections">
-          {/* ---- 1. Project identity ------------------------------------- */}
-          <section className="panel ps-panel" aria-labelledby="ps-identity-title">
-            <div className="section-header">
-              <div>
-                <h2 id="ps-identity-title">Project identity</h2>
-                <p>The project&apos;s display name and the currency reports default to.</p>
-              </div>
-            </div>
-            <div className="ps-panel-body">
-              <div className="ps-field">
-                <label htmlFor="ps-id">Project ID</label>
-                <div className="ps-readonly mono" id="ps-id">
-                  {prefs?.id ?? resolvedProjectId}
-                </div>
-                <p className="field-hint">Immutable identifier. Used in API calls and warehouse scoping.</p>
-              </div>
-
-              <div className="ps-field">
-                <label htmlFor="ps-name">Display name</label>
-                <input
-                  id="ps-name"
-                  className="text-input"
-                  type="text"
-                  value={name}
-                  placeholder="Project name"
-                  maxLength={120}
-                  onChange={(e) => {
-                    setName(e.target.value);
-                    clearSaveState();
-                  }}
-                />
-                <p className="field-hint">Shown to members across the workspace. You can rename it later.</p>
-              </div>
-
-              <div className="ps-field">
-                <label htmlFor="ps-currency">Default currency</label>
-                <input
-                  id="ps-currency"
-                  className="text-input ps-currency-input mono"
-                  type="text"
-                  value={currency}
-                  placeholder="EUR"
-                  maxLength={3}
-                  autoComplete="off"
-                  spellCheck={false}
-                  onChange={(e) => {
-                    setCurrency(e.target.value.toUpperCase().replace(/[^A-Z]/g, ""));
-                    clearSaveState();
-                  }}
-                />
-                <p className="field-hint">ISO 4217 code (e.g. EUR, USD). Reports convert to this currency.</p>
-              </div>
-            </div>
-          </section>
-
-          {/* ---- 2. Verification source ---------------------------------- */}
-          <section className="panel ps-panel" aria-labelledby="ps-verification-title">
-            <div className="section-header">
-              <div>
-                <h2 id="ps-verification-title">Verification source</h2>
-                <p>The source of truth used to deduplicate and verify estimated conversions.</p>
-              </div>
-            </div>
-            <div className="ps-panel-body">
-              <div className="ps-field">
-                <label htmlFor="ps-vs-type">Source type</label>
-                <select
-                  id="ps-vs-type"
-                  className="ps-select"
-                  value={vsType}
-                  onChange={(e) => {
-                    setVsType(e.target.value);
-                    if (e.target.value !== "ga4") setLeadEventName("");
-                    clearSaveState();
-                  }}
-                >
-                  {VS_TYPE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-                {vsType === "stripe" && (
-                  <p className="field-hint">Note: Stripe becomes available after story 15.7.</p>
-                )}
-              </div>
-
-              {vsType && (
-                <div className="ps-field">
-                  <label htmlFor="ps-vs-id">Datastream identifier</label>
-                  <input
-                    id="ps-vs-id"
-                    className="text-input mono"
-                    type="text"
-                    value={vsId}
-                    placeholder="ds_xxxxxxxxxxxxxxxx"
-                    autoComplete="off"
-                    spellCheck={false}
-                    onChange={(e) => {
-                      setVsId(e.target.value);
-                      clearSaveState();
-                    }}
-                  />
-                  <p className="field-hint">The datastream that carries this verification source.</p>
-                </div>
-              )}
-
-              {vsType === "ga4" && (
-                <div className="ps-field">
-                  <label htmlFor="ps-lead-event">Lead event name (GA4)</label>
-                  <input
-                    id="ps-lead-event"
-                    className="text-input mono"
-                    type="text"
-                    value={leadEventName}
-                    placeholder="generate_lead"
-                    autoComplete="off"
-                    spellCheck={false}
-                    onChange={(e) => {
-                      setLeadEventName(e.target.value);
-                      clearSaveState();
-                    }}
-                  />
-                  <p className="field-hint">The GA4 event that counts as a verified lead.</p>
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* ---- 3. Geographic mode -------------------------------------- */}
-          <section className="panel ps-panel" aria-labelledby="ps-geo-title">
-            <div className="section-header">
-              <div>
-                <h2 id="ps-geo-title">Geographic dimension</h2>
-                <p>Global consolidates reporting with no per-country view. Local markets prepares
-                  adding the country to future datastream plans.</p>
-              </div>
-            </div>
-            <div className="ps-panel-body">
-              <fieldset className="ps-radio-group">
-                <legend className="ps-legend">Reporting mode</legend>
-                <label className={`ps-radio${geoMode === "global" ? " selected" : ""}`}>
-                  <input
-                    type="radio"
-                    name="ps-geo-mode"
-                    value="global"
-                    checked={geoMode === "global"}
-                    onChange={() => {
-                      setGeoMode("global");
-                      setCountryCodes([]);
-                      clearSaveState();
-                    }}
-                  />
-                  <span className="ps-radio-body">
-                    <span className="ps-radio-title">Global</span>
-                    <span className="ps-radio-note">One consolidated view. No per-country breakdown.</span>
-                  </span>
-                </label>
-                <label className={`ps-radio${geoMode === "local_markets" ? " selected" : ""}`}>
-                  <input
-                    type="radio"
-                    name="ps-geo-mode"
-                    value="local_markets"
-                    checked={geoMode === "local_markets"}
-                    onChange={() => {
-                      setGeoMode("local_markets");
-                      clearSaveState();
-                    }}
-                  />
-                  <span className="ps-radio-body">
-                    <span className="ps-radio-title">Local markets</span>
-                    <span className="ps-radio-note">Track a set of countries. Adds the country dimension to future plans.</span>
-                  </span>
-                </label>
-              </fieldset>
-
-              {geoMode === "local_markets" && (
-                <div className="ps-field ps-countries">
-                  <label htmlFor="ps-country-input">Tracked markets</label>
-
-                  {selectedCountries.length > 0 && (
-                    <ul className="ps-chips" aria-label="Selected markets">
-                      {selectedCountries.map((c) => (
-                        <li key={c.code} className="ps-chip">
-                          <span>{countryLabel(c)}</span>
-                          <button
-                            type="button"
-                            className="ps-chip-remove"
-                            aria-label={`Remove ${c.display_name}`}
-                            onClick={() => removeCountry(c.code)}
-                          >
-                            ×
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-
-                  <div className="ps-autocomplete">
-                    <input
-                      id="ps-country-input"
-                      className="text-input"
-                      type="text"
-                      value={countryQuery}
-                      placeholder={
-                        countriesLoading
-                          ? "Loading countries…"
-                          : countriesError
-                            ? "Country list unavailable"
-                            : countryOptions.length === 0
-                              ? "No country available"
-                              : "Add a country"
-                      }
-                      autoComplete="off"
-                      disabled={countriesLoading || !!countriesError || countryOptions.length === 0}
-                      onChange={(e) => setCountryQuery(e.target.value)}
-                    />
-                    {countryQuery.trim() !== "" && countrySuggestions.length > 0 && (
-                      <ul className="ps-suggestions" role="listbox" aria-label="Country suggestions">
-                        {countrySuggestions.map((o) => (
-                          <li key={o.code}>
-                            <button type="button" role="option" aria-selected="false" onClick={() => addCountry(o.code)}>
-                              <span>{o.display_name}</span>
-                              <span className="mono ps-suggestion-code">{o.code}</span>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-
-                  {/* A country list that failed to load must never look like a
-                      country list that is empty. */}
-                  {countriesError ? (
-                    <p className="field-error" role="alert">
-                      Could not load the country list ({countriesError}). The picker below is
-                      unavailable — this is a loading failure, not an empty reference list.{" "}
-                      <button
-                        type="button"
-                        className="quiet-button"
-                        onClick={() => void loadCountries()}
-                      >
-                        Retry
-                      </button>
-                    </p>
-                  ) : !countriesLoading && countryOptions.length === 0 ? (
-                    <p className="field-hint">
-                      The reference country list came back empty. No market can be selected
-                      until it is populated.
-                    </p>
-                  ) : (
-                    <p className="field-hint">
-                      Type to search the reference country list. At least one market is required.
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* ---- Save bar ------------------------------------------------ */}
-          <div className="ps-savebar">
-            <div className="ps-savebar-status" aria-live="polite">
-              {saveError && (
-                <span className="signal-label error">
-                  <span className="signal-mark" />
-                  {saveError}
-                </span>
-              )}
-              {saveSuccess && !saveError && (
-                <span className="signal-label success">
-                  <span className="signal-mark" />
-                  Settings saved.
-                </span>
-              )}
-              {!saveError && !saveSuccess && geographyChanged && (
-                <span className="ps-savebar-hint">
-                  A geography change is previewed before it is applied.
-                </span>
-              )}
-            </div>
-            <button
-              className="primary-button"
-              type="button"
-              onClick={() => void handleSave()}
-              disabled={saving || loading}
-            >
-              {saving ? "Saving…" : geographyChanged ? "Preview change" : "Save changes"}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ---- Geography preview -> confirm dialog ---------------------------- */}
-      {geographicPreview && (
-        <div className="ps-scrim" role="presentation">
-          <section
-            className="ps-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="ps-geo-preview-title"
+      </div>
+      {/* The footer. `mt-auto` is what keeps the owner links on the bottom edge
+          of every card in the row instead of wherever the prose above happened
+          to stop — Country's sat 100px below Currency & FX's for no reason a
+          reader could name. The dependency line belongs with them: it names the
+          other capability, they open it. */}
+      <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-divider-base pt-4">
+        {capability.dependencies.length ? (
+          <p className="m-0 text-caption text-text-secondary">
+            Depends on {capability.dependencies.map((key) => capabilityLabel(key)).join(", ")}
+          </p>
+        ) : null}
+        {capability.owner_links.map((link) => (
+          <button
+            key={`${link.owner}:${link.owner_reference.workspace ?? link.owner_reference.global_surface}:${link.owner_reference.section ?? ""}`}
+            type="button"
+            className="text-ui font-semibold text-primary hover:underline"
+            onClick={() => onOpenOwner?.(link.owner_reference)}
           >
-            <header className="ps-dialog-header">
-              <h2 id="ps-geo-preview-title">Preview geography change</h2>
-              <p>Review the impact before applying the new geographic dimension.</p>
-            </header>
+            Open {link.owner}
+          </button>
+        ))}
+      </div>
+    </Panel>
+  );
+}
 
-            <div className="ps-dialog-body">
-              <div className="scope-summary" aria-label="Change impact">
-                <div className="scope-row">
-                  <span className="scope-key">Affected datastreams</span>
-                  <span className="scope-val">{geographicPreview.impact.affected_datastream_count}</span>
-                </div>
-                <div className="scope-row">
-                  <span className="scope-key">Blocking gaps</span>
-                  <span className="scope-val">
-                    {blockingGaps > 0 ? (
-                      <span className="signal-label error">
-                        <span className="signal-mark" />
-                        {blockingGaps}
-                      </span>
-                    ) : (
-                      <span className="signal-label success">
-                        <span className="signal-mark" />
-                        None
-                      </span>
-                    )}
-                  </span>
-                </div>
-                <div className="scope-row">
-                  <span className="scope-key">Backfill</span>
-                  <span className="scope-val">
-                    {geographicPreview.impact.backfill_required ? "Required" : "Not required"}
-                  </span>
-                </div>
-              </div>
+export default function ProjectSettings({
+  projectId,
+  section = "general",
+  onSectionChange,
+  onOpenOwner,
+}: {
+  projectId: string;
+  section?: SettingsSection;
+  onSectionChange?: (section: SettingsSection) => void;
+  /** Resolves a semantic owner reference into a canonical route. */
+  onOpenOwner?: (owner: OwnerReference) => void;
+}) {
+  const [model, setModel] = useState<SettingsEnvelope | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [selectedChangeId, setSelectedChangeId] = useState<string | null>(null);
 
-              {blockingGaps > 0 && (
-                <div className="ps-inline-error" role="alert">
-                  <span className="signal-label error">
-                    <span className="signal-mark" />
-                    {blockingGaps} incompatibilit{blockingGaps === 1 ? "y" : "ies"} block this change
-                  </span>
-                  <p>Resolve the blocking gaps on the affected datastreams before confirming.</p>
-                </div>
-              )}
+  const load = async () => {
+    try {
+      setError(null);
+      setModel(await request<SettingsEnvelope>(`/api/projects/${projectId}/settings`));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to load project settings.");
+    }
+  };
 
-              {geographicPreview.impact.datastreams.length > 0 && (
-                <ul className="ps-impact-list" aria-label="Affected datastreams">
-                  {geographicPreview.impact.datastreams.map((ds) => (
-                    <li key={ds.datastream_id} className="ps-impact-row">
-                      <span className="ps-impact-name">
-                        {ds.datastream_name ?? <span className="mono">{ds.datastream_id}</span>}
-                      </span>
-                      <span
-                        className={`signal-label ${ds.compatibility === "blocked" ? "error" : "success"}`}
-                      >
-                        <span className="signal-mark" />
-                        {ds.compatibility === "blocked" ? "Blocked" : "Compatible"}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+  useEffect(() => {
+    void load();
+  }, [projectId]);
 
-              {geographicPreview.impact.backfill_required && (
-                <fieldset className="ps-radio-group">
-                  <legend className="ps-legend">History handling</legend>
-                  <label className={`ps-radio${backfillDecision === "request" ? " selected" : ""}`}>
-                    <input
-                      type="radio"
-                      name="ps-backfill"
-                      value="request"
-                      checked={backfillDecision === "request"}
-                      onChange={() => setBackfillDecision("request")}
-                    />
-                    <span className="ps-radio-body">
-                      <span className="ps-radio-title">Request backfill</span>
-                      <span className="ps-radio-note">Backfill history through the governed workflow.</span>
-                    </span>
-                  </label>
-                  <label className={`ps-radio${backfillDecision === "defer" ? " selected" : ""}`}>
-                    <input
-                      type="radio"
-                      name="ps-backfill"
-                      value="defer"
-                      checked={backfillDecision === "defer"}
-                      onChange={() => setBackfillDecision("defer")}
-                    />
-                    <span className="ps-radio-body">
-                      <span className="ps-radio-title">Defer backfill</span>
-                      <span className="ps-radio-note">Apply now and show partial coverage until backfilled.</span>
-                    </span>
-                  </label>
-                </fieldset>
-              )}
+  const selectedChange = useMemo(
+    () => model?.changes.find((change) => change.id === selectedChangeId) ?? null,
+    [model, selectedChangeId],
+  );
+
+  const prepare = async (intent: object) => {
+    try {
+      setError(null);
+      const created = await request<ChangeSet>(`/api/projects/${projectId}/settings/change-sets`, {
+        method: "POST",
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({ intent }),
+      });
+      await request(`/api/projects/${projectId}/settings/change-sets/${created.id}/prepare`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      setSelectedChangeId(created.id);
+      setNotice("Change prepared for review.");
+      await load();
+      onSectionChange?.("changes");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to prepare the change.");
+    }
+  };
+
+  const saveProfile = async (name: string, description: string) => {
+    try {
+      setError(null);
+      await request(`/api/projects/${projectId}/settings/profile`, {
+        method: "PATCH",
+        body: JSON.stringify({ name, description }),
+      });
+      setNotice("Project profile updated.");
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to update the profile.");
+    }
+  };
+
+  if (!model && !error) {
+    return <div className="p-8 text-sm text-text-secondary" role="status">Loading project settings…</div>;
+  }
+  if (!model) {
+    return (
+      <div className="p-8">
+        <Status as="block" tone="error" title="Project settings are unavailable"
+          action={<Retry onClick={() => void load()} />}
+        >
+          {error}
+        </Status>
+      </div>
+    );
+  }
+
+  const tabs: Array<[SettingsSection, string]> = [
+    ["general", "General"],
+    ["capabilities", "Capabilities"],
+    ["changes", "Changes"],
+    ["ai", "AI"],
+  ];
+
+  return (
+    // `PageFrame`, not a second `main`: `ApplicationShell` already opens the one
+    // this page renders inside, and two of them make the landmark ambiguous.
+    <PageFrame>
+      <PageHeader
+        eyebrow={
+          // Same contract as the Business Domains below: the association carries
+          // a link to its owner. `README.md:94` puts the Organization under
+          // Organization Settings, so that is where the name opens \u2014 and the
+          // name stays plain text when this surface is mounted without an
+          // owner-opener rather than rendering a control that does nothing.
+          <>
+            {onOpenOwner ? (
+              <button
+                type="button"
+                className="cursor-pointer border-0 bg-transparent p-0 text-caption text-primary underline"
+                onClick={() => onOpenOwner({
+                  surface: "global",
+                  workspace: null,
+                  section: null,
+                  global_surface: "organization-settings",
+                  global_section: "general",
+                  object_type: null,
+                  object_id: null,
+                  tab: null,
+                  action: null,
+                  version_id: null,
+                  evidence_id: null,
+                })}
+              >
+                {model.project.organization.name}
+              </button>
+            ) : (
+              model.project.organization.name
+            )}
+            {` \u00B7 ${model.project.name}`}
+          </>
+        }
+        title="Project settings"
+        description="Governed defaults and capability posture for this project."
+      />
+      <Tabs
+        value={section}
+        onValueChange={(value) => onSectionChange?.(value as SettingsSection)}
+      >
+        <TabsList className="mb-6" aria-label="Project settings sections">
+          {tabs.map(([key, label]) => (
+            <TabsTrigger key={key} value={key}>
+              {label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        {notice ? <Status as="block" tone="success" className="mb-6">{notice}</Status> : null}
+        {error ? <Status as="block" tone="error" className="mb-6">{error}</Status> : null}
+        {!model.project.can_edit ? (
+          <Status as="block" tone="info" title="View-only access" className="mb-6">
+            You can inspect confirmed and pending settings but cannot prepare or confirm changes.
+          </Status>
+        ) : null}
+
+        <TabsContent value="general">
+          <GeneralSection
+            model={model}
+            onSave={saveProfile}
+            onPrepare={prepare}
+            onOpenOwner={onOpenOwner}
+            onReload={() => void load()}
+          />
+        </TabsContent>
+        <TabsContent value="capabilities">
+          <Stack>
+            {/* `SectionHeader`, not `PanelHeader`. `PanelHeader` is the BAND at
+                the top of a `Panel` and brings that panel's `px-5` and its
+                bottom rule with it; used bare on the page it indented "Project
+                capabilities" 20px past the cards under it and past the `h1`
+                above it, and drew a rule across a section that has no panel. */}
+            <SectionHeader
+              level={2}
+              title="Project capabilities"
+              // NO COUNT IN THIS SENTENCE. It used to spell the number of
+              // capabilities out, and kept spelling the old one above SIX cards
+              // once story 61.5 landed — the count is the server's, it arrives in
+              // the envelope, and a screen that writes it down contradicts the
+              // rows it draws the day the count moves.
+              description="The governed capabilities of this Project, with active and pending posture kept distinct."
+            />
+            <div className="grid gap-4 xl:grid-cols-2">
+              {model.capabilities.map((capability) => (
+                <CapabilityCard
+                  key={capability.key}
+                  capability={capability}
+                  projectId={model.project.id}
+                  canEdit={model.project.can_edit}
+                  onOpenOwner={onOpenOwner}
+                  onPrepare={(enabled) =>
+                    prepare({ capabilities: { [capability.key]: enabled ? "enabled" : "disabled" } })
+                  }
+                />
+              ))}
             </div>
+          </Stack>
+        </TabsContent>
+        <TabsContent value="changes">
+          <ChangesSection
+            changes={model.changes}
+            selected={selectedChange}
+            canEdit={model.project.can_edit}
+            projectId={projectId}
+            onOpenOwner={onOpenOwner}
+            onSelect={setSelectedChangeId}
+            onNotice={setNotice}
+            onError={setError}
+            onReload={load}
+          />
+        </TabsContent>
+        <TabsContent value="ai">
+          <AiSettingsPanel projectId={projectId} canEdit={model.project.can_edit} />
+        </TabsContent>
+      </Tabs>
+    </PageFrame>
+  );
+}
 
-            <footer className="ps-dialog-footer">
+/**
+ * The scheduled-task recipe, where the person schedules the task (AI-294).
+ *
+ * WHY IT LIVES HERE AND NOWHERE NEW. Jean's arbitration of 2026-08-16 was
+ * explicit: attach to the existing, no seventh place. The daily insight runs
+ * from the operator's OWN LLM host, on a schedule toorow neither sets nor sees --
+ * so what toorow owes is not a scheduler, it is the exact text to paste into one.
+ *
+ * DERIVED, NEVER STORED. `GET /api/daily-insights/recipe` builds it as a pure
+ * function of the project, its timezone and the hour. A stored copy would be a
+ * second answer to "what should the task say", and it would go stale the day the
+ * contract version moves -- which the recipe carries precisely so a reader can
+ * tell.
+ *
+ * It carries no model secret and schedules nothing server-side. Saying so on the
+ * screen is not decoration: a person about to paste a prompt into their own host
+ * is entitled to know what leaves this product.
+ */
+/** WHICH Datastreams a capability covers, not how many (AI screens, 2026-08-17).
+ *
+ *  The card showed `coverage.applicable` — a NUMBER — and the server has served
+ *  the LIST at `/capabilities/{key}/datastreams` all along. A count tells a
+ *  person that something is uncovered; only the list tells them WHICH, and a
+ *  person cannot act on a number.
+ *
+ *  ON DEMAND, and that is deliberate: five capabilities on one screen would mean
+ *  five reads on mount for a list most visits never open. The button says what
+ *  it will do, and the panel says what came back.
+ *
+ *  A LIST THAT FAILED TO LOAD IS NOT AN EMPTY ONE. Rendering nothing on an error
+ *  would say "this capability covers no Datastream" — a claim about the Project
+ *  that a failed read does not support.
+ */
+function CapabilityDatastreams({
+  projectId,
+  capabilityKey,
+}: {
+  projectId: string;
+  capabilityKey: string;
+}) {
+  const [state, setState] = useState<
+    | { status: "idle" }
+    | { status: "loading" }
+    | { status: "ready"; rows: Array<Record<string, unknown>> }
+    | { status: "failed"; message: string }
+  >({ status: "idle" });
+
+  if (state.status === "idle") {
+    return (
+      <Button
+        type="button"
+        variant="ghost"
+        onClick={() => {
+          setState({ status: "loading" });
+          request<{ datastreams: Array<Record<string, unknown>> }>(
+            `/api/projects/${encodeURIComponent(projectId)}/capabilities/${encodeURIComponent(capabilityKey)}/datastreams`,
+          )
+            .then((body) => setState({ status: "ready", rows: body.datastreams ?? [] }))
+            .catch((reason) =>
+              setState({
+                status: "failed",
+                message:
+                  reason instanceof Error ? reason.message : "The Datastream list could not be read",
+              }),
+            );
+        }}
+      >
+        Show which Datastreams
+      </Button>
+    );
+  }
+  if (state.status === "loading") {
+    return <p className="m-0 text-caption text-text-secondary">Reading the Datastreams…</p>;
+  }
+  if (state.status === "failed") {
+    return (
+      <Status tone="warning" data-testid={`capability-datastreams-error-${capabilityKey}`}>
+        {state.message}
+      </Status>
+    );
+  }
+  if (state.rows.length === 0) {
+    return (
+      <p className="m-0 text-caption text-text-secondary">
+        No Datastream is compatible with this capability yet. Add one that carries the fields it
+        needs, and it will appear here.
+      </p>
+    );
+  }
+  return (
+    <ul
+      className="m-0 grid list-none gap-1 p-0"
+      data-testid={`capability-datastreams-${capabilityKey}`}
+    >
+      {state.rows.map((row, index) => (
+        <li key={String(row.datastream_id ?? index)} className="text-caption text-text-secondary">
+          {/* `read_project_capability` joins `app.datastreams` and orders on
+              `d.name`, which is `NOT NULL` (migration 023), so the word is
+              always served here and `?? row.datastream_id` could only ever
+              print a `ds_<ULID>` where the name already stood. */}
+          <span className="text-text">{String(row.datastream_name ?? "Unnamed")}</span>
+          {" — "}
+          {String(row.coverage_state ?? "unknown")}
+          {row.applicability ? ` · ${String(row.applicability)}` : ""}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+
+function TaskRecipePanel({ projectId }: { projectId: string }) {
+  const [state, setState] = useState<
+    | { status: "idle" | "loading" }
+    | { status: "ready"; text: string; version: string | null }
+    | { status: "failed"; message: string }
+  >({ status: "idle" });
+
+  useEffect(() => {
+    let disposed = false;
+    setState({ status: "loading" });
+    request<{ recipe: Record<string, unknown>; text: string }>(
+      `/api/daily-insights/recipe?project_id=${encodeURIComponent(projectId)}`,
+    )
+      .then((body) => {
+        if (disposed) return;
+        setState({
+          status: "ready",
+          text: body.text,
+          version: (body.recipe?.recipeVersion as string) ?? null,
+        });
+      })
+      .catch((reason) => {
+        if (disposed) return;
+        setState({
+          status: "failed",
+          message: reason instanceof Error ? reason.message : "The recipe could not be built",
+        });
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [projectId]);
+
+  return (
+    <Panel>
+      <div>
+        <h2 className="m-0 text-h2 font-h2 text-text">Daily insight — scheduled task</h2>
+        <p className="mt-1 mb-0 text-ui text-text-secondary">
+          Paste this into your own LLM host&apos;s scheduled task. toorow does not run it: the
+          hour, the tokens and the cost stay with you, and this text carries no secret.
+        </p>
+      </div>
+      {state.status === "loading" ? (
+        <p className="mt-4 mb-0 text-ui text-text-secondary">Building the recipe…</p>
+      ) : null}
+      {state.status === "failed" ? (
+        /* Named, not swallowed: a recipe that cannot be built is not an empty
+           recipe, and pasting nothing into a host schedules nothing. */
+        <Status tone="warning" className="mt-4">
+          {state.message}
+        </Status>
+      ) : null}
+      {state.status === "ready" ? (
+        <>
+          <pre className="mt-4 max-h-96 overflow-auto whitespace-pre-wrap rounded border border-border bg-surface-2 p-3 text-technical">
+            {state.text}
+          </pre>
+          {state.version ? (
+            <p className="mt-2 mb-0 text-ui text-text-secondary">
+              Recipe version {state.version}. Re-copy it after a contract change — an older
+              paste keeps running against the older contract.
+            </p>
+          ) : null}
+        </>
+      ) : null}
+    </Panel>
+  );
+}
+
+
+/** The five things a scheduled run can be, and none of them collapses (AI-294).
+ *
+ *  `execution-substrate.md` fixes the vocabulary and says why it is five and not
+ *  two: `published`, `no_insight` (nothing was worth saying), `blocked` (the data
+ *  was not ready), `failed`, and an ABSENT row -- the task did not run at all.
+ *  Collapsing any pair of those IS the defect.
+ *
+ *  The tones follow the meaning, not the mood. `no_insight` is INFO: a day with
+ *  nothing worth saying is a healthy day, and colouring it as a warning would
+ *  teach a reader to ignore the colour. `absent` is a warning because toorow was
+ *  told nothing -- and that is the one state it must never present as health.
+ */
+/*
+ * THE PRIVATE RUN-STATE MAP IS GONE (76-2), and this one AGREED with the union
+ * on every word -- which is the reason it had to go rather than a reason to keep
+ * it. A second definition that agrees today is the one that drifts tomorrow. Its
+ * two original words are declared instead: `no_insight` is `info` and
+ * `absent` is a warning, with the sentences this file had already written.
+ */
+
+const RUN_STATE_SENTENCE: Record<string, string> = {
+  published: "The task ran and published its insights.",
+  no_insight: "The task ran and found nothing worth saying. That is a healthy day.",
+  blocked: "The task ran and stopped: the data it needed was not ready.",
+  failed: "The task ran and failed.",
+  absent: "No run was recorded for this day. toorow was told nothing — this is NOT a day without insights.",
+};
+
+/**
+ * The run history of work toorow does not schedule.
+ *
+ * WHY THE ABSENT STATE IS THE POINT. toorow neither sets nor sees the operator's
+ * schedule, so a missing row means "the task did not run" -- an ABSENCE to
+ * display, never an inference to make. The document is explicit: no back-filled
+ * "presumed ran", and no health derived from silence.
+ *
+ * So this panel never fills a gap and never counts a missing day as anything. It
+ * shows the rows the server returned, each under its own state.
+ *
+ * AND IT IS WHERE AN INSIGHT BECOMES SHAREABLE (AI-294, last remnant). A day the
+ * server says carries insights can be opened, and each insight then says one of
+ * three things: it names a Result and the door to the one Share mechanism opens
+ * at that Result; it names the link that was missing, with the gesture; or it
+ * predates migration 281 and says so rather than inventing a verdict. The three
+ * states and the sentences live in `daily-insights/InsightShare.tsx`.
+ */
+function RunHistoryPanel({
+  projectId,
+  onOpenOwner,
+}: {
+  projectId: string;
+  onOpenOwner?: (owner: OwnerReference) => void;
+}) {
+  const [state, setState] = useState<
+    | { status: "idle" | "loading" }
+    | { status: "ready"; runs: Array<Record<string, unknown>> }
+    | { status: "failed"; message: string }
+  >({ status: "idle" });
+
+  useEffect(() => {
+    let disposed = false;
+    setState({ status: "loading" });
+    request<{ runs: Array<Record<string, unknown>> }>(
+      `/api/daily-insights/runs?project_id=${encodeURIComponent(projectId)}&limit=14`,
+    )
+      .then((body) => {
+        if (!disposed) setState({ status: "ready", runs: body.runs ?? [] });
+      })
+      .catch((reason) => {
+        if (disposed) return;
+        setState({
+          status: "failed",
+          message: reason instanceof Error ? reason.message : "The run history could not be read",
+        });
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [projectId]);
+
+  return (
+    <Panel data-testid="daily-insight-runs">
+      <div>
+        <h2 className="m-0 text-h2 font-h2 text-text">Daily insight — run history</h2>
+        <p className="mt-1 mb-0 text-ui text-text-secondary">
+          What each day&apos;s scheduled task actually did. toorow records what it was told; a
+          day it was told nothing about is shown as such, never as a day without insights.
+        </p>
+      </div>
+      {state.status === "loading" ? (
+        <p className="mt-4 mb-0 text-ui text-text-secondary">Reading the journal…</p>
+      ) : null}
+      {state.status === "failed" ? (
+        /* A journal that cannot be READ is not a journal that is EMPTY. Showing
+           an empty list here would say "no task ever ran", which is a claim
+           about the operator's host that this failure does not support. */
+        <Status tone="warning" className="mt-4">
+          {state.message}
+        </Status>
+      ) : null}
+      {state.status === "ready" && state.runs.length === 0 ? (
+        <p className="mt-4 mb-0 text-ui text-text-secondary">
+          No run has been recorded for this Project yet. Copy the recipe above into your LLM
+          host&apos;s scheduled task; the first run will appear here.
+        </p>
+      ) : null}
+      {state.status === "ready" && state.runs.length > 0 ? (
+        <ul className="mt-4 grid gap-2">
+          {state.runs.map((run, index) => {
+            const runState = String(run.state ?? "absent");
+            const date = String(run.insightDate ?? "");
+            const itemCount = Number(run.itemCount ?? 0);
+            const retractedCount = Number(run.retractedCount ?? 0);
+            return (
+              <li key={`${date}-${index}`} className="text-body">
+                <Status tone={stateTone(runState)}>
+                  {date || "Unknown date"} — {stateLabel(runState)}
+                </Status>
+                <span className="ml-2 text-text-secondary">
+                  {RUN_STATE_SENTENCE[runState] ?? "This state is not one the contract declares."}
+                </span>
+                {/* A day whose single claim was withdrawn must not read exactly
+                    like a day whose claim still stands (review of ae60c22a, R2):
+                    the server counts retractions for precisely this row, and a
+                    journal that dropped the count would erase a withdrawal from
+                    the one surface that reports days. */}
+                {retractedCount > 0 ? (
+                  <span
+                    className="ml-2 text-text-secondary"
+                    data-testid={`daily-insight-retracted-count-${date}`}
+                  >
+                    {retractedCount === 1
+                      ? "1 claim was withdrawn."
+                      : `${retractedCount} claims were withdrawn.`}
+                  </span>
+                ) : null}
+                {/* AI-294, last remnant: from an insight to a share. The day is
+                    opened only when the SERVER said it carries insights — a
+                    disclosure over an empty day would promise a list nobody
+                    published. `openResult` builds a SEMANTIC reference and hands
+                    it to the shell, exactly as the Organization link above does;
+                    no screen here builds a URL, and no screen here mints a
+                    share. */}
+                {date && itemCount > 0 ? (
+                  <RunInsights
+                    projectId={projectId}
+                    insightDate={date}
+                    onOpenResult={
+                      onOpenOwner
+                        ? (resultId) =>
+                            onOpenOwner({
+                              surface: "project",
+                              workspace: "analyze",
+                              section: "explore",
+                              global_surface: null,
+                              global_section: null,
+                              object_type: "result",
+                              object_id: resultId,
+                              tab: "view",
+                              action: null,
+                              version_id: null,
+                              evidence_id: null,
+                            })
+                        : undefined
+                    }
+                  />
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </Panel>
+  );
+}
+
+
+/**
+ * External sharing — the project-scoped capability of
+ * `docs/product-architecture/proactive-assertions.md` decision 2.
+ *
+ * WHY IT IS HERE AND NOT IN **Capabilities**. That tab holds the six capabilities
+ * that COMPILE — each one has a per-Datastream coverage projection, a dependency
+ * graph and an impact review, because each changes what a Datastream produces.
+ * This one changes no figure and compiles into nothing; its card would carry six
+ * empty counts forever. It belongs with the Project's explicit defaults, which
+ * is **General**, and that is also the store it lives in.
+ *
+ * IT SAYS WHO DECIDED, OR THAT NOBODY DID. A project that forbids sharing
+ * because nobody has ever allowed it is not the same fact as one somebody turned
+ * off, and a screen that showed them identically would have the reader hunting
+ * for a decision that was never taken.
+ */
+function ExternalSharingPanel({
+  projectId,
+  posture,
+  onChanged,
+}: {
+  projectId: string;
+  posture: SettingsEnvelope["project"]["external_sharing"];
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const allowed = posture.state === "allowed";
+
+  const move = async (next: "allowed" | "forbidden") => {
+    setBusy(true);
+    setError(null);
+    try {
+      await request(`/api/projects/${encodeURIComponent(projectId)}/settings/external-sharing`, {
+        method: "PUT",
+        body: JSON.stringify({ external_sharing: next }),
+      });
+      onChanged();
+    } catch (reason: unknown) {
+      setError((reason as Error).message || "The change was refused.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Panel data-testid="external-sharing">
+      <PanelHeader
+        title="External sharing"
+        description="Whether anything in this project may be published outside the platform through a share link. Inside the platform, publication is unaffected."
+      />
+      <Stack>
+        <p className="m-0 text-ui text-text-secondary">
+          {allowed
+            ? "A share link can be requested here, and it only becomes a link once a second person with the Edit role confirms it."
+            : "No share link can be requested. Nothing in this project can be opened by someone without an account."}
+        </p>
+        <p className="m-0 text-caption text-text-secondary">
+          {posture.is_platform_default
+            ? "Nobody has decided this yet: a new project forbids external sharing until someone allows it."
+            : `Set to ${allowed ? "allowed" : "forbidden"} by ${posture.decided_by}.`}
+        </p>
+        {posture.can_change ? (
+          <Button
+            disabled={busy}
+            variant={allowed ? "ghost" : "default"}
+            onClick={() => void move(allowed ? "forbidden" : "allowed")}
+          >
+            {allowed ? "Forbid external sharing" : "Allow external sharing"}
+          </Button>
+        ) : (
+          <p className="m-0 text-caption text-text-secondary">
+            A person holding the Manage role on this project can change this.
+          </p>
+        )}
+        {error ? (
+          <Status as="block" tone="error" title="The change was not applied">
+            {error}
+          </Status>
+        ) : null}
+      </Stack>
+    </Panel>
+  );
+}
+
+function GeneralSection({
+  model,
+  onSave,
+  onPrepare,
+  onOpenOwner,
+  onReload,
+}: {
+  model: SettingsEnvelope;
+  onSave: (name: string, description: string) => Promise<void>;
+  onPrepare: (intent: object) => Promise<void>;
+  onOpenOwner?: (owner: OwnerReference) => void;
+  onReload: () => void;
+}) {
+  const [name, setName] = useState(model.project.name);
+  const [description, setDescription] = useState(model.project.description ?? "");
+  return (
+    <Stack>
+      <TaskRecipePanel projectId={model.project.id} />
+      <RunHistoryPanel projectId={model.project.id} onOpenOwner={onOpenOwner} />
+      <Panel>
+        <form
+          className="space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void onSave(name.trim(), description.trim());
+          }}
+        >
+          <div>
+            <h2 className="m-0 text-h2 font-h2 text-text">Project profile</h2>
+            <p className="mt-1 mb-0 text-ui text-text-secondary">Identity can be edited directly; governed defaults cannot.</p>
+          </div>
+          <Field label="Project name">
+            {(props) => <Input {...props} value={name} disabled={!model.project.can_edit} onChange={(event) => setName(event.target.value)} />}
+          </Field>
+          <Field label="Description">
+            {(props) => <Textarea {...props} value={description} disabled={!model.project.can_edit} onChange={(event) => setDescription(event.target.value)} />}
+          </Field>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="m-0 text-caption text-text-secondary">
+              {/* `project-settings.md:43` contracts these as "read-only
+                  organization and Business Domain associations WITH LINKS to
+                  their owners". They were a `.join(", ")` — the name of the
+                  owner without the way to it, which is the one thing the line
+                  asks for. Governance > Master Data owns the Business Domain
+                  (`README.md:97`), so that is where each one opens. */}
+              Business domains:{" "}
+              {model.project.business_domains.length === 0
+                ? "None"
+                : model.project.business_domains.map((domain, index) => (
+                    <span key={domain.id}>
+                      {index > 0 ? ", " : ""}
+                      {onOpenOwner ? (
+                        <button
+                          type="button"
+                          className="cursor-pointer border-0 bg-transparent p-0 text-caption text-primary underline"
+                          onClick={() => onOpenOwner({
+                            surface: "project",
+                            workspace: "governance",
+                            section: "master-data",
+                            global_surface: null,
+                            global_section: null,
+                            object_type: "business-domain",
+                            object_id: domain.id,
+                            tab: "overview",
+                            action: null,
+                            version_id: null,
+                            evidence_id: null,
+                          })}
+                        >
+                          {domain.name}
+                        </button>
+                      ) : (
+                        domain.name
+                      )}
+                    </span>
+                  ))}
+            </p>
+            <Button type="submit" disabled={!model.project.can_edit || !name.trim()}>Save profile</Button>
+          </div>
+        </form>
+      </Panel>
+      <ExternalSharingPanel
+        projectId={model.project.id}
+        posture={model.project.external_sharing}
+        onChanged={onReload}
+      />
+      <div className="grid gap-4 xl:grid-cols-3">
+        {DEFAULT_LABELS.map(([key, label]) => (
+          <DefaultCard
+            key={key}
+            label={label}
+            value={model.project.defaults[key]}
+            canEdit={model.project.can_edit}
+            vocabulary={DEFAULT_VOCABULARY[key]}
+            onOpenOwner={onOpenOwner}
+            onPrepare={(value) => onPrepare({ defaults: { [key]: value } })}
+          />
+        ))}
+      </div>
+    </Stack>
+  );
+}
+
+function ChangesSection({
+  changes,
+  selected,
+  canEdit,
+  projectId,
+  onOpenOwner,
+  onSelect,
+  onNotice,
+  onError,
+  onReload,
+}: {
+  changes: ChangeSet[];
+  selected: ChangeSet | null;
+  canEdit: boolean;
+  projectId: string;
+  onOpenOwner?: (owner: OwnerReference) => void;
+  onSelect: (id: string) => void;
+  onNotice: (message: string) => void;
+  onError: (message: string | null) => void;
+  onReload: () => Promise<void>;
+}) {
+  const confirm = async () => {
+    if (!selected) return;
+    try {
+      onError(null);
+      const confirmationKey = crypto.randomUUID();
+      const confirmation = await request<{
+        confirmation_id: string;
+        confirmation_secret: string;
+      }>(
+        `/api/projects/${projectId}/settings/change-sets/${selected.id}/confirmations`,
+        {
+          method: "POST",
+          headers: { "Idempotency-Key": confirmationKey },
+          body: JSON.stringify({}),
+        },
+      );
+      await request(`/api/projects/${projectId}/settings/change-sets/${selected.id}/confirm`, {
+        method: "POST",
+        headers: { "Idempotency-Key": confirmationKey },
+        body: JSON.stringify({
+          confirmation_id: confirmation.confirmation_id,
+          confirmation_secret: confirmation.confirmation_secret,
+          prepared_payload_hash: selected.prepared_payload_hash,
+        }),
+      });
+      onNotice("Change activated.");
+      await onReload();
+    } catch (cause) {
+      onError(cause instanceof Error ? cause.message : "Unable to confirm the change.");
+    }
+  };
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(18rem,0.8fr)_minmax(24rem,1.2fr)]">
+      <Panel flush>
+        <PanelHeader title="Change Sets" description="Prepared, blocked, active and historical project changes." />
+        {changes.length ? (
+          <div className="divide-y divide-divider-base">
+            {changes.map((change) => (
               <button
-                className="secondary-button action-link"
+                key={change.id}
                 type="button"
-                onClick={() => setGeographicPreview(null)}
-                disabled={saving}
+                className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left hover:bg-surface-muted"
+                onClick={() => onSelect(change.id)}
               >
-                Cancel
+                <span>
+                  <strong className="block text-ui text-text">{change.summary ?? change.id}</strong>
+                  <span className="text-caption text-text-secondary"><ObjectId value={change.id} title="Change set" /></span>
+                </span>
+                <Badge tone={change.state === "activated" ? "success" : change.state === "blocked" ? "error" : "neutral"}>
+                  {stateLabel(change.state)}
+                </Badge>
               </button>
-              <button
-                className="primary-button"
-                type="button"
-                onClick={() => void confirmGeographicChange()}
-                disabled={saving || blockingGaps > 0}
+            ))}
+          </div>
+        ) : (
+          <EmptyState title="No Change Sets" description="Prepare a default or capability change to start a governed review." />
+        )}
+      </Panel>
+      <Panel>
+        {selected ? (
+          <div className="space-y-4">
+            <div>
+              <h2 className="m-0 text-h2 font-h2 text-text">Change details</h2>
+              <p className="mt-1 mb-0 font-mono text-caption text-text-secondary"><ObjectId value={selected.id} title="Change set" /></p>
+            </div>
+            <Status tone={selected.state === "blocked" ? "error" : "info"}>State: {selected.state}</Status>
+            {selected.prepared_payload_hash ? (
+              <p className="break-all font-mono text-caption text-text-secondary">
+                Prepared payload: {selected.prepared_payload_hash}
+              </p>
+            ) : null}
+            {selected.impact_summary ? (
+              <div className="space-y-3">
+                <h3 className="m-0 text-h3 font-h3 text-text">Frozen impact</h3>
+                {selected.impact_summary.coverage ? (
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    {Object.entries(selected.impact_summary.coverage)
+                      // Only the capabilities this change actually touches: a
+                      // wall of "Not applicable" cards — one per capability the
+                      // change never named — would bury the one that moved.
+                      .filter(([, coverage]) => coverage.applicable > 0)
+                      .map(([capabilityKey, coverage]) => (
+                        <div key={capabilityKey} className="space-y-1">
+                          {/* The capability names its coverage, so it is the
+                              heading — the same `text-h3` a capability card
+                              uses, not a step under the value it introduces. */}
+                          <p className="m-0 text-h3 font-h3 text-text">
+                            {capabilityLabel(capabilityKey)}
+                          </p>
+                          <CapabilityCoverage coverage={coverage} />
+                        </div>
+                      ))}
+                  </div>
+                ) : null}
+                <CapabilityImpactMatrix rows={selected.impact_summary.matrix ?? []} />
+              </div>
+            ) : null}
+            {selected.blockers?.map((blocker, index) => (
+              <Status
+                key={`${blocker.code ?? "blocker"}:${index}`}
+                as="block"
+                tone="error"
+                action={
+                  blocker.owner_reference ? (
+                    <button type="button" onClick={() => onOpenOwner?.(blocker.owner_reference!)}>
+                      Open owner evidence
+                    </button>
+                  ) : undefined
+                }
               >
-                {saving ? "Confirming…" : "Confirm change"}
-              </button>
-            </footer>
-          </section>
-        </div>
-      )}
+                {blocker.message ?? blocker.code ?? "Blocked"}
+                {blocker.datastream_id ? ` (${blocker.datastream_id})` : ""}
+              </Status>
+            ))}
+            <Button
+              type="button"
+              disabled={!canEdit || selected.state !== "prepared" || !selected.prepared_payload_hash}
+              onClick={() => void confirm()}
+            >
+              Confirm exact prepared change
+            </Button>
+          </div>
+        ) : (
+          <EmptyState title="Select a Change Set" description="Its frozen payload, blockers and confirmation action will appear here." />
+        )}
+      </Panel>
     </div>
   );
 }

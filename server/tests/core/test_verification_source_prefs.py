@@ -1,8 +1,8 @@
-"""Tests pour les préférences source de vérification (Story 17.1).
+"""Tests pour les préférences source de verification (Story 17.1).
 
 Tests :
   (a) API admin create/patch avec les 3 champs contre live Postgres (AI-37,
-      contraintes réelles) : valides, invalides (type inconnu 422 FR), round-trip GET.
+      contraintes actualles) : valides, invalides (type inconnu 422 FR), round-trip GET.
   (b) Seam build_asgi_app multi-projets : le champ est scopé projet (AD-5).
   (c) Validation unitaire (sans DB) : les fonctions helpers de validation.
 
@@ -27,6 +27,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from tests.conftest import purge_fixture_project
+
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
@@ -35,7 +37,56 @@ os.environ.setdefault("SCHEDULER_ENABLED", "false")
 # Helpers communs
 # ---------------------------------------------------------------------------
 
-_AUTH = ("core.admin_api._check_auth", (True, "tester@example.com"))
+#: THE CALLER MUST HOLD AN ORGANIZATION, and `anonymous` holds none -- correctly.
+#:
+#: `_create_project` refuses with `org_required` when the identity has no
+#: membership, and it says why: "a Project without an org has no warehouse to
+#: land in and escapes every boundary; that is not a degraded Project, it is an
+#: impossible one." Authenticating as `anonymous` therefore measured that refusal
+#: on twelve tests that meant to measure verification sources.
+#:
+#: The subject is enrolled once for the module, through the same two rows the
+#: product writes (`enrol_fixture_identity`), and the routes then see the caller
+#: production would give them.
+_AUTH_SUBJECT = "verification-prefs@example.com"
+_AUTH = ("core.admin_api._check_auth", (True, _AUTH_SUBJECT))
+
+
+@pytest.fixture(autouse=True)
+def _production_auth_mode(monkeypatch):
+    """Every route in this file takes a production access decision -- see the
+    shared `production_auth_mode` fixture for why `disabled` denies them all."""
+    monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
+
+
+@pytest.fixture(autouse=True)
+def _enrolled_caller():
+    """Enrol the acting subject in the fixture org, once, before any test runs."""
+    if not os.environ.get("TEST_POSTGRES_DSN"):
+        yield
+        return
+    import psycopg
+
+    from tests.conftest import TEST_ORG_ID, enrol_fixture_identity
+
+    global _AUTH
+
+    with psycopg.connect(os.environ["TEST_POSTGRES_DSN"]) as conn:
+        with conn.cursor() as cur:
+            person = enrol_fixture_identity(cur, _AUTH_SUBJECT, org_id=TEST_ORG_ID)
+        conn.commit()
+    # THE ROUTES SEE THE PERSON, not the subject. `_create_project` matches
+    # `app.org_members.identity` against whatever `_check_auth` returned, and
+    # membership carries `person_<ULID>`; in production the HTTP path has already
+    # resolved its principal before the handler runs. Rebinding `_AUTH` here is
+    # what makes the thirty-three call sites below faithful without touching one
+    # of them.
+    previous = _AUTH
+    _AUTH = (_AUTH[0], (True, person))
+    try:
+        yield
+    finally:
+        _AUTH = previous
 
 
 def _pg_reachable() -> bool:
@@ -96,7 +147,9 @@ def _drop_project(project_id: str) -> None:
                 "DELETE FROM app.connection_ref WHERE project_id = %s",
                 (project_id,),
             )
-            cur.execute("DELETE FROM app.projects WHERE id = %s", (project_id,))
+            # AI-291: le graphe prend le relais si une table gouvernee
+            # ajoutee depuis retient le projet en ON DELETE RESTRICT.
+            purge_fixture_project(cur.connection, project_id)
         conn.commit()
 
 
@@ -118,7 +171,7 @@ def _drop_datastream(ds_id: str) -> None:
 @pytest.mark.anyio
 async def test_create_project_with_verification_source_ga4():
     """CREATE avec verification_source_type='ga4' + lead_event_name persiste en DB."""
-    from core.admin_api import _create_project, _get_project
+    from core.projects_api import _create_project, _get_project  # noqa: PLC0415
 
     slug = f"vs-create-{uuid.uuid4().hex[:8]}"
     pid = None
@@ -161,7 +214,7 @@ async def test_create_project_with_verification_source_ga4():
 @pytest.mark.anyio
 async def test_create_project_verification_source_shopify():
     """CREATE avec verification_source_type='shopify' (pas de lead_event_name requis)."""
-    from core.admin_api import _create_project
+    from core.projects_api import _create_project  # noqa: PLC0415
 
     slug = f"vs-shopify-{uuid.uuid4().hex[:8]}"
     pid = None
@@ -193,7 +246,7 @@ async def test_create_project_verification_source_shopify():
 @pytest.mark.anyio
 async def test_create_project_invalid_verification_source_type_422_fr():
     """CREATE avec un type inconnu retourne 422 avec message en français."""
-    from core.admin_api import _create_project
+    from core.projects_api import _create_project  # noqa: PLC0415
 
     with patch(_AUTH[0], return_value=_AUTH[1]):
         resp = await _create_project(
@@ -210,7 +263,7 @@ async def test_create_project_invalid_verification_source_type_422_fr():
     # Message en français avec les valeurs acceptées mentionnées.
     assert "ga4" in body["message"] or "shopify" in body["message"]
     # Doit contenir au moins un mot français.
-    french_words = ["source", "type", "valeurs", "vérification"]
+    french_words = ["source", "type", "valeurs", "verification"]
     assert any(word in body["message"].lower() for word in french_words)
 
 
@@ -218,7 +271,7 @@ async def test_create_project_invalid_verification_source_type_422_fr():
 @pytest.mark.anyio
 async def test_create_project_ga4_without_lead_event_name_empty_422():
     """CREATE avec type='ga4' et lead_event_name vide -> 422 français."""
-    from core.admin_api import _create_project
+    from core.projects_api import _create_project  # noqa: PLC0415
 
     with patch(_AUTH[0], return_value=_AUTH[1]):
         resp = await _create_project(
@@ -240,7 +293,7 @@ async def test_create_project_ga4_without_lead_event_name_empty_422():
 @pytest.mark.anyio
 async def test_patch_project_sets_verification_source():
     """PATCH sur un projet existant persiste les 3 champs et les renvoie."""
-    from core.admin_api import _create_project, _get_project, _patch_project
+    from core.projects_api import _create_project, _get_project, _patch_project  # noqa: PLC0415
 
     slug = f"vs-patch-{uuid.uuid4().hex[:8]}"
     pid = None
@@ -288,7 +341,7 @@ async def test_patch_clear_lead_event_name_with_existing_ga4_422():
     type='ga4' doit être refusé 422 — la cohérence se valide sur l'ÉTAT FINAL
     (existant + patch), sinon la DB finirait en ga4 + lead NULL (état interdit par l'AC).
     """
-    from core.admin_api import _create_project, _get_project, _patch_project
+    from core.projects_api import _create_project, _get_project, _patch_project  # noqa: PLC0415
 
     slug = f"vs-clear-{uuid.uuid4().hex[:8]}"
     pid = None
@@ -331,7 +384,7 @@ async def test_patch_clear_vstype_also_clears_id_and_lead():
     """review-17-1 F-6 : PATCH {"verification_source_type": null} nettoie aussi
     verification_source_id et lead_event_name — pas de préférences orphelines en DB.
     """
-    from core.admin_api import _create_project, _get_project, _patch_project
+    from core.projects_api import _create_project, _get_project, _patch_project  # noqa: PLC0415
 
     slug = f"vs-null-{uuid.uuid4().hex[:8]}"
     pid = None
@@ -376,7 +429,7 @@ async def test_patch_clear_vstype_also_clears_id_and_lead():
 @pytest.mark.anyio
 async def test_patch_project_invalid_vstype_422_fr():
     """PATCH avec type inconnu retourne 422 avec message français."""
-    from core.admin_api import _create_project, _patch_project
+    from core.projects_api import _create_project, _patch_project  # noqa: PLC0415
 
     slug = f"vs-bad-{uuid.uuid4().hex[:8]}"
     pid = None
@@ -394,7 +447,7 @@ async def test_patch_project_invalid_vstype_422_fr():
         assert body["code"] == "invalid_input"
         assert any(
             word in body["message"].lower()
-            for word in ["source", "type", "vérification", "valeurs"]
+            for word in ["source", "type", "verification", "valeurs"]
         )
     finally:
         if pid:
@@ -405,7 +458,7 @@ async def test_patch_project_invalid_vstype_422_fr():
 @pytest.mark.anyio
 async def test_patch_project_ga4_empty_lead_event_name_422():
     """PATCH type='ga4' avec lead_event_name vide explicite -> 422."""
-    from core.admin_api import _create_project, _patch_project
+    from core.projects_api import _create_project, _patch_project  # noqa: PLC0415
 
     slug = f"vs-galen-{uuid.uuid4().hex[:8]}"
     pid = None
@@ -436,7 +489,7 @@ async def test_patch_project_ga4_empty_lead_event_name_422():
 @pytest.mark.anyio
 async def test_get_project_without_verification_prefs_returns_none_fields():
     """GET d'un projet sans préférences VS retourne les 3 champs à None."""
-    from core.admin_api import _create_project, _get_project
+    from core.projects_api import _create_project, _get_project  # noqa: PLC0415
 
     slug = f"vs-none-{uuid.uuid4().hex[:8]}"
     pid = None
@@ -462,7 +515,7 @@ async def test_get_project_without_verification_prefs_returns_none_fields():
 @pytest.mark.anyio
 async def test_patch_project_stripe_declarative_accepted():
     """PATCH type='stripe' accepté même sans connecteur stripe (préférence déclarative)."""
-    from core.admin_api import _create_project, _patch_project
+    from core.projects_api import _create_project, _patch_project  # noqa: PLC0415
 
     slug = f"vs-stripe-{uuid.uuid4().hex[:8]}"
     pid = None
@@ -502,8 +555,8 @@ async def test_seam_patch_cross_project_vsid_denied():
     Crée 2 projets et 1 datastream appartenant au projet A.
     PATCH projet B avec le datastream du projet A -> 403 (AI-56 seam AD-5).
     """
-    from core.admin_api import _create_project, _patch_project
     from core.db import get_connection
+    from core.projects_api import _create_project, _patch_project  # noqa: PLC0415
 
     slug_a = f"scope-a-{uuid.uuid4().hex[:8]}"
     slug_b = f"scope-b-{uuid.uuid4().hex[:8]}"
@@ -568,8 +621,8 @@ async def test_seam_patch_cross_project_vsid_denied():
 @pytest.mark.anyio
 async def test_seam_patch_same_project_vsid_accepted():
     """AD-5: PATCH verification_source_id du même projet est accepté (AI-56)."""
-    from core.admin_api import _create_project, _patch_project
     from core.db import get_connection
+    from core.projects_api import _create_project, _patch_project  # noqa: PLC0415
 
     slug = f"scope-same-{uuid.uuid4().hex[:8]}"
     pid = ds_id = None
@@ -618,7 +671,7 @@ async def test_seam_patch_same_project_vsid_accepted():
 @pytest.mark.anyio
 async def test_seam_multi_project_isolation():
     """AD-5/AI-45: les préférences VS sont bien scopées par projet (deux projets indépendants)."""
-    from core.admin_api import _create_project, _get_project, _patch_project
+    from core.projects_api import _create_project, _get_project, _patch_project  # noqa: PLC0415
 
     slug_x = f"iso-x-{uuid.uuid4().hex[:8]}"
     slug_y = f"iso-y-{uuid.uuid4().hex[:8]}"
@@ -672,14 +725,14 @@ class TestValidateVerificationSourceFields:
     """Tests unitaires pour _validate_verification_source_fields (sans DB)."""
 
     def test_empty_body_returns_empty_fields(self):
-        from core.admin_api import _validate_verification_source_fields
+        from core.projects_api import _validate_verification_source_fields  # noqa: PLC0415
 
         fields, err = _validate_verification_source_fields({})
         assert fields == {}
         assert err is None
 
     def test_valid_ga4_type(self):
-        from core.admin_api import _validate_verification_source_fields
+        from core.projects_api import _validate_verification_source_fields  # noqa: PLC0415
 
         fields, err = _validate_verification_source_fields(
             {
@@ -694,21 +747,21 @@ class TestValidateVerificationSourceFields:
         assert fields["lead_event_name"] == "generate_lead"
 
     def test_valid_shopify_type(self):
-        from core.admin_api import _validate_verification_source_fields
+        from core.projects_api import _validate_verification_source_fields  # noqa: PLC0415
 
         fields, err = _validate_verification_source_fields({"verification_source_type": "shopify"})
         assert err is None
         assert fields["verification_source_type"] == "shopify"
 
     def test_valid_stripe_type(self):
-        from core.admin_api import _validate_verification_source_fields
+        from core.projects_api import _validate_verification_source_fields  # noqa: PLC0415
 
         fields, err = _validate_verification_source_fields({"verification_source_type": "stripe"})
         assert err is None
         assert fields["verification_source_type"] == "stripe"
 
     def test_invalid_type_returns_422(self):
-        from core.admin_api import _validate_verification_source_fields
+        from core.projects_api import _validate_verification_source_fields  # noqa: PLC0415
 
         fields, err = _validate_verification_source_fields({"verification_source_type": "facebook"})
         assert fields is None
@@ -718,11 +771,11 @@ class TestValidateVerificationSourceFields:
         assert body["code"] == "invalid_input"
         # Message français
         assert any(
-            kw in body["message"] for kw in ["ga4", "shopify", "stripe", "vérification", "source"]
+            kw in body["message"] for kw in ["ga4", "shopify", "stripe", "verification", "source"]
         )
 
     def test_ga4_with_empty_lead_event_name_422(self):
-        from core.admin_api import _validate_verification_source_fields
+        from core.projects_api import _validate_verification_source_fields  # noqa: PLC0415
 
         fields, err = _validate_verification_source_fields(
             {
@@ -737,8 +790,8 @@ class TestValidateVerificationSourceFields:
         assert "lead_event_name" in body["message"] or "lead" in body["message"].lower()
 
     def test_null_type_is_valid(self):
-        """None = déactiver la source de vérification (opt-out)."""
-        from core.admin_api import _validate_verification_source_fields
+        """None = déactiver la source de verification (opt-out)."""
+        from core.projects_api import _validate_verification_source_fields  # noqa: PLC0415
 
         fields, err = _validate_verification_source_fields({"verification_source_type": None})
         assert err is None
@@ -746,7 +799,7 @@ class TestValidateVerificationSourceFields:
 
     def test_type_case_insensitive(self):
         """Le type est normalisé en minuscules."""
-        from core.admin_api import _validate_verification_source_fields
+        from core.projects_api import _validate_verification_source_fields  # noqa: PLC0415
 
         fields, err = _validate_verification_source_fields({"verification_source_type": "GA4"})
         assert err is None

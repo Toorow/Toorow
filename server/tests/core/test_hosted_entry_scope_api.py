@@ -6,6 +6,10 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
+from core import (
+    entry_api,  # AD-43 : le handler vit chez son sujet
+    organizations_api,  # AD-43 : le handler vit chez son sujet
+)
 from starlette.requests import Request
 
 
@@ -41,7 +45,6 @@ def test_hosted_entry_api_uses_canonical_person_and_returns_first_project(monkey
         display_name="Owner",
     )
     monkeypatch.setenv("TOOROW_DEPLOYMENT_MODE", "hosted")
-    monkeypatch.setenv("TOOROW_CANONICAL_IDENTITY_ENABLED", "1")
     monkeypatch.setattr(
         admin_api, "_check_canonical_principal", AsyncMock(return_value=(True, principal))
     )
@@ -89,7 +92,7 @@ def test_hosted_entry_api_uses_canonical_person_and_returns_first_project(monkey
 
     monkeypatch.setattr(hosted_entry_scope, "create_hosted_entry_scope", create)
     response = asyncio.run(
-        admin_api._create_hosted_entry_scope(
+        entry_api._create_hosted_entry_scope(
             _request(
                 {
                     "organization_name": "Acme",
@@ -126,7 +129,7 @@ def test_entry_scope_is_hidden_in_self_hosted_mode(monkeypatch):
     monkeypatch.setenv("TOOROW_DEPLOYMENT_MODE", "self_hosted")
     monkeypatch.setattr(admin_api, "_check_canonical_principal", auth)
 
-    response = asyncio.run(admin_api._create_hosted_entry_scope(_request({})))
+    response = asyncio.run(entry_api._create_hosted_entry_scope(_request({})))
 
     assert response.status_code == 404
     auth.assert_not_awaited()
@@ -139,14 +142,13 @@ def test_legacy_org_creation_cannot_bypass_authenticated_entry_or_claim(monkeypa
     request = _request({"name": "Bypass"})
 
     monkeypatch.setenv("TOOROW_DEPLOYMENT_MODE", "hosted")
-    monkeypatch.setenv("TOOROW_CANONICAL_IDENTITY_ENABLED", "1")
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
-    hosted = asyncio.run(admin_api._create_org(request))
+    hosted = asyncio.run(organizations_api._create_org(request))
     assert hosted.status_code == 409
     assert json.loads(hosted.body)["code"] == "entry_scope_required"
 
     monkeypatch.setenv("TOOROW_DEPLOYMENT_MODE", "self_hosted")
-    self_hosted = asyncio.run(admin_api._create_org(_request({"name": "Bypass"})))
+    self_hosted = asyncio.run(organizations_api._create_org(_request({"name": "Bypass"})))
     assert self_hosted.status_code == 404
 
 
@@ -158,19 +160,30 @@ def test_hosted_entry_route_is_registered():
     assert "/api/entry/scope/confirmation" in paths
 
 
-def test_hosted_entry_scope_requires_canonical_identity_activation(monkeypatch):
+def test_hosted_entry_scope_refuses_an_unresolved_person_and_never_asks_twice(monkeypatch):
+    """REPLACES `test_hosted_entry_scope_requires_canonical_identity_activation`.
+
+    That test proved the 503 `identity_activation_required` this route answered
+    when the identity flag was absent -- a REFUSAL TO OPERATE that told the
+    caller to go change a deployment variable. The flag was removed on
+    2026-08-24, so that answer no longer exists and neither does the state name.
+
+    What must hold in its place: the only reason this route refuses is that the
+    canonical resolver did not name a person, and it says so as 401 -- an
+    authentication answer, not a deployment-state answer, which `CLAUDE.md`
+    forbids showing anyone.
+    """
     from core import admin_api
 
     monkeypatch.setenv("TOOROW_DEPLOYMENT_MODE", "hosted")
-    monkeypatch.delenv("TOOROW_CANONICAL_IDENTITY_ENABLED", raising=False)
-    auth = AsyncMock()
+    auth = AsyncMock(return_value=(False, None))
     monkeypatch.setattr(admin_api, "_check_canonical_principal", auth)
 
-    response = asyncio.run(admin_api._create_hosted_entry_scope(_request({})))
+    response = asyncio.run(entry_api._create_hosted_entry_scope(_request({})))
 
-    assert response.status_code == 503
-    assert json.loads(response.body)["code"] == "identity_activation_required"
-    auth.assert_not_awaited()
+    assert response.status_code == 401
+    assert json.loads(response.body)["code"] == "unauthorized"
+    assert auth.await_count == 1
 
 
 def test_hosted_entry_confirmation_is_server_issued_for_exact_payload(monkeypatch):
@@ -185,7 +198,6 @@ def test_hosted_entry_confirmation_is_server_issued_for_exact_payload(monkeypatc
         display_name="Owner",
     )
     monkeypatch.setenv("TOOROW_DEPLOYMENT_MODE", "hosted")
-    monkeypatch.setenv("TOOROW_CANONICAL_IDENTITY_ENABLED", "1")
     monkeypatch.setattr(
         admin_api, "_check_canonical_principal", AsyncMock(return_value=(True, principal))
     )
@@ -215,7 +227,7 @@ def test_hosted_entry_confirmation_is_server_issued_for_exact_payload(monkeypatc
     }
 
     response = asyncio.run(
-        admin_api._issue_hosted_entry_confirmation(
+        entry_api._issue_hosted_entry_confirmation(
             _request(body, headers=[(b"idempotency-key", b"entry-1")])
         )
     )

@@ -1,0 +1,26 @@
+/**
+ * console.css — the target stylesheet. Everything migrated writes here, and
+ * only here.
+ *
+ * It starts empty on purpose. `shell/application.css` and the 60 legacy sheets
+ * are the *source*, and nothing moves across by copying: a rule earns its place
+ * here only when a migrated screen actually needs it and no component or
+ * utility already covers it. What never gets written here was never needed —
+ * which is the only reliable way to find out, since a class that stays in the
+ * old file looks alive whether it is used or not.
+ *
+ * A migrated screen imports `theme.css` and this file. It must not use any
+ * class defined only in the legacy sheets; `scripts/finished_work_audit.py`
+ * reports it when it does, so "unhooked" is measured rather than declared.
+ *
+ * Expected final size: a few dozen lines. If this file grows past ~200, the
+ * vocabulary is being rebuilt here instead of composed from components, and
+ * that is the same failure under a new filename.
+ */
+
+/* Reduced-motion kill-switch. Moved out of shell/application.css, which App.tsx does not
+   import; universal, unlayered, and it shortens rather than removes. Why, and the proof it
+   is LOADED: src/__tests__/reducedMotionKillSwitch.test.ts. */
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after {
+  animation-duration: .001ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important;
+  transition-duration: .001ms !important; transition-delay: 0ms !important; scroll-behavior: auto !important; } }

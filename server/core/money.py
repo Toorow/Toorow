@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import csv
 import logging
+from decimal import ROUND_HALF_EVEN, Decimal, InvalidOperation
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -93,19 +94,29 @@ class MoneyAdapterError(Exception):
 # ---------------------------------------------------------------------------
 
 
-def to_canonical_micros(value: float, native_unit: str) -> int:
+def to_canonical_micros(value: Decimal | int | str | float, native_unit: str) -> int:
     """Normalize a value in its declared *native_unit* to canonical micros (PURE).
 
     The adapter's OUTPUT is ALWAYS canonical micros (an integer), regardless of the input
     encoding:
 
-      * ``micros``  -> ``round(value)``           (already canonical; a no-op scale of 1)
-      * ``decimal`` -> ``round(value * 1e6)``      (1 display unit = 1_000_000 micros)
-      * ``cents``   -> ``round(value * 10_000)``   (1 cent = 10_000 micros)
+      * ``micros``  -> the value itself           (already canonical; a no-op scale of 1)
+      * ``decimal`` -> ``value * 1_000_000``      (1 display unit = 1_000_000 micros)
+      * ``cents``   -> ``value * 10_000``         (1 cent = 10_000 micros)
 
-    The multiply is by an INTEGER scale, so on an exact-in-DOUBLE magnitude it introduces
-    no representational drift; ``round`` collapses any last-bit float residue to the exact
-    integer micro count. Unknown ``native_unit`` raises ``MoneyAdapterError`` (fail-closed).
+    Story 48.3 made this arithmetic EXACT. It used to be ``round(value * scale)`` on a
+    ``float``: for the magnitudes marketing spend actually reaches, a binary float cannot
+    hold the input, so the "exact integer micro count" the previous docstring promised was
+    off by a micro or two on values that had been rounded on the way in. A ``str`` or
+    ``Decimal`` input is now converted with no binary step at all, and a ``float`` input is
+    converted through its shortest exact decimal representation -- which is the number the
+    provider actually sent, rather than the binary approximation Python parsed it into.
+
+    Rounding is HALF-EVEN at the micro, stated rather than inherited: half-up would bias
+    every tie in the same direction, and a mart summing millions of rows accumulates that
+    bias into a visible number.
+
+    Unknown ``native_unit`` raises ``MoneyAdapterError`` (fail-closed).
 
     Returns:
         int: the value expressed in canonical micros.
@@ -116,7 +127,79 @@ def to_canonical_micros(value: float, native_unit: str) -> int:
             f"unknown native_unit {native_unit!r}; "
             f"accepted: {sorted(ACCEPTED_NATIVE_UNITS)} (fail-closed, never guessed)"
         )
-    return round(value * scale)
+    return int((exact_decimal(value) * scale).quantize(Decimal(1), rounding=ROUND_HALF_EVEN))
+
+
+def exact_decimal(value: Decimal | int | str | float) -> Decimal:
+    """The exact decimal a caller meant, whatever type carried it here (PURE).
+
+    ``Decimal(0.1)`` is ``0.1000000000000000055511151231257827...`` -- the binary double,
+    faithfully. ``Decimal(repr(0.1))`` is ``0.1``. When a provider sent ``0.1`` and a JSON
+    parser turned it into a double, the second is the number that was sent, so ``repr`` is
+    the correct bridge and not a rounding shortcut.
+
+    A non-finite value is a typed refusal: ``NaN`` and ``Infinity`` are not amounts, and
+    letting either through produces a total that is silently meaningless.
+    """
+    if isinstance(value, Decimal):
+        candidate = value
+    elif isinstance(value, int) and not isinstance(value, bool):
+        return Decimal(value)
+    elif isinstance(value, float):
+        candidate = Decimal(repr(value))
+    else:
+        try:
+            candidate = Decimal(str(value).strip())
+        except InvalidOperation as exc:
+            raise MoneyAdapterError(f"not a decimal amount: {value!r}") from exc
+    if not candidate.is_finite():
+        raise MoneyAdapterError(f"not a finite amount: {value!r}")
+    return candidate
+
+
+def convert_micros(
+    native_micros: int,
+    rate: Decimal | str,
+    *,
+    minor_unit: int,
+    rounding: str = ROUND_HALF_EVEN,
+) -> int:
+    """Convert canonical micros to canonical micros in another currency (PURE, EXACT).
+
+    The one conversion arithmetic in the platform. Two decisions are load-bearing:
+
+    * **The product is computed in full precision, then rounded ONCE**, to the reporting
+      currency's own minor unit expressed in micros. Rounding to micros and again to the
+      display unit compounds two errors; rounding to the minor unit directly means a JPY
+      total lands on a whole yen and a BHD total on a fils, which is what those currencies
+      mean by "an amount".
+    * **``minor_unit`` is required.** There is no default of 2. A currency whose ISO minor
+      unit is unknown never reaches here -- the Money Policy profile refuses to publish
+      with one, precisely so this function can never guess a precision.
+    """
+    if not isinstance(native_micros, int) or isinstance(native_micros, bool):
+        raise MoneyAdapterError("convert_micros takes canonical micros as an integer")
+    if minor_unit < 0:
+        raise MoneyAdapterError("minor_unit cannot be negative")
+    exact_rate = exact_decimal(rate)
+    if exact_rate <= 0:
+        raise MoneyAdapterError(f"an FX rate must be positive, got {rate!r}")
+    # The rounding step in MICROS: a 2-decimal currency rounds to 10_000 micros, a
+    # 0-decimal one to 1_000_000, a 3-decimal one to 1_000.
+    step = Decimal(MICROS_PER_UNIT).scaleb(-minor_unit)
+    product = Decimal(native_micros) * exact_rate
+    return int((product / step).quantize(Decimal(1), rounding=rounding) * step)
+
+
+def micros_to_decimal(canonical_micros: int, *, minor_unit: int) -> Decimal:
+    """Canonical micros as an exact display amount at the currency's own precision (PURE).
+
+    The exact counterpart of :func:`read_once`, which returns a ``float`` and therefore
+    cannot be the authoritative read for a value someone will add up.
+    """
+    return (Decimal(canonical_micros) / MICROS_PER_UNIT).quantize(
+        Decimal(1).scaleb(-minor_unit), rounding=ROUND_HALF_EVEN
+    )
 
 
 # The integer scale each native unit multiplies by to reach canonical micros. Keyed off

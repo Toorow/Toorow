@@ -1,0 +1,1148 @@
+{
+  "schema_version": "analyze-feedback-targets.v1",
+  "result": {
+    "result_id": "qr_FIXTURE",
+    "content_hash": "sha256_RESULT_FIXTURE",
+    "outcome": "success",
+    "row_count": 3,
+    "ai_path_id": "aip_FIXTURE"
+  },
+  "pins": {
+    "visualization_spec_version_id": "vsv_FIXTURE",
+    "renderer_build_id": "table/toorow-table@1.0.0",
+    "runtime_build_id": "@toorow/card-shell/viz@0.1.0+87c254baf75d",
+    "theme_version": "viz-theme@1",
+    "formatter_version": "viz-formatters@1"
+  },
+  "surfaces": {
+    "mcp": {
+      "context": {
+        "schema_version": "exact-feedback.v1",
+        "token": "SIGNED_CONTEXT_MCP",
+        "interaction_ref": "afi_MCP_FIXTURE",
+        "expires_at": "2026-01-01T00:15:00Z"
+      },
+      "authority": {
+        "surface": "mcp_app",
+        "interaction_ref": "afi_MCP_FIXTURE",
+        "result_id": "qr_FIXTURE",
+        "result_content_hash": "sha256_RESULT_FIXTURE",
+        "ai_path_id": "aip_FIXTURE",
+        "path_step_ordinals": [
+          0
+        ],
+        "delivered_rows": {
+          "count": 3,
+          "field_count": 2,
+          "fields_hash": "eb57e0698494246a74b0d90d59c589ed19fbfb250806c5d9fbbbcaf065016dc9",
+          "start": 0
+        },
+        "visualization_spec_version_id": "vsv_FIXTURE",
+        "renderer_build_id": "table/toorow-table@1.0.0",
+        "runtime_build_id": "@toorow/card-shell/viz@0.1.0+87c254baf75d",
+        "theme_version": "viz-theme@1",
+        "formatter_version": "viz-formatters@1"
+      },
+      "target": {
+        "kind": "answer"
+      },
+      "delivery": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Resultat qr_FIXTURE - issue : success.\nLignes : 3 ; cellules : 6 ; tronque : non.\nVersion du Query Spec : qsv_FIXTURE.\nParcours IA : aip_FIXTURE.\nEmpreinte du contenu : sha256_RESULT_FIXTURE.\nFraicheur : unavailable (au 2026-01-01T00:00:00Z).\nProvenance : vue semantique svv_FIXTURE."
+          }
+        ],
+        "structuredContent": {
+          "schema_version": 1,
+          "result": {
+            "result_id": "qr_FIXTURE",
+            "query_spec_version_id": "qsv_FIXTURE",
+            "semantic_view_version_id": "svv_FIXTURE",
+            "content_hash": "sha256_RESULT_FIXTURE"
+          },
+          "outcome": "success",
+          "ai_path": "aip_FIXTURE",
+          "summary": {
+            "row_count": 3,
+            "cell_count": 6,
+            "counts_unknown_reason": null,
+            "truncated": false,
+            "columns": [
+              "day",
+              "sessions"
+            ],
+            "columns_withheld": 0
+          },
+          "provenance": {
+            "semantic_view_version_id": "svv_FIXTURE",
+            "datastream_output_version_id": "unavailable",
+            "lineage": "unavailable",
+            "data_quality": {
+              "evaluation_ids": [],
+              "evaluation_ids_withheld": 0,
+              "unavailable_reason": null
+            },
+            "lineage_unavailable_reason": "published before the lineage was recorded",
+            "missing_link": null
+          },
+          "freshness": {
+            "state": "unavailable",
+            "as_of": "2026-01-01T00:00:00Z",
+            "complete_through": null,
+            "stale_since_evaluated": false
+          },
+          "evidence": [
+            {
+              "column": "day",
+              "first_value": "2026-07-28"
+            },
+            {
+              "column": "sessions",
+              "first_value": 1412
+            }
+          ],
+          "pagination": {
+            "total_rows": 3,
+            "returned_rows": 3,
+            "has_more": true,
+            "how_to_page": "Appelez app_read_result_slice avec le result_handle de _meta, un offset ou un curseur et une limite d'au plus 500 lignes."
+          },
+          "deep_link": {
+            "kind": "console",
+            "requires_authenticated_session": true,
+            "organization_id": "org_FIXTURE",
+            "project_id": "proj_FIXTURE",
+            "object_type": "result",
+            "object_id": "qr_FIXTURE",
+            "tab": "data",
+            "owner_reference": {
+              "surface": "project",
+              "workspace": "analyze",
+              "section": "explore",
+              "global_surface": null,
+              "global_section": null,
+              "object_type": "result",
+              "object_id": "qr_FIXTURE",
+              "tab": "data",
+              "action": null,
+              "version_id": null,
+              "evidence_id": null
+            }
+          },
+          "chart_templates": {
+            "templates": [],
+            "withheld": 0
+          }
+        },
+        "_meta": {
+          "toorow.result": {
+            "result_id": "qr_FIXTURE",
+            "content_hash": "sha256_RESULT_FIXTURE",
+            "schema": {
+              "fields": [
+                {
+                  "id": "day",
+                  "name": "day"
+                },
+                {
+                  "id": "sessions",
+                  "name": "sessions"
+                }
+              ]
+            },
+            "allowed_columns": [
+              "day",
+              "sessions"
+            ],
+            "row_count": 3,
+            "truncated": false,
+            "projection_size": "small",
+            "rows": [
+              {
+                "day": "2026-07-28",
+                "sessions": 1412
+              },
+              {
+                "day": "2026-07-29",
+                "sessions": 1877
+              },
+              {
+                "day": "2026-07-30",
+                "sessions": 2043
+              }
+            ],
+            "result_handle": "rh_FIXTURE",
+            "next_cursor": null,
+            "ai_path_walk": {
+              "schema_version": "observed-ai-path.v1",
+              "state": "completed",
+              "path_id": "aip_FIXTURE",
+              "lifecycle": "finalized",
+              "outcome": "succeeded",
+              "steps": [
+                {
+                  "ordinal": 0,
+                  "step_kind": "tool_call",
+                  "outcome": "succeeded",
+                  "observed_at": "2026-01-01T00:00:00Z",
+                  "missing_context": [],
+                  "tool_name": "execute_analyze_query_spec",
+                  "owner": {
+                    "workspace": "analyze",
+                    "object_type": "query-spec",
+                    "object_id": "qs_FIXTURE",
+                    "version_id": "qsv_FIXTURE"
+                  },
+                  "chose": {
+                    "query_spec_version_id": "qsv_FIXTURE"
+                  }
+                }
+              ]
+            }
+          },
+          "toorow.visualization": {
+            "visualization_spec_version_id": "vsv_FIXTURE",
+            "runtime_resource_uri": "ui://core/visualization-runtime"
+          },
+          "toorow.feedback": {
+            "schema_version": "exact-feedback.v1",
+            "token": "SIGNED_CONTEXT_MCP",
+            "interaction_ref": "afi_MCP_FIXTURE",
+            "expires_at": "2026-01-01T00:15:00Z"
+          },
+          "toorow.app_payload": {
+            "schema_version": 1,
+            "kind": "render",
+            "render_input": {
+              "result": {
+                "result_id": "qr_FIXTURE",
+                "content_hash": "sha256_RESULT_FIXTURE",
+                "outcome": "success",
+                "schema": {
+                  "fields": [
+                    {
+                      "id": "day",
+                      "name": "day"
+                    },
+                    {
+                      "id": "sessions",
+                      "name": "sessions"
+                    }
+                  ]
+                },
+                "rows": [
+                  {
+                    "day": "2026-07-28",
+                    "sessions": 1412
+                  },
+                  {
+                    "day": "2026-07-29",
+                    "sessions": 1877
+                  },
+                  {
+                    "day": "2026-07-30",
+                    "sessions": 2043
+                  }
+                ],
+                "manifest": {
+                  "grain": null,
+                  "filters": null,
+                  "chosen_by": null,
+                  "freshness": {
+                    "output_created_at": "2026-01-01T00:00:00Z"
+                  },
+                  "truncated": false,
+                  "comparison": null,
+                  "result_shape": "tabular_v1",
+                  "dq_evaluation_ids": [],
+                  "grain_reconciliation": [],
+                  "semantic_view_version_id": "svv_FIXTURE",
+                  "provenance": {
+                    "values": [
+                      {
+                        "member_id": "day"
+                      },
+                      {
+                        "member_id": "sessions"
+                      }
+                    ]
+                  }
+                },
+                "truncated": false,
+                "row_count": 3
+              },
+              "spec": {
+                "visualization_spec_version_id": "vsv_FIXTURE",
+                "spec_contract_version": "visualization-spec.v1",
+                "schema_version": 1,
+                "document": {
+                  "axes": {
+                    "x": {
+                      "scale": "categorical",
+                      "tick_density": "normal",
+                      "zero_baseline": false
+                    },
+                    "y": {
+                      "scale": "linear",
+                      "tick_density": "normal",
+                      "zero_baseline": true
+                    }
+                  },
+                  "color": {
+                    "role": "none",
+                    "semantic_direction": "none"
+                  },
+                  "order": {
+                    "source": "result"
+                  },
+                  "top_n": null,
+                  "family": "table",
+                  "labels": {
+                    "override": {}
+                  },
+                  "legend": {
+                    "visible": false,
+                    "position": "none"
+                  },
+                  "bindings": {
+                    "measure": [
+                      "sessions"
+                    ],
+                    "dimension": [
+                      "day"
+                    ]
+                  },
+                  "evidence": {
+                    "datum_fields": [
+                      "sessions"
+                    ],
+                    "mark_binding": "datum"
+                  },
+                  "formatting": {
+                    "date_style": "auto",
+                    "unit_source": "none",
+                    "number_style": "auto"
+                  },
+                  "responsive": {
+                    "profiles": [
+                      "console",
+                      "share"
+                    ]
+                  },
+                  "thresholds": [],
+                  "annotations": [],
+                  "interactions": {
+                    "zoom": false,
+                    "hover": true,
+                    "select": true,
+                    "local_filter": false,
+                    "legend_toggle": false
+                  },
+                  "accessibility": {
+                    "summary_source": "result_manifest",
+                    "table_fallback": "required"
+                  },
+                  "schema_version": 1,
+                  "reference_lines": [],
+                  "spec_contract_version": "visualization-spec.v1"
+                }
+              },
+              "pins": {
+                "runtime_build": "@toorow/card-shell/viz@0.1.0+87c254baf75d",
+                "renderer_build": "table/toorow-table@1.0.0",
+                "theme_version": "viz-theme@1",
+                "formatter_version": "viz-formatters@1"
+              },
+              "profile": "mcp-inline",
+              "display": {}
+            }
+          }
+        },
+        "isError": false
+      },
+      "receipt": {
+        "schema_version": "exact-feedback-receipt.v1",
+        "status": "recorded",
+        "feedback_id": "feedback_MCP_FIXTURE",
+        "interaction_ref": "afi_MCP_FIXTURE",
+        "target": {
+          "kind": "answer"
+        }
+      }
+    },
+    "console": {
+      "authority": {
+        "surface": "console",
+        "interaction_ref": "afi_CONSOLE_FIXTURE",
+        "result_id": "qr_FIXTURE",
+        "result_content_hash": "sha256_RESULT_FIXTURE",
+        "ai_path_id": "aip_FIXTURE",
+        "path_step_ordinals": [
+          0
+        ],
+        "delivered_rows": {
+          "count": 3,
+          "field_count": 2,
+          "fields_hash": "eb57e0698494246a74b0d90d59c589ed19fbfb250806c5d9fbbbcaf065016dc9",
+          "start": 0
+        },
+        "visualization_spec_version_id": "vsv_FIXTURE",
+        "renderer_build_id": "table/toorow-table@1.0.0",
+        "runtime_build_id": "@toorow/card-shell/viz@0.1.0+87c254baf75d",
+        "theme_version": "viz-theme@1",
+        "formatter_version": "viz-formatters@1",
+        "render_id": "rnd_FIXTURE"
+      },
+      "delivery": {
+        "render_input": {
+          "result": {
+            "result_id": "qr_FIXTURE",
+            "content_hash": "sha256_RESULT_FIXTURE",
+            "outcome": "success",
+            "schema": {
+              "fields": [
+                {
+                  "id": "day",
+                  "name": "day"
+                },
+                {
+                  "id": "sessions",
+                  "name": "sessions"
+                }
+              ]
+            },
+            "rows": [
+              {
+                "day": "2026-07-28",
+                "sessions": 1412
+              },
+              {
+                "day": "2026-07-29",
+                "sessions": 1877
+              },
+              {
+                "day": "2026-07-30",
+                "sessions": 2043
+              }
+            ],
+            "manifest": {
+              "grain": null,
+              "filters": null,
+              "chosen_by": null,
+              "freshness": {
+                "output_created_at": "2026-01-01T00:00:00Z"
+              },
+              "truncated": false,
+              "comparison": null,
+              "result_shape": "tabular_v1",
+              "dq_evaluation_ids": [],
+              "grain_reconciliation": [],
+              "semantic_view_version_id": "svv_FIXTURE",
+              "provenance": {
+                "values": [
+                  {
+                    "member_id": "day"
+                  },
+                  {
+                    "member_id": "sessions"
+                  }
+                ]
+              }
+            },
+            "truncated": false,
+            "row_count": 3
+          },
+          "spec": {
+            "visualization_spec_version_id": "vsv_FIXTURE",
+            "spec_contract_version": "visualization-spec.v1",
+            "schema_version": 1,
+            "document": {
+              "axes": {
+                "x": {
+                  "scale": "categorical",
+                  "tick_density": "normal",
+                  "zero_baseline": false
+                },
+                "y": {
+                  "scale": "linear",
+                  "tick_density": "normal",
+                  "zero_baseline": true
+                }
+              },
+              "color": {
+                "role": "none",
+                "semantic_direction": "none"
+              },
+              "order": {
+                "source": "result"
+              },
+              "top_n": null,
+              "family": "table",
+              "labels": {
+                "override": {}
+              },
+              "legend": {
+                "visible": false,
+                "position": "none"
+              },
+              "bindings": {
+                "measure": [
+                  "sessions"
+                ],
+                "dimension": [
+                  "day"
+                ]
+              },
+              "evidence": {
+                "datum_fields": [
+                  "sessions"
+                ],
+                "mark_binding": "datum"
+              },
+              "formatting": {
+                "date_style": "auto",
+                "unit_source": "none",
+                "number_style": "auto"
+              },
+              "responsive": {
+                "profiles": [
+                  "console",
+                  "share"
+                ]
+              },
+              "thresholds": [],
+              "annotations": [],
+              "interactions": {
+                "zoom": false,
+                "hover": true,
+                "select": true,
+                "local_filter": false,
+                "legend_toggle": false
+              },
+              "accessibility": {
+                "summary_source": "result_manifest",
+                "table_fallback": "required"
+              },
+              "schema_version": 1,
+              "reference_lines": [],
+              "spec_contract_version": "visualization-spec.v1"
+            }
+          },
+          "pins": {
+            "runtime_build": "@toorow/card-shell/viz@0.1.0+87c254baf75d",
+            "renderer_build": "table/toorow-table@1.0.0",
+            "theme_version": "viz-theme@1",
+            "formatter_version": "viz-formatters@1"
+          },
+          "profile": "mcp-inline",
+          "display": {}
+        },
+        "evidence": {
+          "result_id": "qr_FIXTURE",
+          "content_hash": "sha256_RESULT_FIXTURE",
+          "outcome": "success",
+          "row_count": 3,
+          "truncated": false,
+          "schema": {
+            "fields": [
+              {
+                "id": "day",
+                "name": "day"
+              },
+              {
+                "id": "sessions",
+                "name": "sessions"
+              }
+            ]
+          },
+          "manifest": {
+            "grain": null,
+            "filters": null,
+            "chosen_by": null,
+            "freshness": {
+              "output_created_at": "2026-01-01T00:00:00Z"
+            },
+            "truncated": false,
+            "comparison": null,
+            "result_shape": "tabular_v1",
+            "dq_evaluation_ids": [],
+            "grain_reconciliation": [],
+            "semantic_view_version_id": "svv_FIXTURE",
+            "provenance": {
+              "values": [
+                {
+                  "member_id": "day"
+                },
+                {
+                  "member_id": "sessions"
+                }
+              ]
+            }
+          },
+          "rows": [
+            {
+              "day": "2026-07-28",
+              "sessions": 1412
+            },
+            {
+              "day": "2026-07-29",
+              "sessions": 1877
+            },
+            {
+              "day": "2026-07-30",
+              "sessions": 2043
+            }
+          ],
+          "feedback_context": {
+            "schema_version": "exact-feedback.v1",
+            "token": "SIGNED_CONTEXT_CONSOLE",
+            "interaction_ref": "afi_CONSOLE_FIXTURE",
+            "expires_at": "2026-01-01T00:15:00Z"
+          }
+        },
+        "view_lens": {
+          "schema_version": "analyze-result-lens.v1",
+          "result_id": "qr_FIXTURE",
+          "project_id": "proj_FIXTURE",
+          "lens": "view",
+          "outcome": "success",
+          "content_hash": "sha256_RESULT_FIXTURE",
+          "query_spec_id": "qs_FIXTURE",
+          "query_spec_version_id": "qsv_FIXTURE",
+          "query_spec_version_number": 2,
+          "semantic_view_id": "sv_FIXTURE",
+          "semantic_view_version_id": "svv_FIXTURE",
+          "semantic_view_label": "Fixture classified",
+          "semantic_view_version_number": 2,
+          "started_at": "2026-01-01T00:00:00Z",
+          "ended_at": "2026-01-01T00:00:00Z",
+          "lenses": [
+            "view",
+            "data",
+            "definitions",
+            "quality",
+            "provenance",
+            "ai-path"
+          ],
+          "view": {
+            "outcome": "success",
+            "query_context": {
+              "semantic_view_id": "sv_FIXTURE",
+              "semantic_view_version_id": "svv_FIXTURE",
+              "query_spec_id": "qs_FIXTURE",
+              "query_spec_version_id": "qsv_FIXTURE",
+              "query_spec_version_number": 2,
+              "measures": [],
+              "dimensions": [],
+              "filters": [],
+              "sort": [],
+              "comparison": null,
+              "comparison_windows": null,
+              "grain": null,
+              "row_limit": null,
+              "time": {
+                "member_id": null,
+                "start": null,
+                "end": null,
+                "as_of": null
+              }
+            },
+            "quality_summary": {
+              "outcome": "success",
+              "freshness": {
+                "result_ended_at": "2026-01-01T00:00:00Z",
+                "requested_as_of": null,
+                "state": "recorded"
+              },
+              "completeness": {
+                "row_count": 3,
+                "cell_count": 6,
+                "truncated": false,
+                "row_limit": null,
+                "counts_unavailable_reason": null
+              },
+              "limitations": []
+            },
+            "fields": [
+              "day",
+              "sessions"
+            ],
+            "field_semantics": {},
+            "values": [
+              {
+                "row_index": 0,
+                "cells": [
+                  {
+                    "field": "day",
+                    "value": "2026-07-28",
+                    "datum_key": "qr_FIXTURE:0:day",
+                    "kind": "unknown"
+                  },
+                  {
+                    "field": "sessions",
+                    "value": 1412,
+                    "datum_key": "qr_FIXTURE:0:sessions",
+                    "kind": "unknown"
+                  }
+                ]
+              },
+              {
+                "row_index": 1,
+                "cells": [
+                  {
+                    "field": "day",
+                    "value": "2026-07-29",
+                    "datum_key": "qr_FIXTURE:1:day",
+                    "kind": "unknown"
+                  },
+                  {
+                    "field": "sessions",
+                    "value": 1877,
+                    "datum_key": "qr_FIXTURE:1:sessions",
+                    "kind": "unknown"
+                  }
+                ]
+              },
+              {
+                "row_index": 2,
+                "cells": [
+                  {
+                    "field": "day",
+                    "value": "2026-07-30",
+                    "datum_key": "qr_FIXTURE:2:day",
+                    "kind": "unknown"
+                  },
+                  {
+                    "field": "sessions",
+                    "value": 2043,
+                    "datum_key": "qr_FIXTURE:2:sessions",
+                    "kind": "unknown"
+                  }
+                ]
+              }
+            ],
+            "kind_unavailable_reason": null,
+            "server_row_count": 3,
+            "returned_row_count": 3,
+            "truncated": false,
+            "counts_unavailable_reason": null,
+            "read_sliced": false,
+            "read_slice_size": 200,
+            "local_interaction_scope": "Hiding or selecting rows here changes only what is shown of the rows this Result already returned. Any other change needs a new query and produces a new Result."
+          },
+          "feedback_context": {
+            "schema_version": "exact-feedback.v1",
+            "token": "SIGNED_CONTEXT_CONSOLE_WORKBENCH",
+            "interaction_ref": "afi_CONSOLE_WORKBENCH_FIXTURE",
+            "expires_at": "2026-01-01T00:15:00Z"
+          }
+        }
+      },
+      "interactions": {
+        "visualization": {
+          "context": {
+            "schema_version": "exact-feedback.v1",
+            "token": "SIGNED_CONTEXT_CONSOLE",
+            "interaction_ref": "afi_CONSOLE_FIXTURE",
+            "expires_at": "2026-01-01T00:15:00Z"
+          },
+          "authority": {
+            "surface": "console",
+            "interaction_ref": "afi_CONSOLE_FIXTURE",
+            "result_id": "qr_FIXTURE",
+            "result_content_hash": "sha256_RESULT_FIXTURE",
+            "ai_path_id": "aip_FIXTURE",
+            "path_step_ordinals": [
+              0
+            ],
+            "delivered_rows": {
+              "count": 3,
+              "field_count": 2,
+              "fields_hash": "eb57e0698494246a74b0d90d59c589ed19fbfb250806c5d9fbbbcaf065016dc9",
+              "start": 0
+            },
+            "visualization_spec_version_id": "vsv_FIXTURE",
+            "renderer_build_id": "table/toorow-table@1.0.0",
+            "runtime_build_id": "@toorow/card-shell/viz@0.1.0+87c254baf75d",
+            "theme_version": "viz-theme@1",
+            "formatter_version": "viz-formatters@1",
+            "render_id": "rnd_FIXTURE"
+          },
+          "target": {
+            "kind": "datum",
+            "row_index": 1,
+            "field": "sessions"
+          },
+          "receipt": {
+            "schema_version": "exact-feedback-receipt.v1",
+            "status": "recorded",
+            "feedback_id": "feedback_CONSOLE_FIXTURE",
+            "interaction_ref": "afi_CONSOLE_FIXTURE",
+            "target": {
+              "kind": "datum",
+              "row_index": 1,
+              "field": "sessions"
+            }
+          }
+        },
+        "workbench": {
+          "context": {
+            "schema_version": "exact-feedback.v1",
+            "token": "SIGNED_CONTEXT_CONSOLE_WORKBENCH",
+            "interaction_ref": "afi_CONSOLE_WORKBENCH_FIXTURE",
+            "expires_at": "2026-01-01T00:15:00Z"
+          },
+          "authority": {
+            "surface": "console",
+            "interaction_ref": "afi_CONSOLE_WORKBENCH_FIXTURE",
+            "result_id": "qr_FIXTURE",
+            "result_content_hash": "sha256_RESULT_FIXTURE",
+            "ai_path_id": "aip_FIXTURE",
+            "path_step_ordinals": [],
+            "delivered_rows": {
+              "count": 3,
+              "field_count": 2,
+              "fields_hash": "eb57e0698494246a74b0d90d59c589ed19fbfb250806c5d9fbbbcaf065016dc9",
+              "start": 0
+            }
+          },
+          "target": {
+            "kind": "datum",
+            "row_index": 1,
+            "field": "sessions"
+          },
+          "receipt": {
+            "schema_version": "exact-feedback-receipt.v1",
+            "status": "recorded",
+            "feedback_id": "feedback_CONSOLE_WORKBENCH_FIXTURE",
+            "interaction_ref": "afi_CONSOLE_WORKBENCH_FIXTURE",
+            "target": {
+              "kind": "datum",
+              "row_index": 1,
+              "field": "sessions"
+            }
+          }
+        }
+      }
+    },
+    "share": {
+      "context": {
+        "schema_version": "exact-feedback.v1",
+        "token": "SIGNED_CONTEXT_SHARE",
+        "interaction_ref": "afi_SHARE_FIXTURE",
+        "expires_at": "2026-01-01T00:15:00Z"
+      },
+      "authority": {
+        "surface": "share",
+        "interaction_ref": "afi_SHARE_FIXTURE",
+        "result_id": "qr_FIXTURE",
+        "result_content_hash": "sha256_RESULT_FIXTURE",
+        "ai_path_id": "aip_FIXTURE",
+        "path_step_ordinals": [
+          0
+        ],
+        "delivered_rows": {
+          "count": 3,
+          "field_count": 2,
+          "fields_hash": "eb57e0698494246a74b0d90d59c589ed19fbfb250806c5d9fbbbcaf065016dc9",
+          "start": 0
+        },
+        "visualization_spec_version_id": "vsv_FIXTURE",
+        "renderer_build_id": "table/toorow-table@1.0.0",
+        "runtime_build_id": "@toorow/card-shell/viz@0.1.0+87c254baf75d",
+        "theme_version": "viz-theme@1",
+        "formatter_version": "viz-formatters@1",
+        "render_id": "rnd_FIXTURE"
+      },
+      "target": {
+        "kind": "path_step",
+        "ordinal": 0
+      },
+      "delivery": {
+        "render": {
+          "result": {
+            "result_id": "qr_FIXTURE",
+            "content_hash": "sha256_RESULT_FIXTURE",
+            "outcome": "success",
+            "schema": {
+              "fields": [
+                {
+                  "id": "day",
+                  "name": "day"
+                },
+                {
+                  "id": "sessions",
+                  "name": "sessions"
+                }
+              ]
+            },
+            "rows": [
+              {
+                "day": "2026-07-28",
+                "sessions": 1412
+              },
+              {
+                "day": "2026-07-29",
+                "sessions": 1877
+              },
+              {
+                "day": "2026-07-30",
+                "sessions": 2043
+              }
+            ],
+            "manifest": {
+              "grain": null,
+              "filters": null,
+              "chosen_by": null,
+              "freshness": {
+                "output_created_at": "2026-01-01T00:00:00Z"
+              },
+              "truncated": false,
+              "comparison": null,
+              "result_shape": "tabular_v1",
+              "dq_evaluation_ids": [],
+              "grain_reconciliation": [],
+              "semantic_view_version_id": "svv_FIXTURE",
+              "provenance": {
+                "values": [
+                  {
+                    "member_id": "day"
+                  },
+                  {
+                    "member_id": "sessions"
+                  }
+                ]
+              }
+            },
+            "truncated": false,
+            "row_count": 3
+          },
+          "spec": {
+            "visualization_spec_version_id": "vsv_FIXTURE",
+            "spec_contract_version": "visualization-spec.v1",
+            "schema_version": 1,
+            "document": {
+              "axes": {
+                "x": {
+                  "scale": "categorical",
+                  "tick_density": "normal",
+                  "zero_baseline": false
+                },
+                "y": {
+                  "scale": "linear",
+                  "tick_density": "normal",
+                  "zero_baseline": true
+                }
+              },
+              "color": {
+                "role": "none",
+                "semantic_direction": "none"
+              },
+              "order": {
+                "source": "result"
+              },
+              "top_n": null,
+              "family": "table",
+              "labels": {
+                "override": {}
+              },
+              "legend": {
+                "visible": false,
+                "position": "none"
+              },
+              "bindings": {
+                "measure": [
+                  "sessions"
+                ],
+                "dimension": [
+                  "day"
+                ]
+              },
+              "evidence": {
+                "datum_fields": [
+                  "sessions"
+                ],
+                "mark_binding": "datum"
+              },
+              "formatting": {
+                "date_style": "auto",
+                "unit_source": "none",
+                "number_style": "auto"
+              },
+              "responsive": {
+                "profiles": [
+                  "console",
+                  "share"
+                ]
+              },
+              "thresholds": [],
+              "annotations": [],
+              "interactions": {
+                "zoom": false,
+                "hover": true,
+                "select": true,
+                "local_filter": false,
+                "legend_toggle": false
+              },
+              "accessibility": {
+                "summary_source": "result_manifest",
+                "table_fallback": "required"
+              },
+              "schema_version": 1,
+              "reference_lines": [],
+              "spec_contract_version": "visualization-spec.v1"
+            }
+          },
+          "pins": {
+            "theme_version": "viz-theme@1",
+            "formatter_version": "viz-formatters@1",
+            "renderer_build": "table/toorow-table@1.0.0",
+            "runtime_build": "@toorow/card-shell/viz@0.1.0+87c254baf75d"
+          },
+          "profile": "share",
+          "display": {}
+        },
+        "ai_path_evidence": {
+          "state": "completed",
+          "steps": [
+            {
+              "chose": {
+                "query_spec_version_id": "qsv_FIXTURE"
+              },
+              "owner": {
+                "object_id": "qs_FIXTURE",
+                "workspace": "analyze",
+                "version_id": "qsv_FIXTURE",
+                "object_type": "query-spec"
+              },
+              "ordinal": 0,
+              "outcome": "succeeded",
+              "step_kind": "tool_call",
+              "tool_name": "execute_analyze_query_spec",
+              "observed_at": "2026-01-01T00:00:00Z",
+              "missing_context": []
+            }
+          ],
+          "outcome": "succeeded",
+          "path_id": "aip_FIXTURE",
+          "lifecycle": "finalized",
+          "schema_version": "observed-ai-path.v1"
+        },
+        "disclosure": {
+          "shared_on": "2026-01-01T00:00:00Z",
+          "expires_at": "2026-01-01T00:00:00Z"
+        },
+        "facts": [
+          {
+            "label": "Shared on",
+            "value": "FIXTURE_DATE"
+          },
+          {
+            "label": "Data as of",
+            "value": "2026-07-30"
+          },
+          {
+            "label": "Grain",
+            "value": "day"
+          }
+        ],
+        "feedback_context": {
+          "schema_version": "exact-feedback.v1",
+          "token": "SIGNED_CONTEXT_SHARE",
+          "interaction_ref": "afi_SHARE_FIXTURE",
+          "expires_at": "2026-01-01T00:15:00Z"
+        }
+      },
+      "receipt": {
+        "schema_version": "exact-feedback-receipt.v1",
+        "status": "recorded",
+        "feedback_id": "feedback_SHARE_FIXTURE",
+        "interaction_ref": "afi_SHARE_FIXTURE",
+        "target": {
+          "kind": "path_step",
+          "ordinal": 0
+        }
+      }
+    }
+  },
+  "stored": [
+    {
+      "store": "feedback_annotations",
+      "surface": "mcp_app",
+      "target": {
+        "kind": "answer"
+      },
+      "polarity": "negative",
+      "actor": "actor_FIXTURE",
+      "result_id": "qr_FIXTURE",
+      "result_content_hash": "sha256_RESULT_FIXTURE",
+      "render_id": null,
+      "visualization_spec_version_id": "vsv_FIXTURE",
+      "renderer_build_id": "table/toorow-table@1.0.0",
+      "runtime_build_id": "@toorow/card-shell/viz@0.1.0+87c254baf75d",
+      "theme_version": "viz-theme@1",
+      "formatter_version": "viz-formatters@1",
+      "ai_path_id": "aip_FIXTURE"
+    },
+    {
+      "store": "feedback_annotations",
+      "surface": "console",
+      "target": {
+        "kind": "datum",
+        "row_index": 1,
+        "field": "sessions"
+      },
+      "polarity": "positive",
+      "actor": "actor_FIXTURE",
+      "result_id": "qr_FIXTURE",
+      "result_content_hash": "sha256_RESULT_FIXTURE",
+      "render_id": "rnd_FIXTURE",
+      "visualization_spec_version_id": "vsv_FIXTURE",
+      "renderer_build_id": "table/toorow-table@1.0.0",
+      "runtime_build_id": "@toorow/card-shell/viz@0.1.0+87c254baf75d",
+      "theme_version": "viz-theme@1",
+      "formatter_version": "viz-formatters@1",
+      "ai_path_id": "aip_FIXTURE"
+    },
+    {
+      "store": "feedback_annotations",
+      "surface": "console",
+      "target": {
+        "kind": "datum",
+        "row_index": 1,
+        "field": "sessions"
+      },
+      "polarity": "positive",
+      "actor": "actor_FIXTURE",
+      "result_id": "qr_FIXTURE",
+      "result_content_hash": "sha256_RESULT_FIXTURE",
+      "render_id": null,
+      "visualization_spec_version_id": null,
+      "renderer_build_id": null,
+      "runtime_build_id": null,
+      "theme_version": null,
+      "formatter_version": null,
+      "ai_path_id": "aip_FIXTURE"
+    },
+    {
+      "store": "render_share_feedback",
+      "surface": "share",
+      "target": {
+        "kind": "path_step",
+        "ordinal": 0
+      },
+      "polarity": "not_helpful",
+      "actor": null,
+      "result_id": "qr_FIXTURE",
+      "result_content_hash": "sha256_RESULT_FIXTURE",
+      "render_id": "rnd_FIXTURE",
+      "visualization_spec_version_id": "vsv_FIXTURE",
+      "renderer_build_id": "table/toorow-table@1.0.0",
+      "runtime_build_id": "@toorow/card-shell/viz@0.1.0+87c254baf75d",
+      "theme_version": "viz-theme@1",
+      "formatter_version": "viz-formatters@1",
+      "ai_path_id": "aip_FIXTURE"
+    }
+  ]
+}

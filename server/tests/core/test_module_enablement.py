@@ -250,14 +250,18 @@ class TestSchedulerSkipsDisabledModuleConnections:
 
 
 # ---------------------------------------------------------------------------
-# AC8.6 -- GET /api/modules/available: disabled module shows enabled: false
+# AC8.6 -- GET /api/connectors/available: a disabled Connector reads enabled:false
+#
+# Story 47.1 renamed the route and its handler. The response key is
+# `connector_name` now; `app.project_modules` keeps its column names until the
+# wire/DB rename lands (see the Connector vocabulary note in glossary.md).
 # ---------------------------------------------------------------------------
 
 
-class TestAvailableModulesEndpoint:
+class TestAvailableConnectorsEndpoint:
     def test_available_modules_excludes_disabled(self):
-        """GET /api/modules/available with module disabled -> enabled: false in response."""
-        from core.admin_api import _list_available_modules
+        """GET /api/connectors/available with the Connector disabled -> enabled: false."""
+        from core.catalog_api import _list_available_connectors  # noqa: PLC0415
         from starlette.datastructures import QueryParams
 
         # Mock request.
@@ -289,19 +293,23 @@ class TestAvailableModulesEndpoint:
             yield mock_conn
 
         with patch("core.admin_api._check_auth", new=AsyncMock(return_value=(True, "test"))), \
-             patch("core.admin_api._module_discovery_catalog", return_value=discovery_catalog), \
+             patch("core.admin_api._strict_project_capability_allowed", return_value=True), \
+             patch(
+                 "core.catalog_api._connector_discovery_catalog",
+                 return_value=discovery_catalog,
+             ), \
              patch("core.db.get_connection", new=_fake_db):
-            resp = asyncio.run(_list_available_modules(req))
+            resp = asyncio.run(_list_available_connectors(req))
 
         data = json.loads(resp.body)
         assert len(data) == 1
-        assert data[0]["module_name"] == "meta-ads"
+        assert data[0]["connector_name"] == "meta-ads"
         assert data[0]["enabled"] is False
         assert data[0]["explicitly_set"] is True
 
     def test_available_modules_default_enabled_when_no_row(self):
-        """GET /api/modules/available with no explicit row -> enabled: true (default)."""
-        from core.admin_api import _list_available_modules
+        """GET /api/connectors/available with no explicit row -> enabled: true (default)."""
+        from core.catalog_api import _list_available_connectors  # noqa: PLC0415
         from starlette.datastructures import QueryParams
 
         req = MagicMock()
@@ -330,13 +338,17 @@ class TestAvailableModulesEndpoint:
             yield mock_conn
 
         with patch("core.admin_api._check_auth", new=AsyncMock(return_value=(True, "test"))), \
-             patch("core.admin_api._module_discovery_catalog", return_value=discovery_catalog), \
+             patch("core.admin_api._strict_project_capability_allowed", return_value=True), \
+             patch(
+                 "core.catalog_api._connector_discovery_catalog",
+                 return_value=discovery_catalog,
+             ), \
              patch("core.db.get_connection", new=_fake_db), \
              patch.dict(os.environ, {"MODULE_DEFAULT_ENABLED": "true"}):
-            resp = asyncio.run(_list_available_modules(req))
+            resp = asyncio.run(_list_available_connectors(req))
 
         data = json.loads(resp.body)
         assert len(data) == 1
-        assert data[0]["module_name"] == "google-analytics"
+        assert data[0]["connector_name"] == "google-analytics"
         assert data[0]["enabled"] is True
         assert data[0]["explicitly_set"] is False

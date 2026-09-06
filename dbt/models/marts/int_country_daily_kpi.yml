@@ -1,0 +1,32 @@
+version: 2
+
+models:
+  - name: int_country_daily_kpi
+    description: Additive Country partitions retained for governed report grouping and DQ.
+    columns:
+      - name: project_id
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: connector
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [cm360, dv360, taboola]
+      - name: metric
+        tests: [not_null]
+      - name: breakdown_dimension
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [country]
+      - name: breakdown_value
+        tests: [not_null]
+      - name: value
+        tests: [not_null]
+      - name: pull_id
+        tests: [not_null]
+      - name: loaded_at
+        tests: [not_null]

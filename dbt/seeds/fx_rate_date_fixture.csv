@@ -1,0 +1,6 @@
+from_currency,to_currency,rate,rate_date,rate_policy,valid_from,valid_to,scenario,notes
+USD,EUR,0.92,2026-07-01,static_dev_rate,2020-01-01,2099-12-31,open_window,the shape of every row of fx_rates.csv -- an open validity window whose start is nowhere near the day the rate was quoted
+GBP,EUR,1.17,2026-07-02,static_dev_rate,2020-01-01,2099-12-31,open_window,a second pair quoted on a different day and sharing the same window start -- valid_from cannot tell the two quotations apart and rate_date can
+CHF,EUR,1.04,2026-06-15,static_dev_rate,2020-01-01,2099-12-31,open_window,a third quotation date on the same window start -- one date varies across the three rows and the other does not
+JPY,EUR,0.0058,2026-07-03,static_dev_rate,2026-07-01,2026-07-31,bounded_window,the row that proves the window still CHOOSES -- a bounded validity window a probe date falls inside and a quotation two days after it opened
+JPY,EUR,0.0061,2026-08-05,static_dev_rate,2026-08-01,2026-08-31,bounded_window,the same pair in the next window -- a probe date in July must select the row above and never this one

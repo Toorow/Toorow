@@ -1,7 +1,7 @@
 /**
  * Story 23.1 — the theme-driven viz color contract (AC5) + branded end-to-end (AC6).
  *
- * AC5: getVizPalette works on a bare createTheme() (standard MUI colors, no crash),
+ * AC5: getVizPalette works on a bare createTheme() (the toorow tokens, no crash),
  *      puts org colors first in categorical when the theme is branded, derives the
  *      diverging ramp from the semantic palette, and a STATIC GUARD proves no
  *      primitive imports color constants from tokens/dist/theme (only vizTheme.ts).
@@ -11,10 +11,11 @@
 
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { ThemeProvider, createTheme, decomposeColor } from "@mui/material/styles";
+
 import { resolveWidgetTheme } from "@toorow/shell";
-import { getVizPalette } from "../vizTheme";
+import { getVizPalette, readCssVizTheme } from "../vizTheme";
 import BarChart from "../BarChart";
+import { ThemeProvider, createTheme, decomposeColor } from "@toorow/shell";
 
 const BRAND = "#0F6FFF"; // rgb(15, 111, 255)
 const TOOROW_ACCENT = "#FF99C8"; // rgb(255, 153, 200)
@@ -24,7 +25,7 @@ function rgbOf(color: string): number[] {
 }
 
 describe("getVizPalette (AC5)", () => {
-  it("fonctionne sur un createTheme() nu — couleurs MUI standard, >= 6 catégorielles", () => {
+  it("fonctionne sur un createTheme() nu — jetons toorow, >= 6 catégorielles", () => {
     const theme = createTheme();
     const viz = getVizPalette(theme);
     expect(viz.accent).toBe(theme.palette.primary.main);
@@ -104,7 +105,7 @@ describe("BarChart brandé de bout en bout (AC6)", () => {
   ];
 
   function barFills(container: HTMLElement): string[] {
-    // Horizontal variant renders HTML bars via MUI Box backgroundColor; assert on
+    // Horizontal variant renders HTML bars via a Box backgroundColor; assert on
     // the vertical SVG variant instead — rect fills are plain attributes.
     return Array.from(container.querySelectorAll("svg rect"))
       .map((r) => r.getAttribute("fill") ?? "")
@@ -154,5 +155,39 @@ describe("BarChart brandé de bout en bout (AC6)", () => {
       }
     });
     expect(hasToorowFill).toBe(true);
+  });
+});
+
+describe("porteur CSS-variables (AD-35) — le contrat sans MUI", () => {
+  it("lit les @theme de styles/theme.css depuis un scope, et l'org les surcharge", () => {
+    // Le porteur : les mêmes propriétés que generate_theme_css.py écrit, posées ici
+    // sur un élément — c'est exactement ainsi qu'une org les surcharge au runtime.
+    const scope = document.createElement("div");
+    scope.style.setProperty("--color-primary", BRAND);
+    scope.style.setProperty("--viz-brand-secondary", "#00AA55");
+    scope.style.setProperty("--viz-brand-accent", "#AA00CC");
+    document.body.appendChild(scope);
+
+    const viz = getVizPalette(readCssVizTheme(scope));
+    expect(viz.accent).toBe(BRAND);
+    expect(viz.categorical.slice(0, 3)).toEqual([BRAND, "#00AA55", "#AA00CC"]);
+    expect(viz.categorical.length).toBeGreaterThanOrEqual(6);
+
+    document.body.removeChild(scope);
+  });
+
+  it("sans variable posée, retombe sur les jetons toorow plutôt que de rendre vide", () => {
+    const viz = getVizPalette(readCssVizTheme(document.createElement("div")));
+    expect(viz.accent).toBe(TOOROW_ACCENT);
+    expect(viz.categorical.length).toBeGreaterThanOrEqual(6);
+    expect(viz.diverging(0)).toBeTruthy();
+  });
+
+  it("une couleur illisible dégrade au lieu de lever — MUI alpha() levait", () => {
+    const scope = document.createElement("div");
+    scope.style.setProperty("--color-primary", "var(--une-var-non-resolue)");
+    const viz = getVizPalette(readCssVizTheme(scope));
+    expect(() => viz.diverging(0.5)).not.toThrow();
+    expect(typeof viz.hairline).toBe("string");
   });
 });

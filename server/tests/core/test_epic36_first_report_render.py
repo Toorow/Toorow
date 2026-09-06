@@ -184,8 +184,8 @@ def test_render_degraded_within_policy_runs_and_stays_honest(monkeypatch):
     assert rendered["overall"] == "degraded"
     assert rendered["validation"]["is_degraded"] is True
     assert rendered["validation"]["degraded_note"]
-    # Honest: never upgraded to "prêt".
-    assert "prêt" not in rendered["headline"].lower()
+    # Honest: never upgraded to "ready".
+    assert "ready" not in rendered["headline"].lower()
 
 
 def test_render_refuses_when_blocked(monkeypatch):
@@ -217,6 +217,64 @@ def test_no_app_ui_compact_text_bounded_evidence_and_deeplink(monkeypatch):
     link = rendered["report_deep_link"]
     assert link["requires_authentication"] is True
     assert "token" not in link
+
+
+def _conn(org_id: str | None = "org-1"):
+    """A connection whose only read is the Datastream's owning organization."""
+    conn = MagicMock()
+    cursor = conn.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value = (org_id,) if org_id else None
+    return conn
+
+
+def test_deep_link_is_an_address_the_console_can_open(monkeypatch):
+    """AI-218 -- the deep link must be a CONSOLE address, not an invented one.
+
+    It used to read ``/projects/{p}/datastreams/{ds}/first-report/rendered``:
+    a `/projects/` root the console router refuses on its first segment
+    (`ui/admin/src/shell/router.tsx:130`), a collection that is not addressable
+    under it, and a screen that has never existed. The one gesture this render
+    offers a human opened the unknown-route screen, and the console-side test
+    pinned the string verbatim, so nothing was red.
+
+    What is asserted here is the grammar, segment by segment, because that is
+    what was wrong: the organization root, the `object` literal, the `tab`
+    literal. `ComposedAddressesResolve.test.tsx` puts the same string to the real
+    parser.
+    """
+    _patch_compute(monkeypatch, overall="ready")
+    # The host context has its own read; patched out so the connection above
+    # answers the organization query and nothing else.
+    monkeypatch.setattr(frr, "_bound_host_connection", lambda *a, **k: {"ui_supported": False})
+    rendered = frr.render_first_report(
+        _conn(), datastream_id="ds-1", project_id="proj-1", actor="alice"
+    ).as_dict()
+
+    path = rendered["report_deep_link"]["path"]
+    assert path == (
+        "/org/org-1/project/proj-1"
+        "/data/datastreams/object/datastream/ds-1/tab/outputs"
+    )
+    # And it still cites the publication it claims to open.
+    assert rendered["report_deep_link"]["publication_execution_id"] == "dse_pub"
+
+
+def test_no_deep_link_when_the_organization_cannot_be_read(monkeypatch):
+    """No organization, no address -- and no link rather than a broken one.
+
+    The console's grammar begins at the organization, so without one there is
+    nothing to compose. A link that cannot resolve is worse than no link: the
+    screen reports it as a way forward. Same rule as `data_surface.py:405`.
+    """
+    _patch_compute(monkeypatch, overall="ready")
+    monkeypatch.setattr(frr, "_bound_host_connection", lambda *a, **k: {"ui_supported": False})
+    rendered = frr.render_first_report(
+        _conn(org_id=None), datastream_id="ds-1", project_id="proj-1", actor="alice"
+    ).as_dict()
+
+    assert rendered["report_deep_link"] is None
+    # The bounded evidence is mandatory and does not depend on the link.
+    assert rendered["bounded_evidence"]["row_count"] == 120
 
 
 def test_full_dataset_never_enters_model_facing_output(monkeypatch):

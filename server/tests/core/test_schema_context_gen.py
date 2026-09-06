@@ -36,6 +36,12 @@ from core.schema_context_gen import (
 )
 from starlette.testclient import TestClient
 
+from tests.support.statement_router import (
+    StatementInventory,
+    UnknownStatement,
+    describe,
+)
+
 ROOT = Path(__file__).resolve().parents[3]
 MIGRATION = ROOT / "infra" / "nango" / "migrations" / "031_context_layer.sql"
 
@@ -225,6 +231,118 @@ def test_generate_schema_context_pipeline():
     assert written_kinds == ["columns", "description", "preview"]
 
 
+# ---------------------------------------------------------------------------
+# The in-process stand-in for the Postgres side of app.schema_context.
+# ---------------------------------------------------------------------------
+
+# EVERY STATEMENT generate_schema_context ISSUES AGAINST POSTGRES on the path
+# this file exercises, named once (AI-317). What this replaces was an if/elif
+# chain ending in `else: self._result = None` -- and None is not "I do not know"
+# here, it is a MEANINGFUL ANSWER: upsert_schema_context_doc reads exactly that
+# as "no doc exists yet for this (project, relation, doc_kind), insert one"
+# (schema_context_gen.py:370). A statement that stopped matching -- a reordered
+# projection, a new scoping column -- would have been answered "absent", the
+# generator would have re-inserted on the second run, and the double-run below
+# would have failed pointing at the product.
+#
+# release_savepoint and rollback_savepoint are declared BEFORE savepoint:
+# declaration order is first match wins, and both of them contain the third
+# fragment whole.
+#
+# The CHANGE path is deliberately NOT taught. UPDATE app.schema_context
+# (schema_context_gen.py:392) and the two history statements it goes through
+# first -- SELECT COALESCE(MAX(version_number), 0) (:313) and INSERT INTO
+# app.schema_context_versions (:323) -- are never issued from here, because the
+# second run finds every body byte-identical. The old fake carried an UPDATE
+# branch that never fired and would have been wrong if it had (a no-op leaves
+# the stale body in the store, so a third run would report a change again).
+# Reaching UPDATE from this test means the double run stopped being idempotent,
+# and that is what the reader needs to be told -- by name, not by a no-op.
+_SCHEMA_CONTEXT = StatementInventory(
+    "test_schema_context_gen._FakeCursor",
+    doc_lookup="select id, body_md, generated_at from app.schema_context",
+    doc_insert="insert into app.schema_context (",
+    release_savepoint="release savepoint",
+    rollback_savepoint="rollback to savepoint",
+    savepoint="savepoint",
+)
+
+
+class _FakeCursor:
+    """Answers the statements above from a dict, and REFUSES every other one.
+
+    ``description`` is DERIVED from the statement rather than spelled out: a
+    hand-written column tuple is a second copy of the projection, and it is the
+    copy that goes stale first, because nothing reads it.
+    """
+
+    def __init__(self, store: dict[tuple, str]):
+        self._store = store
+        self._result = None
+        self.description = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, sql, params=()):
+        statement = _SCHEMA_CONTEXT.match(sql)
+        # Only the lookup returns a result set. An INSERT with no RETURNING and
+        # a savepoint command report `description = None`, which is the signal
+        # psycopg reserves for exactly "this statement had no result set".
+        self.description = describe(sql) if statement == "doc_lookup" else None
+        match statement:
+            case "doc_lookup":
+                stored = self._store.get((params[0], params[1], params[2]))
+                self._result = None if stored is None else ("sctx_x", stored, "t0")
+            case "doc_insert":
+                self._store[(params[1], params[2], params[3])] = params[4]
+                self._result = None
+            case "savepoint" | "release_savepoint" | "rollback_savepoint":
+                self._result = None
+            case _:  # pragma: no cover - a name in the inventory, unanswered
+                raise _SCHEMA_CONTEXT.unknown(sql)
+
+    def fetchone(self):
+        return self._result
+
+    def fetchall(self):
+        return []
+
+
+class _FakeConn:
+    def __init__(self):
+        self.store: dict[tuple, str] = {}
+
+    def cursor(self):
+        return _FakeCursor(self.store)
+
+    def commit(self):
+        pass
+
+
+def test_the_fake_refuses_a_statement_it_was_never_taught():
+    """AI-317: an unrecognised statement must NAME itself, not answer no rows.
+
+    The statement shown is the product own UPDATE (schema_context_gen.py:392),
+    the one the change path issues. The old chain answered it with a silent
+    no-op, and answered anything else with ``None`` -- the very shape
+    upsert_schema_context_doc reads as "nothing stored yet, insert".
+    """
+    cursor = _FakeCursor({})
+    with pytest.raises(UnknownStatement) as raised:
+        cursor.execute(
+            "UPDATE app.schema_context SET body_md = %s, generated_at = now() "
+            "WHERE id = %s",
+            ("# New Columns", "sctx_x"),
+        )
+    message = str(raised.value)
+    assert "update app.schema_context set body_md" in message
+    assert "doc_lookup" in message
+
+
 def test_generate_schema_context_double_run_is_idempotent():
     """CRITICAL fix (idempotence): a real double-run over an unchanged DuckDB
     relation produces 0 updates on the second pass (byte-identical preview via
@@ -237,52 +355,6 @@ def test_generate_schema_context_double_run_is_idempotent():
             (3, 'eu', 30.0), (1, 'us', 10.0), (2, 'apac', 20.0);
         """
     )
-
-    store: dict[tuple, str] = {}
-
-    class _FakeCursor:
-        def __init__(self):
-            self._result = None
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-        def execute(self, sql, params=()):
-            s = " ".join(sql.split())
-            if s.startswith("SELECT id, body_md, generated_at FROM app.schema_context"):
-                key = (params[0], params[1], params[2])
-                if key in store:
-                    self._result = ("sctx_x", store[key], "t0")
-                else:
-                    self._result = None
-            elif s.startswith("INSERT INTO app.schema_context ("):
-                key = (params[1], params[2], params[3])
-                store[key] = params[4]
-                self._result = None
-            elif s.startswith("UPDATE app.schema_context"):
-                # params: (body_md, id) -- update by re-finding the key is not
-                # needed here; the double-run test never reaches UPDATE on run 2.
-                self._result = None
-            elif "SAVEPOINT" in s or "RELEASE" in s or "ROLLBACK" in s:
-                self._result = None
-            else:
-                self._result = None
-
-        def fetchone(self):
-            return self._result
-
-        def fetchall(self):
-            return []
-
-    class _FakeConn:
-        def cursor(self):
-            return _FakeCursor()
-
-        def commit(self):
-            pass
 
     conn = _FakeConn()
 
@@ -490,7 +562,16 @@ def test_live_postgres_schema_context_historisation(live_postgres):
 
 @requires_postgres
 def test_live_postgres_schema_context_versions_immutable(live_postgres):
-    """schema_context_versions is append-only: UPDATE/DELETE/TRUNCATE blocked."""
+    """schema_context_versions is append-only: UPDATE/DELETE/TRUNCATE blocked.
+
+    THE THREE ASSERTIONS READ `sqlstate`, NOT `pgcode`. `pgcode` is psycopg2's
+    name for it; this repository has been on psycopg3 since `384d0ed9`
+    (2026-07-11), where the attribute is `sqlstate` -- so all three raised
+    `AttributeError: 'RaiseException' object has no attribute 'pgcode'` the moment
+    a live Postgres let the trigger fire, and the file was green only without one.
+    `tests/integration/test_context_constraints.py` had the spelling right all
+    along; this one is the last three occurrences in the tree.
+    """
     import psycopg.errors
 
     conn = live_postgres
@@ -518,7 +599,7 @@ def test_live_postgres_schema_context_versions_immutable(live_postgres):
                 "WHERE schema_context_id = %s",
                 (sctx_id,),
             )
-    assert exc_info.value.pgcode == "P0001"
+    assert exc_info.value.sqlstate == "P0001"
     conn.rollback()
 
     with conn.cursor() as cur:
@@ -527,11 +608,11 @@ def test_live_postgres_schema_context_versions_immutable(live_postgres):
                 "DELETE FROM app.schema_context_versions WHERE schema_context_id = %s",
                 (sctx_id,),
             )
-    assert exc_info.value.pgcode == "P0001"
+    assert exc_info.value.sqlstate == "P0001"
     conn.rollback()
 
     with conn.cursor() as cur:
         with pytest.raises(psycopg.errors.RaiseException) as exc_info:
             cur.execute("TRUNCATE app.schema_context_versions")
-    assert exc_info.value.pgcode == "P0001"
+    assert exc_info.value.sqlstate == "P0001"
     conn.rollback()

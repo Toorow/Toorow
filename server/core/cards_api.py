@@ -232,27 +232,46 @@ async def _list_templates(request: Request) -> Response:
     project_id = (request.query_params.get("project_id") or "").strip() or None
 
     try:
+        from core import answerable_topics as topics_module  # noqa: PLC0415
         from core import cards as cards_module  # noqa: PLC0415
 
-        raw = cards_module.list_templates()
-        templates = [_enrich_catalog_entry(e) for e in raw]
-
-        if project_id:
+        if not project_id:
+            # No project named -> the platform default set, and it is labelled as
+            # such. Story 52.1: the project-resolved catalog needs a project.
+            raw = topics_module.default_catalog()
+            templates = [_enrich_catalog_entry(e) for e in raw]
+        else:
             from core.db import get_connection  # noqa: PLC0415
-            from core.project_access import identity_has_project_access  # noqa: PLC0415
+            from core.project_access import identity_can_read_project  # noqa: PLC0415
 
             with get_connection() as conn:
-                # AD-5: enforce access before exposing the project's field inventory.
-                if not identity_has_project_access(project_id, identity or "anonymous", conn):
+                # AD-5: enforce access before exposing the project's field inventory
+                # OR its own catalog.
+                if not identity_can_read_project(project_id, identity or "anonymous", conn):
                     return JSONResponse(
-                        {"code": "not_found", "message": "Projet introuvable ou acces refuse"},
+                        {"code": "not_found", "message": "Project not found or access denied"},
                         status_code=404,
                     )
+                raw = topics_module.resolve_catalog(project_id, conn)
                 available_metrics, available_dimensions = (
                     _project_available_canonical_fields(project_id, conn)
                 )
+            templates = [_enrich_catalog_entry(e) for e in raw]
 
-            for entry, tpl in zip(templates, cards_module.CARD_TEMPLATES):
+            # Story 52.1: paired by IDENTITY, never by position. The previous
+            # `zip(templates, cards_module.CARD_TEMPLATES)` was correct only while
+            # every project saw the same nine templates in the same order; the day
+            # a project reworded or added one, it attached one entry's usability
+            # verdict to another entry.
+            by_id = {
+                entry["id"]: cards_module.template_from_entry(entry)
+                for entry in raw
+                if entry.get("id")
+            }
+            for entry in templates:
+                tpl = by_id.get(entry.get("id"))
+                if tpl is None:  # pragma: no cover -- enrichment preserves ids
+                    continue
                 if tpl.is_context:
                     # Context cards read app-level sources -> always usable.
                     entry["usable"] = True
@@ -288,6 +307,8 @@ async def _get_card(request: Request) -> Response:
         template    (optional) -- explicit card id; omitted => server suggestion
         metrics     (optional) -- comma-separated canonical metrics (ad-hoc mode)
         report_ref  (optional) -- "{module}/{report_id}" (report-backed mode)
+        plan_id     (optional) -- the object an object-scoped context card is about
+                    (e.g. template="mediaplan_pacing"), forwarded verbatim
         date_from / date_to (optional ISO) -- default: last 30 days
 
     Returns: {"summary", "envelope", "widget_uri"}.
@@ -306,6 +327,17 @@ async def _get_card(request: Request) -> Response:
 
     template = (request.query_params.get("template") or "").strip() or None
     report_ref = (request.query_params.get("report_ref") or "").strip() or None
+    # THE OBJECT A CONTEXT CARD IS ABOUT. `get_card` has taken `plan_id` since
+    # story 22.5 and this mirror never forwarded it, so `mediaplan_pacing` --
+    # which refuses without one -- answered 422 to every REST caller. That is
+    # the whole reason `analyze-and-test.md` could say "no console route reads
+    # the pacing Result": the route existed and could not be addressed.
+    #
+    # FIXED AS A CLASS, not for one card. Any context card scoped to an object
+    # now reaches this mirror the same way the MCP tool does, which is what the
+    # module docstring already promised ("both channels call the SAME core.cards
+    # functions"). Absent stays absent: None, never a placeholder id.
+    plan_id = (request.query_params.get("plan_id") or "").strip() or None
     metrics_raw = (request.query_params.get("metrics") or "").strip()
     metrics = [m.strip() for m in metrics_raw.split(",") if m.strip()] if metrics_raw else None
     date_from = (request.query_params.get("date_from") or "").strip()
@@ -336,21 +368,38 @@ async def _get_card(request: Request) -> Response:
     try:
         from core import cards as cards_module  # noqa: PLC0415
         from core.db import get_connection  # noqa: PLC0415
-        from core.project_access import identity_has_project_access  # noqa: PLC0415
+        from core.project_access import identity_can_read_project  # noqa: PLC0415
 
-        # AD-5: scope enforcement before any warehouse read (best-effort DB open).
+        # AD-5: scope enforcement before any warehouse read. FAIL-CLOSED.
+        #
+        # This used to swallow the exception and continue ("fail open like the tool
+        # path"). The access graph lives in Postgres and the facts live in the
+        # warehouse (BigQuery/DuckDB, core.warehouse) -- two different stores. So a
+        # Postgres outage skipped the check WITHOUT preventing the warehouse read,
+        # and the response body was one project's data served on an unverified
+        # identity. `identity_can_read_project` is itself strict by construction
+        # ("no default-open mode exists", core.project_access:222); the hole was
+        # here, in the caller.
+        #
+        # README.md:121 (invariant 6, permissions evaluated server-side against the
+        # organization-rooted graph) and :123 (invariant 8, unverifiable is never
+        # healthy) both forbid the previous posture. An unverifiable decision is a
+        # refusal, and it takes the SAME non-disclosing 404 as a denial so a caller
+        # cannot tell absent / denied / unverifiable apart.
         try:
             with get_connection() as conn:
-                if not identity_has_project_access(project_id, identity or "anonymous", conn):
-                    return JSONResponse(
-                        {
-                            "code": "forbidden",
-                            "message": "Acces refuse pour ce projet",
-                        },
-                        status_code=404,
-                    )
-        except Exception as scope_exc:  # noqa: BLE001 - fail open like the tool path
-            logger.debug("cards_api: scope_check_skipped: %s", scope_exc)
+                _allowed = identity_can_read_project(project_id, identity or "anonymous", conn)
+        except Exception as scope_exc:  # noqa: BLE001 - unverifiable => refuse
+            logger.warning("cards_api: scope_check_unverifiable: %s", scope_exc)
+            _allowed = False
+        if not _allowed:
+            return JSONResponse(
+                {
+                    "code": "forbidden",
+                    "message": "Acces refuse pour ce projet",
+                },
+                status_code=404,
+            )
 
         summary, envelope, widget_uri = cards_module.get_card(
             _loaded_modules(),
@@ -361,6 +410,7 @@ async def _get_card(request: Request) -> Response:
             date_from=date_from,
             date_to=date_to,
             identity=identity or "anonymous",
+            plan_id=plan_id,
         )
     except cards_module.CardTemplateNotFound as exc:
         return JSONResponse(
@@ -379,14 +429,54 @@ async def _get_card(request: Request) -> Response:
             status_code=422,
         )
     except Exception as exc:  # noqa: BLE001
+        # AN UNREACHABLE WAREHOUSE IS NOT AN INTERNAL ERROR, and the difference
+        # decides what the console draws. `_resolve_mediaplan_pacing_card`
+        # deliberately lets `WarehouseUnavailable` propagate ("never a silent
+        # empty pacing", AD-9); collapsing it into a 500 whose body carries the
+        # raw exception text both leaked internals and told the console nothing
+        # it could say to a person. It takes the same opaque 503 the sibling
+        # route `/api/mediaplans/{plan_id}/pacing` already returns -- one product,
+        # one sentence for one condition.
+        if type(exc).__name__ == "WarehouseUnavailable":
+            logger.warning("cards_api: warehouse_unavailable: %s", exc)
+            return JSONResponse(
+                {
+                    "code": "warehouse_unavailable",
+                    # English, unlike the identical sentence in `mediaplan_api`:
+                    # that one is recorded French debt, and a new string may not
+                    # add to it (`test_operator_messages_are_english`).
+                    "message": "Pacing is unavailable right now",
+                },
+                status_code=503,
+            )
         logger.error("cards_api: get_card_error: %s", exc)
         return JSONResponse(
             {"code": "internal_error", "message": f"Erreur interne : {exc}"},
             status_code=500,
         )
 
+    # Story 52.4: the answer contract, built at the HOST boundary by the one
+    # shared builder. It is deliberately NOT inside the envelope: measured on the
+    # `dedup` card, the `dedup` envelope sits a few dozen bytes under the 4096-byte
+    # model-channel budget -- 117 was written here once and never reproduced;
+    # the reading was 127, then 65 as the envelope grew. It is a READING OF THE
+    # TREE, not a constant, so the durable form is the command:
+    #   cd server && python -m pytest tests/integration/test_model_channel_margin.py -q
+    # which measures every card and fails before the cliff (AI-115).
+    # The point stands whatever the reading: the envelope has no room for
+    # budget, so a 336-byte contract inside it would have pushed `composition`
+    # out of the model channel -- the contract displacing the very thing it
+    # describes. It is a host binding, like the MCP `_meta`, and both hosts build
+    # it from `answer_contract.build_answer` so they cannot diverge.
+    from core.answer_contract import build_answer  # noqa: PLC0415
+
     return JSONResponse(
-        {"summary": summary, "envelope": envelope, "widget_uri": widget_uri}
+        {
+            "summary": summary,
+            "envelope": envelope,
+            "widget_uri": widget_uri,
+            "answer": build_answer(envelope, widget_uri=widget_uri),
+        }
     )
 
 

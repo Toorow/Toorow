@@ -1,0 +1,6 @@
+project_id,date,connector,metric,country,country_source,value,scenario,notes
+__country_absence__,2026-06-01,__country_src_a__,impressions,FR,France,100,resolved,the provider named a country and the vocabulary resolved it -- the bucket is the canonical code and nothing changes
+__country_absence__,2026-06-01,__country_src_a__,impressions,,Republic of Nowhere,25,unresolved,the provider named something the vocabulary cannot resolve -- FAIL-CLOSED: the canonical form stays NULL so normalize_dimension's not_null still breaks the build; the observable form keeps the raw spelling for governed DQ
+__country_absence__,2026-06-01,__country_src_a__,impressions,,,40,absent,THE ROW THIS FIXTURE EXISTS FOR -- the provider reported no country at all. Both forms answer the sentinel; without it fact_daily_kpi emits a NULL breakdown_value and int_country_daily_kpi drops the row
+__country_absence__,2026-06-02,__country_src_b__,clicks,DE,Germany,7,resolved,a second connector and a second day so the no-loss identity is not proven on a single group
+__country_absence__,2026-06-02,__country_src_b__,clicks,,,3,absent,a second absent row on a different connector -- one connector answering correctly proves nothing about the family

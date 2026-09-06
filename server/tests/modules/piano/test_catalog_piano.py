@@ -102,25 +102,51 @@ def test_manifest_catalog_diff_is_clean(catalog):
     assert diff_catalog_manifest(catalog, MANIFEST) == []
 
 
-def test_error_map_declares_only_matchable_prefix_keys():
-    """F-3: _raise_provider_error reduces the API-Code to its Category PREFIX
-    before matching, so every error_map key must be '<status>:<Category>' with
-    NO '_subcode' -- a full-code key (e.g. 401:BadAuthentication_NoHeader) would
-    be unreachable. The map declares only what it can actually match."""
-    for full_key in MANIFEST["error_map"]:
+def test_error_map_declares_only_matchable_prefix_keys(connector):
+    """F-3 + AI-114: what error_map declares must be MATCHABLE *and* must REFINE.
+
+    F-3 (unchanged, and still enforced for every key present):
+    _raise_provider_error reduces the API-Code to its Category PREFIX before
+    handing the payload to core, so a key must be '<status>:<Category>' with NO
+    '_subcode' -- a full-code key (401:BadAuthentication_NoHeader) is
+    unreachable and classifies nothing.
+
+    AI-114 (2026-08-01) emptied the map, and the SECOND assertion below is the
+    reason -- not a relaxation of the first. Every Category piano had declared
+    (BadAuthentication/401, UnauthorizedSite+InvalidSpace/403, Invalid*/400,
+    UnknownError/500) returned exactly the class core.pull_errors derives from
+    the HTTP status alone, so not one entry could change a verdict: the map
+    made the taxonomy LOOK refined where it was not. Pinning both halves is
+    what stops a decorative entry from coming back unnoticed -- a restatement
+    of pure HTTP now FAILS here instead of passing as documentation.
+    """
+    from core.pull_errors import classify_http_error
+
+    for full_key, canonical in MANIFEST["error_map"].items():
         if full_key.startswith("_"):
             continue
-        status, _colon, code = full_key.partition(":")
-        assert status.isdigit(), full_key
+        status, colon, code = full_key.partition(":")
+        assert colon and status.isdigit(), full_key
         assert "_" not in code, (
             f"error_map key {full_key!r} carries a subcode -- unreachable "
             "(the connector matches on the Category prefix only)"
         )
-    # InvalidSpace is declared as a prefix (explicit permission_denied), and the
-    # removed full-code keys are gone.
-    assert MANIFEST["error_map"]["403:InvalidSpace"] == "permission_denied"
+        pure_http = classify_http_error(int(status), None, None).error_class
+        assert canonical != pure_http, (
+            f"error_map key {full_key!r} -> {canonical!r} restates the class "
+            f"core already derives from HTTP {status} alone. It cannot change "
+            "any verdict; declaring it claims a refinement that does not exist."
+        )
+
+    # The unreachable full-code keys stay gone.
     assert "403:InvalidSpace_NoActiveSite" not in MANIFEST["error_map"]
     assert "401:BadAuthentication_NoHeader" not in MANIFEST["error_map"]
+
+    # The Category-prefix reduction is NOT dead code just because the map is
+    # empty: it carries the InvalidColumns dynamic-catalog drift signal, and it
+    # is what would make a future key matchable on the day one is justified.
+    assert connector._code_prefix("InvalidColumns_UnknownColumn") == "InvalidColumns"
+    assert connector._code_prefix("UnauthorizedSite") == "UnauthorizedSite"
 
 
 def test_tier_core_default_selection_is_non_empty(catalog):

@@ -31,12 +31,17 @@ WHAT THIS MODULE REUSES (E36-NFR05 / the gap analysis: the substrate EXISTS):
   * ``refetch.compute_refetch_windows`` / ``REFETCH_WINDOW_DAYS`` -- the bounded
     <=31-day half-open windowing for a reload range (the Story 26.1 mechanism).
 
-  * ``datastream_publication.create_execution`` -- mint ONE non-live CANDIDATE
-    execution against the pinned (or chosen, for reprocess) plan/mapping
-    versions. This module NEVER calls ``commit_publication`` and NEVER writes
-    ``current_published_execution_id``: an invalid candidate simply stays
-    UNPUBLISHED, the current version + its freshness stay explicit (publication
-    gates are Governance's fail-closed authority, Story 36.18).
+  * ``datastream_publication.create_execution`` -- it DID mint ONE non-live
+    candidate per confirmed proposal. STORY 63.7 REMOVED THAT MINT. Nothing in
+    this build advances such a candidate: there is no ``enqueue``, no
+    ``advance_state`` and no worker that reads ``recovery_kind``, so the
+    execution stayed in ``created`` -- an ACTIVE state -- and
+    ``uq_datastream_executions_active`` then answered 409 to every later
+    publication while ``open_collection_run`` returned ``None`` every following
+    night. The three verbs now REFUSE, at prepare and again at dispatch, with the
+    sentence ``core.run_origins.refusal_message`` writes. Building their engine
+    is a different story; offering a gesture that silently costs a flux its
+    recurring collection was not an option in the meantime.
 
   * ``operations_mcp._load_target`` / ``_current_policy_version`` /
     ``_quota_estimate`` / ``_proposal_fingerprint`` /
@@ -71,6 +76,15 @@ import json
 import logging
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from typing import Any, Mapping
+
+# Story 63.7. Imported at module level rather than lazily like the rest of
+# `core.*`: `run_origins` is a leaf registry -- a frozen table and four pure
+# functions, importing nothing from `core` -- so it cannot take part in the
+# import cycle with `core.main` the convention below exists to avoid, exactly as
+# `core.pull_job_states` is imported at the top of `scheduler` and
+# `execution_progress`.
+from core import run_origins
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +97,44 @@ KIND_SYNCHRONIZE = "synchronize"
 KIND_RELOAD = "reload"
 KIND_REPROCESS = "reprocess"
 
+#: Story 63.7: the origin each verb WOULD stamp on the execution it mints.
+#:
+#: It is a mapping onto `core.run_origins`, and none of the three has an engine
+#: in this build -- so `stamp_origin` refuses all three, and so does this module,
+#: before anything is written. See `_refuse_without_engine` below.
+_ORIGIN_BY_KIND = {
+    KIND_SYNCHRONIZE: run_origins.BOUNDED_SYNCHRONIZE,
+    KIND_RELOAD: run_origins.BOUNDED_RELOAD,
+    KIND_REPROCESS: run_origins.BOUNDED_REPROCESS,
+}
+
+
+def _refuse_without_engine(kind: str) -> None:
+    """Refuse a verb whose execution nothing in this build would advance.
+
+    WHAT THIS STOPS, MEASURED 2026-08-06. `_dispatch_bounded_recovery` minted one
+    non-terminal candidate per confirmed proposal and enqueued NOTHING: no pull
+    job, no activation job, no `advance_state` anywhere in this module, and no
+    worker reading `recovery_kind`. The execution stayed in `created`, which is
+    an ACTIVE state, so `uq_datastream_executions_active` answered 409 to every
+    later publication AND `execution_progress.open_collection_run` returned
+    `None` every following night. One press of a button offered on the Runs tab
+    cost the flux its recurring collection, permanently and silently.
+
+    So the verb refuses instead, with the sentence the registry writes -- at
+    PREPARE, so nothing is frozen, and again at DISPATCH, so a proposal frozen
+    before this change cannot be confirmed into the same damage.
+
+    This is not a judgement on the three verbs: they are the right verbs and the
+    ratified surface asks for them. It says they have no engine yet, and that a
+    gesture with no engine says so rather than locking a Datastream.
+    """
+    origin = _ORIGIN_BY_KIND.get(kind)
+    if origin is None or run_origins.has_engine(origin):
+        return
+    raise BoundedRecoveryError(run_origins.NO_ENGINE, run_origins.refusal_message(origin))
+
+
 BOUNDED_KINDS = frozenset({KIND_SYNCHRONIZE, KIND_RELOAD, KIND_REPROCESS})
 
 # A single reload window may not exceed the Story 26.1 window ceiling
@@ -93,12 +145,11 @@ BOUNDED_KINDS = frozenset({KIND_SYNCHRONIZE, KIND_RELOAD, KIND_REPROCESS})
 # refusing an over-wide (e.g. multi-year) request as forbidden_interval.
 MAX_RELOAD_SPAN_DAYS = 92
 
-# The default incremental depth (in days) a synchronize covers when the caller
-# states no explicit window: the datastream's own configured refetch depth, read
-# from app.datastreams.refetch_days. A documented fallback keeps a missing/absurd
-# value safe. Never a platform-wide hardcode of the *effective* window -- this is
-# only the floor used when the per-datastream value is unreadable.
-DEFAULT_SYNCHRONIZE_DAYS = 3
+# The incremental depth a synchronize covers is NOT declared here. It is the
+# Datastream's own retrieval window, arbitrated once in `core.pull_window` --
+# which also owns the defensive fallback for a row that declares nothing. A
+# second constant standing next to that resolver is exactly how this door came
+# to collect three days for a Datastream whose screen said thirty.
 
 
 class BoundedRecoveryError(Exception):
@@ -192,7 +243,7 @@ def normalize_reload_scope(
         raise BoundedRecoveryError(
             "forbidden_interval",
             "Intervalle de rechargement vide : la borne 'to' est exclusive et "
-            "doit etre strictement posterieure a 'from'.",
+            "must be strictly later than 'from'.",
         )
 
     # The last INCLUSIVE reloaded day is the exclusive bound minus one day. Cap the
@@ -229,21 +280,31 @@ def normalize_reload_scope(
     )
 
 
-def synchronize_interval(today: date, refetch_days: int | None) -> dict:
+def synchronize_interval(end_reference: date, declaration: Mapping[str, Any] | None) -> dict:
     """Return the incremental ``{from, to}`` window for a synchronize-now run.
 
-    Story 12.11 AC1: synchronize states its interval. The incremental window is
-    the last ``refetch_days`` days ENDING YESTERDAY (the nightly convention; a
-    DATE grain, never an hour -- date-grain invariant). Falls back to
-    ``DEFAULT_SYNCHRONIZE_DAYS`` when ``refetch_days`` is missing/absurd so the
-    stated interval is always concrete. Inclusive on both ends.
+    Story 12.11 AC1: synchronize states its interval. Inclusive on both ends, a
+    DATE grain and never an hour (date-grain invariant).
+
+    CORRIGÉ le 2026-08-12. This read ``refetch_days`` ALONE -- the legacy alias
+    that AI-46 arbitrated away everywhere else -- so a Datastream whose
+    retrieval window says thirty days synchronized three, and the extraction
+    offset of a lagging source was ignored. "Synchronize now" is the manual
+    replay of the scheduled run, so it must not resolve a different window from
+    it: the precedence, the offset and the cadence floor are CALLED
+    (``core.pull_window``), not restated. The defensive fallback of three days
+    survives inside that resolver, for a row that declares neither column.
+
+    *end_reference* is the last COMPLETE day; the caller resolves it in the
+    PROJECT's timezone (AI-117), which is why it is a parameter.
     """
-    days = refetch_days if isinstance(refetch_days, int) and refetch_days >= 1 else None
-    if days is None:
-        days = DEFAULT_SYNCHRONIZE_DAYS
-    to = today - timedelta(days=1)
-    frm = to - timedelta(days=days - 1)
-    return {"from": frm.isoformat(), "to": to.isoformat()}
+    from core.pull_window import resolve_window  # noqa: PLC0415
+
+    row = declaration or {}
+    window = resolve_window(
+        row, end_reference=end_reference, cadence=row.get("schedule_mode")
+    )
+    return {"from": window.date_from, "to": window.date_to}
 
 
 # ---------------------------------------------------------------------------
@@ -299,9 +360,9 @@ def evaluate_reprocess_retention(
             available=False,
             code="retention_unavailable",
             reason=(
-                "Aucune donnee source retenue a retraiter : lancez d'abord une "
-                "synchronisation ou un rechargement (le retraitement n'appelle "
-                "jamais la source)."
+                "No retained source data to reprocess: first run a "
+                "synchronisation or a reload (reprocessing never calls the "
+                "source)."
             ),
         )
     if not retained_source_schema_hash or not chosen_mapping_source_schema_hash:
@@ -309,9 +370,9 @@ def evaluate_reprocess_retention(
             available=False,
             code="incompatible_schema",
             reason=(
-                "Schema de la donnee retenue inconnu : impossible de prouver la "
-                "compatibilite avec le mapping choisi. Re-classez la source avant "
-                "de retraiter."
+                "Schema of the retained data is unknown, so compatibility with "
+                "the chosen mapping cannot be proved. Re-classify the source "
+                "before reprocessing."
             ),
             retained_execution_id=retained_execution_id,
             retained_source_schema_hash=retained_source_schema_hash,
@@ -322,7 +383,7 @@ def evaluate_reprocess_retention(
             code="incompatible_schema",
             reason=(
                 "Le schema source du mapping choisi ne correspond pas a celui de "
-                "la donnee retenue : le mapping ne peut pas etre reapplique sans "
+                "the retained data: the mapping cannot be reapplied without "
                 "risque. Rechargez l'intervalle sous un mapping compatible."
             ),
             retained_execution_id=retained_execution_id,
@@ -434,6 +495,17 @@ def build_impact(
         impact["retained_execution_id"] = (
             reprocess.retained_execution_id if reprocess is not None else None
         )
+        # THE GATE IS PART OF THE IMPACT, because it is the one thing about a
+        # reprocess a person cannot see from its scope: reapplying the SAME
+        # mapping republishes the same meaning, reapplying a different one does
+        # not. Carried from the caller's interval so the proposal a person reads
+        # and the operation that is audited say it in the same words.
+        gate = (interval or {}).get("mapping_gate") if isinstance(interval, dict) else None
+        if isinstance(gate, dict):
+            impact["mapping_gate"] = dict(gate)
+        impact["supersedes_output_relation"] = (
+            (interval or {}).get("superseded_relation") if isinstance(interval, dict) else None
+        )
     return impact
 
 
@@ -505,7 +577,7 @@ def _server_estimated_points(
     if not project_id:
         raise BoundedRecoveryError(
             "quota_estimate_unavailable",
-            "Projet du flux introuvable : estimation de quota impossible.",
+            "Datastream project not found: quota estimate impossible.",
         )
     with conn.cursor() as cur:
         cur.execute(
@@ -588,6 +660,7 @@ def assemble_proposal(
     if kind not in BOUNDED_KINDS:
         raise BoundedRecoveryError("invalid_kind", "Type de recuperation borne non autorise.")
 
+    today_pinned = today is not None
     today = today or date.today()
     target = operations_mcp._load_target(conn, datastream_id)
     if target is None:
@@ -603,8 +676,16 @@ def assemble_proposal(
     pinned_mapping = live_mapping  # reprocess may override this with a chosen version.
 
     if kind == KIND_SYNCHRONIZE:
-        refetch_days = _load_refetch_days(conn, datastream_id)
-        interval = synchronize_interval(today, refetch_days)
+        # A caller that pinned `today` asked for THAT day (the tests do); with
+        # nobody pinning one, the day is the project's, not the deployment's.
+        end_reference = (
+            today - timedelta(days=1)
+            if today_pinned
+            else _project_last_complete_day(conn, target.get("project_id"))
+        )
+        interval = synchronize_interval(
+            end_reference, _load_declared_window(conn, datastream_id)
+        )
 
     elif kind == KIND_RELOAD:
         reload_scope = normalize_reload_scope(date_from, date_to_exclusive, partition)
@@ -625,24 +706,64 @@ def assemble_proposal(
         if not chosen:
             raise BoundedRecoveryError(
                 "invalid_mapping",
-                "Aucun mapping choisi et aucun mapping courant : impossible de "
-                "retraiter.",
+                "No mapping is chosen and this Datastream has none in force, so "
+                "there is nothing to reapply. Publish a mapping first.",
             )
-        retained = _load_retained_source(conn, datastream_id)
-        chosen_hash = _load_mapping_source_schema_hash(conn, chosen)
-        reprocess_check = evaluate_reprocess_retention(
-            retained_execution_id=(retained or {}).get("execution_id"),
-            retained_source_schema_hash=(retained or {}).get("source_schema_hash"),
-            chosen_mapping_source_schema_hash=chosen_hash,
+        # ONE ELIGIBILITY DECISION, READ BY BOTH HALVES (chantier 67-15b).
+        #
+        # This branch used to answer from `_load_retained_source` +
+        # `evaluate_reprocess_retention`: a prior PUBLISHED execution carrying
+        # both a row count and a content hash, whose mapping's
+        # `source_schema_hash` equals the chosen mapping's. That is the right
+        # question for a connector landing and the WRONG one for the mode this
+        # verb actually serves -- a managed feed's retained material is the
+        # DELIVERY still held in quarantine, and its mapping versions carry no
+        # `source_schema_hash` at all, so every real reprocess was refused
+        # `incompatible_schema` for a comparison neither side could make.
+        #
+        # Worse, it was a second opinion: `datastream_reprocess` has to decide
+        # the same question again at dispatch, against the store it will actually
+        # read. Two answers to one question is precisely the defect the
+        # 2026-08-17 audit named across this surface (<< le pont prepare des
+        # verbes que la confirmation refuse >>), so prepare now ASKS the engine
+        # rather than approximating it.
+        #
+        # `evaluate_reprocess_retention` and `_load_retained_source` stay: they
+        # are pure, they are the connector-landing form of the question, and
+        # deleting them would be a second change dressed as a tidy-up.
+        from core.datastream_reprocess import evaluate_reprocess_plan  # noqa: PLC0415
+
+        eligibility = evaluate_reprocess_plan(
+            conn,
+            datastream_id=datastream_id,
+            project_id=target.get("project_id"),
+            chosen_mapping_version_id=chosen,
+            actor=actor,
         )
-        if not reprocess_check.available:
-            # Actionable refusal -- NO provider call, NO candidate created.
-            raise BoundedRecoveryError(reprocess_check.code or "reprocess_blocked",
-                                       reprocess_check.reason or "Retraitement impossible.")
+        if not eligibility.available:
+            # Actionable refusal -- NO provider call, NO candidate, NO proposal
+            # frozen. The message names the gesture that repairs, never the code.
+            raise BoundedRecoveryError(
+                eligibility.state,
+                eligibility.message or "This Datastream cannot be reprocessed.",
+            )
+        artifact = eligibility.artifact
         pinned_mapping = chosen
+        reprocess_check = RetentionCheck(
+            available=True,
+            retained_execution_id=(artifact.published_execution_id if artifact else None),
+        )
         interval = {
-            "retained_execution_id": reprocess_check.retained_execution_id,
+            "retained_execution_id": (artifact.published_execution_id if artifact else None),
+            "retained_raw_import_id": (artifact.raw_import_id if artifact else None),
+            # What the analytical read answers TODAY, which is what this act
+            # supersedes -- not where the rows are (`published_relation`). In the
+            # case being repaired the two disagree, and that disagreement IS the
+            # defect.
+            "superseded_relation": (artifact.superseded_relation if artifact else None),
+            "retained_relation": (artifact.published_relation if artifact else None),
             "chosen_mapping_version_id": chosen,
+            "mapping_gate": eligibility.mapping_gate,
             "calls_provider": False,
         }
 
@@ -681,15 +802,41 @@ def assemble_proposal(
     )
 
 
-def _load_refetch_days(conn, datastream_id: str) -> int | None:
-    """Return the datastream's configured refetch depth in days, or None."""
+def _load_declared_window(conn, datastream_id: str) -> dict:
+    """The four columns that DECLARE the window of one run.
+
+    Selected together because the resolver arbitrates between them: reading
+    ``refetch_days`` alone -- which this did -- silently obeyed the legacy alias
+    over the retrieval window a person actually set.
+    """
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT refetch_days FROM app.datastreams WHERE id = %s",
+            "SELECT date_window_days, refetch_days, window_offset_days, schedule_mode "
+            "FROM app.datastreams WHERE id = %s",
             (datastream_id,),
         )
         row = cur.fetchone()
-    return int(row[0]) if row and row[0] is not None else None
+    if not row:
+        return {}
+    return {
+        "date_window_days": row[0],
+        "refetch_days": row[1],
+        "window_offset_days": row[2],
+        "schedule_mode": row[3],
+    }
+
+
+def _project_last_complete_day(conn, project_id: str | None) -> date:
+    """The last COMPLETE day in the PROJECT's timezone (AI-117).
+
+    ``date.today()`` here is the deployment's calendar: between 18:00 and
+    midnight in New York it names a different day from the one the dispatcher
+    used, so the same Datastream synchronized and dispatched two windows that
+    did not agree. Same resolution as the dispatcher, same fallbacks.
+    """
+    from core.scheduler import project_timezone, project_yesterday  # noqa: PLC0415
+
+    return project_yesterday(project_timezone(conn, project_id or ""))
 
 
 # ---------------------------------------------------------------------------
@@ -723,8 +870,15 @@ def prepare_bounded_recovery(
 
     ``reason`` is frozen into the proposal impact and then copied to the durable
     operation at confirm time; confirmation cannot replace that audited reason.
+
+    STORY 63.7: IT REFUSES FIRST. A proposal is a promise that confirming it will
+    do something. None of the three verbs has an engine in this build, so the
+    refusal happens here -- before an immutable proposal is frozen and before a
+    person reads a scope they cannot act on.
     """
     from core import operations_mcp  # noqa: PLC0415
+
+    _refuse_without_engine(kind)
 
     proposal = assemble_proposal(
         conn,
@@ -811,7 +965,7 @@ def confirm_bounded_recovery(
         raise BoundedRecoveryError("stale_preparation", "Proposition perimee ou deja traitee.")
     if confirmed_replay and not prep.get("operation_id"):
         raise BoundedRecoveryError(
-            "outcome_unknown", "La proposition est confirmee sans operation durable liee."
+            "outcome_unknown", "The proposal is confirmed with no durable operation bound to it."
         )
 
     target = operations_mcp._load_target(conn, prep["datastream_id"])
@@ -862,7 +1016,7 @@ def confirm_bounded_recovery(
             if not quota_now.get("can_proceed"):
                 raise BoundedRecoveryError("quota_violation", "Budget quota insuffisant.")
         if target.get("active_execution_id"):
-            raise BoundedRecoveryError("lock_conflict", "Une execution est deja active.")
+            raise BoundedRecoveryError("lock_conflict", "An execution is already active.")
 
     fingerprint = operations_mcp._proposal_fingerprint(
         {
@@ -965,98 +1119,84 @@ def _revalidate_reload_interval(interval: dict) -> None:
 
 
 def _dispatch_bounded_recovery(conn, operation_id: str, prep: dict, target: dict):
-    """Perform the bounded recovery for one confirmed proposal (Story 36.2 mutation).
+    """Refuse one confirmed bounded-recovery proposal -- and mint NOTHING.
 
-    Runs INSIDE ``operations.execute_operation`` so it is atomic with the durable
-    operation's audit + outbox and idempotent on replay. Reuses
-    ``datastream_publication.create_execution`` to mint ONE non-live CANDIDATE
-    execution against the pinned/chosen plan + mapping versions. It NEVER commits
-    a publication and NEVER mutates ``current_published_execution_id`` -- an
-    invalid candidate stays UNPUBLISHED (AC4).
+    Runs INSIDE ``operations.execute_operation``, so the durable operation, its
+    audit row and its outbox event are still written: a person pressed a button
+    and the refusal is part of the record. What is no longer written is the
+    execution.
 
-    Per verb the ``projection_plan`` carried on the candidate declares the scope:
-      * synchronize -> ``recovery_kind=synchronize`` + incremental interval;
-      * reload      -> ``recovery_kind=reload`` + half-open windows (supersede
-        ONLY that scope, AC2);
-      * reprocess   -> ``recovery_kind=reprocess`` + ``calls_provider=False`` +
-        the retained-execution reference (NO provider dispatch, AC3).
+    WHY IT REFUSES HERE TOO, WHEN ``prepare_bounded_recovery`` ALREADY DID.
+    ``app.operation_preparations`` holds proposals frozen before this change,
+    and a confirm reads one of those. Refusing only at prepare would leave every
+    one of them able to inflict the exact damage this story closes.
 
-    Returns a ``MutationResult``. The candidate creation itself may be rejected
-    (concurrent execution, invalid reference) -> a ``failed`` outcome with an
-    actionable reason; it is NEVER a duplicate durable operation (the operations
-    idempotency guard owns that).
+    WHAT THAT DAMAGE WAS, MEASURED 2026-08-06. This function minted ONE non-live
+    candidate per confirmed proposal, carrying a ``recovery_kind`` no worker
+    reads, and enqueued nothing: no pull job, no activation job, no
+    ``advance_state`` in this module or in any consumer of that key. The
+    execution stayed in ``created`` -- an ACTIVE state -- so
+    ``uq_datastream_executions_active`` refused every later publication with a
+    409, and ``execution_progress.open_collection_run`` returned ``None`` on
+    every following night's dispatch. The flux lost its recurring collection,
+    permanently, and no screen said why. The verbs are right; their engine does
+    not exist, and a gesture with no engine says so.
+
+    Returns a ``failed`` ``MutationResult`` carrying the ORIGIN of the verb, so
+    the console and the MCP can name what was refused, and the one sentence
+    ``core.run_origins`` writes for it. Never a duplicate durable operation --
+    the operations idempotency guard owns that.
     """
-    from core.datastream_publication import (  # noqa: PLC0415
-        PublicationError,
-        create_execution,
-    )
-    from core.operations import MutationResult, _canonical_hash  # noqa: PLC0415
+    from core.operations import MutationResult  # noqa: PLC0415
 
     kind = prep["kind"]
-    project_id = prep["project_id"]
     datastream_id = prep["datastream_id"]
-    interval = prep.get("interval") or {}
+    origin = _ORIGIN_BY_KIND.get(kind)
 
-    projection_plan: dict = {"executable": True, "recovery_kind": kind}
-    if kind == KIND_SYNCHRONIZE:
-        projection_plan["interval"] = {
-            "from": interval.get("from"),
-            "to": interval.get("to"),
-        }
-        projection_plan["scope"] = "incremental_new_data"
-    elif kind == KIND_RELOAD:
-        # Carry the half-open windows so the re-pull supersedes ONLY that scope.
-        projection_plan["half_open_range"] = {
-            "from": interval.get("from"),
-            "to_exclusive": interval.get("to_exclusive"),
-        }
-        projection_plan["windows"] = interval.get("windows") or []
-        projection_plan["partition"] = interval.get("partition")
-        projection_plan["scope"] = "bounded_range_supersede"
-    elif kind == KIND_REPROCESS:
-        projection_plan["calls_provider"] = False
-        projection_plan["retained_execution_id"] = interval.get("retained_execution_id")
-        projection_plan["chosen_mapping_version_id"] = interval.get("chosen_mapping_version_id")
-        projection_plan["scope"] = "reapply_mapping_no_provider"
+    # REPROCESS HAS AN ENGINE SINCE 2026-08-17 (chantier 67-15b), so it is
+    # dispatched instead of refused. It is routed by the SAME registry lookup the
+    # refusal uses -- `has_engine` decides, here as everywhere -- rather than by a
+    # second `if kind == ...`, which is how the console and the server came to
+    # disagree about which verbs could run in the first place.
+    #
+    # Synchronize and Reload fall through to the refusal below and are meant to:
+    # they are RETIRED, and their sentence names the delivered gesture.
+    if origin is not None and run_origins.has_engine(origin):
+        from core.datastream_reprocess import dispatch_reprocess  # noqa: PLC0415
 
-    plan_version_id = prep["target_versions"].get("plan_version_id")
-    mapping_version_id = prep["target_versions"].get("mapping_version_id")
-
-    try:
-        execution = create_execution(
+        return dispatch_reprocess(
+            conn,
+            operation_id=operation_id,
+            org_id=prep["org_id"],
+            project_id=prep["project_id"],
             datastream_id=datastream_id,
-            project_id=project_id,
-            plan_version_id=plan_version_id,
-            mapping_version_id=mapping_version_id,
-            projection_plan=projection_plan,
             actor=prep["actor"],
-            idempotency_key=f"{operation_id}:candidate",
-            conn=conn,
+            reason=(prep.get("impact") or {}).get("reason"),
+            chosen_mapping_version_id=(prep.get("target_versions") or {}).get(
+                "mapping_version_id"
+            ),
+            trace_id=None,
         )
-    except PublicationError as exc:
-        logger.warning("bounded_recovery: candidate rejected kind=%s: %s", kind, exc)
-        return MutationResult(
-            outcome="failed", before_hash=None, after_hash=None,
-            result={"reason": "candidate_rejected", "kind": kind,
-                    "code": getattr(exc, "code", "publication_error")},
-            outbox_payload={"kind": kind, "datastream_id": datastream_id},
-        )
-    except Exception as exc:  # noqa: BLE001 -- concurrency/lock conflict, never a dup.
-        logger.warning("bounded_recovery: candidate conflict kind=%s: %s", kind, exc)
-        return MutationResult(
-            outcome="failed", before_hash=None, after_hash=None,
-            result={"reason": "lock_conflict", "kind": kind},
-            outbox_payload={"kind": kind, "datastream_id": datastream_id},
-        )
-
     result = {
         "kind": kind,
-        "execution_id": execution.get("id"),
-        "state": execution.get("state"),
-        "scope": projection_plan.get("scope"),
-        "calls_provider": projection_plan.get("calls_provider", True),
+        # Story 63.7: the refusing path carries an origin exactly like the four
+        # that mint. This is the moment a person asks why, so it is the last
+        # moment to be silent about which treatment they asked for.
+        "origin": origin,
+        "reason": run_origins.NO_ENGINE,
+        "message": run_origins.refusal_message(origin),
+        "execution_id": None,
     }
+    logger.warning(
+        "bounded_recovery: refused kind=%s ds=%s -- no engine advances this run",
+        kind,
+        datastream_id,
+    )
     return MutationResult(
-        outcome="succeeded", before_hash=None, after_hash=_canonical_hash(result),
-        result=result, outbox_payload=result,
+        outcome="failed",
+        before_hash=None,
+        after_hash=None,
+        result=result,
+        outbox_payload={"kind": kind, "datastream_id": datastream_id,
+                        "reason": run_origins.NO_ENGINE},
     )

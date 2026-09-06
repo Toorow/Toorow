@@ -1,0 +1,322 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Resultat qr_01M1SYSHZ54J4HAHQRTCXEEYCS - issue : success.\nLignes : 3 ; cellules : 6 ; tronque : non.\nVersion du Query Spec : qsv_01M1SYSHZ2MTPTBMXRSGC019NA.\nParcours IA : No AI path.\nEmpreinte du contenu : fb91e2c3ed048a11bf6d8925c16aefb705f3a9390f29d137d6f0708290a6d5e3.\nFraicheur : unavailable (au 2026-09-06T01:34:52.546524+02:00).\nProvenance : vue semantique svv_01M1SYSHXZF35SGYMBQ3CV6PGY."
+    }
+  ],
+  "structuredContent": {
+    "schema_version": 1,
+    "result": {
+      "result_id": "qr_01M1SYSHZ54J4HAHQRTCXEEYCS",
+      "query_spec_version_id": "qsv_01M1SYSHZ2MTPTBMXRSGC019NA",
+      "semantic_view_version_id": "svv_01M1SYSHXZF35SGYMBQ3CV6PGY",
+      "content_hash": "fb91e2c3ed048a11bf6d8925c16aefb705f3a9390f29d137d6f0708290a6d5e3"
+    },
+    "outcome": "success",
+    "ai_path": "No AI path",
+    "summary": {
+      "row_count": 3,
+      "cell_count": 6,
+      "counts_unknown_reason": null,
+      "truncated": false,
+      "columns": [
+        "device_category",
+        "sessions"
+      ],
+      "columns_withheld": 0
+    },
+    "provenance": {
+      "semantic_view_version_id": "svv_01M1SYSHXZF35SGYMBQ3CV6PGY",
+      "datastream_output_version_id": "dsov_01M1SYSHX5H6G3Y0DVYNBZGBZM",
+      "lineage": {
+        "source_system": "google-analytics",
+        "datastream_id": "ds_01M1SYSHWRKFMJE1PMHZ0JAA45",
+        "mapping_version_id": "dmv_01M1SYSHWRKFMJE1PMHZ0JAA47",
+        "relation": "main.raw_ga4_standard_daily",
+        "pull_id": "dse_01M1SYSHX5H6G3Y0DVYNBZGBZJ",
+        "member_count": 2
+      },
+      "data_quality": {
+        "evaluation_ids": [],
+        "evaluation_ids_withheld": 0,
+        "unavailable_reason": null
+      },
+      "lineage_unavailable_reason": null,
+      "missing_link": null
+    },
+    "freshness": {
+      "state": "unavailable",
+      "as_of": "2026-09-06T01:34:52.546524+02:00",
+      "complete_through": null,
+      "stale_since_evaluated": false
+    },
+    "evidence": [
+      {
+        "column": "device_category",
+        "first_value": "desktop"
+      },
+      {
+        "column": "sessions",
+        "first_value": 371093
+      }
+    ],
+    "pagination": {
+      "total_rows": 3,
+      "returned_rows": 3,
+      "has_more": true,
+      "how_to_page": "Appelez app_read_result_slice avec le result_handle de _meta, un offset ou un curseur et une limite d'au plus 500 lignes."
+    },
+    "deep_link": {
+      "kind": "console",
+      "requires_authenticated_session": true,
+      "organization_id": "org_01M1SYSHW1V3W0B969YBM96GWE",
+      "project_id": "proj_01M1SYSHW1V3W0B969YBM96GWF",
+      "object_type": "result",
+      "object_id": "qr_01M1SYSHZ54J4HAHQRTCXEEYCS",
+      "tab": "data",
+      "owner_reference": {
+        "surface": "project",
+        "workspace": "analyze",
+        "section": "explore",
+        "global_surface": null,
+        "global_section": null,
+        "object_type": "result",
+        "object_id": "qr_01M1SYSHZ54J4HAHQRTCXEEYCS",
+        "tab": "data",
+        "action": null,
+        "version_id": null,
+        "evidence_id": null
+      }
+    },
+    "chart_templates": {
+      "templates": [],
+      "withheld": 0
+    }
+  },
+  "_meta": {
+    "toorow.result": {
+      "result_id": "qr_01M1SYSHZ54J4HAHQRTCXEEYCS",
+      "content_hash": "fb91e2c3ed048a11bf6d8925c16aefb705f3a9390f29d137d6f0708290a6d5e3",
+      "schema": {
+        "fields": [
+          {
+            "id": "sc_01M1SYSHXZF35SGYMBQ3CV6PGZ",
+            "name": "device_category"
+          },
+          {
+            "id": "sc_01M1SYSHYENQ5FFEJ2QRA1NWJX",
+            "name": "sessions"
+          }
+        ]
+      },
+      "allowed_columns": [
+        "device_category",
+        "sessions"
+      ],
+      "row_count": 3,
+      "truncated": false,
+      "projection_size": "small",
+      "rows": [
+        {
+          "device_category": "desktop",
+          "sessions": 371093
+        },
+        {
+          "device_category": "mobile",
+          "sessions": 249123
+        },
+        {
+          "device_category": "tablet",
+          "sessions": 61742
+        }
+      ],
+      "result_handle": "rh_01M1SYSK797F5XC9T3YBK2WJP4",
+      "next_cursor": null,
+      "ai_path_walk": {
+        "schema_version": "observed-ai-path.v1",
+        "state": "human_absent",
+        "literal": "No AI path"
+      }
+    },
+    "toorow.visualization": {
+      "visualization_spec_version_id": "vsv_01M1SYSJDT757Z2SWQ58KDY6DA",
+      "runtime_resource_uri": "ui://core/visualization-runtime"
+    },
+    "toorow.feedback": {
+      "schema_version": "exact-feedback.v1",
+      "token": "SIGNED_CONTEXT_FIXTURE",
+      "interaction_ref": "afi_FIXTURE",
+      "expires_at": "2026-01-01T00:15:00Z"
+    },
+    "toorow.app_payload": {
+      "schema_version": 1,
+      "kind": "render",
+      "render_input": {
+        "result": {
+          "result_id": "qr_01M1SYSHZ54J4HAHQRTCXEEYCS",
+          "content_hash": "fb91e2c3ed048a11bf6d8925c16aefb705f3a9390f29d137d6f0708290a6d5e3",
+          "outcome": "success",
+          "schema": {
+            "fields": [
+              {
+                "id": "sc_01M1SYSHXZF35SGYMBQ3CV6PGZ",
+                "name": "device_category"
+              },
+              {
+                "id": "sc_01M1SYSHYENQ5FFEJ2QRA1NWJX",
+                "name": "sessions"
+              }
+            ]
+          },
+          "rows": [
+            {
+              "device_category": "desktop",
+              "sessions": 371093
+            },
+            {
+              "device_category": "mobile",
+              "sessions": 249123
+            },
+            {
+              "device_category": "tablet",
+              "sessions": 61742
+            }
+          ],
+          "manifest": {
+            "grain": "day",
+            "filters": [],
+            "chosen_by": null,
+            "freshness": {
+              "output_created_at": "2026-09-06T01:34:52.546524+02:00"
+            },
+            "truncated": false,
+            "comparison": "none",
+            "result_shape": "tabular_v1",
+            "dq_evaluation_ids": [],
+            "grain_reconciliation": [],
+            "semantic_view_version_id": "svv_01M1SYSHXZF35SGYMBQ3CV6PGY",
+            "datastream_output_version_id": "dsov_01M1SYSHX5H6G3Y0DVYNBZGBZM",
+            "time_window": {
+              "end": null,
+              "as_of": null,
+              "start": null,
+              "timezone": null,
+              "member_id": null,
+              "reporting_boundary_id": null
+            },
+            "provenance": {
+              "pull_id": "dse_01M1SYSHX5H6G3Y0DVYNBZGBZJ",
+              "datastream_id": "ds_01M1SYSHWRKFMJE1PMHZ0JAA45",
+              "mapping_version_id": "dmv_01M1SYSHWRKFMJE1PMHZ0JAA47",
+              "values": [
+                {
+                  "pull_id": "dse_01M1SYSHX5H6G3Y0DVYNBZGBZJ",
+                  "member_id": "sc_01M1SYSHXZF35SGYMBQ3CV6PGZ"
+                },
+                {
+                  "pull_id": "dse_01M1SYSHX5H6G3Y0DVYNBZGBZJ",
+                  "member_id": "sc_01M1SYSHYENQ5FFEJ2QRA1NWJX"
+                }
+              ]
+            }
+          },
+          "truncated": false,
+          "row_count": 3
+        },
+        "spec": {
+          "visualization_spec_version_id": "vsv_01M1SYSJDT757Z2SWQ58KDY6DA",
+          "spec_contract_version": "visualization-spec.v1",
+          "schema_version": 1,
+          "document": {
+            "axes": {
+              "x": {
+                "scale": "categorical",
+                "tick_density": "normal",
+                "zero_baseline": true
+              },
+              "y": {
+                "scale": "linear",
+                "tick_density": "normal",
+                "zero_baseline": true
+              }
+            },
+            "color": {
+              "role": "categorical",
+              "semantic_direction": "higher_is_better"
+            },
+            "order": {
+              "source": "result"
+            },
+            "top_n": null,
+            "family": "bar",
+            "labels": {
+              "override": {}
+            },
+            "legend": {
+              "visible": true,
+              "position": "right"
+            },
+            "bindings": {
+              "size": [],
+              "time": [],
+              "color": [],
+              "facet": [],
+              "label": [],
+              "detail": [],
+              "series": [],
+              "measure": [
+                "sc_01M1SYSHYENQ5FFEJ2QRA1NWJX"
+              ],
+              "breakdown": [],
+              "dimension": [
+                "sc_01M1SYSHXZF35SGYMBQ3CV6PGZ"
+              ]
+            },
+            "evidence": {
+              "datum_fields": [
+                "sc_01M1SYSHXZF35SGYMBQ3CV6PGZ"
+              ],
+              "mark_binding": "datum"
+            },
+            "formatting": {
+              "date_style": "auto",
+              "unit_source": "semantic_view",
+              "number_style": "auto"
+            },
+            "responsive": {
+              "profiles": [
+                "mcp-inline"
+              ]
+            },
+            "thresholds": [],
+            "annotations": [],
+            "interactions": {
+              "zoom": false,
+              "hover": true,
+              "select": true,
+              "local_filter": false,
+              "legend_toggle": true
+            },
+            "accessibility": {
+              "summary_source": "result_manifest",
+              "table_fallback": "required"
+            },
+            "schema_version": 1,
+            "reference_lines": [],
+            "spec_contract_version": "visualization-spec.v1"
+          }
+        },
+        "pins": {
+          "runtime_build": "@toorow/card-shell/viz@0.1.0+87c254baf75d",
+          "renderer_build": "bar/toorow-echarts-bar@1.0.0",
+          "theme_version": "viz-theme@1",
+          "formatter_version": "viz-formatters@1"
+        },
+        "profile": "mcp-inline",
+        "display": {}
+      }
+    }
+  },
+  "isError": false
+}

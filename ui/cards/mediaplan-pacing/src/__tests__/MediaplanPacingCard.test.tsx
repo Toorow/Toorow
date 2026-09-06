@@ -6,8 +6,8 @@
  *   - Valeurs rendues depuis block.data (leçon F-4 review-10-6).
  *   - AD-9 NON-NÉGOCIABLE : pace NULL → jamais rendu « 0 » ou « 0 % ».
  *   - Badge « Plan seul » visible pour les lignes plan-only.
- *   - Titre de la carte et libellés français accentués (UX-DR10).
- *   - Commentaire présent avec formule citée et « Estimation ».
+ *   - Card title and server-owned column labels (UX-DR10).
+ *   - Comment present, formula cited, extrapolation labelled an estimate.
  *   - Dégradés propres : table vide, composition vide, bloc inconnu.
  *   - Ordre des blocs (2 tables + 1 comment).
  */
@@ -41,35 +41,35 @@ function makeEnvelope(
 // 1. Rendu happy-path depuis FIXTURE_ENVELOPE
 // ---------------------------------------------------------------------------
 
-describe("Pacing Médiaplan card — fixture happy-path (FIXTURE_ENVELOPE)", () => {
-  it("rend le titre de la carte 'Pacing Médiaplan'", () => {
+describe("Media Plan Pacing card — fixture happy-path (FIXTURE_ENVELOPE)", () => {
+  it("renders the card title 'Media Plan Pacing'", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
-    expect(screen.getByTestId("card-title")).toHaveTextContent("Pacing Médiaplan");
+    expect(screen.getByTestId("card-title")).toHaveTextContent("Media Plan Pacing");
   });
 
-  it("rend la table 'Lignes du plan' avec son titre", () => {
+  it("rend la table 'Plan lines' avec son titre", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
-    expect(screen.getByText("Lignes du plan")).toBeInTheDocument();
+    expect(screen.getByText("Plan lines")).toBeInTheDocument();
   });
 
-  it("rend la colonne 'Ligne' (libellé FR, UX-DR10)", () => {
+  it("renders the 'Line' column (server-owned label, UX-DR10)", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
-    expect(screen.getAllByText("Ligne").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Line").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("rend la colonne 'Support' (libellé FR)", () => {
+  it("renders the 'Channel' column", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
-    expect(screen.getAllByText("Support").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Channel").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("rend la colonne 'Budget (€)'", () => {
+  it("rend la colonne 'Budget'", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
-    expect(screen.getAllByText("Budget (€)").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Budget").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("rend la colonne 'Consommé (%)' (libellé FR)", () => {
+  it("renders the 'Spent (%)' column", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
-    expect(screen.getAllByText("Consommé (%)").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Spent (%)").length).toBeGreaterThanOrEqual(1);
   });
 
   it("rend la colonne 'Pace (%)'", () => {
@@ -77,15 +77,15 @@ describe("Pacing Médiaplan card — fixture happy-path (FIXTURE_ENVELOPE)", () 
     expect(screen.getAllByText("Pace (%)").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("rend la colonne 'Reste (€)'", () => {
+  it("rend la colonne 'Remaining'", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
-    expect(screen.getAllByText("Reste (€)").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Remaining").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("rend la colonne 'Extrapolé (€) (Estimation)' avec le label Estimation (AD-9)", () => {
+  it("renders the extrapolation column labelled an estimate (AD-9)", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
     expect(
-      screen.getAllByText("Extrapolé (€) (Estimation)").length
+      screen.getAllByText("Extrapolated (Estimate)").length
     ).toBeGreaterThanOrEqual(1);
   });
 
@@ -99,9 +99,9 @@ describe("Pacing Médiaplan card — fixture happy-path (FIXTURE_ENVELOPE)", () 
     expect(screen.getByText("TV Brand")).toBeInTheDocument();
   });
 
-  it("rend la table 'Rollup par support'", () => {
+  it("rend la table 'Channel rollup'", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
-    expect(screen.getByText("Rollup par support")).toBeInTheDocument();
+    expect(screen.getByText("Channel rollup")).toBeInTheDocument();
   });
 
   it("rend le canal 'digital' dans le rollup", () => {
@@ -110,7 +110,7 @@ describe("Pacing Médiaplan card — fixture happy-path (FIXTURE_ENVELOPE)", () 
     expect(screen.getAllByText("digital").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("rend le bloc comment avec 'Estimation' (AD-9 non-négociable)", () => {
+  it("renders the comment block labelling the extrapolation an estimate (AD-9)", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
     expect(screen.getByTestId("composition-block-comment")).toBeInTheDocument();
     const comment = screen.getByTestId("composition-comment");
@@ -124,7 +124,7 @@ describe("Pacing Médiaplan card — fixture happy-path (FIXTURE_ENVELOPE)", () 
     expect(comment.textContent?.toLowerCase()).toMatch(/pace|réel|prévu/);
   });
 
-  it("rend 'Contexte manquant' dans le commentaire (AD-9 verbatim)", () => {
+  it("renders the missing-context sentence in the comment (AD-9 verbatim)", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
     expect(screen.getByTestId("composition-comment")).toHaveTextContent(
       "Contexte manquant"
@@ -141,7 +141,7 @@ describe("Pacing Médiaplan card — fixture happy-path (FIXTURE_ENVELOPE)", () 
 // 2. AD-9 CRITIQUE : pace NULL → jamais 0 ou 0 %
 // ---------------------------------------------------------------------------
 
-describe("Pacing Médiaplan card — AD-9 pace NULL (FIXTURE_ENVELOPE_PACE_NULL)", () => {
+describe("Media Plan Pacing card — AD-9 pace NULL (FIXTURE_ENVELOPE_PACE_NULL)", () => {
   it("rend la carte sans exception quand pace est NULL", () => {
     expect(() => render(<App envelope={FIXTURE_ENVELOPE_PACE_NULL} />)).not.toThrow();
   });
@@ -167,14 +167,14 @@ describe("Pacing Médiaplan card — AD-9 pace NULL (FIXTURE_ENVELOPE_PACE_NULL)
 // 3. Dégradé plan vide (FIXTURE_ENVELOPE_EMPTY)
 // ---------------------------------------------------------------------------
 
-describe("Pacing Médiaplan card — plan sans lignes (FIXTURE_ENVELOPE_EMPTY)", () => {
+describe("Media Plan Pacing card — plan sans lignes (FIXTURE_ENVELOPE_EMPTY)", () => {
   it("rend la carte sans exception quand le plan n'a pas de lignes", () => {
     expect(() => render(<App envelope={FIXTURE_ENVELOPE_EMPTY} />)).not.toThrow();
   });
 
   it("rend le titre même avec une composition vide", () => {
     render(<App envelope={FIXTURE_ENVELOPE_EMPTY} />);
-    expect(screen.getByTestId("card-title")).toHaveTextContent("Pacing Médiaplan");
+    expect(screen.getByTestId("card-title")).toHaveTextContent("Media Plan Pacing");
   });
 
   it("les tables vides affichent l'état vide (data-table-empty)", () => {
@@ -188,16 +188,16 @@ describe("Pacing Médiaplan card — plan sans lignes (FIXTURE_ENVELOPE_EMPTY)",
 // 4. Dégradés bloc par bloc (composition ad-hoc) — jamais d'exception
 // ---------------------------------------------------------------------------
 
-describe("Pacing Médiaplan card — dégradés blocs individuels", () => {
+describe("Media Plan Pacing card — dégradés blocs individuels", () => {
   it("table avec rows:[] → data-table-empty", () => {
     const env = makeEnvelope([
       {
         type: "table",
-        title: "Lignes du plan",
+        title: "Plan lines",
         binding: { source: "plan_lines" },
         data: {
           columns: [
-            { key: "label", label: "Ligne", numeric: false },
+            { key: "label", label: "Line", numeric: false },
             { key: "pace_pct", label: "Pace (%)", numeric: true },
           ],
           rows: [],
@@ -221,7 +221,7 @@ describe("Pacing Médiaplan card — dégradés blocs individuels", () => {
   it("composition entièrement vide → carte utilisable sans exception", () => {
     const env = makeEnvelope([]);
     expect(() => render(<App envelope={env} />)).not.toThrow();
-    expect(screen.getByTestId("card-title")).toHaveTextContent("Pacing Médiaplan");
+    expect(screen.getByTestId("card-title")).toHaveTextContent("Media Plan Pacing");
   });
 
   it("type de bloc inconnu → composition-unknown-block (jamais d'exception)", () => {
@@ -237,7 +237,7 @@ describe("Pacing Médiaplan card — dégradés blocs individuels", () => {
 // 5. Ordre des blocs (contrat composition serveur AI-54)
 // ---------------------------------------------------------------------------
 
-describe("Pacing Médiaplan card — ordre des blocs (contrat AI-54)", () => {
+describe("Media Plan Pacing card — ordre des blocs (contrat AI-54)", () => {
   it("table#1 (lignes) avant table#2 (rollup) avant comment", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
     const composition = screen.getByTestId("card-composition");
@@ -269,23 +269,26 @@ describe("Pacing Médiaplan card — ordre des blocs (contrat AI-54)", () => {
 // 6. Libellés français accentués (UX-DR10)
 // ---------------------------------------------------------------------------
 
-describe("Pacing Médiaplan card — libellés français accentués (UX-DR10)", () => {
-  it("le titre est 'Pacing Médiaplan' avec accent", () => {
+describe("Media Plan Pacing card — server-owned labels (UX-DR10)", () => {
+  it("the title is the server's, in English", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
-    expect(screen.getByTestId("card-title").textContent).toContain("Pacing Médiaplan");
+    expect(screen.getByTestId("card-title").textContent).toContain("Media Plan Pacing");
   });
 
-  it("le commentaire contient 'Estimation' (français, jamais 'estimate' anglais)", () => {
+  it("the comment labels the extrapolation an estimate, never a measure (AD-9)", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
     const comment = screen.getByTestId("composition-comment");
+    // UX-DR10 / audit C16: the server emits French-first narrative, so the label
+    // is the French « Estimation ». What AD-9 actually requires is that an
+    // extrapolation be LABELLED an estimate and never presented as a measure.
     expect(comment.textContent?.toLowerCase()).toContain("estimation");
-    expect(comment.textContent).not.toMatch(/\bestimate\b/i);
+    expect(comment.textContent).not.toMatch(/\bmeasured\b/i);
   });
 
   it("les colonnes sont en français (pas d'anglais 'Budget' seul sans €)", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
-    // 'Budget (€)' doit apparaître
-    expect(screen.getAllByText("Budget (€)").length).toBeGreaterThanOrEqual(1);
+    // 'Budget' doit apparaître
+    expect(screen.getAllByText("Budget").length).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -293,7 +296,7 @@ describe("Pacing Médiaplan card — libellés français accentués (UX-DR10)", 
 // 7. Snapshot contrat AI-54 (structure de la composition)
 // ---------------------------------------------------------------------------
 
-describe("Pacing Médiaplan card — snapshot composition (AI-54)", () => {
+describe("Media Plan Pacing card — snapshot composition (AI-54)", () => {
   it("la composition a 4 blocs (2 tables + actuals non mappés + comment) — E1-F-2", () => {
     expect(FIXTURE_ENVELOPE.data.composition?.length).toBe(4);
     const types = FIXTURE_ENVELOPE.data.composition?.map((b) => b.type);

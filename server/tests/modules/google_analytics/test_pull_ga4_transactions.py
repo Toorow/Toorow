@@ -93,7 +93,6 @@ _TXN_RESPONSE = {
 def test_pull_transactions_lands_multi_date_rows(connector, tmp_path, monkeypatch):
     """Transactions pull: dims lead with date, transactionId + purchaseRevenue, multi-date,
     (not set) -> NULL join key."""
-    monkeypatch.setenv("GA4_PROPERTY_ID", "TEST123")
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     db_path = str(tmp_path / "txn.duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", db_path)
@@ -109,6 +108,7 @@ def test_pull_transactions_lands_multi_date_rows(connector, tmp_path, monkeypatc
             date_to="2026-07-03",
             project_id="jean-ga4",
             pull_id="pull_txn",
+            property_id="TEST123",
         )
 
     assert route.called
@@ -157,7 +157,6 @@ def test_pull_transactions_pages_to_completeness(connector, tmp_path, monkeypatc
     We set GA4_TXN_LIMIT=2 so a 3-row day forces a SECOND request (offset=2). The mock
     returns a full page (2 rows) then a partial page (1 row) -> loop stops.
     """
-    monkeypatch.setenv("GA4_PROPERTY_ID", "TEST123")
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("GA4_TXN_LIMIT", "50")  # will be clamped to min 50; override below
     db_path = str(tmp_path / "txn_page.duckdb")
@@ -199,6 +198,7 @@ def test_pull_transactions_pages_to_completeness(connector, tmp_path, monkeypatc
             date_to="2026-07-01",
             project_id="jean-ga4",
             pull_id="pull_txn_page",
+            property_id="TEST123",
         )
 
     assert route.call_count == 2, "a full page must trigger a second (offset) request"
@@ -225,7 +225,7 @@ def test_pull_transactions_pages_to_completeness(connector, tmp_path, monkeypatc
 def test_pull_transactions_requires_property_id(connector, monkeypatch):
     """Shim raises a clear ValueError when neither arg nor GA4_PROPERTY_ID is set."""
     monkeypatch.delenv("GA4_PROPERTY_ID", raising=False)
-    with pytest.raises(ValueError, match="GA4_PROPERTY_ID"):
+    with pytest.raises(ValueError, match="selected account"):
         connector.pull_transactions_daily(
             connection_id="conn_test",
             date_from="2026-07-01",

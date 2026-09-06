@@ -26,9 +26,14 @@ Covers (non-tautological per review lessons H1-H4):
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock
 
+# AD-42: la constante vit chez son ecrivain.
+import core.connector_verification_api as connector_verification_api_actions
 import pytest
+
+from tests.conftest import REPO_ROOT
 
 # ---------------------------------------------------------------------------
 # Shared mock helpers (same style as test_epic38_connector_domain.py).
@@ -181,6 +186,8 @@ def test_run_verification_payload_is_deterministic(monkeypatch):
     # The run id (cvr_...) must never appear in the hashed inputs.
     assert not any("cvr_" in str(v) for v in first.values())
     assert "run_id" not in first
+    assert "outcome" not in first
+    assert "evidence_class" not in first
 
 
 def test_run_synthetic_delivery_payload_is_deterministic(monkeypatch):
@@ -219,6 +226,142 @@ def test_run_synthetic_delivery_payload_is_deterministic(monkeypatch):
     assert first == second
     assert not any("cvr_" in str(v) for v in first.values())
     assert "run_id" not in first
+    assert "outcome" not in first
+    assert "evidence_class" not in first
+
+
+def test_verification_reads_are_locked_and_require_active_domain(monkeypatch):
+    from core import connector_installation as ci
+    from core import connector_verification as cv
+
+    _stub_operation(monkeypatch, cv)
+    monkeypatch.setattr(
+        ci,
+        "get_installation_state",
+        lambda conn, **kw: {"state": "DOMAIN_PENDING"},
+    )
+
+    install_cur = _cur(_INST_ROW_DOMAIN_PENDING)
+    domain_cur = _cur(_DC_ROW)
+    result = cv.run_verification(
+        _conn_with(install_cur, domain_cur),
+        environment="production",
+        connector_name="test-connector",
+        checks=[],
+        actor="admin",
+        idempotency_key="ik-locks",
+        host_context={},
+        trace_id=None,
+    )
+    assert result["last_outcome"] == "not_configured"
+    assert "FOR UPDATE" in install_cur.execute.call_args.args[0]
+    assert "FOR SHARE" in domain_cur.execute.call_args.args[0]
+
+    with pytest.raises(cv.ConnectorVerificationUnavailable):
+        cv.run_verification(
+            _conn_with(_cur(_INST_ROW_DOMAIN_PENDING), _cur(None)),
+            environment="production",
+            connector_name="test-connector",
+            checks=[],
+            actor="admin",
+            idempotency_key="ik-no-domain",
+            host_context={},
+            trace_id=None,
+        )
+
+
+def test_default_delivery_runner_fails_closed():
+    from core.connector_verification_api import _build_delivery_runner
+
+    runner = _build_delivery_runner("test-connector", "production")
+    assert runner() == (False, "synthetic_verification_failed")
+
+
+def test_idempotency_keys_are_normalized_and_bounded():
+    from core import connector_verification as cv
+    from core.connector_verification_api import _idempotency_key
+    from starlette.requests import Request
+
+    request = Request({
+        "type": "http",
+        "method": "POST",
+        "path": "/",
+        "headers": [(b"idempotency-key", b"  replay-key  ")],
+    })
+    assert _idempotency_key(request) == "replay-key"
+
+    with pytest.raises(cv.ConnectorVerificationError, match="too long"):
+        cv.run_verification(
+            MagicMock(),
+            environment="production",
+            connector_name="test-connector",
+            checks=[],
+            actor="admin",
+            idempotency_key="x" * 256,
+            host_context={},
+            trace_id=None,
+        )
+    with pytest.raises(cv.ConnectorVerificationError, match="too long"):
+        cv.run_synthetic_delivery(
+            MagicMock(),
+            environment="production",
+            connector_name="test-connector",
+            delivery_runner=lambda: (True, "ok"),
+            actor="admin",
+            idempotency_key="x" * 256,
+            host_context={},
+            trace_id=None,
+        )
+
+
+def test_invalid_check_output_is_collapsed_to_safe_failure(monkeypatch):
+    from core import connector_installation as ci
+    from core import connector_verification as cv
+
+    _stub_operation(monkeypatch, cv)
+    monkeypatch.setattr(
+        ci,
+        "get_installation_state",
+        lambda conn, **kw: {"state": "DOMAIN_PENDING"},
+    )
+    result = cv.run_verification(
+        _conn_with(
+            _cur(_INST_ROW_DOMAIN_PENDING),
+            _cur(_DC_ROW),
+            _cur(None, rowcount=1),
+        ),
+        environment="production",
+        connector_name="test-connector",
+        checks=[lambda: (False, "untrusted-evidence", "secret detail")],
+        actor="admin",
+        idempotency_key="ik-invalid-check",
+        host_context={},
+        trace_id=None,
+    )
+    assert result["last_outcome"] == "failed"
+    assert result["evidence_class"] == "routing_check"
+    assert result["blocking_reason"] == "verification_failed"
+
+
+def test_unexpected_evidence_insert_conflict_is_rejected(monkeypatch):
+    from core import connector_verification as cv
+
+    _stub_operation(monkeypatch, cv)
+    with pytest.raises(cv.ConnectorVerificationError, match="exactly one row"):
+        cv.run_verification(
+            _conn_with(
+                _cur(_INST_ROW_DOMAIN_PENDING),
+                _cur(_DC_ROW),
+                _cur(None, rowcount=0),
+            ),
+            environment="production",
+            connector_name="test-connector",
+            checks=[_check_pass],
+            actor="admin",
+            idempotency_key="ik-impossible-collision",
+            host_context={},
+            trace_id=None,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -281,62 +424,44 @@ def test_all_pass_advances_domain_pending_to_ready(monkeypatch):
 
 
 def test_no_checks_returns_not_configured_and_does_not_advance(monkeypatch):
-    """F5: An empty checks list must NOT silently pass or advance state.
+    """An empty check set is audited/replayable but writes no evidence or state."""
 
-    Outcome must be 'not_configured', evidence_class 'no_checks', checks_evaluated=0,
-    and NO state transition must be attempted. No DB row is written (early return
-    before execute_operation).
-    """
     from core import connector_installation as ci
     from core import connector_verification as cv
 
-    # Do NOT stub execute_operation -- it must never be called for zero checks.
-    execute_called = [False]
-    original_execute = cv.execute_operation
-
-    def spy_execute(*a, **kw):
-        execute_called[0] = True
-        return original_execute(*a, **kw)
-
-    monkeypatch.setattr(cv, "execute_operation", spy_execute)
-
+    capture = {}
+    _stub_operation(monkeypatch, cv, capture=capture)
     transitions_called = []
-
-    def _fake_ts(conn, *, environment, connector_name, target_state, **kw):
-        transitions_called.append(target_state)
-
-    monkeypatch.setattr(ci, "transition_state", _fake_ts)
-
-    # Only cursor 0 (installation) and 1 (domain config) are consumed --
-    # no mutation cursor because the early return path writes NO DB row.
-    conn = _conn_with(
-        _cur(_INST_ROW_DOMAIN_PENDING),   # [0] installation
-        _cur(_DC_ROW),                     # [1] domain config
+    monkeypatch.setattr(
+        ci,
+        "transition_state",
+        lambda conn, *, target_state, **kw: transitions_called.append(target_state),
+    )
+    monkeypatch.setattr(
+        ci,
+        "get_installation_state",
+        lambda conn, **kw: {"state": "DOMAIN_PENDING"},
     )
 
     result = cv.run_verification(
-        conn,
+        _conn_with(
+            _cur(_INST_ROW_DOMAIN_PENDING),
+            _cur(_DC_ROW),
+        ),
         environment="production",
         connector_name="test-connector",
-        checks=[],   # F5: empty -> NOT silently passing
+        checks=[],
         actor="admin",
         idempotency_key="ik-nocheck",
         host_context={},
         trace_id=None,
     )
-    # F5: must NOT be "passed" and must NOT advance.
-    assert result["last_outcome"] == "not_configured", (
-        f"Expected not_configured, got {result['last_outcome']!r} -- zero checks must not pass"
-    )
-    assert result.get("checks_evaluated", -1) == 0
-    # No state transition must have been attempted.
-    assert not transitions_called, (
-        f"Expected no state transitions, but got {transitions_called}"
-    )
-    # No DB write must have been attempted.
-    assert not execute_called[0], (
-        "execute_operation must not be called when checks=[]: no DB row should be written"
-    )
+    assert result["last_outcome"] == "not_configured"
+    assert result["evidence_class"] == "no_checks"
+    assert result["checks_evaluated"] == 0
+    assert transitions_called == []
+    assert capture["changes"][0].result.get("run_id") is None
+    assert capture["specs"][0].command_type == "connector.verification.ran"
 
 
 # ---------------------------------------------------------------------------
@@ -445,24 +570,19 @@ def test_ready_to_degraded_carries_first_seen(monkeypatch):
 
 
 def test_ready_to_degraded_no_prior_run_first_seen_is_not_null(monkeypatch):
-    """F6: First-ever degradation: no prior degraded row -> first_seen_at set to DB NOW().
-
-    The read-model first_seen_at is None here because the sentinel 'SET_TO_NOW' maps to
-    None in the read-model (the real DB value is set via NOW() in SQL, not Python).
-    What matters is that the INSERT uses NOW() (verified by SQL inspection), and the
-    DB value will be non-null. The read-model returns None only as an artifact of the
-    mock; in a live run the re-read would return the DB timestamp.
-    """
+    """First-ever degradation persists and returns a concrete first-seen time."""
     from core import connector_installation as ci
     from core import connector_verification as cv
 
     sql_calls = []
+    sql_params = []
 
     def tracking_execute(operation_conn, spec, *, mutation):
         from core import operations
 
-        def recording_execute_sql(sql, *args):
+        def recording_execute_sql(sql, params=None):
             sql_calls.append(sql.lower().strip())
+            sql_params.append(params)
 
         def _recording_cur(fetchone_val=None, rowcount=1):
             cur = MagicMock()
@@ -474,7 +594,10 @@ def test_ready_to_degraded_no_prior_run_first_seen_is_not_null(monkeypatch):
             return cur
 
         op_conn = MagicMock()
-        op_conn.cursor.side_effect = [_recording_cur(None, rowcount=1)]
+        op_conn.cursor.side_effect = [
+            _recording_cur(None),
+            _recording_cur(None, rowcount=1),
+        ]
         changed = mutation(op_conn, "op-f6-1")
         return operations.OperationResult(
             "op-f6-1", "succeeded", changed.result, "audit-1", "outbox-1", False
@@ -506,15 +629,16 @@ def test_ready_to_degraded_no_prior_run_first_seen_is_not_null(monkeypatch):
     )
 
     assert result["last_outcome"] == "degraded"
-    # F6: The INSERT SQL must use NOW() for first_seen_at (not a Python NULL).
-    insert_sqls = [
-        s for s in sql_calls if "insert into" in s and "connector_verification_runs" in s
+    assert result["first_seen_at"] is not None
+    insert_calls = [
+        (sql, params)
+        for sql, params in zip(sql_calls, sql_params, strict=True)
+        if "insert into" in sql and "connector_verification_runs" in sql
     ]
-    assert len(insert_sqls) == 1, f"Expected one INSERT, got {insert_sqls}"
-    assert "now()" in insert_sqls[0], (
-        f"F6: first-ever degradation INSERT must use NOW() for first_seen_at, "
-        f"but SQL was: {insert_sqls[0]!r}"
-    )
+    assert len(insert_calls) == 1
+    _, params = insert_calls[0]
+    assert params[9] is not None
+    assert params[9].isoformat() == result["first_seen_at"]
 
 
 # ---------------------------------------------------------------------------
@@ -748,7 +872,7 @@ def test_synthetic_delivery_runner_failure_records_failed_run(monkeypatch):
 
     assert result["last_outcome"] == "failed"
     assert result["synthetic_delivery"] is True
-    assert result["blocking_reason"] == "auth_rejected"
+    assert result["blocking_reason"] == "synthetic_verification_failed"
 
 
 # ---------------------------------------------------------------------------
@@ -768,6 +892,7 @@ def test_get_verification_state_is_secret_free():
         None,                 # created_at (last_run_at)
         None,                 # blocking_reason
         False,                # synthetic_delivery
+        3600,                 # ttl_seconds -- the re-check interval, AI-206
         "READY",              # inst_state
     )
     conn = _conn_with(_cur(run_row))
@@ -784,8 +909,10 @@ def test_get_verification_state_is_secret_free():
             f"Secret key {forbidden_key!r} found in read-model"
         )
     # Required safe keys must be present.
+    # `ttl_seconds` is required too: the console tells a person whether a READY
+    # connector's evidence has run out, and it cannot invent the interval.
     for required in ("last_outcome", "evidence_class", "safe_next_action",
-                     "installation_state", "synthetic_delivery"):
+                     "installation_state", "synthetic_delivery", "ttl_seconds"):
         assert required in result, f"Required key {required!r} missing from read-model"
 
 
@@ -832,19 +959,61 @@ def test_run_verification_replays_on_same_key(monkeypatch):
         _cur(_DC_ROW),
     )
 
+    check_calls = []
+
+    def should_not_run():
+        check_calls.append(True)
+        return _check_pass()
+
     result = cv.run_verification(
         conn,
         environment="production",
         connector_name="test-connector",
-        checks=[_check_pass],
+        checks=[should_not_run],
         actor="admin",
         idempotency_key="ik-replay",
         host_context={},
         trace_id=None,
     )
 
-    # Should return the replayed outcome without error.
     assert result["last_outcome"] == "passed"
+    assert check_calls == []
+
+
+def test_synthetic_delivery_replay_does_not_run_auth_again(monkeypatch):
+    from core import connector_verification as cv
+    from core import operations
+
+    replay_result = operations.OperationResult(
+        "op-synth-1",
+        "succeeded",
+        {
+            "outcome": "passed",
+            "evidence_class": "synthetic_delivery_auth",
+            "synthetic_delivery": True,
+        },
+        "audit-1",
+        "outbox-1",
+        True,
+    )
+    monkeypatch.setattr(
+        cv,
+        "execute_operation",
+        lambda operation_conn, spec, *, mutation: replay_result,
+    )
+    runner_calls = []
+    result = cv.run_synthetic_delivery(
+        _conn_with(_cur(_INST_ROW_DOMAIN_PENDING), _cur(_DC_ROW)),
+        environment="production",
+        connector_name="test-connector",
+        delivery_runner=lambda: runner_calls.append(True) or (True, "ok"),
+        actor="admin",
+        idempotency_key="ik-synth-replay",
+        host_context={},
+        trace_id=None,
+    )
+    assert result["last_outcome"] == "passed"
+    assert runner_calls == []
 
 
 def test_run_verification_conflicting_key_raises(monkeypatch):
@@ -1002,6 +1171,9 @@ def test_mcp_verification_status_returns_same_model_as_rest(monkeypatch):
         def __exit__(self, *a): pass
 
     monkeypatch.setattr(_db, "get_connection", lambda: _FakeConn())
+    monkeypatch.setattr(operations_mcp, "_identity", lambda: "platform-admin@test")
+    import core.super_admin as _super_admin
+    monkeypatch.setattr(_super_admin, "is_super_admin", lambda identity: True)
     monkeypatch.setenv("TOOROW_ENVIRONMENT", "production")
 
     # Extract the handler directly.
@@ -1038,6 +1210,31 @@ def test_mcp_verification_status_returns_same_model_as_rest(monkeypatch):
     # No evidence_hash or secrets.
     assert "evidence_hash" not in data
     assert "signing_secret" not in data
+
+    monkeypatch.setattr(_super_admin, "is_super_admin", lambda identity: False)
+    with pytest.raises(Exception) as exc_info:
+        handler("test-connector")
+    assert "not_found" in str(exc_info.value)
+    assert "test-connector" not in str(exc_info.value)
+
+
+def test_corrective_migration_enforces_verification_provenance():
+    migration = Path(
+        REPO_ROOT / "infra/nango/migrations/180_connector_verification_run_guard.sql"
+    ).read_text(encoding="utf-8")
+    for fragment in (
+        "connector.verification.ran",
+        "effective_org_id",
+        "superseded_by IS NOT NULL",
+        "synthetic_delivery_auth",
+        "routing_check",
+        "auth_check",
+        "^[0-9a-f]{64}$",
+        "ttl_seconds NOT BETWEEN 1 AND 86400",
+        "first_seen_at IS NULL",
+        "DEFERRABLE INITIALLY DEFERRED",
+    ):
+        assert fragment in migration
 
 
 # ---------------------------------------------------------------------------
@@ -1086,7 +1283,10 @@ def test_post_verify_non_admin_returns_404(monkeypatch, asgi_client):
     assert resp.json()["code"] == "not_found"
     # F3: denial must be audited exactly once with the correct action.
     assert len(audit_calls) == 1, f"Expected 1 audit call, got {audit_calls}"
-    assert audit_calls[0]["action"] == _audit.ACTION_CONNECTOR_VERIFICATION_DENIED
+    assert (
+        audit_calls[0]["action"]
+        == connector_verification_api_actions.ACTION_CONNECTOR_VERIFICATION_DENIED
+    )
 
 
 def test_post_verify_missing_idempotency_key_returns_422(monkeypatch, asgi_client):
@@ -1180,7 +1380,10 @@ def test_post_test_delivery_non_admin_returns_404(monkeypatch, asgi_client):
     assert resp.status_code == 404
     # F3: denial must be audited exactly once with the correct action.
     assert len(audit_calls) == 1, f"Expected 1 audit call, got {audit_calls}"
-    assert audit_calls[0]["action"] == _audit.ACTION_CONNECTOR_VERIFICATION_DENIED
+    assert (
+        audit_calls[0]["action"]
+        == connector_verification_api_actions.ACTION_CONNECTOR_VERIFICATION_DENIED
+    )
 
 
 def test_post_test_delivery_admin_returns_200_with_synthetic_flag(monkeypatch, asgi_client):
@@ -1255,7 +1458,10 @@ def test_get_verification_non_admin_returns_404(monkeypatch, asgi_client):
     assert resp.status_code == 404
     # F3: denial must be audited exactly once with the correct action.
     assert len(audit_calls) == 1, f"Expected 1 audit call, got {audit_calls}"
-    assert audit_calls[0]["action"] == _audit.ACTION_CONNECTOR_VERIFICATION_DENIED
+    assert (
+        audit_calls[0]["action"]
+        == connector_verification_api_actions.ACTION_CONNECTOR_VERIFICATION_DENIED
+    )
 
 
 def test_get_verification_admin_returns_200_when_no_run(monkeypatch, asgi_client):
@@ -1333,13 +1539,13 @@ def test_get_verification_admin_returns_200_with_run(monkeypatch, asgi_client):
 
 # ---------------------------------------------------------------------------
 # (n) Live-PG-gated: append-only trigger + latest-run index.
-#     These tests run only when PLATFORM_DB_URL is set (live PG gate).
+#     These tests run only when TEST_POSTGRES_DSN is set (live PG gate).
 # ---------------------------------------------------------------------------
 
 
 pytestmark_live = pytest.mark.skipif(
-    not __import__("os").environ.get("PLATFORM_DB_URL"),
-    reason="live PG not configured (PLATFORM_DB_URL unset)",
+    not __import__("os").environ.get("TEST_POSTGRES_DSN"),
+    reason="live PG not configured (TEST_POSTGRES_DSN unset)",
 )
 
 
@@ -1350,54 +1556,60 @@ def test_live_append_only_trigger_rejects_update():
 
     import psycopg
 
-    db_url = os.environ["PLATFORM_DB_URL"]
-    with psycopg.connect(db_url) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
+    _DO_BLOCK = """
                 DO $$
                 DECLARE
-                    v_inst_id TEXT;
-                    v_op_id   TEXT;
-                    v_run_id  TEXT;
+                    v_inst_id TEXT := 'cin_01JZAAABBBCCCDDDEEEFFF0001';
+                    v_run_id  TEXT := 'cvr_01JZAAABBBCCCDDDEEEFFF0002';
+                    v_install_op TEXT := 'op_01JZAAABBBCCCDDDEEEFFF0003';
+                    v_domain_op TEXT := 'op_01JZAAABBBCCCDDDEEEFFF0004';
+                    v_verify_op TEXT := 'op_01JZAAABBBCCCDDDEEEFFF0005';
+                    v_config_id TEXT := 'cdc_01JZAAABBBCCCDDDEEEFFF0006';
                 BEGIN
-                    -- Reuse or create a minimal operation row.
                     INSERT INTO app.operations
                         (id, effective_org_id, command_type, actor, resource_path,
                          host_context, versions, request_hash, provider_references,
                          confirmation_mode, idempotency_key_hash, state)
                     VALUES
-                        ('op_LIVETEST001ABCDEFGHIJKLMNOPQ', 'platform',
-                         'connector.verification.ran', 'test', '["t"]'::jsonb,
-                         '{}'::jsonb, '{}'::jsonb,
-                         'a0' || repeat('0', 62),
-                         '{}'::jsonb, 'server',
-                         'b0' || repeat('0', 62), 'pending')
-                    ON CONFLICT DO NOTHING;
-                    SELECT id INTO v_op_id FROM app.operations
-                    WHERE id = 'op_LIVETEST001ABCDEFGHIJKLMNOPQ';
+                        (v_install_op, NULL, 'connector.install.applied', 'test',
+                         '["test-install"]'::jsonb, '{}'::jsonb, '{}'::jsonb,
+                         repeat('a', 64), '{}'::jsonb, 'server',
+                         repeat('1', 64), 'pending'),
+                        (v_domain_op, NULL, 'connector.domain.configured', 'test',
+                         '["test-domain"]'::jsonb, '{}'::jsonb, '{}'::jsonb,
+                         repeat('b', 64), '{}'::jsonb, 'server',
+                         repeat('2', 64), 'pending'),
+                        (v_verify_op, NULL, 'connector.verification.ran', 'test',
+                         '["test-verification"]'::jsonb, '{}'::jsonb, '{}'::jsonb,
+                         repeat('c', 64), '{}'::jsonb, 'server',
+                         repeat('3', 64), 'pending');
 
-                    -- Reuse or create a minimal installation row.
                     INSERT INTO app.connector_installations
-                        (id, environment, connector_name, state, operation_id)
+                        (id, environment, connector_name, state, blocking_cause,
+                         responsible_actor, operation_id)
                     VALUES
-                        ('cin_LIVETEST001ABCDEFGHIJKLMNO', 'test', 'live-test-conn',
-                         'READY', v_op_id)
-                    ON CONFLICT DO NOTHING;
-                    SELECT id INTO v_inst_id FROM app.connector_installations
-                    WHERE environment = 'test' AND connector_name = 'live-test-conn';
+                        (v_inst_id, 'test', 'live-test-conn', 'DOMAIN_PENDING',
+                         'domain_configuration_pending', 'platform_admin',
+                         v_install_op);
 
-                    -- Insert one verification run.
-                    v_run_id := 'cvr_LIVETEST001ABCDEFGHIJKLMNO';
-                    INSERT INTO app.connector_verification_runs
+                    INSERT INTO app.connector_domain_configs
                         (id, installation_id, environment, connector_name,
-                         outcome, evidence_class, synthetic_delivery, operation_id)
+                         domain, provider_adapter, config_version, operation_id)
                     VALUES
-                        (v_run_id, v_inst_id, 'test', 'live-test-conn',
-                         'passed', 'routing_check', FALSE, v_op_id)
-                    ON CONFLICT DO NOTHING;
+                        (v_config_id, v_inst_id, 'test', 'live-test-conn',
+                         'live-test.invalid', 'test-adapter', 1, v_domain_op);
 
-                    -- Attempt UPDATE -> trigger must raise.
+                    INSERT INTO app.connector_verification_runs
+                        (id, installation_id, domain_config_id, environment,
+                         connector_name, outcome, evidence_class, evidence_hash,
+                         ttl_seconds, synthetic_delivery, operation_id)
+                    VALUES
+                        (v_run_id, v_inst_id, v_config_id, 'test',
+                         'live-test-conn', 'passed', 'routing_check',
+                         repeat('d', 64), 3600, FALSE, v_verify_op);
+
+                    SET CONSTRAINTS ALL IMMEDIATE;
+
                     BEGIN
                         UPDATE app.connector_verification_runs
                         SET evidence_class = 'tampered'
@@ -1405,30 +1617,53 @@ def test_live_append_only_trigger_rejects_update():
                         RAISE EXCEPTION 'trigger did not fire -- append-only violation';
                     EXCEPTION WHEN OTHERS THEN
                         IF SQLERRM LIKE '%append-only%' THEN
-                            NULL;  -- expected
+                            NULL;
                         ELSE
                             RAISE;
                         END IF;
                     END;
 
-                    -- Attempt DELETE -> trigger must raise.
                     BEGIN
                         DELETE FROM app.connector_verification_runs WHERE id = v_run_id;
                         RAISE EXCEPTION 'trigger did not fire -- DELETE not blocked';
                     EXCEPTION WHEN OTHERS THEN
                         IF SQLERRM LIKE '%append-only%' THEN
-                            NULL;  -- expected
+                            NULL;
                         ELSE
                             RAISE;
                         END IF;
                     END;
 
-                    -- Rollback the test data.
                     RAISE EXCEPTION 'rollback_test_data';
                 END;
                 $$ LANGUAGE plpgsql;
                 """
-            )
+    _EXPECTED_ROLLBACK = "rollback_test_data"
+
+    db_url = os.environ["TEST_POSTGRES_DSN"]
+    with psycopg.connect(db_url) as conn:
+        with conn.cursor() as cur:
+            # The block ENDS by raising, on purpose, to roll its fixture rows
+            # back. Reaching that raise is the pass condition: it means both the
+            # UPDATE and the DELETE were refused by the append-only trigger,
+            # since either one succeeding raises a different message that the
+            # inner handlers re-raise. Any other error is a real failure.
+            #
+            # Nothing caught it before, so the test failed on its own success
+            # marker -- invisible for as long as TEST_POSTGRES_DSN was unset and
+            # the test never ran.
+            try:
+                cur.execute(_DO_BLOCK)
+            except psycopg.errors.RaiseException as exc:
+                assert _EXPECTED_ROLLBACK in str(exc), (
+                    "The append-only block stopped before its rollback marker, "
+                    f"which means a trigger did not fire: {exc}"
+                )
+            else:
+                pytest.fail(
+                    "Expected the block to end on its rollback marker; it "
+                    "returned normally, so the fixture rows were committed."
+                )
         conn.rollback()
 
 
@@ -1440,7 +1675,7 @@ def test_live_latest_run_index_used_by_planner():
 
     import psycopg
 
-    db_url = os.environ["PLATFORM_DB_URL"]
+    db_url = os.environ["TEST_POSTGRES_DSN"]
     explain_sql = (
         "EXPLAIN (FORMAT JSON) "
         "SELECT outcome, evidence_class, first_seen_at, created_at, "

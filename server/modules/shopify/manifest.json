@@ -1,346 +1,372 @@
 {
-    "schema_version": "1.2",
-    "name": "shopify",
-    "display_name": "Shopify",
-    "public_catalog": {
-        "visibility": "public",
-        "category": "commerce_billing",
-        "onboarding_modes": [
-            "connector_pull"
-        ],
-        "verification": {
-            "status": "blocked",
-            "reason_code": "live_evidence_not_ratified",
-            "follow_up": "Ratify and run the independent connector evidence contract."
-        }
-    },
-    "module_kind": "kpi",
-    "auth_type": "oauth2",
-    "report_profiles": [
-        {
-            "id": "orders_daily",
-            "display_name": "Orders (daily sales of record)",
-            "metrics": [
-                "revenue",
-                "refund_amount",
-                "orders_count"
-            ],
-            "dimensions": [
-                "date",
-                "transaction_id"
-            ],
-            "extraction_capabilities": {
-                "row_limit": 250,
-                "filters_supported": true,
-                "realtime": false
-            },
-            "extraction_path": "custom_pull",
-            "verification_expected_rows_per_day": null
-        },
-        {
-            "id": "catalog_daily",
-            "display_name": "Orders — catalog-driven (any field, order grain)",
-            "metrics": [
-                "revenue",
-                "refund_amount",
-                "orders_count"
-            ],
-            "dimensions": [
-                "date",
-                "transaction_id"
-            ],
-            "extraction_capabilities": {
-                "row_limit": 250,
-                "filters_supported": true,
-                "realtime": false
-            },
-            "extraction_path": "custom_pull",
-            "verification_expected_rows_per_day": null
-        },
-        {
-            "id": "product_launch",
-            "display_name": "Product launches (events)",
-            "metrics": [],
-            "dimensions": ["date"],
-            "events": ["product_launch"],
-            "extraction_capabilities": {
-                "row_limit": 250,
-                "filters_supported": false,
-                "realtime": false
-            },
-            "extraction_path": "custom_pull",
-            "landing": "context_events",
-            "_api_notes": "GET /admin/api/{version}/products.json?published_at_min=&published_at_max=&limit=250 (Link rel=next cursor pagination). published_at = event_date (YYYY-MM-DD); title = label. A null published_at (unpublished product) emits no event. Reuses the existing shopify OAuth token/scope. Persisted to context_events (no fact_daily_kpi). AI-53: endpoint/field names declared from the Admin REST docs, to confirm on the live pass (no test account 2026-07-21)."
-        }
+  "schema_version": "1.2",
+  "name": "shopify",
+  "display_name": "Shopify",
+  "business_domain": "sales",
+  "public_catalog": {
+    "visibility": "public",
+    "category": "commerce_billing",
+    "onboarding_modes": [
+      "connector_pull"
     ],
-    "canonical_metric_mapping": {
-        "total_price": "revenue",
-        "total_refunded": "refund_amount",
-        "order": "orders_count"
-    },
-    "canonical_dimension_mapping": {
-        "order_id": "order_id",
-        "transaction_id": "transaction_id"
-    },
-    "canonical_event_mapping": {
-        "product_launch": "product_launch"
-    },
-    "quota": {
-        "window_seconds": 1,
-        "budget_points": 2,
-        "read_cost": 1,
-        "write_cost": 10
-    },
-    "widget_ref": "ui://core/daily-report",
-    "_ai_53_notes": {
-        "quota": "AI-53 A CONFIRMER EN STORY: Shopify applique des call limits PAR PLAN MARCHAND (leaky bucket REST: 2 req/s standard, 4 req/s Shopify Plus, bucket 40/80). review-15-4 F-3: l'engine core est un FIXED-WINDOW (recharge complete par fenetre) et ne modelise PAS le leaky bucket -- une fenetre 60s/40pts autoriserait un BURST de 40 requetes instantanees (plus permissif que Shopify, pas 'prudent'). Profil retenu: window 1s / 2 points = 2 req/s soutenu SANS burst (approximation conservatrice du bucket standard). Le vrai backstop reste le handler 429 -> RateLimitError. A recalibrer via X-Shopify-Shop-Api-Call-Limit en passe live (Phase B).",
-        "canonical_metric_mapping": "AI-53 A CONFIRMER EN STORY: noms de champs API Admin REST supposes d'apres la doc: order.total_price -> revenue (montant total commande, additif), order.total_refunded (ou somme des refund.transactions) -> refund_amount (COLONNE DEDIEE, JAMAIS soustrait silencieusement de revenue), comptage d'ordres -> orders_count. A verifier endpoint/champs exacts (Admin REST vs GraphQL) en passe live (AI-53/AI-13).",
-        "transaction_id": "AI-53 A CONFIRMER EN STORY: transaction_id expose comme DIMENSION DE DETAIL du raw (une commande -> une/plusieurs transactions de paiement Shopify). C'est la cle de jointure GA4 x Shopify (Epic 17). Le mart agrege au JOUR: transaction_id N'est PAS une partition de breakdown du mart. Disponibilite exacte (order.transactions[].id vs order.id) a confirmer via la doc Admin API.",
-        "refunds_decision": "DECISION 15.4 (REFERENCE pour Stripe 15.7): les remboursements sont stockes en COLONNE DEDIEE refund_amount (metrique additive positive), JAMAIS soustraits silencieusement de revenue. Le net se calcule au niveau semantique (revenue - refund_amount) de facon explicite et auditable."
-    },
-    "_error_map_note": "Shopify Admin REST uses pure HTTP status semantics: 401=Unauthorized (expired/invalid token), 402=Payment Required (shop suspended), 403=Forbidden (permission scope missing), 423=Locked (shop locked), 429=Too Many Requests (leaky-bucket overflow, handled by RateLimitError path). No provider-level numeric error codes refine beyond the HTTP status; error_map is intentionally empty. The 429 path keeps raising core.quota.RateLimitError directly (Story 3.3 breaker contract). All other non-200 responses raise via classify_http_error(status_code, body) with an empty map, relying on pure-HTTP classification.",
-    "error_map": {},
-    "_account_topology_note": "Shopify is shop-scoped: one OAuth token = one merchant store. There is no account hierarchy to discover or select; the shop_domain is the sole scope and is resolved from the connection's Nango credential at pull time. account_topology is therefore absent from this manifest by design, not by omission.",
-    "source_capabilities": {
-        "contract_version": "1",
-        "field_discovery": {
-            "mode": "static",
-            "allowed_targets": []
-        },
-        "fields": [
-            {
-                "field_id": "revenue",
-                "source_field": "total_price",
-                "kind": "metric",
-                "physical_type": "decimal",
-                "description": "revenue exposed by Shopify.",
-                "semantic_hints": [
-                    "revenue",
-                    "currency"
-                ],
-                "canonical_target": "revenue",
-                "aggregation": "sum",
-                "non_additive": false
-            },
-            {
-                "field_id": "refund_amount",
-                "source_field": "total_refunded",
-                "kind": "metric",
-                "physical_type": "decimal",
-                "description": "refund amount exposed by Shopify.",
-                "semantic_hints": [
-                    "revenue",
-                    "currency"
-                ],
-                "canonical_target": "refund_amount",
-                "aggregation": "sum",
-                "non_additive": false
-            },
-            {
-                "field_id": "orders_count",
-                "source_field": "order",
-                "kind": "metric",
-                "physical_type": "integer",
-                "description": "orders count exposed by Shopify.",
-                "semantic_hints": [
-                    "conversion",
-                    "count"
-                ],
-                "canonical_target": "orders_count",
-                "aggregation": "sum",
-                "non_additive": false
-            },
-            {
-                "field_id": "date",
-                "source_field": "created_at",
-                "kind": "dimension",
-                "physical_type": "date",
-                "description": "date exposed by Shopify.",
-                "semantic_hints": [
-                    "date"
-                ],
-                "canonical_target": "date",
-                "aggregation": "none",
-                "non_additive": false
-            },
-            {
-                "field_id": "transaction_id",
-                "source_field": "transaction_id",
-                "kind": "dimension",
-                "physical_type": "string",
-                "description": "transaction id exposed by Shopify.",
-                "semantic_hints": [
-                    "identifier"
-                ],
-                "canonical_target": "transaction_id",
-                "aggregation": "none",
-                "non_additive": false
-            },
-            {
-                "field_id": "product_launch",
-                "source_field": "published_at",
-                "kind": "event",
-                "physical_type": "datetime",
-                "description": "Date a product was published to the Online Store (product.published_at from the Admin REST products edge). Maps to canonical event_type product_launch. label = product.title. A product with a null published_at (never published) emits no launch event. Persisted as a context_events pulse (value null).",
-                "semantic_hints": [
-                    "event"
-                ],
-                "label_source_field": "title",
-                "canonical_target": "product_launch",
-                "aggregation": "none",
-                "non_additive": false
-            }
-        ],
-        "reports": [
-            {
-                "id": "orders_daily",
-                "selection_mode": "exact_bundle",
-                "availability": {
-                    "status": "selectable"
-                },
-                "metrics": [
-                    "revenue",
-                    "refund_amount",
-                    "orders_count"
-                ],
-                "dimensions": [
-                    "date",
-                    "transaction_id"
-                ],
-                "supported_grains": [
-                    [
-                        "date",
-                        "transaction_id"
-                    ]
-                ],
-                "compatibility": [],
-                "filters": [
-                    {
-                        "field_id": "date",
-                        "operators": [
-                            "gte",
-                            "lte"
-                        ]
-                    }
-                ],
-                "pagination": {
-                    "mode": "link",
-                    "completeness": "bounded",
-                    "max_pages": 1000,
-                    "row_limit": 250,
-                    "truncation_signal": "logged"
-                },
-                "quota_cost": {
-                    "read_points": 1,
-                    "unit": "request"
-                },
-                "incremental": {
-                    "mode": "date_window",
-                    "cursor_field": null
-                },
-                "cadence": {
-                    "minimum_interval_minutes": 1440,
-                    "supported_modes": [
-                        "manual",
-                        "daily"
-                    ]
-                },
-                "dispatch": {
-                    "callable": "pull"
-                }
-            },
-            {
-                "id": "catalog_daily",
-                "selection_mode": "catalog_driven",
-                "availability": {
-                    "status": "selectable"
-                },
-                "metrics": [
-                    "revenue",
-                    "refund_amount",
-                    "orders_count"
-                ],
-                "dimensions": [
-                    "date",
-                    "transaction_id"
-                ],
-                "supported_grains": [
-                    [
-                        "date",
-                        "transaction_id"
-                    ]
-                ],
-                "compatibility": [],
-                "filters": [
-                    {
-                        "field_id": "date",
-                        "operators": [
-                            "gte",
-                            "lte"
-                        ]
-                    }
-                ],
-                "pagination": {
-                    "mode": "link",
-                    "completeness": "bounded",
-                    "max_pages": 1000,
-                    "row_limit": 250,
-                    "truncation_signal": "logged"
-                },
-                "quota_cost": {
-                    "read_points": 1,
-                    "unit": "request"
-                },
-                "incremental": {
-                    "mode": "date_window",
-                    "cursor_field": null
-                },
-                "cadence": {
-                    "minimum_interval_minutes": 1440,
-                    "supported_modes": [
-                        "manual",
-                        "daily"
-                    ]
-                },
-                "dispatch": {
-                    "callable": "pull_catalog_daily"
-                }
-            },
-            {
-                "id": "product_launch",
-                "selection_mode": "exact_bundle",
-                "availability": {
-                    "status": "selectable"
-                },
-                "metrics": [],
-                "dimensions": ["date"],
-                "events": ["product_launch"],
-                "supported_grains": [["date"]],
-                "compatibility": [],
-                "filters": [],
-                "pagination": {
-                    "mode": "link",
-                    "completeness": "bounded",
-                    "max_pages": 1000,
-                    "row_limit": 250,
-                    "truncation_signal": "logged"
-                },
-                "quota_cost": {
-                    "read_points": 1,
-                    "unit": "request"
-                },
-                "incremental": {
-                    "mode": "full_refresh",
-                    "cursor_field": null
-                },
-                "cadence": {
-                    "minimum_interval_minutes": 1440,
-                    "supported_modes": ["manual", "daily"]
-                },
-                "dispatch": {
-                    "callable": "pull_product_launch"
-                }
-            }
-        ]
+    "verification": {
+      "status": "blocked",
+      "reason_code": "live_evidence_not_ratified",
+      "follow_up": "Ratify and run the independent connector evidence contract."
     }
+  },
+  "module_kind": "kpi",
+  "auth_type": "oauth2",
+  "report_profiles": [
+    {
+      "id": "orders_daily",
+      "raw_relation": "raw_shopify_orders",
+      "staging_relation": "stg_shopify_orders_daily",
+      "display_name": "Orders (daily sales of record)",
+      "metrics": [
+        "revenue",
+        "refund_amount",
+        "orders_count"
+      ],
+      "dimensions": [
+        "date",
+        "transaction_id"
+      ],
+      "extraction_capabilities": {
+        "row_limit": 250,
+        "filters_supported": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull",
+      "verification_expected_rows_per_day": null
+    },
+    {
+      "id": "catalog_daily",
+      "raw_relation": "raw_shopify_catalog_daily",
+      "staging_relation": null,
+      "display_name": "Orders \u2014 catalog-driven (any field, order grain)",
+      "metrics": [
+        "revenue",
+        "refund_amount",
+        "orders_count"
+      ],
+      "dimensions": [
+        "date",
+        "transaction_id"
+      ],
+      "extraction_capabilities": {
+        "row_limit": 250,
+        "filters_supported": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull",
+      "verification_expected_rows_per_day": null
+    },
+    {
+      "id": "product_launch",
+      "raw_relation": null,
+      "staging_relation": null,
+      "display_name": "Product launches (events)",
+      "metrics": [],
+      "dimensions": [
+        "date"
+      ],
+      "events": [
+        "product_launch"
+      ],
+      "extraction_capabilities": {
+        "row_limit": 250,
+        "filters_supported": false,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull",
+      "landing": "context_events",
+      "_api_notes": "GET /admin/api/{version}/products.json?published_at_min=&published_at_max=&limit=250 (Link rel=next cursor pagination). published_at = event_date (YYYY-MM-DD); title = label. A null published_at (unpublished product) emits no event. Reuses the existing shopify OAuth token/scope. Persisted to context_events (no fact_daily_kpi). AI-53: endpoint/field names declared from the Admin REST docs, to confirm on the live pass (no test account 2026-07-21)."
+    }
+  ],
+  "canonical_metric_mapping": {
+    "total_price": "revenue",
+    "total_refunded": "refund_amount",
+    "order": "orders_count"
+  },
+  "canonical_dimension_mapping": {
+    "order_id": "order_id",
+    "transaction_id": "transaction_id"
+  },
+  "canonical_event_mapping": {
+    "product_launch": "product_launch"
+  },
+  "quota": {
+    "window_seconds": 1,
+    "budget_points": 2,
+    "read_cost": 1,
+    "write_cost": 10
+  },
+  "widget_ref": "ui://core/daily-report",
+  "_ai_53_notes": {
+    "quota": "AI-53 A CONFIRMER EN STORY: Shopify applique des call limits PAR PLAN MARCHAND (leaky bucket REST: 2 req/s standard, 4 req/s Shopify Plus, bucket 40/80). review-15-4 F-3: l'engine core est un FIXED-WINDOW (recharge complete par fenetre) et ne modelise PAS le leaky bucket -- une fenetre 60s/40pts autoriserait un BURST de 40 requetes instantanees (plus permissif que Shopify, pas 'prudent'). Profil retenu: window 1s / 2 points = 2 req/s soutenu SANS burst (approximation conservatrice du bucket standard). Le vrai backstop reste le handler 429 -> RateLimitError. A recalibrer via X-Shopify-Shop-Api-Call-Limit en passe live (Phase B).",
+    "canonical_metric_mapping": "AI-53 A CONFIRMER EN STORY: noms de champs API Admin REST supposes d'apres la doc: order.total_price -> revenue (montant total commande, additif), order.total_refunded (ou somme des refund.transactions) -> refund_amount (COLONNE DEDIEE, JAMAIS soustrait silencieusement de revenue), comptage d'ordres -> orders_count. A verifier endpoint/champs exacts (Admin REST vs GraphQL) en passe live (AI-53/AI-13).",
+    "transaction_id": "AI-53 A CONFIRMER EN STORY: transaction_id expose comme DIMENSION DE DETAIL du raw (une commande -> une/plusieurs transactions de paiement Shopify). C'est la cle de jointure GA4 x Shopify (Epic 17). Le mart agrege au JOUR: transaction_id N'est PAS une partition de breakdown du mart. Disponibilite exacte (order.transactions[].id vs order.id) a confirmer via la doc Admin API.",
+    "refunds_decision": "DECISION 15.4 (REFERENCE pour Stripe 15.7): les remboursements sont stockes en COLONNE DEDIEE refund_amount (metrique additive positive), JAMAIS soustraits silencieusement de revenue. Le net se calcule au niveau semantique (revenue - refund_amount) de facon explicite et auditable."
+  },
+  "error_map": {
+    "401:[API] Invalid API key or access token (unrecognized login or wrong password)": "auth_revoked",
+    "404:Not Found": "invalid_request"
+  },
+  "_error_map_note": "Reference: Shopify Admin API 'Response codes' + 'Uninstalling an app' (shopify.dev/docs/api/admin). Shopify emits NO numeric error code: its whole error vocabulary is the body's 'errors' value, {\"errors\": \"<verbatim message>\"} (a string on the auth/lookup failures; an object of field messages on a 422 write, which this read-only connector never provokes). KEYS ARE THEREFORE THE VERBATIM DOCUMENTED MESSAGES. PAYLOAD SHAPE: core.pull_errors._extract_provider_codes has no 'errors' string branch, so connector._shopify_error_payload() copies that string into the top-level 'reason' slot -- the first top-level shape core consults -- while preserving every original key as evidence (the stripe/square normalisation pattern; core keeps zero provider vocabulary, AD-2). WHAT THE KEYS BUY: the 401 message is the ONE Shopify returns when the app has been uninstalled or the offline token revoked, and uninstalling invalidates the token immediately with no grace period -- so it is auth_revoked, not auth_expired: the merchant must reinstall/reauthorise the app, and no refresh will ever succeed. '404:Not Found' becomes invalid_request where core leaves 404 'unclassified', i.e. retried to the dead letter for a resource that no longer exists. STATUSES LEFT TO PURE HTTP ON PURPOSE: 402 (shop suspended) and 423 (shop locked) carry no stable documented message string to key on, and 403 (missing scope) is already permission_denied from the status alone. 429 (leaky-bucket overflow) keeps raising core.quota.RateLimitError (Story 3.3 breaker contract) and is never keyed here.",
+  "_account_topology_note": "Shopify is shop-scoped: one OAuth token = one merchant store. There is no account hierarchy to discover or select; the shop_domain is the sole scope and is resolved from the connection's Nango credential at pull time. account_topology is therefore absent from this manifest by design, not by omission.",
+  "source_capabilities": {
+    "contract_version": "1",
+    "field_discovery": {
+      "mode": "static",
+      "allowed_targets": []
+    },
+    "fields": [
+      {
+        "field_id": "revenue",
+        "source_field": "total_price",
+        "kind": "metric",
+        "physical_type": "decimal",
+        "description": "revenue exposed by Shopify.",
+        "semantic_hints": [
+          "revenue",
+          "currency"
+        ],
+        "canonical_target": "revenue",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "refund_amount",
+        "source_field": "total_refunded",
+        "kind": "metric",
+        "physical_type": "decimal",
+        "description": "refund amount exposed by Shopify.",
+        "semantic_hints": [
+          "revenue",
+          "currency"
+        ],
+        "canonical_target": "refund_amount",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "orders_count",
+        "source_field": "order",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "orders count exposed by Shopify.",
+        "semantic_hints": [
+          "conversion",
+          "count"
+        ],
+        "canonical_target": "orders_count",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "date",
+        "source_field": "created_at",
+        "kind": "dimension",
+        "physical_type": "date",
+        "description": "date exposed by Shopify.",
+        "semantic_hints": [
+          "date"
+        ],
+        "canonical_target": "date",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "transaction_id",
+        "source_field": "transaction_id",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "transaction id exposed by Shopify.",
+        "semantic_hints": [
+          "identifier"
+        ],
+        "canonical_target": "transaction_id",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "product_launch",
+        "source_field": "published_at",
+        "kind": "event",
+        "physical_type": "datetime",
+        "description": "Date a product was published to the Online Store (product.published_at from the Admin REST products edge). Maps to canonical event_type product_launch. label = product.title. A product with a null published_at (never published) emits no launch event. Persisted as a context_events pulse (value null).",
+        "semantic_hints": [
+          "event"
+        ],
+        "label_source_field": "title",
+        "canonical_target": "product_launch",
+        "aggregation": "none",
+        "non_additive": false
+      }
+    ],
+    "reports": [
+      {
+        "id": "orders_daily",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "metrics": [
+          "revenue",
+          "refund_amount",
+          "orders_count"
+        ],
+        "dimensions": [
+          "date",
+          "transaction_id"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "transaction_id"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "link",
+          "completeness": "bounded",
+          "max_pages": 1000,
+          "row_limit": 250,
+          "truncation_signal": "logged"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "request"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "dispatch": {
+          "callable": "pull"
+        }
+      },
+      {
+        "id": "catalog_daily",
+        "selection_mode": "catalog_driven",
+        "availability": {
+          "status": "selectable"
+        },
+        "metrics": [
+          "revenue",
+          "refund_amount",
+          "orders_count"
+        ],
+        "dimensions": [
+          "date",
+          "transaction_id"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "transaction_id"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "link",
+          "completeness": "bounded",
+          "max_pages": 1000,
+          "row_limit": 250,
+          "truncation_signal": "logged"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "request"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "dispatch": {
+          "callable": "pull_catalog_daily"
+        }
+      },
+      {
+        "id": "product_launch",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "metrics": [],
+        "dimensions": [
+          "date"
+        ],
+        "events": [
+          "product_launch"
+        ],
+        "supported_grains": [
+          [
+            "date"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [],
+        "pagination": {
+          "mode": "link",
+          "completeness": "bounded",
+          "max_pages": 1000,
+          "row_limit": 250,
+          "truncation_signal": "logged"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "request"
+        },
+        "incremental": {
+          "mode": "full_refresh",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "dispatch": {
+          "callable": "pull_product_launch"
+        }
+      }
+    ]
+  },
+  "_max_provider_backfill_days_note": "No max_provider_backfill_days is declared because Shopify's 60-day limit on the Order resource is a SCOPE gate, not a window: an app granted read_all_orders reaches the full history (https://shopify.dev/docs/api/admin-rest/latest/resources/order). The reachable history therefore depends on the installation, which a manifest cannot state. Declaring a guessed window would promise a history the provider never committed to, so this module answers 'unknown' rather than a number (test_backfill_bound_is_declared_or_its_absence_is)."
 }

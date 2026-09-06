@@ -1,11 +1,39 @@
-"""Real-ASGI seams for versioned Datastream field mapping operations (Story 12.3)."""
+﻿"""Real-ASGI seams for versioned Datastream field mapping operations (Story 12.3).
+
+Six of these pin `POST /api/datastreams/{id}/mapping/versions`, a route that
+26695dc RETIRED when it landed the six-tab Workbench. The append moved to
+`workbench/mapping/changes` then `confirm` ->
+`datastream_change.confirm_change`, which runs inside `execute_operation` and
+calls `save_field_mapping(advance_pointer=False, commit=False)`. The Story 12.3
+handler keeps the older shape -- no operation, `advance_pointer` at its `True`
+default -- so it would ACTIVATE the version it appends, which the governed path
+refuses.
+
+They are marked `xfail(strict=True)` rather than deleted or left red. Deleted,
+the retirement would leave no trace and the next reader would remount the route
+(this session did exactly that). Left red, they would be noise. `strict` means
+that if someone remounts the route they turn from expected-failure to
+UNEXPECTEDLY PASSING, and the suite says so out loud.
+
+Retargeting them at the governed command belongs to whoever owns the Workbench.
+"""
 
 from __future__ import annotations
 
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from starlette.testclient import TestClient
+
+#: The append is governed elsewhere; see the module docstring.
+_retired_post_route = pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "POST /api/datastreams/{id}/mapping/versions was retired by 26695dc; the "
+        "governed append is datastream_change.confirm_change"
+    ),
+)
 
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
@@ -57,6 +85,7 @@ def test_profile_datastream_mapping_requires_member_and_returns_suggestions():
     role_check.assert_called()
 
 
+@_retired_post_route
 def test_create_mapping_version_requires_idempotency_key():
     client, auth, database, role = _client(role_allowed=True)
     mapping = {
@@ -76,6 +105,7 @@ def test_create_mapping_version_requires_idempotency_key():
     assert response.json()["code"] == "missing_header"
 
 
+@_retired_post_route
 def test_create_mapping_version_appends_and_audits():
     client, auth, database, role = _client(role_allowed=True)
     mapping = {
@@ -141,6 +171,76 @@ def test_get_mapping_version_returns_single_version():
     assert response.json() == version
 
 
+def test_compare_mapping_versions_reads_two_and_names_the_concept():
+    """2026-08-18. The ledger could not say what one version decided.
+
+    Through the REAL ASGI stack, because the point of this door is that `compare`
+    is declared BEFORE `{ver}`: resolved the other way round, this path reaches
+    the single-version handler and answers "version introuvable" forever.
+    """
+    client, auth, database, role = _client(role_allowed=True)
+    versions = {
+        "dmap_01": {
+            "id": "dmap_01",
+            "version_number": 1,
+            "created_by": "analyst@example.com",
+            "mapping_payload": {
+                "fields": [{"field_id": "day", "binding": {"status": "suggested"}}]
+            },
+        },
+        "dmap_02": {
+            "id": "dmap_02",
+            "version_number": 2,
+            "created_by": "owner@example.com",
+            "mapping_payload": {
+                "fields": [{"field_id": "day", "binding": {"status": "suggested",
+                                                           "mdm_target": "mdm_EXAMPLE"}}]
+            },
+        },
+    }
+    with (
+        auth,
+        database,
+        role as role_check,
+        patch(
+            "core.datastream_field_mapping.get_mapping_version",
+            side_effect=lambda ds, project, spec, conn: versions[spec],
+        ),
+        patch(
+            "core.canonical_field_registry.list_visible_canonical_fields",
+            return_value=[{"id": "mdm_EXAMPLE", "canonical_name": "event_date"}],
+        ),
+        client,
+    ):
+        response = client.get(
+            "/api/datastreams/ds_01/mapping/versions/compare",
+            params={"project_id": "proj_a", "base": "dmap_01", "against": "dmap_02"},
+        )
+    assert response.status_code == 200
+    body = response.json()
+    # Reading history is a READ, at viewer. The append stays governed elsewhere.
+    assert role_check.call_args.args[2] == "viewer"
+    assert body["base"]["version_number"] == 1
+    assert body["against"]["created_by"] == "owner@example.com"
+    # No payload echo: two whole contracts on the wire to say one reading differs.
+    assert "mapping_payload" not in body["base"]
+    entries = body["value_diff"]["entries"]
+    assert body["value_diff"]["state"] == "composed"
+    assert [entry["reading"] for entry in entries] == ["Governed target"]
+    assert entries[0]["after"] == "event_date (mdm_EXAMPLE)"
+
+
+def test_compare_mapping_versions_requires_both_versions():
+    client, auth, database, role = _client(role_allowed=True)
+    with auth, database, role, client:
+        response = client.get(
+            "/api/datastreams/ds_01/mapping/versions/compare",
+            params={"project_id": "proj_a", "base": "dmap_01"},
+        )
+    assert response.status_code == 400
+    assert response.json()["code"] == "missing_param"
+
+
 def test_mapping_api_denies_unauthorized():
     app = build_asgi_app()
     client = TestClient(app, raise_server_exceptions=True)
@@ -175,6 +275,7 @@ def test_list_mapping_versions_returns_404_for_missing_datastream():
     assert response.json()["code"] == "not_found"
 
 
+@_retired_post_route
 def test_viewer_append_is_denied_404_and_audited():
     """A Viewer (no member role) appending a mapping version gets a non-disclosing
     404 and a cross-scope audit row, never a silent success."""
@@ -235,6 +336,7 @@ def test_production_zero_membership_defaults_denied():
     assert response.status_code == 404
 
 
+@_retired_post_route
 def test_idempotent_replay_returns_original_result():
     """A same-key replay surfaces the original version with a 200 (not a new 201)."""
     client, auth, database, role = _client(role_allowed=True)
@@ -265,6 +367,7 @@ def test_idempotent_replay_returns_original_result():
     assert response.json()["idempotent_replay"] is True
 
 
+@_retired_post_route
 def test_conflicting_payload_same_key_returns_409():
     """Reusing a key with a different payload surfaces the idempotency conflict."""
     client, auth, database, role = _client(role_allowed=True)
@@ -296,6 +399,7 @@ def test_conflicting_payload_same_key_returns_409():
     assert response.json()["code"] == "conflict"
 
 
+@_retired_post_route
 def test_blocking_payload_response_is_not_executable():
     """A saved mapping that still holds blocking bindings returns executable=False,
     never a silent approval."""

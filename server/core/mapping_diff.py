@@ -188,7 +188,7 @@ def diff_mappings(
     if non_additive_changes:
         parts.append(f"{len(non_additive_changes)} changement(s) d'additivite")
     if not parts:
-        summary = "Aucun changement de structure de mapping." if unchanged else (
+        summary = "No mapping structure change." if unchanged else (
             "Mapping equivalent (aucun champ modifie)."
         )
     else:

@@ -1,21 +1,22 @@
 ---
 title: Supported Connectors
-description: Exhaustive catalog of pre-built connector modules available in toorow for multi-channel marketing ingestion.
+description: Exhaustive catalog of pre-built connectors available in toorow for multi-channel marketing ingestion.
 ---
 
-**toorow** features a modular, auto-discovered connector architecture. Connectors extract daily raw indicators, map fields to canonical targets, and enforce joint-grain preservation.
+**toorow** features an auto-discovered connector architecture. Connectors extract daily raw indicators, map fields to canonical targets, and enforce joint-grain preservation.
 
 ---
 
-## Connector Catalog (37 Built-in Modules)
+## Connector Catalog (39 Built-in Connectors)
 
-Below is the complete list of connector modules available in the platform, categorized by marketing surface:
+Below is the complete list of connectors available in the platform, categorized by marketing surface. The count and the list are checked against the platform registry by a conformance test, so this page cannot silently fall behind the code.
 
 ### Analytics & Web Intelligence
 - **Google Analytics 4 (`google-analytics`)**: Traffic, conversions, event counts, pageviews, and source/medium breakdowns.
 - **Google Search Console (`gsc`)**: Organic search impressions, clicks, CTR, and average position by query, page, and device.
 - **Adobe Analytics (`adobe-analytics`)**: Enterprise web analytics indicators.
 - **Piano Analytics (`piano`)**: Digital analytics and user engagement tracking.
+- **Google Business Profile (`google-business-profile`)**: Location-level daily visibility and interactions, plus social post performance.
 
 ### Paid Search & Retail Advertising
 - **Google Ads (`google-ads`)**: Campaign spend, impressions, clicks, conversions, and CPC across Search, Display, and Video.
@@ -33,6 +34,7 @@ Below is the complete list of connector modules available in the platform, categ
 - **Pinterest Ads (`pinterest-ads`)**: Promoted pins performance, impressions, and saved clicks.
 - **X Ads / Twitter (`x-ads`)**: Campaign impressions, engagements, and spend.
 - **YouTube Analytics (`youtube-analytics`)**: Video view counts, watch time, subscriber deltas, and video performance.
+- **Instagram Insights (`instagram-insights`)**: Organic account reach and daily audience indicators, plus per-media performance.
 
 ### Programmatic & Enterprise Display
 - **DV360 / Display & Video 360 (`dv360`)**: Programmatic demand-side platform impressions, spend, and conversions.
@@ -51,7 +53,13 @@ Below is the complete list of connector modules available in the platform, categ
 ### Email & Customer Engagement
 - **Klaviyo (`klaviyo`)**: Email campaign performance, open rates, click rates, and email-attributed revenue.
 - **Brevo / Sendinblue (`brevo`)**: Email dispatch stats, deliverability, and campaign responses.
-- **Mailgun (`mailgun`)**: Transactional email deliveries, drops, opens, clicks, and spam complaints.
+
+<Note>
+  **Mailgun is not a connector**, and this page used to list it as one. Mailgun is the
+  *inbound transport*: it delivers files to a managed-feed Datastream by email
+  (`server/inbound/adapters/mailgun.py`). It is a way for data to arrive, not a source
+  to extract from — see [File-Source Ingestion](/file-source-ingestion).
+</Note>
 
 ### CRM & Workflow Integration
 - **HubSpot (`hubspot`)**: Contacts created, deal pipeline stages, deal amounts, and sales activity.
@@ -63,6 +71,7 @@ Below is the complete list of connector modules available in the platform, categ
 
 ### System & Custom Feeds
 - **Google Sheets (`google-sheets`)**: Managed ingestion of custom benchmarks, promo calendars, and manual targets.
+- **BigQuery (`bigquery`)**: Read an existing BigQuery table as a source — the columns of the table you choose *are* the fields.
 - **GitHub (`github`)**: Development context events (releases, PR deployments, system changes).
 - **Generic (`generic`)**: Custom HTTP webhook and arbitrary tabular data ingestion.
 
@@ -70,7 +79,7 @@ Below is the complete list of connector modules available in the platform, categ
 
 ## Extensibility & Custom Connectors
 
-Need a connector that isn't listed here? toorow provides a standardized module contract that allows developers to scaffold and deploy custom connectors in hours.
+Need a connector that isn't listed here? toorow provides a standardized connector contract that allows developers to scaffold and deploy custom connectors in hours.
 
 <Card title="Build a Custom Connector" icon="plug" href="/adding-a-connector">
   Read the step-by-step walkthrough for scaffolding custom connectors, defining manifests, and implementing dbt staging models.

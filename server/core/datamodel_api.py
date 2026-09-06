@@ -4,56 +4,37 @@ Provides DATAMODEL_ROUTES: list[Route] — a flat list that the orchestrator
 splices into admin_api.router at startup. This module is NEVER imported by
 admin_api.py at module level (no circular import risk).
 
-Routes:
+Routes (READS ONLY since 2026-08-25 -- story 49.3 AC1, see below):
   GET    /api/datamodel/fields              ?project_id=&kind=&usage=
   GET    /api/datamodel/fields/{name}       field detail + used-by + conflicts
-  POST   /api/datamodel/fields              create user field
-  PATCH  /api/datamodel/fields/{name}       update display_name/measure/description
-  POST   /api/datamodel/fields/{name}/approve  approve field (draft -> approved) [13.1]
-  DELETE /api/datamodel/fields/{name}       soft-delete field (guard: used_by=0) [13.1;
-                                              soft delete + versioned since 44.7]
   GET    /api/datamodel/fields/{name}/history  full version timeline [44.8]
-  PUT    /api/datamodel/mappings            upsert mapping (body: datastream_id,
-                                              source_field, target_field|null)
   GET    /api/datamodel/mappings            list by ?datastream_id= OR, since 44.10,
                                               by ?target_field=[&project_id=] ("Fed by")
+  POST   /api/datamodel/fields                 REFUSED, 409 legacy_store_is_read_only
+  PATCH  /api/datamodel/fields/{name}          REFUSED, 409 legacy_store_is_read_only
+  POST   /api/datamodel/fields/{name}/approve  REFUSED, 409 legacy_store_is_read_only
+  DELETE /api/datamodel/fields/{name}          REFUSED, 409 legacy_store_is_read_only
+  PUT    /api/datamodel/mappings               REFUSED, 409 legacy_store_is_read_only
 
 Auth: same _check_auth from core.admin_api (Bearer token via core.api_auth).
 AD-5: project scoping on datastream-bound queries.
 AD-8: admin console communicates through this REST layer only.
 French error messages throughout (Epic 8 Part B + 13.1).
 
-Story 44.7: PATCH and DELETE thread the caller's REAL identity (from
-_check_auth) into core.datamodel.update_target_field / delete_target_field so
-every app.target_fields_versions row and every 'target_field.*' audit row
-carries who actually made the change, never a literal "system".
-
 Story 44.8: GET .../history calls core.datamodel.list_field_versions(name,
-conn) (the store fn already existed from 44.7), after checking
-target_field_exists(name, conn) for a genuine 404 on unknown names (finding
-#5). History outlives visibility: it is servable even for a soft-deleted
-field (status='deleted' row still exists) -- no status filter anywhere in
-this path. Restore has NO dedicated endpoint -- the UI PATCHes this same
-/fields/{name} route with the snapshot's patchable fields plus a
-`restored_from` hint; _patch_field normalises + verifies that hint (a plain
-int, or a dict with an int version_number, verified to exist in
-app.target_fields_versions -- 422 otherwise) BEFORE calling
-update_target_field, which then always records change_kind='restored'
-(finding #4 -- validation moved to the API layer, the store no longer
-trusts the client's value verbatim).
-
-AC3 (permission-gated Restore) is intentionally NOT implemented here: see
-the note under Story 44.8 in the epic file. No org-permission model exists
-in this API today; Restore is available to any authenticated operator, and
-failures surface verbatim via the PATCH response (no fabricated
-403/"forbidden reason" state).
+conn), after checking target_field_exists(name, conn) for a genuine 404 on
+unknown names (finding #5). History outlives visibility: it is servable even
+for a soft-deleted field (status='deleted' row still exists) -- no status
+filter anywhere in this path. That timeline is now a pure READ of what the
+dictionary already recorded; the Restore that used to append to it went with
+the PATCH door in the 49.3 cutover (see the block below), because going back
+to an earlier definition is publishing a Concept version again.
 
 ASCII-only stdout (AI-03). No private framework attributes (AI-02).
 """
 
 from __future__ import annotations
 
-import json
 import logging
 
 from starlette.requests import Request
@@ -75,78 +56,197 @@ async def _check_auth(request: Request) -> tuple[bool, str]:
     return await _admin_check_auth(request)
 
 
+def _project_access_allowed(
+    conn,
+    *,
+    identity: str,
+    project_id: str,
+    minimum_capability: str,
+) -> bool:
+    """Delegate to the shared strict seam, including explicit local compatibility."""
+    from core.admin_api import _strict_project_capability_allowed  # noqa: PLC0415
+
+    try:
+        return _strict_project_capability_allowed(
+            conn,
+            identity=identity,
+            project_id=project_id,
+            minimum_capability=minimum_capability,
+        )
+    except Exception as exc:
+        logger.warning(
+            "datamodel_api: project access unavailable project=%s: %s",
+            project_id,
+            type(exc).__name__,
+        )
+        return False
+
+
+def _datastream_in_project(conn, *, datastream_id: str, project_id: str) -> bool:
+    """Delegate the pair proof to the one seam that owns it (AI-219).
+
+    This module used to read the owner project and compare it in Python. The
+    answer was right and the shape was wrong: two statements where one does, and
+    a local copy of a rule that has to hold for every reader of a Datastream id.
+    """
+    from core.admin_api import require_datastream_in_project  # noqa: PLC0415
+
+    return require_datastream_in_project(
+        conn, datastream_id=datastream_id, project_id=project_id
+    )
+
+
+def _project_not_found() -> JSONResponse:
+    return JSONResponse(
+        {"code": "not_found", "message": "Project not found"}, status_code=404
+    )
+
+
+def _required_project_id(request: Request) -> str | None:
+    return (request.query_params.get("project_id") or "").strip() or None
+
+
+# ---------------------------------------------------------------------------
+# THIS SURFACE STOPPED TAKING WRITES ON 2026-08-25 (story 49.3, AC1).
+#
+# WHAT WENT, AND WHY. `app.target_fields` is the legacy field dictionary. The
+# Semantic Model is the authority `governance.md` names -- "The Semantic Model
+# owns canonical metrics, dimensions, relationships, aggregation behavior" --
+# and a field is declared, published and retired there, as a Concept, through a
+# change set. Two stores took a declaration and only one of them governed
+# anything, which is the same defect story 60.2 measured on additivity.
+#
+# MEASURED BEFORE REMOVING THEM, and this is why no caller breaks: the five
+# write doors had exactly two callers in the whole repository --
+# `ui/admin/src/datamodel/FieldDetailDrawer.tsx` and
+# `ui/admin/src/datamodel/NewFieldDialog.tsx` -- and both were orphans, imported
+# by their own tests and by nothing else since their host `FieldsTable.tsx` was
+# deleted. They go in this commit with the doors they called.
+#
+# THE READS STAY, and that is not an oversight. `GET /api/datamodel/fields*` and
+# `GET /api/datamodel/mappings` have four real console readers, one of which IS
+# the governed `mapping-coverage` lens of Governance
+# (`ui/admin/src/shell/pages/ProjectMapping.tsx`); retiring them with the writes
+# would blind that lens. The dictionary keeps its 15 delivered rows (migration
+# 023) and stays readable.
+#
+# THE STORE IS NOT ORPHANED EITHER. `app.target_fields` is still written by
+# `conflict_resolutions_api` (a MEASURE_NULL resolution PATCHes `measure`
+# through `core.datamodel.update_target_field`), and `app.datastream_mappings`
+# is still written by `flows._apply_mappings` -- the Datastream Workbench
+# mapping tab, under a version ledger and a publication review. Only the two
+# ungoverned doors are closed.
+#
+# THEY REFUSE RATHER THAN DISAPPEAR, exactly like `notebooks_api` did in the
+# 67.23 cutover: unmounting them would answer 404 to a write, which tells the
+# caller its object does not exist and sends it looking for it. A refusal names
+# the gesture that works instead.
+# ---------------------------------------------------------------------------
+
+_LEGACY_FIELD_WRITE_REFUSED = {
+    "code": "legacy_store_is_read_only",
+    "message": (
+        "This field dictionary no longer takes writes. A measure or a dimension "
+        "is declared, published and retired in Governance, on the Project's "
+        "Semantic Model, where every screen reads its definition from."
+    ),
+}
+
+_LEGACY_MAPPING_WRITE_REFUSED = {
+    "code": "legacy_store_is_read_only",
+    "message": (
+        "This mapping surface no longer takes writes. A source column is bound "
+        "to a canonical field on the Datastream's Mapping tab, which proposes a "
+        "mapping version and publishes it under review."
+    ),
+}
+
+
+def _refuse_legacy_field_write() -> Response:
+    """The same refusal for the four field doors -- one code, one sentence."""
+    return JSONResponse(_LEGACY_FIELD_WRITE_REFUSED, status_code=409)
+
+
+def _refuse_legacy_mapping_write() -> Response:
+    """The mapping door names a different gesture, under the same code."""
+    return JSONResponse(_LEGACY_MAPPING_WRITE_REFUSED, status_code=409)
+
+
 # ---------------------------------------------------------------------------
 # GET /api/datamodel/fields
 # ---------------------------------------------------------------------------
 
 
 async def _list_fields(request: Request) -> Response:
-    """GET /api/datamodel/fields -- list target fields with used_by_count.
-
-    Query params:
-        project_id  (optional) -- scope used_by_count to one project (AD-5)
-        kind        (optional) -- 'metric' | 'dimension'
-        usage       (optional) -- 'used' | 'unmapped'
-        module      (optional) -- AI-49: restrict to fields mapped by datastreams of this
-                                  module_name (JOIN datastream_mappings -> datastreams).
-                                  Unknown module -> empty list (200, not an error).
-
-    Response (200):
-        [{"name", "display_name", "data_type", "field_kind", "measure",
-          "description", "created_by", "is_default", "created_at", "used_by_count"}]
-
-    Error responses:
-        401 -- unauthorized
-        422 -- invalid kind/usage filter value
-        500 -- DB error
-    """
-    authorized, _identity = await _check_auth(request)
+    """GET /api/datamodel/fields -- list fields for one authorized project."""
+    authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
             {"code": "unauthorized", "message": "Authentification requise"},
             status_code=401,
         )
 
-    project_id = (request.query_params.get("project_id") or "").strip() or None
+    project_id = (request.query_params.get("project_id") or "").strip()
+    if not project_id:
+        return JSONResponse(
+            {"code": "missing_param", "message": "project_id est requis"},
+            status_code=422,
+        )
     kind = (request.query_params.get("kind") or "").strip() or None
     usage = (request.query_params.get("usage") or "").strip() or None
-    # AI-49: ?module= filter (optional; unknown module -> empty 200, not an error).
     module = (request.query_params.get("module") or "").strip() or None
 
     if kind is not None and kind not in ("metric", "dimension"):
         return JSONResponse(
-            {
-                "code": "invalid_param",
-                "message": "kind doit etre 'metric' ou 'dimension'",
-            },
+            {"code": "invalid_param", "message": "kind must be 'metric' or 'dimension'"},
             status_code=422,
         )
     if usage is not None and usage not in ("used", "unmapped"):
         return JSONResponse(
-            {
-                "code": "invalid_param",
-                "message": "usage doit etre 'used' ou 'unmapped'",
-            },
+            {"code": "invalid_param", "message": "usage must be 'used' or 'unmapped'"},
             status_code=422,
         )
 
     try:
-        from core.datamodel import list_target_fields  # noqa: PLC0415
+        from core.admin_api import _strict_project_capability_allowed  # noqa: PLC0415
         from core.db import get_connection  # noqa: PLC0415
+
+        with get_connection() as conn:
+            allowed = _strict_project_capability_allowed(
+                conn,
+                identity=identity,
+                project_id=project_id,
+                minimum_capability="view",
+            )
+    except Exception as exc:
+        logger.warning(
+            "datamodel_api: field-list access unavailable project=%s: %s",
+            project_id,
+            type(exc).__name__,
+        )
+        return JSONResponse(
+            {"code": "not_found", "message": "Project not found"}, status_code=404
+        )
+    if not allowed:
+        return JSONResponse(
+            {"code": "not_found", "message": "Project not found"}, status_code=404
+        )
+
+    try:
+        from core.datamodel import list_target_fields  # noqa: PLC0415
 
         with get_connection() as conn:
             fields = list_target_fields(
                 conn, project_id=project_id, kind=kind, usage=usage, module=module
             )
     except Exception as exc:
-        logger.error("datamodel_api: list_fields_error: %s", exc)
+        logger.error("datamodel_api: list_fields_error: %s", type(exc).__name__)
         return JSONResponse(
-            {"code": "db_error", "message": f"Erreur de base de donnees : {exc}"},
+            {"code": "db_error", "message": "Erreur de base de donnees"},
             status_code=500,
         )
 
     return JSONResponse(fields)
-
 
 # ---------------------------------------------------------------------------
 # GET /api/datamodel/fields/{name}
@@ -173,11 +273,18 @@ async def _get_field(request: Request) -> Response:
         404 -- field not found
         500 -- DB error
     """
-    authorized, _identity = await _check_auth(request)
+    authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
             {"code": "unauthorized", "message": "Authentification requise"},
             status_code=401,
+        )
+
+    project_id = _required_project_id(request)
+    if not project_id:
+        return JSONResponse(
+            {"code": "invalid_param", "message": "project_id est requis"},
+            status_code=422,
         )
 
     name = request.path_params.get("name", "").strip()
@@ -192,7 +299,14 @@ async def _get_field(request: Request) -> Response:
         from core.db import get_connection  # noqa: PLC0415
 
         with get_connection() as conn:
-            field = get_target_field(name, conn)
+            if not _project_access_allowed(
+                conn,
+                identity=identity,
+                project_id=project_id,
+                minimum_capability="view",
+            ):
+                return _project_not_found()
+            field = get_target_field(name, conn, project_id=project_id)
     except Exception as exc:
         logger.error("datamodel_api: get_field_error: %s", exc)
         return JSONResponse(
@@ -215,68 +329,16 @@ async def _get_field(request: Request) -> Response:
 
 
 async def _create_field(request: Request) -> Response:
-    """POST /api/datamodel/fields -- create a user-defined target field.
+    """POST /api/datamodel/fields -- REFUSED since 2026-08-25 (story 49.3 AC1).
 
-    Request body (JSON):
-        {"name": str, "display_name": str, "data_type": str,
-         "field_kind": str, "measure": str|null, "description": str|null}
+    Declaring a measure or a dimension is a Semantic Model act: the Concept
+    workbench in Governance writes `app.semantic_concepts` through a change set
+    that is prepared, confirmed and versioned. This door wrote `app.target_fields`
+    directly, with no version a reader could pin and no review anyone saw.
 
-    Response (201):
-        {name, display_name, data_type, field_kind, measure, description,
-         created_by, is_default, created_at}
-
-    Error responses:
-        400 -- missing/invalid JSON body
-        401 -- unauthorized
-        409 -- name already exists (UniqueViolation)
-        422 -- validation error (snake_case, enum values, etc.)
-        500 -- DB error
+    Its only caller, `ui/admin/src/datamodel/NewFieldDialog.tsx`, went with it.
     """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Authentification requise"},
-            status_code=401,
-        )
-
-    try:
-        body_bytes = await request.body()
-        body: dict = json.loads(body_bytes)
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Corps JSON invalide : {exc}"},
-            status_code=400,
-        )
-
-    try:
-        from core.datamodel import DuplicateFieldError, create_target_field  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            created = create_target_field(body, created_by=identity or "anonymous", conn=conn)
-    except DuplicateFieldError as exc:
-        # Live duplicate name (44.7 revival path re-raises this instead of the
-        # raw UniqueViolation) -- keep the documented 409 contract.
-        return JSONResponse({"code": "conflict", "message": str(exc)}, status_code=409)
-    except ValueError as exc:
-        return JSONResponse({"code": "validation_error", "message": str(exc)}, status_code=422)
-    except Exception as exc:
-        err_str = str(exc)
-        if "UniqueViolation" in type(exc).__name__ or "unique" in err_str.lower():
-            return JSONResponse(
-                {
-                    "code": "conflict",
-                    "message": f"Un champ nomme '{body.get('name')}' existe deja",
-                },
-                status_code=409,
-            )
-        logger.error("datamodel_api: create_field_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Erreur de base de donnees : {exc}"},
-            status_code=500,
-        )
-
-    return JSONResponse(created, status_code=201)
+    return _refuse_legacy_field_write()
 
 
 # ---------------------------------------------------------------------------
@@ -285,135 +347,19 @@ async def _create_field(request: Request) -> Response:
 
 
 async def _patch_field(request: Request) -> Response:
-    """PATCH /api/datamodel/fields/{name} -- update mutable attributes.
+    """PATCH /api/datamodel/fields/{name} -- REFUSED since 2026-08-25 (49.3 AC1).
 
-    Patchable: display_name, measure, description.
-    Immutable: name, data_type, field_kind (returns 422 if attempted).
+    This carried both the attribute edit and the 44.8 Restore (`restored_from`).
+    Both are Semantic Model acts now: a Concept is edited by publishing a new
+    version, and going back to an earlier one is publishing that one again --
+    an append, never a rewrite, which is what `app.target_fields_versions` could
+    only imitate.
 
-    Request body (JSON, all optional):
-        {"display_name": str, "measure": str|null, "description": str|null,
-         "restored_from": int}  -- restored_from is the 44.8 restore hint,
-        see below.
-
-    Story 44.8 finding #4: `restored_from` is client-supplied and would
-    otherwise be injected verbatim into the append-only history jsonb
-    unvalidated. It is normalised and verified HERE, before the store is
-    ever called:
-      - accepted shapes: a plain int, OR a dict carrying an int
-        `version_number` key (some UI snapshots pass the whole version
-        object back) -- anything else is a 422 with a French message;
-      - the resulting int is verified to name a real
-        (name, version_number) row in app.target_fields_versions via a
-        SELECT -- 422 if it does not exist;
-      - only the validated int is ever passed through to
-        core.datamodel.update_target_field. The store copies that int
-        as-is into the diff metadata; it does not re-validate it.
-
-    Response (200): updated field row.
-
-    Error responses:
-        400 -- invalid JSON body
-        401 -- unauthorized
-        404 -- field not found
-        422 -- immutable field change attempted, invalid/unknown
-                restored_from, or other validation error
-        500 -- DB error
+    The store function stays: `conflict_resolutions_api` still calls
+    `core.datamodel.update_target_field` to resolve a MEASURE_NULL conflict, and
+    that path is governed by the conflict it answers.
     """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Authentification requise"},
-            status_code=401,
-        )
-
-    name = request.path_params.get("name", "").strip()
-    if not name:
-        return JSONResponse(
-            {"code": "missing_param", "message": "name est requis"},
-            status_code=400,
-        )
-
-    try:
-        body_bytes = await request.body()
-        body: dict = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Corps JSON invalide : {exc}"},
-            status_code=400,
-        )
-
-    # Story 44.8 finding #4: normalise + verify restored_from BEFORE it ever
-    # reaches the store.
-    if "restored_from" in body:
-        raw_restored_from = body["restored_from"]
-        version_number: int | None = None
-        if isinstance(raw_restored_from, bool):
-            version_number = None  # bool is a subclass of int -- reject explicitly
-        elif isinstance(raw_restored_from, int):
-            version_number = raw_restored_from
-        elif isinstance(raw_restored_from, dict):
-            candidate = raw_restored_from.get("version_number")
-            if isinstance(candidate, int) and not isinstance(candidate, bool):
-                version_number = candidate
-
-        if version_number is None:
-            return JSONResponse(
-                {
-                    "code": "validation_error",
-                    "message": (
-                        "restored_from doit etre un entier (numero de version) valide"
-                    ),
-                },
-                status_code=422,
-            )
-
-        body["restored_from"] = version_number
-
-    # ONE connection for both the restored_from existence check and the
-    # update (44.8 re-review): two get_connection() calls doubled pooler
-    # churn and left a TOCTOU window between verify and write.
-    try:
-        from core.datamodel import update_target_field  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            if "restored_from" in body:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        SELECT 1 FROM app.target_fields_versions
-                        WHERE name = %s AND version_number = %s
-                        """,
-                        (name, body["restored_from"]),
-                    )
-                    if cur.fetchone() is None:
-                        return JSONResponse(
-                            {
-                                "code": "validation_error",
-                                "message": (
-                                    f"Version {body['restored_from']} introuvable "
-                                    f"pour le champ '{name}'"
-                                ),
-                            },
-                            status_code=422,
-                        )
-            updated = update_target_field(name, body, conn, identity=identity or "anonymous")
-    except ValueError as exc:
-        return JSONResponse({"code": "validation_error", "message": str(exc)}, status_code=422)
-    except Exception as exc:
-        logger.error("datamodel_api: patch_field_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Erreur de base de donnees : {exc}"},
-            status_code=500,
-        )
-
-    if updated is None:
-        return JSONResponse(
-            {"code": "not_found", "message": f"Champ '{name}' introuvable"},
-            status_code=404,
-        )
-
-    return JSONResponse(updated)
+    return _refuse_legacy_field_write()
 
 
 # ---------------------------------------------------------------------------
@@ -450,11 +396,18 @@ async def _get_field_history(request: Request) -> Response:
         404 -- unknown field name (never existed)
         500 -- DB error
     """
-    authorized, _identity = await _check_auth(request)
+    authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
             {"code": "unauthorized", "message": "Authentification requise"},
             status_code=401,
+        )
+
+    project_id = _required_project_id(request)
+    if not project_id:
+        return JSONResponse(
+            {"code": "invalid_param", "message": "project_id est requis"},
+            status_code=422,
         )
 
     name = request.path_params.get("name", "").strip()
@@ -469,6 +422,13 @@ async def _get_field_history(request: Request) -> Response:
         from core.db import get_connection  # noqa: PLC0415
 
         with get_connection() as conn:
+            if not _project_access_allowed(
+                conn,
+                identity=identity,
+                project_id=project_id,
+                minimum_capability="view",
+            ):
+                return _project_not_found()
             if not target_field_exists(name, conn):
                 return JSONResponse(
                     {"code": "not_found", "message": f"Champ '{name}' introuvable"},
@@ -508,90 +468,18 @@ async def _get_field_history(request: Request) -> Response:
 
 
 async def _upsert_mapping(request: Request) -> Response:
-    """PUT /api/datamodel/mappings -- upsert a source->target field mapping.
+    """PUT /api/datamodel/mappings -- REFUSED since 2026-08-25 (story 49.3 AC1).
 
-    Request body (JSON):
-        {"datastream_id": str, "source_field": str, "target_field": str|null}
+    A binding between a source column and a canonical field is decided on the
+    Datastream's Mapping tab, which proposes a mapping VERSION and publishes it
+    under review (`core.flows._apply_mappings`, the ledger the Workbench draws).
+    This door wrote one row of `app.datastream_mappings` with no version and no
+    review, so a binding could change under a published Datastream with nothing
+    recording that it had.
 
-    target_field=null removes the mapping (sets it to unmapped).
-
-    Response (200):
-        {"datastream_id", "source_field", "target_field", "is_key_column", "created_at"}
-
-    Error responses:
-        400 -- missing/invalid JSON body or missing required fields
-        401 -- unauthorized
-        422 -- validation error (FK violation = target_field does not exist)
-        500 -- DB error
+    Its only caller, `ui/admin/src/datamodel/FieldDetailDrawer.tsx`, went with it.
     """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Authentification requise"},
-            status_code=401,
-        )
-
-    try:
-        body_bytes = await request.body()
-        body: dict = json.loads(body_bytes)
-    except Exception as exc:
-        return JSONResponse(
-            {"code": "invalid_body", "message": f"Corps JSON invalide : {exc}"},
-            status_code=400,
-        )
-
-    datastream_id = (body.get("datastream_id") or "").strip()
-    source_field = (body.get("source_field") or "").strip()
-    # target_field can be explicitly None / null (unmapping)
-    target_field = body.get("target_field") or None
-    if isinstance(target_field, str):
-        target_field = target_field.strip() or None
-
-    if not datastream_id:
-        return JSONResponse(
-            {"code": "missing_field", "message": "datastream_id est requis"},
-            status_code=400,
-        )
-    if not source_field:
-        return JSONResponse(
-            {"code": "missing_field", "message": "source_field est requis"},
-            status_code=400,
-        )
-
-    try:
-        from core.datamodel import upsert_mapping  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            result = upsert_mapping(
-                datastream_id=datastream_id,
-                source_field=source_field,
-                target_field_name=target_field,
-                identity=identity or "anonymous",
-                conn=conn,
-            )
-    except ValueError as exc:
-        return JSONResponse({"code": "validation_error", "message": str(exc)}, status_code=422)
-    except Exception as exc:
-        err_str = str(exc)
-        # FK violation: target_field does not exist in target_fields
-        if "ForeignKeyViolation" in type(exc).__name__ or "foreign key" in err_str.lower():
-            return JSONResponse(
-                {
-                    "code": "invalid_target",
-                    "message": (
-                        f"Le champ cible '{target_field}' n'existe pas dans le dictionnaire"
-                    ),
-                },
-                status_code=422,
-            )
-        logger.error("datamodel_api: upsert_mapping_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Erreur de base de donnees : {exc}"},
-            status_code=500,
-        )
-
-    return JSONResponse(result)
+    return _refuse_legacy_mapping_write()
 
 
 async def _list_mappings(request: Request) -> Response:
@@ -601,8 +489,13 @@ async def _list_mappings(request: Request) -> Response:
     current source->target mappings; only PUT existed, so GET returned 405.
 
     Two mutually exclusive lookups, exactly one of which is required:
-      * ``?datastream_id=`` -- one stream's mappings (the original shape).
+      * ``?datastream_id=&project_id=`` -- one stream's mappings.
         Response: {"mappings": [{"source_field", "target_field", "is_key_column"}]}
+        ``project_id`` is REQUIRED (AI-219). Until 2026-08-06 this branch
+        authenticated the identity and then read ``WHERE datastream_id = %s``
+        with nothing else: ANY authenticated caller could name ANY stream id and
+        receive its field mapping. Its PUT sibling, twenty lines up, had proven
+        the pair since 43.x -- the read had simply never been asked to.
       * ``?target_field=&project_id=`` -- Story 44.10's "Fed by" read: which
         datastreams feed this dictionary field. Response rows additionally carry
         datastream_id / datastream_name / module_name / project_id / enabled, so
@@ -611,7 +504,7 @@ async def _list_mappings(request: Request) -> Response:
         platform-wide answer (every project's streams) must never be reachable
         by accident -- the only consumer (the graph drawer) always scopes.
     """
-    authorized, _identity = await _check_auth(request)
+    authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
             {"code": "unauthorized", "message": "Authentification requise"},
@@ -642,7 +535,7 @@ async def _list_mappings(request: Request) -> Response:
             return JSONResponse(
                 {
                     "code": "missing_field",
-                    "message": "project_id est requis avec target_field",
+                    "message": "project_id is required with target_field",
                 },
                 status_code=400,
             )
@@ -651,6 +544,13 @@ async def _list_mappings(request: Request) -> Response:
             from core.db import get_connection  # noqa: PLC0415
 
             with get_connection() as conn:
+                if not _project_access_allowed(
+                    conn,
+                    identity=identity,
+                    project_id=project_id,
+                    minimum_capability="view",
+                ):
+                    return _project_not_found()
                 mappings = list_mappings_for_target_field(
                     conn, target_field=target_field, project_id=project_id
                 )
@@ -662,19 +562,44 @@ async def _list_mappings(request: Request) -> Response:
             )
         return JSONResponse({"mappings": mappings})
 
+    project_id = (request.query_params.get("project_id") or "").strip() or None
+    if project_id is None:
+        return JSONResponse(
+            {
+                "code": "missing_field",
+                "message": "project_id is required with datastream_id",
+            },
+            status_code=400,
+        )
+
     try:
         from core.db import get_connection  # noqa: PLC0415
 
         with get_connection() as conn:
+            if not _project_access_allowed(
+                conn,
+                identity=identity,
+                project_id=project_id,
+                minimum_capability="view",
+            ) or not _datastream_in_project(
+                conn, datastream_id=datastream_id, project_id=project_id
+            ):
+                # ONE envelope for "you may not" and for "it is not here": a
+                # caller comparing two answers must not learn that the stream
+                # exists in somebody else's project.
+                return _project_not_found()
             with conn.cursor() as cur:
+                # `app.datastream_mappings` carries no `project_id` of its own,
+                # so the pair is carried by the join, not by a second column.
                 cur.execute(
                     """
-                    SELECT source_field, target_field, is_key_column
-                    FROM app.datastream_mappings
-                    WHERE datastream_id = %s
-                    ORDER BY source_field
+                    SELECT m.source_field, m.target_field, m.is_key_column
+                    FROM app.datastream_mappings m
+                    JOIN app.datastreams d ON d.id = m.datastream_id
+                    WHERE m.datastream_id = %s AND d.project_id = %s
+                    ORDER BY m.source_field
                     """,
-                    (datastream_id,),
+                    (datastream_id, project_id),
                 )
                 mappings = [
                     {
@@ -700,54 +625,13 @@ async def _list_mappings(request: Request) -> Response:
 
 
 async def _approve_field(request: Request) -> Response:
-    """POST /api/datamodel/fields/{name}/approve -- approve a target field.
+    """POST /api/datamodel/fields/{name}/approve -- REFUSED (story 49.3 AC1).
 
-    Transitions the field from 'draft' to 'approved'. Idempotent: approving
-    an already-approved field updates the approval timestamp and appends a new
-    audit row. Immutable fields (name/data_type/field_kind) are never touched.
-
-    Response (200): updated field row (includes status='approved', approved_at,
-                    approved_by).
-
-    Error responses:
-        401 -- unauthorized
-        404 -- field not found
-        500 -- DB error
+    Approving is a publication, and publication belongs to the change set: the
+    Semantic Model gate verifies the change, records the verdict and moves the
+    concept pointer. A boolean flipped on a dictionary row recorded none of that.
     """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Authentification requise"},
-            status_code=401,
-        )
-
-    name = request.path_params.get("name", "").strip()
-    if not name:
-        return JSONResponse(
-            {"code": "missing_param", "message": "name est requis"},
-            status_code=400,
-        )
-
-    try:
-        from core.datamodel import approve_target_field  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            result = approve_target_field(name, identity=identity or "anonymous", conn=conn)
-    except Exception as exc:
-        logger.error("datamodel_api: approve_field_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Erreur de base de donnees : {exc}"},
-            status_code=500,
-        )
-
-    if result is None:
-        return JSONResponse(
-            {"code": "not_found", "message": f"Champ '{name}' introuvable"},
-            status_code=404,
-        )
-
-    return JSONResponse(result)
+    return _refuse_legacy_field_write()
 
 
 # ---------------------------------------------------------------------------
@@ -756,64 +640,25 @@ async def _approve_field(request: Request) -> Response:
 
 
 async def _delete_field(request: Request) -> Response:
-    """DELETE /api/datamodel/fields/{name} -- delete a target field.
+    """DELETE /api/datamodel/fields/{name} -- REFUSED (story 49.3 AC1).
 
-    Guard: refuses deletion (409) when the field is referenced by at least one
-    datastream mapping (used_by_count > 0). Error message is in French.
-
-    Response (204): no content on success.
-
-    Error responses:
-        401 -- unauthorized
-        404 -- field not found
-        409 -- field has active mappings (FR message included)
-        500 -- DB error
+    Retiring a measure or a dimension is `lifecycle_status = 'archived'` on its
+    Concept, published like any other change. The soft delete here left the row
+    physically present and every reader had to remember to filter it out.
     """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Authentification requise"},
-            status_code=401,
-        )
-
-    name = request.path_params.get("name", "").strip()
-    if not name:
-        return JSONResponse(
-            {"code": "missing_param", "message": "name est requis"},
-            status_code=400,
-        )
-
-    try:
-        from core.datamodel import FieldInUseError, delete_target_field  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        with get_connection() as conn:
-            delete_target_field(name, identity or "anonymous", conn)
-    except FieldInUseError as exc:
-        return JSONResponse(
-            {"code": "field_in_use", "message": str(exc)},
-            status_code=409,
-        )
-    except ValueError as exc:
-        # Field not found
-        return JSONResponse(
-            {"code": "not_found", "message": str(exc)},
-            status_code=404,
-        )
-    except Exception as exc:
-        logger.error("datamodel_api: delete_field_error: %s", exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Erreur de base de donnees : {exc}"},
-            status_code=500,
-        )
-
-    return Response(status_code=204)
+    return _refuse_legacy_field_write()
 
 
 # ---------------------------------------------------------------------------
 # Exported route list (orchestrator wires into admin_api.router)
 # ---------------------------------------------------------------------------
 
+#: THE FIVE WRITE VERBS ARE STILL DECLARED, and each one now points at a refusal.
+#: They stay because unmounting a write answers 405 or 404 -- "this address takes
+#: no such verb", or "your object is not here" -- and both send the caller looking
+#: instead of telling it where to go. Their handlers carry the reason; the router
+#: only has to keep the address reachable. `screens/routes.json` is unchanged by
+#: the cutover for exactly this reason: not one path left the server.
 DATAMODEL_ROUTES: list[Route] = [
     # IMPORTANT: the static /api/datamodel/fields route (list + create) must
     # precede the parametrized /{name} routes so Starlette matches list/create first.
@@ -827,7 +672,7 @@ DATAMODEL_ROUTES: list[Route] = [
     Route("/api/datamodel/fields/{name}", endpoint=_get_field, methods=["GET"]),
     Route("/api/datamodel/fields/{name}", endpoint=_patch_field, methods=["PATCH"]),
     Route("/api/datamodel/fields/{name}", endpoint=_delete_field, methods=["DELETE"]),
-    # GET/PUT /api/datamodel/mappings — list + upsert source->target bindings
+    # GET/PUT /api/datamodel/mappings — list + the retired upsert of source->target
     Route("/api/datamodel/mappings", endpoint=_list_mappings, methods=["GET"]),
     Route("/api/datamodel/mappings", endpoint=_upsert_mapping, methods=["PUT"]),
 ]

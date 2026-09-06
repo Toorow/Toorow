@@ -35,7 +35,20 @@ Invariants held by this module (epic-19 (a)-(f))
     reading the origin -- absence of cache is a latency degradation, not an error.
 
 # AD-2: source-agnostic -- no module-specific strings here.
-# AD-12: reads marts only (never raw_* tables, CSV, or direct APIs).
+#
+# THIS CACHE HOLDS THE ALLOWLISTED MARTS AND NOTHING ELSE, and the rule is its
+# own: AD-22 « Cache local DuckDB read-through : instantane ephemere, jamais une
+# seconde verite » is what ratifies the allowlist, "par projet, configurable --
+# parametre story-level". That is the policy the refusals below implement.
+#
+# This line used to read "AD-12: reads marts only (never raw_* tables …)", and
+# AD-12 « Third-party APIs only through the queue » says the opposite on that
+# point: « every pull -- scheduled, event-triggered, or on-demand -- lands in
+# BigQuery raw first and is read back through the semantic layer ». AD-12 IMPOSES
+# the raw landing and forbids serving a provider's answer directly; reading a raw
+# relation IN THE WAREHOUSE satisfies it. Corrected by story 58.3, which reads
+# both zones from `core/collected_mapped_reader.py` -- beside this cache and not
+# inside it, precisely because AD-22's own policy stands.
 """
 
 from __future__ import annotations
@@ -749,9 +762,10 @@ def _meta_alert(step: str, reason: str) -> None:
 # (collected | mapped | processed | published), with a DETERMINISTIC, reproducible
 # ordering so "first N" is stable evidence -- not a random draw.
 #
-# STAGE MATERIALISATION -- HONEST APPROXIMATION (AD-9, AD-12, "do not invent data"):
+# STAGE MATERIALISATION -- HONEST APPROXIMATION (AD-9, "do not invent data"):
 #   The readable warehouse cache holds ONLY the consolidated dbt marts
-#   (``fact_daily_kpi`` et al -- AD-12: marts only, never raw_* tables). There is NO
+#   (``fact_daily_kpi`` et al -- the allowlist of the ephemeral cache, ratified by
+#   AD-22 « Cache local DuckDB read-through », NOT by AD-12). There is NO
 #   physically distinct per-stage relation in the cache/origin for a raw *collected*
 #   extract, an intermediate *mapped* projection, or a *processed* view: mapping is
 #   Postgres metadata (app.datastream_mappings / mapping_versions) and *published* is
@@ -776,7 +790,12 @@ def _meta_alert(step: str, reason: str) -> None:
 # total cell budget guard so a very wide relation cannot blow the response size.
 _SAMPLE_DEFAULT_LIMIT = 5
 _SAMPLE_MAX_LIMIT = 20
-_SAMPLE_MAX_DAYS = 92  # a bounded interval; a wider range is a caller error (400)
+#: The widest interval of days any bounded read of this warehouse serves. ONE
+#: number for every such reader (story 58.1, arbitrage 4): the day-grain
+#: breakdown route caps its window on exactly this, so a person cannot be shown
+#: a strip of days the sample beside it refuses to cover.
+SAMPLE_MAX_DAYS = 92  # a bounded interval; a wider range is a caller error (400)
+_SAMPLE_MAX_DAYS = SAMPLE_MAX_DAYS
 _SAMPLE_CELL_BUDGET = 20_000  # total (rows x columns) cells across all days
 _SAMPLE_MASK_SENTINEL = "[MASKED]"
 # Deterministic ordering is applied over the mart's stable grain columns when they
@@ -793,7 +812,16 @@ _SAMPLE_ORDER_COLUMNS = (
 )
 # The stage a request maps to when the requested stage has no distinct
 # materialisation. All four collapse onto the mart in v1 (documented above).
-_SAMPLE_SERVED_STAGE = "processed"
+SAMPLE_SERVED_STAGE = "processed"
+_SAMPLE_SERVED_STAGE = SAMPLE_SERVED_STAGE
+
+#: The four stages of the ratified vocabulary, in pipeline order. Declared ONCE:
+#: `read_datastream_sample` carried its own set literal, and story 58.1 needs the
+#: same four names to say which of them it can and cannot serve.
+SAMPLE_STAGES: tuple[str, ...] = ("collected", "mapped", "processed", "published")
+
+#: The relation every mart-stage read of a Datastream goes through. AD-12.
+_MART_RELATION = "fact_daily_kpi"
 
 
 class SampleReadError(Exception):
@@ -891,11 +919,10 @@ def read_datastream_sample(
     The HTTP layer owns auth + project-scope enforcement; this reader assumes the
     ``project_id`` it is handed has already passed the AD-5 access check.
     """
-    valid_stages = {"collected", "mapped", "processed", "published"}
-    if stage not in valid_stages:
+    if stage not in SAMPLE_STAGES:
         raise SampleReadError(
             "invalid_stage",
-            f"unknown stage {stage!r}; expected one of {sorted(valid_stages)}",
+            f"unknown stage {stage!r}; expected one of {sorted(SAMPLE_STAGES)}",
         )
     per_day_limit = max(1, min(int(limit or _SAMPLE_DEFAULT_LIMIT), _SAMPLE_MAX_LIMIT))
     days = _daterange_days(date_from, date_to)
@@ -1024,6 +1051,212 @@ def read_datastream_sample(
     }
 
 
+def read_daily_row_counts(
+    *,
+    project_id: str,
+    connector: str,
+    date_from: str,
+    date_to: str,
+) -> dict:
+    """How many mart rows landed on each day of ``[date_from, date_to]`` (58.1).
+
+    Returns ``{"connector_present": bool, "counts": {"YYYY-MM-DD": int}}``.
+
+    ONE STATEMENT FOR THE WHOLE WINDOW, and that is the point. `read_datastream_sample`
+    beside it issues one warehouse query PER DAY -- 92 of them at the ceiling -- because
+    it fetches ROWS and has to bound them day by day. A COUNT does not: `GROUP BY date`
+    answers the whole strip at once, and copying the per-day loop here would have made
+    the day-grain read the most expensive call of the surface.
+
+    `connector_present` IS ASKED SEPARATELY, AND IT IS WHY THIS IS TWO STATEMENTS AND
+    NOT ONE. `fact_daily_kpi` is built from 16 of the 39 connectors; for the other 23 it
+    can never carry a row. A window with no rows is then indistinguishable from a
+    connector the mart does not model -- and answering `0` for the second would be a
+    measurement nobody made. So the probe is a second statement, bounded by `LIMIT 1`,
+    and a caller that gets `connector_present: False` must publish an absence, never a
+    zero. It is scoped to the project on purpose: "this project's mart has never carried
+    this connector" is the honest claim, and it is the one a screen can act on.
+
+    Raises ``SampleReadError`` -- never a raw backend exception.
+    """
+    days = _daterange_days(date_from, date_to)
+    if not connector:
+        return {"connector_present": False, "counts": {}}
+
+    from core import warehouse  # noqa: PLC0415
+    from core.schema_context_gen import _quote_ident  # noqa: PLC0415
+
+    mode = warehouse._db_mode()
+    try:
+        columns = _sample_relation_columns(warehouse, mode, project_id, _MART_RELATION)
+    except SampleReadError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise SampleReadError("warehouse_unavailable", f"{type(exc).__name__}: {exc}") from exc
+    if not columns:
+        # The relation is absent: nothing landed anywhere, for any connector.
+        return {"connector_present": False, "counts": {}}
+
+    _quote_ident(_MART_RELATION)
+    try:
+        if mode == "duckdb":
+            prefix = warehouse._duckdb_mart_prefix(project_id)
+            probe = warehouse._query_duckdb(
+                f"SELECT 1 AS present FROM {prefix}{_MART_RELATION} "  # noqa: S608
+                "WHERE project_id = ? AND connector = ? LIMIT 1",
+                [project_id, connector],
+            )
+            grouped = warehouse._query_duckdb(
+                f"SELECT date AS day, count(*) AS landed FROM {prefix}{_MART_RELATION} "  # noqa: S608
+                "WHERE project_id = ? AND connector = ? AND date >= ? AND date <= ? "
+                "GROUP BY date",
+                [project_id, connector, days[0], days[-1]],
+            )
+        elif mode == "bigquery":
+            from core import warehouse_tenancy  # noqa: PLC0415
+
+            dataset = warehouse_tenancy.bigquery_marts_dataset(project_id)
+            probe = warehouse._query_bigquery(
+                f"SELECT 1 AS present FROM `{dataset}`.{_MART_RELATION} "  # noqa: S608
+                "WHERE project_id = @p0 AND connector = @p1 LIMIT 1",
+                [project_id, connector],
+            )
+            grouped = warehouse._query_bigquery(
+                f"SELECT date AS day, count(*) AS landed FROM `{dataset}`.{_MART_RELATION} "  # noqa: S608
+                "WHERE project_id = @p0 AND connector = @p1 "
+                "AND date >= DATE(@p2) AND date <= DATE(@p3) GROUP BY date",
+                [project_id, connector, days[0], days[-1]],
+            )
+        else:
+            raise SampleReadError("warehouse_unavailable", f"unknown TOOROW_DB_MODE: {mode!r}")
+    except SampleReadError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise SampleReadError("warehouse_unavailable", f"{type(exc).__name__}: {exc}") from exc
+
+    counts: dict[str, int] = {}
+    for row in grouped or []:
+        day = row.get("day")
+        day_key = day.isoformat() if hasattr(day, "isoformat") else str(day)
+        counts[day_key] = int(row.get("landed") or 0)
+    return {"connector_present": bool(probe), "counts": counts}
+
+
+#: The canonical country partition of the mart, as `int_country_daily_kpi` and the
+#: GA4/GSC blocks of `fact_daily_kpi` write it. Named here rather than typed into a
+#: query so the two readers of this file cannot drift from the writer.
+COUNTRY_BREAKDOWN_DIMENSION = "country"
+
+
+def read_daily_country_counts(
+    *,
+    project_id: str,
+    connector: str,
+    date_from: str,
+    date_to: str,
+) -> dict:
+    """How many mart rows landed per (day, country value) -- story 58.5.
+
+    Returns ``{"dimension_present": bool, "counts": {"YYYY-MM-DD": {value: int}}}``.
+
+    ONE GROUPING MORE, NEVER ONE QUERY PER DAY. This is the same statement as
+    `read_daily_row_counts` beside it with `breakdown_value` added to the `GROUP BY`
+    and the country partition pinned in the `WHERE`; the whole window still answers
+    in one round trip, so opening a 92-day strip costs the same two statements as
+    opening one day.
+
+    AND THE COUNTRY SERIES IS NOT A DECOMPOSITION OF THE DAY'S TOTAL. `fact_daily_kpi`
+    is long-form and carries several PARALLEL series per day (`country`,
+    `country>device`, `device_category`, `user_type`, …), each of which independently
+    totals the day. `read_daily_row_counts` counts them all; this counts one of them.
+    Presenting the second as the parts of the first would be a sum that does not add
+    up, drawn as one -- the caller says which it is showing.
+
+    `dimension_present` IS ASKED SEPARATELY, AND IT IS WHY THIS IS TWO STATEMENTS.
+    Measured 2026-08-07: only 5 connectors of the 39 carry a `country_source` column
+    at staging at all, so for most fluxes the mart can never hold a country row.
+    Without the probe, "this window carried no country row" and "this connector never
+    reports a country" render identically -- and they send a person to two different
+    places. The probe is unbounded by date on purpose: it answers about the CONNECTOR,
+    not about the window.
+
+    Raises ``SampleReadError`` -- never a raw backend exception.
+    """
+    days = _daterange_days(date_from, date_to)
+    if not connector:
+        return {"dimension_present": False, "counts": {}}
+
+    from core import warehouse  # noqa: PLC0415
+    from core.schema_context_gen import _quote_ident  # noqa: PLC0415
+
+    mode = warehouse._db_mode()
+    try:
+        columns = _sample_relation_columns(warehouse, mode, project_id, _MART_RELATION)
+    except SampleReadError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise SampleReadError("warehouse_unavailable", f"{type(exc).__name__}: {exc}") from exc
+    if not columns:
+        return {"dimension_present": False, "counts": {}}
+
+    _quote_ident(_MART_RELATION)
+    try:
+        if mode == "duckdb":
+            prefix = warehouse._duckdb_mart_prefix(project_id)
+            probe = warehouse._query_duckdb(
+                f"SELECT 1 AS present FROM {prefix}{_MART_RELATION} "  # noqa: S608
+                "WHERE project_id = ? AND connector = ? AND breakdown_dimension = ? "
+                "LIMIT 1",
+                [project_id, connector, COUNTRY_BREAKDOWN_DIMENSION],
+            )
+            grouped = warehouse._query_duckdb(
+                f"SELECT date AS day, breakdown_value AS value, count(*) AS landed "  # noqa: S608
+                f"FROM {prefix}{_MART_RELATION} "
+                "WHERE project_id = ? AND connector = ? AND breakdown_dimension = ? "
+                "AND date >= ? AND date <= ? "
+                "GROUP BY date, breakdown_value",
+                [project_id, connector, COUNTRY_BREAKDOWN_DIMENSION, days[0], days[-1]],
+            )
+        elif mode == "bigquery":
+            from core import warehouse_tenancy  # noqa: PLC0415
+
+            dataset = warehouse_tenancy.bigquery_marts_dataset(project_id)
+            probe = warehouse._query_bigquery(
+                f"SELECT 1 AS present FROM `{dataset}`.{_MART_RELATION} "  # noqa: S608
+                "WHERE project_id = @p0 AND connector = @p1 "
+                "AND breakdown_dimension = @p2 LIMIT 1",
+                [project_id, connector, COUNTRY_BREAKDOWN_DIMENSION],
+            )
+            grouped = warehouse._query_bigquery(
+                f"SELECT date AS day, breakdown_value AS value, count(*) AS landed "  # noqa: S608
+                f"FROM `{dataset}`.{_MART_RELATION} "
+                "WHERE project_id = @p0 AND connector = @p1 "
+                "AND breakdown_dimension = @p2 "
+                "AND date >= DATE(@p3) AND date <= DATE(@p4) "
+                "GROUP BY date, breakdown_value",
+                [project_id, connector, COUNTRY_BREAKDOWN_DIMENSION, days[0], days[-1]],
+            )
+        else:
+            raise SampleReadError("warehouse_unavailable", f"unknown TOOROW_DB_MODE: {mode!r}")
+    except SampleReadError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise SampleReadError("warehouse_unavailable", f"{type(exc).__name__}: {exc}") from exc
+
+    counts: dict[str, dict[str, int]] = {}
+    for row in grouped or []:
+        day = row.get("day")
+        day_key = day.isoformat() if hasattr(day, "isoformat") else str(day)
+        value = row.get("value")
+        if value is None:
+            # A country row with no value is the exact NULL story 58.5 removed from
+            # the mart. Counting it under the string "None" would resurrect it on the
+            # screen; it is left out and the mart's own `not_null` is what reports it.
+            continue
+        counts.setdefault(day_key, {})[str(value)] = int(row.get("landed") or 0)
+    return {"dimension_present": bool(probe), "counts": counts}
+
+
 def _sample_stage_note(requested_stage: str) -> str | None:
     """Return the honesty note when the requested stage has no distinct relation.
 
@@ -1059,7 +1292,7 @@ def _sample_relation_columns(warehouse, mode: str, project_id: str, relation: st
         prefix = warehouse._duckdb_mart_prefix(project_id)
         con = duckdb.connect(path, read_only=True)
         try:
-            # prefix is a trusted naming-point value (e.g. "main_marts."); relation is
+            # prefix is a trusted naming-point value (e.g. `main_marts.`); relation is
             # a module constant. Validate the bare relation ident defensively.
             _quote_ident(relation)
             try:
@@ -1127,3 +1360,167 @@ def _sample_day_rows(
         )
         return warehouse._query_bigquery(sql, [project_id, connector, day])
     raise SampleReadError("warehouse_unavailable", f"unknown TOOROW_DB_MODE: {mode!r}")
+
+
+# ---------------------------------------------------------------------------
+# EXPORT -- a wider read than evidence, and a narrower one than "the dataset".
+#
+# `read_datastream_sample` above is hard-capped at _SAMPLE_MAX_LIMIT rows PER DAY
+# and _SAMPLE_MAX_DAYS days, and its own comment says why: "evidence, not bulk
+# export". Building an export on it would return at most 1,840 rows and call them
+# a dataset, which is the class of claim this codebase forbids.
+#
+# So this is a separate read with its own, stated ceiling. What it is NOT is the
+# governed asynchronous export story 43.16 describes -- that needs "a durable,
+# authorized job/worker contract bound to project, Datastream, stage, interval,
+# filters and publication version", the story lists creating it under **Ask
+# First**, and no such substrate exists. A request-scoped read cannot become one
+# by growing its limit, so this one REFUSES past its ceiling rather than
+# truncating: a silently truncated export is a file a person will treat as
+# complete.
+#
+# The masking is the same masking. An export that dropped it would be a
+# credential-free path to exactly the values the sample takes care to hide.
+# ---------------------------------------------------------------------------
+
+#: The most rows one synchronous export may return. Chosen, not derived: it is
+#: large enough for a year of most daily marts and small enough to stay inside a
+#: request. Raising it is not the fix for a dataset that exceeds it -- the job
+#: substrate is.
+_EXPORT_MAX_ROWS = 50_000
+_EXPORT_MAX_DAYS = 400
+
+
+def read_datastream_export(
+    *,
+    project_id: str,
+    connector: str,
+    stage: str,
+    date_from: str,
+    date_to: str,
+    columns: list[str] | None = None,
+    row_limit: int = _EXPORT_MAX_ROWS,
+) -> dict:
+    """Read a bounded, masked, column-projected export over a date range.
+
+    Returns ``{"columns": [...], "rows": [{col: value}], "masked_fields": [...],
+    "truncated": bool, "row_limit": int}``.
+
+    Raises `SampleReadError` for an invalid stage, an inverted or over-wide
+    range, an unknown requested column, or a warehouse that cannot be reached.
+    """
+    from core import warehouse  # noqa: PLC0415
+
+    valid_stages = {"collected", "mapped", "processed", "published"}
+    if stage not in valid_stages:
+        raise SampleReadError(
+            "invalid_stage", f"unknown stage {stage!r}; expected one of {sorted(valid_stages)}"
+        )
+    days = _daterange_days(date_from, date_to)
+    if len(days) > _EXPORT_MAX_DAYS:
+        raise SampleReadError(
+            "range_too_wide",
+            f"range spans {len(days)} days; max is {_EXPORT_MAX_DAYS}",
+        )
+    if not connector:
+        raise SampleReadError(
+            "no_materialization",
+            "This Datastream has no connector-scoped consolidated mart to export.",
+        )
+
+    relation = "fact_daily_kpi"  # AD-12: marts only, exactly as the sample reads.
+    mode = warehouse._db_mode()
+    col_names = _sample_relation_columns(warehouse, mode, project_id, relation)
+    if not col_names:
+        raise SampleReadError("warehouse_unavailable", "the consolidated mart is unavailable")
+
+    # A requested column that does not exist is a caller error, never a silently
+    # dropped column: an export missing a column a person asked for is worse than
+    # one that refuses, because they will not notice.
+    requested = [c for c in (columns or []) if c]
+    unknown = [c for c in requested if c not in col_names]
+    if unknown:
+        raise SampleReadError(
+            "unknown_column", f"unknown column(s): {', '.join(sorted(unknown))}"
+        )
+    selected = requested or col_names
+
+    masked_set = frozenset(_pii_columns(col_names))
+    order_cols = [c for c in ("date", "connector") if c in col_names]
+    rows = _export_rows(
+        warehouse, mode, project_id, connector, relation,
+        date_from, date_to, order_cols, min(int(row_limit), _EXPORT_MAX_ROWS) + 1,
+    )
+    truncated = len(rows) > min(int(row_limit), _EXPORT_MAX_ROWS)
+    if truncated:
+        raise SampleReadError(
+            "export_too_large",
+            f"this range holds more than {min(int(row_limit), _EXPORT_MAX_ROWS):,} rows;"
+            " narrow the period or the columns. A truncated export would be read as complete.",
+        )
+
+    projected: list[dict] = []
+    for row in rows:
+        projected.append({col: _mask_cell(row.get(col), col, masked_set) for col in selected})
+    return {
+        "columns": selected,
+        "rows": projected,
+        "masked_fields": sorted(c for c in selected if c in masked_set),
+        "truncated": False,
+        "row_limit": min(int(row_limit), _EXPORT_MAX_ROWS),
+    }
+
+
+def _export_rows(
+    warehouse, mode: str, project_id: str, connector: str, relation: str,
+    date_from: str, date_to: str, order_cols: list[str], limit: int,
+) -> list[dict]:
+    """Rows across the whole range in one query, deterministically ordered.
+
+    Scoped exactly like `_sample_day_rows`: project_id, connector and both date
+    bounds are BOUND parameters, never interpolated."""
+    from core.schema_context_gen import _quote_ident  # noqa: PLC0415
+
+    order_by = ", ".join(_quote_ident(c) for c in order_cols) if order_cols else "1"
+    safe_limit = max(1, int(limit))
+    if mode == "duckdb":
+        prefix = warehouse._duckdb_mart_prefix(project_id)
+        sql = (
+            f"SELECT * FROM {prefix}{relation} "  # noqa: S608 -- relation is a constant
+            "WHERE project_id = ? AND connector = ? AND date BETWEEN ? AND ? "
+            f"ORDER BY {order_by} LIMIT {safe_limit}"
+        )
+        return warehouse._query_duckdb(sql, [project_id, connector, date_from, date_to])
+    if mode == "bigquery":
+        from core import warehouse_tenancy  # noqa: PLC0415
+
+        dataset = warehouse_tenancy.bigquery_marts_dataset(project_id)
+        sql = (
+            f"SELECT * FROM `{dataset}`.{relation} "  # noqa: S608 -- relation is a constant
+            "WHERE project_id = @p0 AND connector = @p1 "
+            "AND date BETWEEN DATE(@p2) AND DATE(@p3) "
+            f"ORDER BY {order_by} LIMIT {safe_limit}"
+        )
+        return warehouse._query_bigquery(
+            sql, [project_id, connector, date_from, date_to]
+        )
+    raise SampleReadError("warehouse_unavailable", f"unknown TOOROW_DB_MODE: {mode!r}")
+
+
+def export_columns_for(project_id: str, connector: str) -> tuple[list[str], list[str]]:
+    """(all columns, masked columns) a person may choose from for an export.
+
+    Read from the mart itself rather than from the mapping version: the export
+    reads the mart, so the only honest list is the one the mart actually has.
+    A column offered here and absent there would be a 400 nobody could diagnose.
+    """
+    from core import warehouse  # noqa: PLC0415
+
+    if not connector:
+        return [], []
+    mode = warehouse._db_mode()
+    col_names = _sample_relation_columns(warehouse, mode, project_id, "fact_daily_kpi")
+    if not col_names:
+        return [], []
+    masked = frozenset(_pii_columns(col_names))
+    return list(col_names), sorted(c for c in col_names if c in masked)

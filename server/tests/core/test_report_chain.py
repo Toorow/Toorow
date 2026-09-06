@@ -68,6 +68,43 @@ def _make_conn(rows_by_query: dict | None = None):
     return conn_mock
 
 
+_CONCEPT_COLUMNS = (
+    "name", "project_id", "kind", "label", "value_type", "definition",
+    "aggregation", "additivity_class",
+)
+_DICTIONARY_COLUMNS = (
+    "name", "display_name", "data_type", "field_kind", "measure", "description",
+    "status",
+)
+
+
+def _catalogue_conn(*, concepts=(), dictionary=()):
+    """A connection that answers the TWO reads of `governed_field_catalogue`.
+
+    Dispatched on the table named in the statement, so a helper that stopped
+    consulting one of the two stores would receive nothing from it rather than
+    silently reuse the other one's rows -- which is exactly how the previous
+    single-cursor double hid the change.
+    """
+    cur = MagicMock()
+    cur.__enter__ = lambda s: s
+    cur.__exit__ = MagicMock(return_value=False)
+
+    def fake_execute(sql, params=None):
+        wanted = set((params or {}).get("names") or [])
+        if "app.semantic_concepts" in sql:
+            rows, columns = list(concepts), _CONCEPT_COLUMNS
+        else:
+            rows, columns = list(dictionary), _DICTIONARY_COLUMNS
+        cur.fetchall.return_value = [r for r in rows if not wanted or r[0] in wanted]
+        cur.description = [(name, None) for name in columns]
+
+    cur.execute = fake_execute
+    conn = MagicMock()
+    conn.cursor.return_value = cur
+    return conn
+
+
 # ---------------------------------------------------------------------------
 # _fetch_target_fields
 # ---------------------------------------------------------------------------
@@ -80,23 +117,22 @@ class TestFetchTargetFields:
         assert result == {}
 
     def test_returns_dict_keyed_by_name(self):
-        # cursor returns 2 rows: (name, display_name, data_type, field_kind, measure)
-        rows = [
-            ("clicks", "Clics", "integer", "metric", "sum"),
-            ("impressions", "Impressions", "integer", "metric", "sum"),
-        ]
-        cur = MagicMock()
-        cur.__enter__ = lambda s: s
-        cur.__exit__ = MagicMock(return_value=False)
-        cur.fetchall.return_value = rows
-        cur.description = [
-            ("name", None), ("display_name", None), ("data_type", None),
-            ("field_kind", None), ("measure", None),
-        ]
-        cur.execute = MagicMock()
+        """The dictionary half of the governed catalogue still answers.
 
-        conn = MagicMock()
-        conn.cursor.return_value = cur
+        Story 49.3 moved this helper onto `core.governed_field_catalogue`, so it
+        now issues TWO reads -- the Semantic Model, then `app.target_fields`. This
+        double serves nothing to the first and the dictionary rows to the second,
+        which is the situation of a metric no Concept carries. The Semantic Model
+        side of the same helper is proved against a REAL database in
+        `test_governed_field_catalogue_pg.py`; a mock cannot prove a precedence.
+        """
+        conn = _catalogue_conn(
+            dictionary=[
+                ("clicks", "Clics", "integer", "metric", "sum", None, "approved"),
+                ("impressions", "Impressions", "integer", "metric", "sum", None,
+                 "approved"),
+            ]
+        )
 
         result = _fetch_target_fields(["clicks", "impressions"], conn)
         assert "clicks" in result
@@ -105,18 +141,12 @@ class TestFetchTargetFields:
         assert result["impressions"]["measure"] == "sum"
 
     def test_missing_metric_absent_from_result(self):
-        # Only clicks is in DB, cost_per_click is not.
-        cur = MagicMock()
-        cur.__enter__ = lambda s: s
-        cur.__exit__ = MagicMock(return_value=False)
-        cur.fetchall.return_value = [("clicks", "Clics", "integer", "metric", "sum")]
-        cur.description = [
-            ("name", None), ("display_name", None), ("data_type", None),
-            ("field_kind", None), ("measure", None),
-        ]
-        cur.execute = MagicMock()
-        conn = MagicMock()
-        conn.cursor.return_value = cur
+        # Only clicks is governed; cost_per_click is in neither store.
+        conn = _catalogue_conn(
+            dictionary=[
+                ("clicks", "Clics", "integer", "metric", "sum", None, "approved"),
+            ]
+        )
 
         result = _fetch_target_fields(["clicks", "cost_per_click"], conn)
         assert "clicks" in result
@@ -197,7 +227,7 @@ def _make_merged_doc(metrics=_SENTINEL, metric_definitions=None, llm_guidelines=
 _TF_ROWS = [
     ("clicks", "Clics", "integer", "metric", "sum"),
     ("impressions", "Impressions", "integer", "metric", "sum"),
-    ("average_position", "Position moyenne", "decimal", "metric", "average"),
+    ("average_position", "Average position", "decimal", "metric", "average"),
 ]
 _TF_DESCRIPTION = [
     ("name", None), ("display_name", None), ("data_type", None),
@@ -300,7 +330,7 @@ class TestGetReportChain:
             patch("core.report_chain._fetch_target_fields", return_value={
                 "average_position": {
                     "name": "average_position",
-                    "display_name": "Position moyenne",
+                    "display_name": "Average position",
                     "data_type": "decimal",
                     "measure": "average",
                 },
@@ -317,9 +347,9 @@ class TestGetReportChain:
         assert m["datastreams"] == []
         assert chain["validation"]["ok_count"] == 0
         assert len(chain["validation"]["warnings"]) == 1
-        assert "Aucun flux actif" in chain["validation"]["warnings"][0]
+        assert "No active Datastream" in chain["validation"]["warnings"][0]
         assert "average_position" in chain["validation"]["warnings"][0] or \
-               "Position moyenne" in chain["validation"]["warnings"][0]
+               "Average position" in chain["validation"]["warnings"][0]
 
     def test_not_in_dictionary_path(self):
         """Metric 'cost_per_click' does not exist in target_fields."""
@@ -343,7 +373,12 @@ class TestGetReportChain:
         assert m["datastreams"] == []
         assert chain["validation"]["ok_count"] == 0
         assert len(chain["validation"]["warnings"]) == 1
-        assert "dictionnaire" in chain["validation"]["warnings"][0].lower()
+        # The warning names the gesture that WORKS. It used to say "add it as a
+        # target field", and that door has answered 409 `legacy_store_is_read_only`
+        # since 2026-08-25 -- a warning cannot send a reader to a closed door.
+        warning = chain["validation"]["warnings"][0]
+        assert "Semantic Model" in warning
+        assert "target field" not in warning.lower()
 
     def test_mixed_statuses(self):
         """clicks=ok, average_position=no_stream, unknown_metric=not_in_dictionary."""
@@ -360,7 +395,7 @@ class TestGetReportChain:
                 "clicks": {"name": "clicks", "display_name": "Clics",
                            "data_type": "integer", "measure": "sum"},
                 "average_position": {"name": "average_position",
-                                     "display_name": "Position moyenne",
+                                     "display_name": "Average position",
                                      "data_type": "decimal", "measure": "average"},
             }),
             patch("core.report_chain._fetch_datastreams_by_target", return_value={

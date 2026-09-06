@@ -162,6 +162,54 @@ def test_semantic_validation_keeps_safe_incomplete_draft() -> None:
     assert "incomplete_selection" in {issue.code for issue in result.issues}
 
 
+def test_an_event_report_is_complete_without_a_measure() -> None:
+    """A report that OFFERS no measure cannot be asked for one.
+
+    An event report -- what happened and when: a publication, a campaign start --
+    declares no metric. Demanding one refused every attempt to configure an event
+    feed with `incomplete_selection`, and no gesture on the screen could repair it
+    because the catalog had no measure to select. Measured 2026-08-12: the
+    `video_upload` profile of youtube-analytics collected 5 publications from the
+    provider and could not be turned into a Datastream.
+
+    Dimensions and grain stay required: without them there is no row identity,
+    measure or not.
+    """
+    from core.datastream_intents import validate_intent
+
+    catalog = _catalog()
+    catalog["reports"].append(
+        {
+            "id": "publication_event",
+            "selection_mode": "exact_bundle",
+            "availability": {"status": "selectable"},
+            "metrics": [],
+            "dimensions": ["date"],
+            "supported_grains": [["date"]],
+            "compatibility": [],
+            "filters": [],
+            "quota_cost": {"read_points": 1, "unit": "request"},
+            "cadence": {"minimum_interval_minutes": 60, "supported_modes": ["manual", "daily"]},
+        }
+    )
+    intent = _intent()
+    intent["source"]["report_id"] = "publication_event"
+    intent["source"]["selection"]["selection_mode"] = "exact_bundle"
+    intent["source"]["selection"]["metrics"] = []
+    intent["source"]["selection"]["dimensions"] = ["date"]
+    intent["source"]["selection"]["grain"] = ["date"]
+
+    result = validate_intent(intent, capabilities=catalog)
+    assert "incomplete_selection" not in {issue.code for issue in result.issues}
+
+    # And a report that DOES offer measures still requires one.
+    kpi = _intent()
+    kpi["source"]["selection"]["metrics"] = []
+    assert "incomplete_selection" in {
+        issue.code for issue in validate_intent(kpi, capabilities=catalog).issues
+    }
+
+
 def test_connector_validation_rejects_unknown_field_and_unsupported_cadence() -> None:
     from core.datastream_intents import validate_intent
 
@@ -440,3 +488,67 @@ def test_replay_recovers_compiled_intent_without_current_capabilities() -> None:
             idempotency_key="same-key",
             conn=conflict_conn,
         )
+
+
+# ---------------------------------------------------------------------------
+# AI-217 -- the plan intent has to be able to say `weekly`.
+# ---------------------------------------------------------------------------
+
+
+def _weekly_intent() -> dict:
+    intent = _intent()
+    intent["schedule"]["mode"] = "weekly"
+    intent["schedule"]["interval_minutes"] = 10080
+    return intent
+
+
+def test_the_schema_accepts_a_weekly_cadence() -> None:
+    """`weekly` is legal in the database and was illegal in the plan.
+
+    Migration 204 widened `datastreams_schedule_mode_check`, the Workbench, the
+    MCP tool and the REST seam all accept the value, and the dispatcher now runs
+    it -- while `$.schedule.mode` still enumerated `manual/daily/hourly`, so a
+    weekly plan died at normalization with a structural error. An operator could
+    choose the cadence on one door and be refused by the next.
+    """
+    assert list(_validator().iter_errors(_weekly_intent())) == []
+
+
+def test_a_weekly_cadence_declares_the_interval_of_a_week() -> None:
+    """One period, one number: 10080 minutes, and the schema refuses anything else.
+
+    `build_candidate_review` already computed 10080 for weekly. Leaving the
+    schema silent would have let a second number describe the same cadence.
+    """
+    wrong = _weekly_intent()
+    wrong["schedule"]["interval_minutes"] = 1440
+    assert list(_validator().iter_errors(wrong))
+
+
+def test_a_weekly_cadence_is_supported_wherever_a_daily_one_is() -> None:
+    """A weekly poll is a daily-grain report read LESS often, not a new shape.
+
+    No connector manifest declares `weekly` in `supported_modes` (measured:
+    119 reports declare `daily+manual`, 12 add `hourly`, 2 are manual only), and
+    refusing a cadence that is strictly gentler than one the report advertises
+    is the rule contradicting itself -- the constraint a provider actually
+    states is `minimum_interval_minutes`, which a week clears by construction.
+    """
+    from core.datastream_intents import validate_intent
+
+    result = validate_intent(_weekly_intent(), capabilities=_catalog())
+    assert "unsupported_cadence" not in {issue.code for issue in result.issues}
+    assert result.executable is True
+
+
+def test_a_weekly_cadence_is_still_refused_where_nothing_recurring_is() -> None:
+    """The widening is not a blanket pass: a manual-only report still refuses it."""
+    from core.datastream_intents import validate_intent
+
+    catalog = _catalog()
+    catalog["reports"][0]["cadence"] = {
+        "minimum_interval_minutes": 1440,
+        "supported_modes": ["manual"],
+    }
+    result = validate_intent(_weekly_intent(), capabilities=catalog)
+    assert "unsupported_cadence" in {issue.code for issue in result.issues}

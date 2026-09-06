@@ -19,10 +19,29 @@
       "url": "https://developers.google.com/youtube/analytics/metrics",
       "fetched_at": "2026-07-21",
       "_also": [
-        { "purpose": "dimensions", "url": "https://developers.google.com/youtube/analytics/dimensions", "fetched_at": "2026-07-21" },
-        { "purpose": "reports_query", "url": "https://developers.google.com/youtube/analytics/reference/reports/query", "fetched_at": "2026-07-21", "_note": "GET https://youtubeanalytics.googleapis.com/v2/reports?ids=channel==MINE&startDate=&endDate=&metrics=&dimensions=&filters=&sort=&maxResults=&startIndex= -> {columnHeaders[]:{name,columnType,dataType}, rows[[...]]}. Synchronous. Map by columnHeaders order." },
-        { "purpose": "discovery_channel", "url": "https://developers.google.com/youtube/v3/docs/channels/list", "fetched_at": "2026-07-21", "_note": "GET https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true -> channel id + snippet.title (1 quota unit). Reporting-entity discovery." },
-        { "purpose": "scopes_quota", "url": "https://developers.google.com/youtube/analytics/data_model", "fetched_at": "2026-07-21", "_note": "Scopes yt-analytics.readonly (core), yt-analytics-monetary.readonly (revenue/ads), youtube.readonly (Data API). Data API 10k units/day; Analytics API separate pool + per-100s rate cap." }
+        {
+          "purpose": "dimensions",
+          "url": "https://developers.google.com/youtube/analytics/dimensions",
+          "fetched_at": "2026-07-21"
+        },
+        {
+          "purpose": "reports_query",
+          "url": "https://developers.google.com/youtube/analytics/reference/reports/query",
+          "fetched_at": "2026-07-21",
+          "_note": "GET https://youtubeanalytics.googleapis.com/v2/reports?ids=channel==MINE&startDate=&endDate=&metrics=&dimensions=&filters=&sort=&maxResults=&startIndex= -> {columnHeaders[]:{name,columnType,dataType}, rows[[...]]}. Synchronous. Map by columnHeaders order."
+        },
+        {
+          "purpose": "discovery_channel",
+          "url": "https://developers.google.com/youtube/v3/docs/channels/list",
+          "fetched_at": "2026-07-21",
+          "_note": "GET https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true -> channel id + snippet.title (1 quota unit). Reporting-entity discovery."
+        },
+        {
+          "purpose": "scopes_quota",
+          "url": "https://developers.google.com/youtube/analytics/data_model",
+          "fetched_at": "2026-07-21",
+          "_note": "Scopes yt-analytics.readonly (core), yt-analytics-monetary.readonly (revenue/ads), youtube.readonly (Data API). Data API 10k units/day; Analytics API separate pool + per-100s rate cap."
+        }
       ]
     }
   ],
@@ -64,5 +83,7 @@
     "status": "blocked",
     "reason_code": "live_evidence_not_ratified",
     "note": "No YouTube test account (2026-07-21). Ratification deferred: probe channels.list(mine=true) + reports.query for one channel."
-  }
+  },
+  "reach_reports_2026": "2026-01-15: the Reporting API (bulk) gained channel reach reports (channel_reach_basic_a1, channel_reach_combined_a1) carrying video_thumbnail_impressions and video_thumbnail_impressions_ctr, daily grain, channel level (official revision history). Probed 2026-09-01 with the live connection: reports.query recognises the impressions name but answers 'query not supported' on every channel shape (impressions/ctr stay bulk-only); the Reporting API answers 200 for this token and both reach types are visible once youtubereporting.googleapis.com is enabled on the OAuth project (enabled 2026-09-01). Collection needs the bulk transport (create job -> poll -> download CSV -> land), a NEW extraction path for this connector -- AI-359.",
+  "views_counting_change_2026": "2026-08-24: YouTube counts a public view from the FIRST FRAME for every format (long-form, live, podcast, Shorts); the ~30s implicit threshold is gone (official banner, revision history 2026-08-27; monetisation unchanged). The former counting survives as engagedViews ('viewed past the first frame, or clicks/taps to play'), probed 2026-09-02: reports.query serves it (200) with the existing scope. Consequences: `views` is an era-broken series at that date (this project's warehouse currently ends 2026-08-22, entirely pre-break); engaged_views is the continuity metric to collect (AI-371); the governed context event evt_01M1PF6HGVZJQ289FMND2F7H17 (2026-08-24, platform=youtube, metric=views) records the break for the proactive surfaces."
 }

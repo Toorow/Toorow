@@ -24,8 +24,11 @@ Covers (non-tautological per review lessons H1-H4):
 
 from __future__ import annotations
 
+import json as _json
 from unittest.mock import MagicMock
 
+# AD-42: la constante vit chez son ecrivain.
+import core.connector_domain_api as connector_domain_api_actions
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -124,6 +127,7 @@ def test_configure_domain_payload_is_deterministic(monkeypatch):
             idempotency_key="ik-domain-same",
             host_context={},
             trace_id=None,
+            dns_evidence_hash="a" * 64,
         )
         return capture["specs"][0].request_payload
 
@@ -135,6 +139,7 @@ def test_configure_domain_payload_is_deterministic(monkeypatch):
     # No random row id in the hashed payload (review H1).
     assert "config_id" not in first, "config_id (row id) must NOT be in request_payload"
     assert "id" not in first, "row id must NOT be in request_payload"
+    assert first["dns_evidence_hash"] == "a" * 64
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +190,7 @@ def test_configure_domain_versioned_supersede(monkeypatch):
     assert len(capture.get("specs", [])) == 1
     spec = capture["specs"][0]
     assert spec.command_type == "connector.domain.configured"
-    assert spec.request_payload["config_version"] == 2
+    assert "config_version" not in spec.request_payload
     # Outbox payload must be secret-free (review H3 / E38-NFR03).
     outbox = capture["changes"][0].outbox_payload
     assert "signing_secret_ref" not in outbox, "signing_secret_ref must NOT appear in outbox"
@@ -224,7 +229,7 @@ def test_configure_domain_first_version_is_one(monkeypatch):
 
     assert result["config_version"] == 1
     assert len(capture["specs"]) == 1
-    assert capture["specs"][0].request_payload["config_version"] == 1
+    assert "config_version" not in capture["specs"][0].request_payload
     assert "config_id" not in capture["specs"][0].request_payload
 
 
@@ -286,7 +291,7 @@ def test_configure_domain_cross_env_conflict_raises(monkeypatch):
 
     conn = _conn_with(inst_cur, domain_row_cur)
 
-    with pytest.raises(cd.ConnectorDomainConflict, match="cross-environment"):
+    with pytest.raises(cd.ConnectorDomainConflict, match="another platform installation"):
         cd.configure_domain(
             conn,
             environment="production",
@@ -364,7 +369,7 @@ def test_configure_domain_rejects_not_installed_state():
     inst_cur = _cur(_install_row(state="NOT_INSTALLED"))
     conn = _conn_with(inst_cur)
 
-    with pytest.raises(ConnectorDomainUnavailable, match="NOT_INSTALLED"):
+    with pytest.raises(ConnectorDomainUnavailable, match="not available"):
         configure_domain(
             conn,
             environment="production",
@@ -388,7 +393,7 @@ def test_configure_domain_rejects_disabled_state():
     inst_cur = _cur(_install_row(state="DISABLED"))
     conn = _conn_with(inst_cur)
 
-    with pytest.raises(ConnectorDomainUnavailable, match="DISABLED"):
+    with pytest.raises(ConnectorDomainUnavailable, match="not available"):
         configure_domain(
             conn,
             environment="production",
@@ -429,6 +434,54 @@ def test_configure_domain_rejects_missing_installation():
         )
 
 
+def test_configure_domain_rejects_post_verification_states():
+    from core.connector_domain import ConnectorDomainUnavailable, configure_domain
+
+    for state in ("VERIFYING", "READY", "DEGRADED"):
+        conn = _conn_with(_cur(_install_row(state=state)))
+        with pytest.raises(ConnectorDomainUnavailable, match="not available"):
+            configure_domain(
+                conn,
+                environment="production",
+                connector_name="x",
+                domain="mail.example.com",
+                provider_adapter="adapter_eu_v1",
+                webhook_endpoint_version="v1",
+                signing_secret_ref=None,
+                dns_evidence_class=None,
+                actor="a@b.com",
+                idempotency_key="ik-post-verification",
+                host_context={},
+                trace_id=None,
+            )
+
+
+def test_configure_domain_rejects_unbounded_evidence_and_raw_secret():
+    from core.connector_domain import ConnectorDomainValidationError, configure_domain
+
+    base = dict(
+        conn=MagicMock(),
+        environment="production",
+        connector_name="x",
+        domain="mail.example.com",
+        provider_adapter="adapter_eu_v1",
+        webhook_endpoint_version="v1",
+        actor="a@b.com",
+        idempotency_key="ik-evidence",
+        host_context={},
+        trace_id=None,
+    )
+    with pytest.raises(ConnectorDomainValidationError, match="version reference"):
+        configure_domain(**base, signing_secret_ref="raw-secret-value", dns_evidence_class=None)
+    with pytest.raises(ConnectorDomainValidationError, match="SHA-256"):
+        configure_domain(
+            **base,
+            signing_secret_ref=None,
+            dns_evidence_class="dns_proof",
+            dns_evidence_hash="not-a-digest",
+        )
+
+
 # ---------------------------------------------------------------------------
 # (f) Secret-free read-model (AC6, E38-NFR03).
 # ---------------------------------------------------------------------------
@@ -449,9 +502,7 @@ def test_safe_read_model_contains_no_secret_keys():
         created_at=None,
     )
     for key in model:
-        assert not _is_secret_key(key), (
-            f"Read-model contains secret-like key: {key!r}"
-        )
+        assert not _is_secret_key(key), f"Read-model contains secret-like key: {key!r}"
     # Explicit: these must never appear.
     assert "signing_secret_ref" not in model
     assert "dns_evidence_hash" not in model
@@ -475,9 +526,7 @@ def test_get_domain_config_excludes_secrets():
     assert "dns_evidence_hash" not in sql_called
 
     for key in result:
-        assert not _is_secret_key(key), (
-            f"get_domain_config returned secret-like key: {key!r}"
-        )
+        assert not _is_secret_key(key), f"get_domain_config returned secret-like key: {key!r}"
 
 
 def test_configure_domain_result_excludes_secrets(monkeypatch):
@@ -502,7 +551,7 @@ def test_configure_domain_result_excludes_secrets(monkeypatch):
         domain="mail.example.com",
         provider_adapter="adapter_eu_v1",
         webhook_endpoint_version="v1",
-        signing_secret_ref="ref-id-secret",
+        signing_secret_ref="secret-ref-secret",
         dns_evidence_class=None,
         actor="a@b.com",
         idempotency_key="ik-secret-check",
@@ -594,11 +643,13 @@ def test_configure_domain_audit_via_execute_operation(monkeypatch):
     )
 
     assert len(capture["specs"]) == 1
+    assert inst_cur.execute.call_args.args[0].endswith("FOR UPDATE")
     spec = capture["specs"][0]
     assert spec.command_type == "connector.domain.configured"
-    assert spec.effective_org_id == "platform"
+    assert spec.effective_org_id is None
     # Outbox payload must be secret-free.
     from core.operations import _is_secret_key
+
     outbox = capture["changes"][0].outbox_payload
     for key in outbox:
         assert not _is_secret_key(key), f"Outbox payload has secret key: {key!r}"
@@ -690,7 +741,10 @@ def test_post_domain_non_admin_gets_404(monkeypatch, _domain_client):
     assert resp.json()["code"] == "not_found"
     # review M2: prove the denial is actually audited (a silent regression must fail).
     assert len(audit_calls) == 1
-    assert audit_calls[0]["action"] == audit_mod.ACTION_CONNECTOR_DOMAIN_CONFIG_DENIED
+    assert (
+        audit_calls[0]["action"]
+        == connector_domain_api_actions.ACTION_CONNECTOR_DOMAIN_CONFIG_DENIED
+    )
 
 
 def test_post_domain_missing_idempotency_key_gets_422(monkeypatch, _domain_client):
@@ -703,6 +757,46 @@ def test_post_domain_missing_idempotency_key_gets_422(monkeypatch, _domain_clien
     )
     assert resp.status_code == 422
     assert resp.json()["code"] == "missing_header"
+
+
+@pytest.mark.parametrize(
+    ("body", "status"),
+    [(["not", "an", "object"], 400), ({"domain": 7, "provider_adapter": "adapter_eu_v1"}, 422)],
+)
+def test_post_domain_rejects_invalid_json_shape_and_types(
+    monkeypatch, _domain_client, body, status
+):
+    _patch_domain_auth(monkeypatch, authorized=True, identity="admin@toorow.io")
+    _patch_domain_admin(monkeypatch, is_admin=True)
+    response = _domain_client.post(
+        "/api/connectors/test-connector/domain",
+        headers={"Idempotency-Key": "ik-shape"},
+        json=body,
+    )
+    assert response.status_code == status
+
+
+def test_post_domain_rejects_long_idempotency_key(monkeypatch, _domain_client):
+    _patch_domain_auth(monkeypatch, authorized=True, identity="admin@toorow.io")
+    _patch_domain_admin(monkeypatch, is_admin=True)
+    response = _domain_client.post(
+        "/api/connectors/test-connector/domain",
+        headers={"Idempotency-Key": "x" * 256},
+        json={"domain": "mail.example.com", "provider_adapter": "adapter_eu_v1"},
+    )
+    assert response.status_code == 422
+
+
+def test_post_domain_invalid_json_does_not_echo_parser_details(monkeypatch, _domain_client):
+    _patch_domain_auth(monkeypatch, authorized=True, identity="admin@toorow.io")
+    _patch_domain_admin(monkeypatch, is_admin=True)
+    response = _domain_client.post(
+        "/api/connectors/test-connector/domain",
+        headers={"Idempotency-Key": "ik-json", "Content-Type": "application/json"},
+        content="{",
+    )
+    assert response.status_code == 400
+    assert response.json()["message"] == "Request body must be valid JSON"
 
 
 def test_get_domain_non_admin_gets_404(monkeypatch, _domain_client):
@@ -718,7 +812,10 @@ def test_get_domain_non_admin_gets_404(monkeypatch, _domain_client):
     assert resp.json()["code"] == "not_found"
     # review M2: prove the denied GET is audited.
     assert len(audit_calls) == 1
-    assert audit_calls[0]["action"] == audit_mod.ACTION_CONNECTOR_DOMAIN_CONFIG_DENIED
+    assert (
+        audit_calls[0]["action"]
+        == connector_domain_api_actions.ACTION_CONNECTOR_DOMAIN_CONFIG_DENIED
+    )
 
 
 def test_get_domain_unauthorized_gets_401(monkeypatch, _domain_client):
@@ -818,8 +915,9 @@ def test_post_domain_admin_success(monkeypatch, _domain_client):
         "configured_at": None,
     }
 
-    monkeypatch.setattr(cd_mod, "configure_domain",
-                        lambda conn, *, environment, connector_name, **kw: fake_model)
+    monkeypatch.setattr(
+        cd_mod, "configure_domain", lambda conn, *, environment, connector_name, **kw: fake_model
+    )
 
     @contextlib.contextmanager
     def fake_conn():
@@ -869,8 +967,9 @@ def test_get_domain_admin_configured(monkeypatch, _domain_client):
         "configured_at": "2026-07-23T12:00:00+00:00",
     }
 
-    monkeypatch.setattr(cd_mod, "get_domain_config",
-                        lambda conn, *, environment, connector_name: fake_model)
+    monkeypatch.setattr(
+        cd_mod, "get_domain_config", lambda conn, *, environment, connector_name: fake_model
+    )
 
     @contextlib.contextmanager
     def fake_conn():
@@ -903,8 +1002,9 @@ def test_get_domain_admin_not_configured(monkeypatch, _domain_client):
         lambda: "production",
     )
 
-    monkeypatch.setattr(cd_mod, "get_domain_config",
-                        lambda conn, *, environment, connector_name: None)
+    monkeypatch.setattr(
+        cd_mod, "get_domain_config", lambda conn, *, environment, connector_name: None
+    )
 
     @contextlib.contextmanager
     def fake_conn():
@@ -981,6 +1081,8 @@ def test_mcp_domain_tool_returns_same_model_as_rest(monkeypatch):
     handlers = _register_operations_tools()
     handler = handlers.get("get_connector_domain_config")
     assert handler is not None, "get_connector_domain_config not registered"
+    monkeypatch.setattr("core.operations_mcp._identity", lambda: "platform-admin")
+    monkeypatch.setattr("core.super_admin.is_super_admin", lambda _identity: True)
 
     import core.connector_domain as cd_mod
     import core.db as db_mod
@@ -996,8 +1098,9 @@ def test_mcp_domain_tool_returns_same_model_as_rest(monkeypatch):
         "configured_at": None,
     }
 
-    monkeypatch.setattr(cd_mod, "get_domain_config",
-                        lambda conn, *, environment, connector_name: fake_model)
+    monkeypatch.setattr(
+        cd_mod, "get_domain_config", lambda conn, *, environment, connector_name: fake_model
+    )
     monkeypatch.setenv("TOOROW_ENVIRONMENT", "production")
 
     @contextlib.contextmanager
@@ -1028,12 +1131,15 @@ def test_mcp_domain_tool_not_configured_returns_unconfigured(monkeypatch):
 
     handlers = _register_operations_tools()
     handler = handlers.get("get_connector_domain_config")
+    monkeypatch.setattr("core.operations_mcp._identity", lambda: "platform-admin")
+    monkeypatch.setattr("core.super_admin.is_super_admin", lambda _identity: True)
 
     import core.connector_domain as cd_mod
     import core.db as db_mod
 
-    monkeypatch.setattr(cd_mod, "get_domain_config",
-                        lambda conn, *, environment, connector_name: None)
+    monkeypatch.setattr(
+        cd_mod, "get_domain_config", lambda conn, *, environment, connector_name: None
+    )
     monkeypatch.setenv("TOOROW_ENVIRONMENT", "production")
 
     @contextlib.contextmanager
@@ -1046,6 +1152,18 @@ def test_mcp_domain_tool_not_configured_returns_unconfigured(monkeypatch):
     data = result.structured_content["data"]
     assert data["configured"] is False
     assert "safe_next_action" in data
+
+
+def test_mcp_domain_tool_hides_config_from_non_admin(monkeypatch):
+    handlers = _register_operations_tools()
+    handler = handlers["get_connector_domain_config"]
+    monkeypatch.setattr("core.operations_mcp._identity", lambda: "tenant-user")
+    monkeypatch.setattr("core.super_admin.is_super_admin", lambda _identity: False)
+
+    from fastmcp.exceptions import ToolError
+
+    with pytest.raises(ToolError, match="not_found"):
+        handler("test-connector")
 
 
 def test_mcp_domain_tool_missing_connector_name_raises():
@@ -1066,49 +1184,101 @@ def test_mcp_domain_tool_missing_connector_name_raises():
 
 import os as _os  # noqa: E402
 
-_DSN = _os.environ.get("TEST_POSTGRES_DSN") or _os.environ.get("PLATFORM_DB_URL")
+_DSN = _os.environ.get("TEST_POSTGRES_DSN")
 
 requires_postgres = pytest.mark.skipif(
     not _DSN,
-    reason="TEST_POSTGRES_DSN/PLATFORM_DB_URL not set -- live Postgres constraint test skipped",
+    reason="TEST_POSTGRES_DSN not set -- live Postgres constraint test skipped",
 )
 
-_MIGRATION = (
+_MIGRATION_179 = (
     __import__("pathlib").Path(__file__).resolve().parents[3]
     / "infra"
     / "nango"
     / "migrations"
-    / "084_connector_domain_config.sql"
-)
-
-_MIGRATION_082 = (
-    __import__("pathlib").Path(__file__).resolve().parents[3]
-    / "infra"
-    / "nango"
-    / "migrations"
-    / "082_connector_installation_state.sql"
+    / "179_connector_domain_config_guard.sql"
 )
 
 
-def _apply_migrations(conn) -> None:
-    """Apply 082 (installations) then 084 (domain configs) idempotently."""
+def test_corrective_domain_migration_is_operation_backed_and_deferred():
+    sql = _MIGRATION_179.read_text(encoding="utf-8")
+    assert "effective_org_id" in sql
+    assert "connector.domain.configured" in sql
+    assert "DOMAIN_PENDING" in sql
+    assert "DEFERRABLE INITIALLY DEFERRED" in sql
+    assert "version chain is not monotonic" in sql
+
+
+
+
+def _require_preapplied_schema(conn) -> None:
+    """Require a pre-migrated disposable schema without mutating it from tests."""
     with conn.cursor() as cur:
-        cur.execute(_MIGRATION_082.read_text(encoding="utf-8"))
-    conn.commit()
-    with conn.cursor() as cur:
-        cur.execute(_MIGRATION.read_text(encoding="utf-8"))
-    conn.commit()
+        cur.execute("SELECT to_regclass('app.connector_domain_configs')")
+        row = cur.fetchone()
+    if row is None or row[0] is None:
+        pytest.skip("connector_domain_configs migration is not pre-applied")
 
 
 def _insert_installation(conn, *, env: str, name: str, inst_id: str) -> None:
+    """Une installation NAIT d une operation, et la migration 178 l exige.
+
+    Cette fixture posait la ligne sans `operation_id`. Le garde
+    `protect_connector_installation` refuse depuis :
+
+        connector installation inserts require DOMAIN_PENDING and an operation
+
+    L ecart etait invisible depuis le jour ou 178 a ete appliquee, parce que ces
+    tests sont pg-gated : sans DSN ils SKIPPENT, et une fixture fausse y reste
+    invisible indefiniment. Six tests d integrite du domaine ne prouvaient donc
+    plus rien des qu on leur donnait une base.
+
+    Le garde nomme aussi la COMMANDE : `connector.install.applied`, et rien
+    d autre. Une installation ne peut pas naitre d une operation quelconque.
+
+    L operation est de PORTEE PLATEFORME -- `effective_org_id` NULL, rendu
+    nullable par la migration 109 pour exactement ce cas : << un acte de la
+    plateforme sur elle-meme, n appartenant a aucun locataire >>. Installer un
+    connecteur dans un environnement en est un ; lui inventer une organisation
+    serait fabriquer un locataire pour satisfaire une contrainte.
+    """
+    import hashlib
+
+    from ulid import ULID as _ULID
+
+    op_id = f"op_{_ULID()}"
+    seed = f"{op_id}:{inst_id}"
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO app.connector_installations "
-            "(id, environment, connector_name, state) "
-            "VALUES (%s, %s, %s, 'DOMAIN_PENDING')",
-            (inst_id, env, name),
+            "INSERT INTO app.operations "
+            "(id, effective_org_id, command_type, actor, resource_path, "
+            " host_context, versions, request_hash, provider_references, "
+            " confirmation_mode, idempotency_key_hash, state) "
+            "VALUES (%s, NULL, 'connector.install.applied', 'test', "
+            "        %s::jsonb, '{}'::jsonb, '{}'::jsonb, %s, '{}'::jsonb, "
+            "        'server', %s, 'pending')",
+            (
+                op_id,
+                _json.dumps([f"connector:{name}", f"environment:{env}"]),
+                # De l hex REEL de la bonne longueur : la colonne porte un CHECK,
+                # et une lettre au-dela de 'f' le fait echouer.
+                hashlib.sha256(f"req:{seed}".encode()).hexdigest(),
+                hashlib.sha256(f"idem:{seed}".encode()).hexdigest(),
+            ),
         )
-    conn.commit()
+        # L ETAT DE NAISSANCE EST DEFINI PAR LE GARDE, pas choisi ici. La 178
+        # exige les quatre ensemble : DOMAIN_PENDING, un acteur responsable
+        # connu, la cause bloquante qui NOMME ce qui manque, et aucune date de
+        # verification -- une installation qui naitrait deja verifiee serait une
+        # verification que personne n a faite.
+        cur.execute(
+            "INSERT INTO app.connector_installations "
+            "(id, environment, connector_name, state, operation_id, "
+            " responsible_actor, blocking_cause) "
+            "VALUES (%s, %s, %s, 'DOMAIN_PENDING', %s, "
+            "        'platform_admin', 'domain_configuration_pending')",
+            (inst_id, env, name, op_id),
+        )
 
 
 def _insert_domain_config(
@@ -1130,7 +1300,6 @@ def _insert_domain_config(
             "VALUES (%s, %s, %s, %s, %s, %s, 'v1', %s)",
             (config_id, installation_id, env, name, domain, adapter, version),
         )
-    conn.commit()
 
 
 @requires_postgres
@@ -1140,7 +1309,7 @@ def test_live_active_env_name_unique_constraint():
     from ulid import ULID
 
     with psycopg.connect(_DSN) as conn:
-        _apply_migrations(conn)
+        _require_preapplied_schema(conn)
         env = f"test-{ULID()}"
         name = f"connector-{ULID()}"
         inst_id = f"cin_{ULID()}"
@@ -1148,16 +1317,24 @@ def test_live_active_env_name_unique_constraint():
 
         id1 = f"cdc_{ULID()}"
         _insert_domain_config(
-            conn, config_id=id1, installation_id=inst_id,
-            env=env, name=name, domain=f"mail-{ULID()}.example.com",
+            conn,
+            config_id=id1,
+            installation_id=inst_id,
+            env=env,
+            name=name,
+            domain=f"mail-{ULID()}.example.com",
         )
 
         # Second ACTIVE row for the same (env, name) must violate the partial-unique index.
         id2 = f"cdc_{ULID()}"
         with pytest.raises(Exception) as exc_info:
             _insert_domain_config(
-                conn, config_id=id2, installation_id=inst_id,
-                env=env, name=name, domain=f"mail2-{ULID()}.example.com",
+                conn,
+                config_id=id2,
+                installation_id=inst_id,
+                env=env,
+                name=name,
+                domain=f"mail2-{ULID()}.example.com",
             )
         assert "unique" in str(exc_info.value).lower()
         conn.rollback()
@@ -1170,7 +1347,7 @@ def test_live_active_domain_unique_constraint():
     from ulid import ULID
 
     with psycopg.connect(_DSN) as conn:
-        _apply_migrations(conn)
+        _require_preapplied_schema(conn)
         shared_domain = f"shared-{ULID()}.example.com"
 
         env1 = f"test-{ULID()}"
@@ -1179,8 +1356,12 @@ def test_live_active_domain_unique_constraint():
         _insert_installation(conn, env=env1, name=name1, inst_id=inst1)
         id1 = f"cdc_{ULID()}"
         _insert_domain_config(
-            conn, config_id=id1, installation_id=inst1,
-            env=env1, name=name1, domain=shared_domain,
+            conn,
+            config_id=id1,
+            installation_id=inst1,
+            env=env1,
+            name=name1,
+            domain=shared_domain,
         )
 
         env2 = f"test-{ULID()}"
@@ -1192,8 +1373,12 @@ def test_live_active_domain_unique_constraint():
         # Second connector trying to bind the same domain must fail.
         with pytest.raises(Exception) as exc_info:
             _insert_domain_config(
-                conn, config_id=id2, installation_id=inst2,
-                env=env2, name=name2, domain=shared_domain,
+                conn,
+                config_id=id2,
+                installation_id=inst2,
+                env=env2,
+                name=name2,
+                domain=shared_domain,
             )
         assert "unique" in str(exc_info.value).lower()
         conn.rollback()
@@ -1206,7 +1391,7 @@ def test_live_superseded_row_does_not_block_new_active():
     from ulid import ULID
 
     with psycopg.connect(_DSN) as conn:
-        _apply_migrations(conn)
+        _require_preapplied_schema(conn)
         env = f"test-{ULID()}"
         name = f"connector-{ULID()}"
         inst_id = f"cin_{ULID()}"
@@ -1215,8 +1400,13 @@ def test_live_superseded_row_does_not_block_new_active():
         id1 = f"cdc_{ULID()}"
         domain = f"mail-{ULID()}.example.com"
         _insert_domain_config(
-            conn, config_id=id1, installation_id=inst_id,
-            env=env, name=name, domain=domain, version=1,
+            conn,
+            config_id=id1,
+            installation_id=inst_id,
+            env=env,
+            name=name,
+            domain=domain,
+            version=1,
         )
 
         id2 = f"cdc_{ULID()}"
@@ -1226,14 +1416,19 @@ def test_live_superseded_row_does_not_block_new_active():
                 "UPDATE app.connector_domain_configs SET superseded_by = %s WHERE id = %s",
                 (id2, id1),
             )
-        conn.commit()
 
         # Now insert id2 as the new active row (same domain, same env+name).
         # The partial-unique index only applies to active rows, so this must succeed.
         _insert_domain_config(
-            conn, config_id=id2, installation_id=inst_id,
-            env=env, name=name, domain=domain, version=2,
+            conn,
+            config_id=id2,
+            installation_id=inst_id,
+            env=env,
+            name=name,
+            domain=domain,
+            version=2,
         )
+        conn.rollback()
 
 
 @requires_postgres
@@ -1243,7 +1438,7 @@ def test_live_immutability_trigger_blocks_identity_mutation():
     from ulid import ULID
 
     with psycopg.connect(_DSN) as conn:
-        _apply_migrations(conn)
+        _require_preapplied_schema(conn)
         env = f"test-{ULID()}"
         name = f"connector-{ULID()}"
         inst_id = f"cin_{ULID()}"
@@ -1252,16 +1447,19 @@ def test_live_immutability_trigger_blocks_identity_mutation():
         config_id = f"cdc_{ULID()}"
         domain = f"mail-{ULID()}.example.com"
         _insert_domain_config(
-            conn, config_id=config_id, installation_id=inst_id,
-            env=env, name=name, domain=domain,
+            conn,
+            config_id=config_id,
+            installation_id=inst_id,
+            env=env,
+            name=name,
+            domain=domain,
         )
 
         # Attempt to mutate `domain` (frozen identity column) -> trigger fires.
         with conn.cursor() as cur:
             with pytest.raises(Exception, match="immutable"):
                 cur.execute(
-                    "UPDATE app.connector_domain_configs "
-                    "SET domain = %s WHERE id = %s",
+                    "UPDATE app.connector_domain_configs SET domain = %s WHERE id = %s",
                     ("mutated.example.com", config_id),
                 )
         conn.rollback()
@@ -1274,7 +1472,7 @@ def test_live_immutability_trigger_allows_superseded_by_update():
     from ulid import ULID
 
     with psycopg.connect(_DSN) as conn:
-        _apply_migrations(conn)
+        _require_preapplied_schema(conn)
         env = f"test-{ULID()}"
         name = f"connector-{ULID()}"
         inst_id = f"cin_{ULID()}"
@@ -1283,8 +1481,12 @@ def test_live_immutability_trigger_allows_superseded_by_update():
         config_id = f"cdc_{ULID()}"
         domain = f"mail-{ULID()}.example.com"
         _insert_domain_config(
-            conn, config_id=config_id, installation_id=inst_id,
-            env=env, name=name, domain=domain,
+            conn,
+            config_id=config_id,
+            installation_id=inst_id,
+            env=env,
+            name=name,
+            domain=domain,
         )
 
         next_id = f"cdc_{ULID()}"
@@ -1295,7 +1497,7 @@ def test_live_immutability_trigger_allows_superseded_by_update():
                 (next_id, config_id),
             )
             assert cur.rowcount == 1
-        conn.commit()
+        conn.rollback()
 
 
 @requires_postgres
@@ -1305,7 +1507,7 @@ def test_live_delete_rejected_by_trigger():
     from ulid import ULID
 
     with psycopg.connect(_DSN) as conn:
-        _apply_migrations(conn)
+        _require_preapplied_schema(conn)
         env = f"test-{ULID()}"
         name = f"connector-{ULID()}"
         inst_id = f"cin_{ULID()}"
@@ -1314,8 +1516,12 @@ def test_live_delete_rejected_by_trigger():
         config_id = f"cdc_{ULID()}"
         domain = f"mail-{ULID()}.example.com"
         _insert_domain_config(
-            conn, config_id=config_id, installation_id=inst_id,
-            env=env, name=name, domain=domain,
+            conn,
+            config_id=config_id,
+            installation_id=inst_id,
+            env=env,
+            name=name,
+            domain=domain,
         )
 
         with conn.cursor() as cur:

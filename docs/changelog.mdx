@@ -5,6 +5,62 @@ description: Track updates, new connector releases, and architecture enhancement
 
 ## Release History
 
+### v1.5.0 — 2026-09-04
+Everything shipped between 2026-07-26 and 2026-09-04, grouped by what it changes for a reader.
+
+**A shareable analysis, end to end**
+- **Renders**: a figure can be frozen into an immutable snapshot that pins its exact Result, Visualization Spec version, renderer build, theme and formatters. A Render is a snapshot, never a rerun instruction.
+- **Dossiers**: several Renders plus narrative blocks compose one addressable, versioned document. `compose_dossier` writes every frozen figure and the Dossier version in a single transaction — a block pointing at a figure from another project fails the whole call.
+- **Authorship on the page**: every narrative block records whether a model or a person wrote it, and both the console and the share page show which.
+- **Sharing, with two people**: requesting a Share returns no link. A *second* role holder confirms the exit and receives the only link; the requester and the confirmer cannot be the same person. Revocation stays a single act. One Share opens exactly one target — one Render or one Dossier version, never *the latest*.
+- **The share page uses the same rendering runtime** as the console and the MCP App surface, so a figure cannot read one way in the product and another way in the link you sent.
+- New page: [Renders, Dossiers and Sharing](/renders-and-sharing).
+
+**Chart Templates**
+- A reusable, validated presentation starting point with immutable versions, a compatibility verdict in three states with all its reasons, and materialisation into a Visualization Spec version indistinguishable from a hand-made one.
+- Templates are edited, versioned, archived and restored from their workbench. An archived version stays readable, and a pin onto an archived version is named rather than silently broken.
+- A connector may declare Chart Templates as data; a connector never *owns* one — the first edit makes the head project-owned.
+
+**Data quality: five new monitors, ten in total**
+- **Arrival timeliness** — the timeliness question for a feed that arrives instead of being pulled: the deadline it was promised to meet, not the age of its newest row.
+- **Null rate** — the missing rate (`NULL` *or* blank) of a field the active mapping version declares in its grain.
+- **Zero rows** — a window that returned nothing where the source has been producing. An absence is not a small number.
+- **Unresolved values** — after mapping, the values the reading still cannot name, per `(datastream, dimension, reason)`. The backlog present when the monitor is armed becomes the baseline: what you are told about is a *new* gap.
+- **Unresolved geography** — project-scoped, and evaluated only on a Local-markets project.
+
+**Context that survives being corrected**
+- Correcting a context event no longer overwrites it: the previous wording, who changed it, when, and which fields, are appended as a revision and served with the event.
+- Withdrawing an event is an audited transition, and it is not undone.
+- A context event can name the metric it concerns, and the comparison that uses it says when it did not compare.
+
+**Governance and the semantic model**
+- A version number designates one content: colliding version numbers were renumbered, and a collision is now a noisy path rather than a silent overlap.
+- Master Data objects are renamed, archived and restored through the same gate as the Context Hub, and a rename states which version it renames.
+- A metric names its dimensions (measure-grain authority), with derived coverage and a `used-by` reading.
+- The client's own word for a dimension is served through one seam: titles, table headers, chart units and generated questions all speak it, and the internal identifier appears on no branch.
+
+**Alignment and planning**
+- **Analytics Alignment** joins the activatable modules, with its own cascade and store.
+- **Pro-rata allocation** with exact weights — observed values are never mixed with allocated ones.
+- **Planned versus actual**: a planned day with no actual is a gap, not a hole.
+- **MMM extract**: a served read that writes nothing, names its date gaps, and traces every line back to the Semantic View it came from.
+
+**Operations you can see**
+- A provider refusal during a pull is now a health fact: the pull that learned it writes it, the nightly sweep never raises a red somebody else posted, and only a verified successful pull clears it. The console renders those states instead of falling back to *Unknown*.
+- Every step of the nightly run is registered before the first one starts, in four states that cannot collapse into each other — a crash *is* the open line. Visible on the Platform Clocks screen.
+- The warehouse layer speaks two engines: one spelling per construct, checked offline and against a real dry run that bills nothing.
+
+**Connectors**
+- The catalog stays at 39 connectors. YouTube Analytics gained a Competitors output: snapshots of tracked channels, and a named directory of their uploads.
+
+**Agent surface**
+- The MCP surface is 131 declared tools across three profiles — `insights` (54, read-only, always reachable), `operations` (43) and `governance` (34). A tool that writes cannot be declared `insights`.
+- 43 tools are declared *confirmed write*: refused before running unless a person is verifiably present at the host. Five of those additionally consume a single-use confirmation issued by a preceding `prepare_*` call.
+- [Agent Tools](/agent-tools) was rewritten against the running registry. It previously documented three tools that do not exist and a per-connector `<source>_report` family that was never built.
+
+---
+
+
 ### v1.4.0 — 2026-07-25
 - **37 Connector Modules**: Full support for Google Analytics 4, Meta Ads, TikTok Ads, LinkedIn Ads, Shopify, Stripe, Klaviyo, Amazon Ads, DV360, Search Console, Mailgun, and 26 additional platforms.
 - **File-Source Ingestion Engine**: Support for uploading and emailing messy media plans, audience panels, and TGI extracts with automatic grain explosion and plan-vs-actual reconciliation.
@@ -16,7 +72,7 @@ description: Track updates, new connector releases, and architecture enhancement
 ### v1.3.0 — 2026-07-10
 - **dbt Semantic Ratio Views**: Introduced non-additive metric safeguards (`semantic_ctr`, `semantic_cpa`, `semantic_roas`, `semantic_avg_position`) eliminating false direct sums over ratio measures.
 - **Z-Score Anomaly Engine**: Trailing 30-day baseline calculation for identifying statistically significant metric spikes and dips.
-- **Non-Causal Context Citations**: Enforced AD-9 non-causal language rules when annotating anomalies with registered context events.
+- **Non-Causal Context Citations**: Enforced non-causal language when annotating anomalies with registered context events.
 
 ---
 

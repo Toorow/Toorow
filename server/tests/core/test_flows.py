@@ -201,7 +201,7 @@ class TestScope:
     def test_scope_violation_raises_and_audits(self):
         conn = MagicMock()
         with (
-            patch("core.project_access.identity_has_project_access", return_value=False),
+            patch("core.project_access.identity_can_read_project", return_value=False),
             patch("core.flows._audit") as mock_audit,
         ):
             with pytest.raises(flows.FlowScopeError):
@@ -213,7 +213,7 @@ class TestScope:
     def test_access_ok_no_audit(self):
         conn = MagicMock()
         with (
-            patch("core.project_access.identity_has_project_access", return_value=True),
+            patch("core.project_access.identity_can_read_project", return_value=True),
             patch("core.flows._audit") as mock_audit,
         ):
             flows._assert_access("proj_a", "alice", conn)
@@ -233,7 +233,7 @@ class TestScope:
     def test_get_flow_scope_violation(self):
         conn = MagicMock()
         with (
-            patch("core.project_access.identity_has_project_access", return_value=False),
+            patch("core.project_access.identity_can_read_project", return_value=False),
             patch("core.flows._audit"),
         ):
             with pytest.raises(flows.FlowScopeError):
@@ -286,7 +286,11 @@ class TestUpsertDatastream:
             "config": {},
         }
         with (
+            # `_assert_access` picks ONE gate depending on the document: the role
+            # floor for a versioned intent write, the read gate otherwise. Authorizing
+            # the identity means authorizing both; patching one leaves the other real.
             patch("core.project_access.identity_has_project_role", return_value=True),
+            patch("core.project_access.identity_can_read_project", return_value=True),
             patch("core.flows._connection_ref_belongs", return_value=True),
             patch("core.datastream_intents.replay_datastream_intent", return_value=None),
             patch(
@@ -326,7 +330,11 @@ class TestUpsertDatastream:
         created = {"id": "ds_new", "project_id": "proj_a", "name": "Campaign feed"}
         saved = {"id": "dsp_01", "version_number": 1, "executable": True}
         with (
+            # `_assert_access` picks ONE gate depending on the document: the role
+            # floor for a versioned intent write, the read gate otherwise. Authorizing
+            # the identity means authorizing both; patching one leaves the other real.
             patch("core.project_access.identity_has_project_role", return_value=True),
+            patch("core.project_access.identity_can_read_project", return_value=True),
             patch("core.flows._connection_ref_belongs", return_value=True),
             patch("core.datastream_intents.replay_datastream_intent", return_value=None),
             patch(
@@ -390,7 +398,11 @@ class TestUpsertDatastream:
             "idempotent_replay": True,
         }
         with (
+            # `_assert_access` picks ONE gate depending on the document: the role
+            # floor for a versioned intent write, the read gate otherwise. Authorizing
+            # the identity means authorizing both; patching one leaves the other real.
             patch("core.project_access.identity_has_project_role", return_value=True),
+            patch("core.project_access.identity_can_read_project", return_value=True),
             patch(
                 "core.datastream_intents.replay_datastream_intent", return_value=saved
             ) as recover,
@@ -423,7 +435,7 @@ class TestUpsertDatastream:
         """GUARDRAIL: connection_ref_id must belong to the project (opaque FK)."""
         conn = MagicMock()
         with (
-            patch("core.project_access.identity_has_project_access", return_value=True),
+            patch("core.project_access.identity_can_read_project", return_value=True),
             patch("core.flows._connection_ref_belongs", return_value=False),
         ):
             with pytest.raises(flows.FlowValidationError) as ei:
@@ -450,7 +462,11 @@ class TestUpsertDatastream:
             {"source_field": "sessions", "target_field": "sessions", "is_key_column": False}
         ]
         with (
+            # `_assert_access` picks ONE gate depending on the document: the role
+            # floor for a versioned intent write, the read gate otherwise. Authorizing
+            # the identity means authorizing both; patching one leaves the other real.
             patch("core.project_access.identity_has_project_role", return_value=True),
+            patch("core.project_access.identity_can_read_project", return_value=True),
             patch("core.flows._connection_ref_belongs", return_value=True),
             patch("core.datastream_intents.replay_datastream_intent", return_value=None),
             patch("core.datastreams.get_datastream", return_value=existing),
@@ -537,7 +553,11 @@ class TestApplyMappings:
         ]
 
         with (
+            # `_assert_access` picks ONE gate depending on the document: the role
+            # floor for a versioned intent write, the read gate otherwise. Authorizing
+            # the identity means authorizing both; patching one leaves the other real.
             patch("core.project_access.identity_has_project_role", return_value=True),
+            patch("core.project_access.identity_can_read_project", return_value=True),
             patch("core.flows._connection_ref_belongs", return_value=True),
             patch("core.datastream_intents.replay_datastream_intent", return_value=None),
             patch("core.datastreams.get_datastream", return_value=existing),
@@ -641,7 +661,11 @@ class TestCreateAtomicity:
         }
 
         with (
+            # `_assert_access` picks ONE gate depending on the document: the role
+            # floor for a versioned intent write, the read gate otherwise. Authorizing
+            # the identity means authorizing both; patching one leaves the other real.
             patch("core.project_access.identity_has_project_role", return_value=True),
+            patch("core.project_access.identity_can_read_project", return_value=True),
             patch("core.flows._connection_ref_belongs", return_value=True),
             patch("core.datastream_intents.replay_datastream_intent", return_value=None),
             patch("core.datastreams.create_datastream", return_value=created_row),

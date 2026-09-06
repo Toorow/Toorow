@@ -18,7 +18,19 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import jsonschema
 from ulid import ULID
 
+from core.audit import declare_action
 from core.geographic_reporting import GeographicPosture
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12) : declarees ICI, a cote du code qui les ecrit, et non
+# dans `core/audit.py`. Ce fichier etait un carrefour -- 43 editions de 29
+# sujets depuis juin, dont 34 n'ajoutaient qu'une constante -- et 45 % des
+# actions reellement ecrites en production n'y etaient meme pas declarees,
+# parce que la liste etait trop loin pour valoir le detour. `write_audit_row`
+# refuse desormais une action que personne n'a declaree.
+ACTION_DATASTREAM_INTENT_VERSIONED = declare_action("datastream.intent.versioned")
+
 
 _SCHEMA_PATH = Path(__file__).parent / "schemas" / "datastream-intent.schema.json"
 _WRITER_BY_SOURCE = {
@@ -479,12 +491,27 @@ def _validate_connector(
         )
 
     selection = source["selection"]
-    if not selection["metrics"] or not selection["dimensions"] or not selection["grain"]:
+    # A MEASURE IS REQUIRED ONLY WHERE THE REPORT OFFERS ONE. An event report --
+    # what happened and when, a publication, a campaign start -- declares no
+    # metric at all, and demanding one asked for something its catalog could not
+    # supply: `incomplete_selection` on every attempt, a refusal no gesture on
+    # the screen could repair, so no event feed could ever be configured.
+    #
+    # Read from the report's own declaration rather than from its landing: the
+    # governed catalog drops `landing` in normalization, and what a report offers
+    # is the question anyway. Dimensions and grain stay required for everyone --
+    # without them there is no row identity, measure or not.
+    if (report.get("metrics") and not selection["metrics"]) or not selection["dimensions"] or (
+        not selection["grain"]
+    ):
         _add_issue(
             issues,
             code="incomplete_selection",
             path="$.source.selection",
-            message="Connector selection requires metrics, dimensions, and grain.",
+            message=(
+                "Connector selection requires dimensions and grain, "
+                "and a measure when the report offers one."
+            ),
             repair={"action": "complete_selection"},
         )
 
@@ -549,7 +576,22 @@ def _validate_connector(
     supported_modes = cadence.get("supported_modes", [])
     minimum = cadence.get("minimum_interval_minutes")
     interval = schedule["interval_minutes"]
-    if schedule["mode"] not in supported_modes or (
+    # AI-217: a WEEKLY poll is a daily report read less often, not a new shape.
+    #
+    # No connector manifest declares `weekly` in `supported_modes` -- measured
+    # across the 39: 119 reports declare `daily`+`manual`, 12 add `hourly`, 2 are
+    # manual only. Refusing a cadence that is strictly GENTLER than one the
+    # report advertises is the rule contradicting itself: what a provider
+    # actually constrains is `minimum_interval_minutes`, which a week clears by
+    # construction. Declaring `weekly` in 39 manifests instead would have changed
+    # every report's `capability_fingerprint` and answered `stale_capabilities`
+    # (409) to every plan saved before the change.
+    #
+    # Not a blanket pass: a report that supports nothing recurring still refuses.
+    supported = list(supported_modes)
+    if "daily" in supported and "weekly" not in supported:
+        supported.append("weekly")
+    if schedule["mode"] not in supported or (
         interval is not None and isinstance(minimum, int) and interval < minimum
     ):
         preferred_mode = "daily" if "daily" in supported_modes else supported_modes[0]
@@ -727,8 +769,9 @@ def save_datastream_intent(
     trace_id: str | None = None,
     now_utc: datetime | None = None,
     commit: bool = True,
+    advance_pointer: bool = True,
 ) -> dict[str, Any]:
-    """Append one immutable version and atomically move its Datastream pointer."""
+    """Append one immutable version, optionally leaving every active pointer untouched."""
 
     if not idempotency_key.strip():
         raise ValueError("Idempotency-Key is required")
@@ -752,6 +795,14 @@ def save_datastream_intent(
                 identity=identity,
                 loaded_modules=loaded_modules,
                 conn=conn,
+                # WHICH tool of the authorization this Datastream reads. Absent
+                # from every intent written before Google direct existed, and
+                # absent from every single-connector one after -- resolve_connection_connector
+                # answers those from the authorization itself. Present only where
+                # one authorization opens several and the answer cannot be
+                # inferred, which is precisely where guessing would silently
+                # build the Datastream on the wrong product.
+                module_name=source.get("module"),
             )
         except SourceCapabilitiesNotFound as exc:
             raise DatastreamIntentNotFound from exc
@@ -882,7 +933,7 @@ def save_datastream_intent(
                     schedule_window.scheduled_for,
                     schedule_window.window_start,
                     schedule_window.window_end,
-                    schedule_window.next_run_at,
+                    schedule_window.next_run_at if advance_pointer else None,
                 ),
             )
             cur.execute(
@@ -894,7 +945,7 @@ def save_datastream_intent(
                     enabled = FALSE,
                     archived_at = NULL,
                     archived_by = NULL
-                WHERE id = %s AND project_id = %s
+                WHERE id = %s AND project_id = %s AND %s
                 """,
                 (
                     plan_id,
@@ -904,10 +955,11 @@ def save_datastream_intent(
                     else None,
                     datastream_id,
                     project_id,
+                    advance_pointer,
                 ),
             )
 
-        from core.audit import ACTION_DATASTREAM_INTENT_VERSIONED, insert_audit_row  # noqa: PLC0415
+        from core.audit import insert_audit_row  # noqa: PLC0415
 
         insert_audit_row(
             conn,

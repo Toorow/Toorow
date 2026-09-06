@@ -632,10 +632,14 @@ async def test_seam_linkedin_fastmcp_inprocess(tmp_path):
 
 @pytest.mark.anyio
 async def test_seam_linkedin_core_loader_mounts_namespace(tmp_path):
-    """AI-56 : seam via core.main.mcp -- prouve que le loader core monte linkedin-ads.
+    """AI-56 : seam via core.main.mcp -- le loader core DECOUVRE linkedin-ads.
 
-    Verifie que 'linkedin-ads_get_linkedin_ads_report' est dans les outils montes.
-    Pattern identique au seam core Klaviyo (conforme AI-56 + T15.3.A/B du test_module_loading).
+    Ce cas verifiait que `linkedin-ads_get_linkedin_ads_report` etait dans les
+    outils montes. AD-42 a retire le montage sous espace de noms : aucun nom
+    d'outil MCP ne porte un nom de fournisseur. La decouverte se prouve par
+    `list_connectors` -- la surface ou le nom d'un connecteur a sa place, comme
+    donnee dans une reponse et jamais comme nom d'outil -- dans
+    `tests/integration/test_module_loading.py::test_list_connectors_includes_linkedin_ads`.
     """
     import duckdb
     from fastmcp.client import Client, FastMCPTransport
@@ -671,11 +675,8 @@ async def test_seam_linkedin_core_loader_mounts_namespace(tmp_path):
 
     tool_names = [t.name for t in tools]
     linkedin_tools = [n for n in tool_names if "linkedin" in n.lower()]
-    assert linkedin_tools, (
-        f"Aucun outil linkedin-ads trouve dans les outils montes par core.main.mcp: {tool_names}"
-    )
-    assert any("get_linkedin_ads_report" in n for n in linkedin_tools), (
-        f"linkedin-ads_get_linkedin_ads_report absent des outils montes: {linkedin_tools}"
+    assert linkedin_tools == [], (
+        f"un outil MCP porte le nom du fournisseur: {linkedin_tools} -- AD-42."
     )
 
 

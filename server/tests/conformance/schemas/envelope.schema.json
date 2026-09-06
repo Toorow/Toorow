@@ -87,13 +87,6 @@
             "string",
             "null"
           ]
-        },
-        "gate": {
-          "description": "Epic 11 (Story 11.6, AD-18): measured pre-query gate verdict for this data query. Object {adherent (bool: did a context call precede this query in the same session?), context_tool (search_context|get_procedure|null), session_kind ('trace'|'time_window')}. MEASURED only, never enforced -- a non-adherent query still succeeds. Present on get_daily_report/get_report/get_card envelopes. Additive under 1.x (AI-31 policy).",
-          "type": [
-            "object",
-            "null"
-          ]
         }
       }
     },

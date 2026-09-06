@@ -33,6 +33,7 @@ import KnowledgeGraphPage, {
   toElkGraphForProjection,
   toFlowEdges,
   DEFAULT_FILTERS,
+  type GraphBundle,
   type GraphEdgeRow,
   type GraphNodeRow,
 } from "../KnowledgeGraphPage";
@@ -228,7 +229,7 @@ describe("KnowledgeGraphPage — pure graph logic", () => {
       ...DEFAULT_FILTERS,
       // target_field (Story 44.10) is the fourth key GraphFilterState requires;
       // this fixture has no dictionary node, so its value is immaterial here.
-      types: { topic: true, procedure: false, schema_doc: true, target_field: true },
+      types: { ...DEFAULT_FILTERS.types, procedure: false },
     });
     expect(out.nodes.map((n) => n.id)).toEqual(["top_1", "doc_1"]);
     // Both edges had the procedure as an endpoint — neither may survive dangling.
@@ -273,7 +274,9 @@ describe("KnowledgeGraphPage — pure graph logic", () => {
     const g = toElkGraphForProjection(projectGraph("domains", BUNDLE.nodes, BUNDLE.edges));
     expect(g.layoutOptions["elk.algorithm"]).toBe("layered");
     expect(g.layoutOptions["elk.direction"]).toBe("RIGHT");
-    expect(g.children.map((c) => c.id)).toEqual(["top_1", "proc_1", "doc_1"]);
+    // La vue Domains trie par (groupe, titre) : sans taxonomie tout est
+    // « Unlinked », le titre seul ordonne — doc_1 avant top_1 avant proc_1.
+    expect(g.children.map((c) => c.id)).toEqual(["doc_1", "top_1", "proc_1"]);
     expect(g.edges).toEqual([
       { id: "edge_1", sources: ["top_1"], targets: ["proc_1"] },
       { id: "edge_2", sources: ["proc_1"], targets: ["doc_1"] },
@@ -322,8 +325,8 @@ describe("KnowledgeGraphPage — pure graph logic", () => {
 // ---------------------------------------------------------------------------
 
 describe("KnowledgeGraphPage — navigation", () => {
-  it("is reachable as Context ▸ Graph", () => {
-    expect(WORKSPACE_BY_KEY.context.subnav).toContainEqual({ slug: "graph", label: "Graph" });
+  it("is reachable as Context Hub > Knowledge Graph", () => {
+    expect(WORKSPACE_BY_KEY["context-hub"].subnav.map(({ slug, label }) => ({ slug, label }))).toContainEqual({ slug: "knowledge-graph", label: "Knowledge Graph" });
   });
 });
 
@@ -348,7 +351,7 @@ describe("KnowledgeGraphPage — rendering", () => {
     // schema docs are generator-written: an "auto" badge, the doc_kind, and no
     // fabricated owner.
     expect(within(docCard).getByText("auto")).toBeInTheDocument();
-    expect(within(docCard).getByText("columns")).toBeInTheDocument();
+    expect(within(docCard).getByText("Columns")).toBeInTheDocument();
     expect(within(docCard).getByText("Generated")).toBeInTheDocument();
 
     // The rendered counter is the page's own view of the laid-out node/edge set.
@@ -387,6 +390,34 @@ describe("KnowledgeGraphPage — rendering", () => {
       expect(screen.queryByTestId("kg-node-top_1")).not.toBeInTheDocument();
     });
     expect(screen.getByTestId("kg-node-proc_1")).toBeInTheDocument();
+    expect(graphCalls(calls)).toHaveLength(1);
+  }, TEST_TIMEOUT);
+
+  /**
+   * The symmetric half of the test above, and the one nothing covered: narrowing
+   * to the PROJECT scope evaluated a branch the platform scope short-circuits
+   * past. That branch referenced an identifier that does not exist, so the whole
+   * page threw on the render that followed the select — an operator picking
+   * "Project" got a blank screen, not a filtered graph.
+   */
+  it("scope filter keeps only project nodes without tearing the page down", async () => {
+    const calls = stubFetch(defaultHandler);
+    const user = userEvent.setup();
+    render(<KnowledgeGraphPage projectId="p1" />);
+
+    await screen.findByTestId("kg-node-proc_1");
+    await user.selectOptions(screen.getByTestId("kg-scope"), "project");
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("kg-node-proc_1")).not.toBeInTheDocument();
+    });
+    // The canvas is still standing, with the project-scoped nodes on it.
+    expect(screen.getByTestId("kg-canvas")).toBeInTheDocument();
+    expect(screen.getByTestId("kg-node-top_1")).toBeInTheDocument();
+    expect(screen.getByTestId("kg-node-doc_1")).toBeInTheDocument();
+    // And the graph has nodes, so the "nothing here yet" panel must stay away:
+    // it would contradict the two cards on screen.
+    expect(screen.queryByTestId("kg-empty")).toBeNull();
     expect(graphCalls(calls)).toHaveLength(1);
   }, TEST_TIMEOUT);
 
@@ -517,7 +548,7 @@ describe("KnowledgeGraphPage — drawer", () => {
     });
     // The bundle only carried the 280-char excerpt: the full body came from the
     // per-node read, not from the graph payload.
-    expect(calls).toContain("/api/context/topics/top_1");
+    expect(calls).toContain("/api/context/topics/top_1?project_id=p1");
     expect(FULL_TOPIC_BODY.length).toBeGreaterThan(TOPIC.excerpt.length);
 
     expect(within(drawer).getByText("ann@toorow.com")).toBeInTheDocument();
@@ -526,7 +557,7 @@ describe("KnowledgeGraphPage — drawer", () => {
 
     // Outbound: explains -> the procedure. Inbound: none.
     const outbound = within(drawer).getByTestId("kg-outbound");
-    expect(within(outbound).getByText("explains")).toBeInTheDocument();
+    expect(within(outbound).getByText("Explains")).toBeInTheDocument();
     expect(within(outbound).getByText("Weekly performance review")).toBeInTheDocument();
     expect(within(drawer).queryByTestId("kg-inbound")).not.toBeInTheDocument();
   }, TEST_TIMEOUT);
@@ -632,4 +663,156 @@ describe("KnowledgeGraphPage — drawer", () => {
       expect(screen.queryByTestId("kg-drawer")).not.toBeInTheDocument();
     });
   }, TEST_TIMEOUT);
+});
+
+
+describe("KnowledgeGraphPage — the procedure drawer hands over to the Skill page", () => {
+  const SKILL_FRONTMATTER = [
+    "name: weekly-performance-review",
+    "description: Review the week.",
+    "steps:",
+    "  - step: 1",
+    "    action: read",
+    '    label: "Open the report"',
+    "    target: weekly-report",
+    "  - step: 2",
+    "    action: analyze",
+    '    label: "Compare the weeks"',
+    "    target: weekly-report",
+  ].join("\n");
+
+  const handlerWithSkill = (url: string) => {
+    if (url.startsWith("/api/context/graph?")) return resp(200, BUNDLE);
+    if (url.startsWith("/api/context/procedures/proc_1")) {
+      return resp(200, {
+        id: "proc_1",
+        body_md: "Step 1. Open the report.",
+        updated_at: null,
+        frontmatter_yaml: SKILL_FRONTMATTER,
+      });
+    }
+    if (url.startsWith("/api/context/topics/top_1")) {
+      return resp(200, { id: "top_1", body_md: "x", updated_at: null });
+    }
+    return resp(500, { code: "unexpected", message: `unexpected call: ${url}` });
+  };
+
+  it("names the standardized step count and opens the Skill object, not the collection", async () => {
+    // Le bouton menait a la COLLECTION Skills Registry : a l'operateur de
+    // retrouver la carte. Une Skill se travaille sur sa page propre — celle
+    // qui montre ses etapes — et le bouton peut annoncer ce qu'on va y lire.
+    stubFetch(handlerWithSkill);
+    const user = userEvent.setup();
+    const onOpenProcedure = vi.fn();
+    render(<KnowledgeGraphPage projectId="p1" onOpenProcedure={onOpenProcedure} />);
+
+    fireEvent.click(await screen.findByTestId("kg-node-proc_1"));
+    const button = await screen.findByTestId("kg-drawer-edit-procedure");
+    await waitFor(() => {
+      expect(button).toHaveTextContent("Open the Skill — 2 steps");
+    });
+
+    await user.click(button);
+    expect(onOpenProcedure).toHaveBeenCalledWith("proc_1");
+  }, TEST_TIMEOUT);
+});
+
+
+describe("KnowledgeGraphPage — the layout's bundle is adopted, not re-read", () => {
+  it("issues NO graph read when the Context Hub layout already paid for it", async () => {
+    // Le layout charge /api/context/graph pour sa taxonomie ; la page le
+    // rechargeait a l'identique au montage -- deux fois la meme reponse.
+    const calls = stubFetch(defaultHandler);
+    render(<KnowledgeGraphPage projectId="p1" initialBundle={BUNDLE} />);
+
+    expect(await screen.findByTestId("kg-node-top_1")).toBeInTheDocument();
+    expect(graphCalls(calls)).toEqual([]);
+  }, TEST_TIMEOUT);
+
+  it("adopts a refreshed bundle when the layout re-reads it", async () => {
+    // Un rafraichissement du layout (creation de lien metier, etc.) re-lit le
+    // graphe cote serveur -- ecritures de cette page comprises, puisqu'elles
+    // sont POSTees avant tout. La nouvelle identite du prop est adoptee.
+    stubFetch(defaultHandler);
+    const refreshed: GraphBundle = { nodes: [TOPIC], edges: [] };
+    const { rerender } = render(
+      <KnowledgeGraphPage projectId="p1" initialBundle={BUNDLE} />,
+    );
+    expect(await screen.findByTestId("kg-node-proc_1")).toBeInTheDocument();
+
+    rerender(<KnowledgeGraphPage projectId="p1" initialBundle={refreshed} />);
+    await waitFor(() => {
+      expect(screen.queryByTestId("kg-node-proc_1")).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId("kg-node-top_1")).toBeInTheDocument();
+  }, TEST_TIMEOUT);
+});
+
+/**
+ * `kg-empty` was UNREACHABLE, and its copy was false while it was.
+ *
+ * MEASURED 2026-08-07: the graph bundle is AD-5-scoped, so a project sees
+ * platform rows AND its own. `scripts/seed_context_platform_defaults.py` seeds
+ * platform topics and skills. Therefore `allNodes.length === 0` is never true
+ * on a seeded install, and a brand-new project never saw the empty state — it
+ * saw a canvas of entries nobody on that project wrote, while the panel it
+ * could not reach promised "no placeholder nodes are drawn".
+ *
+ * The state is SPLIT, not widened: loosening `isEmpty` to ignore platform rows
+ * would have hidden a graph the project can genuinely read, which is the worse
+ * of the two lies — those entries are governed context and analysis uses them.
+ */
+describe("KnowledgeGraphPage — a project with nothing of its own", () => {
+  const PLATFORM_NODE = {
+    id: "top_platform",
+    node_type: "topic" as const,
+    title: "Governed Marketing Context",
+    excerpt: "Platform-wide reporting standard.",
+    owner: "auto",
+    owner_raw: null,
+    version_number: 1,
+    scope: "platform" as const,
+    status: "active" as const,
+  };
+  const PROJECT_NODE = { ...PLATFORM_NODE, id: "top_own", title: "Our ROAS rule", scope: "project" as const };
+
+  it("says so, instead of showing an empty state it can never reach", async () => {
+    stubFetch((url) =>
+      url.startsWith("/api/context/graph?")
+        ? resp(200, { nodes: [PLATFORM_NODE], edges: [] })
+        : resp(200, {}),
+    );
+    render(<KnowledgeGraphPage projectId="p1" />);
+
+    const notice = await screen.findByTestId("kg-platform-only");
+    expect(notice.textContent).toContain("Nothing of this project’s own yet");
+    // The count is NAMED. "Some platform entries exist" would leave the reader
+    // to count the canvas themselves.
+    expect(notice.textContent).toContain("1 entry");
+    // And the true empty state is NOT claimed: there is a graph here.
+    expect(screen.queryByTestId("kg-empty")).toBeNull();
+  });
+
+  it("keeps quiet as soon as the project has written one entry of its own", async () => {
+    stubFetch((url) =>
+      url.startsWith("/api/context/graph?")
+        ? resp(200, { nodes: [PLATFORM_NODE, PROJECT_NODE], edges: [] })
+        : resp(200, {}),
+    );
+    render(<KnowledgeGraphPage projectId="p1" />);
+
+    await screen.findByTestId("kg-node-top_own");
+    expect(screen.queryByTestId("kg-platform-only")).toBeNull();
+    expect(screen.queryByTestId("kg-empty")).toBeNull();
+  });
+
+  it("still shows the true empty state when there is genuinely nothing", async () => {
+    stubFetch((url) =>
+      url.startsWith("/api/context/graph?") ? resp(200, { nodes: [], edges: [] }) : resp(200, {}),
+    );
+    render(<KnowledgeGraphPage projectId="p1" />);
+
+    expect(await screen.findByTestId("kg-empty")).toBeTruthy();
+    expect(screen.queryByTestId("kg-platform-only")).toBeNull();
+  });
 });

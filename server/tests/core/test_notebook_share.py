@@ -1,5 +1,19 @@
 """Tests for notebook share token endpoints (Story 6.6, AC3, AC6).
 
+STORY 50.7 RETIRED THE SHARE-TOKEN HALF OF THIS FILE. `PATCH
+/api/notebooks/{notebook_id}/share` now answers `410 Gone` and
+`GET /api/notebooks/shared/{token}` is not mounted at all, so the six tests that
+pinned the mutable-token contract are `xfail(strict=True)` rather than deleted:
+deleted, the retirement leaves no trace and the next reader remounts the route --
+which is exactly what happened once already (SESSIONS.md, "Desaccord CLOS:
+`_create_datastream_mapping_version`"). Strict makes a remount an *unexpectedly
+passing* failure. The replacement is `core.render_shares` /
+`core.render_shares_api`: one revocable, expiring, audited Share over one
+immutable Render, its bearer carried in a URL fragment and exchanged once.
+
+The slide-export tests below are NOT part of that retirement and are left as they
+were.
+
 Covers (from AC6):
   - test_share_generates_token: PATCH share=true -> share_token in DB is non-null, 32 chars.
   - test_share_url_returned: response contains share_url with token.
@@ -86,6 +100,15 @@ def _make_mock_conn(cursor_mock=None):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "Story 50.7 retired this path. Converted to strict-xfail rather than "
+    "deleted: deleted, the retirement leaves no trace and the next reader "
+    "remounts the route -- which is exactly what happened once already "
+    "(SESSIONS.md, 'Desaccord CLOS: _create_datastream_mapping_version'). "
+    "Strict-xfail turns a remount into an UNEXPECTEDLY PASSING failure, so "
+    "the absence stays loud. Replacement: core.render_shares / "
+    "core.render_shares_api."
+))
 def test_share_generates_token(client):
     """PATCH share=true -> share_token set to a non-null, 32-char URL-safe token."""
     # Test that share_url is returned, contains the generated token, and the
@@ -121,6 +144,15 @@ def test_share_generates_token(client):
     assert params[0] == token
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "Story 50.7 retired this path. Converted to strict-xfail rather than "
+    "deleted: deleted, the retirement leaves no trace and the next reader "
+    "remounts the route -- which is exactly what happened once already "
+    "(SESSIONS.md, 'Desaccord CLOS: _create_datastream_mapping_version'). "
+    "Strict-xfail turns a remount into an UNEXPECTEDLY PASSING failure, so "
+    "the absence stays loud. Replacement: core.render_shares / "
+    "core.render_shares_api."
+))
 def test_share_url_returned(client):
     """Response contains share_url in the correct format."""
     cursor_mock = MagicMock()
@@ -139,6 +171,15 @@ def test_share_url_returned(client):
     assert "/api/notebooks/shared/" in data["share_url"]
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "Story 50.7 retired this path. Converted to strict-xfail rather than "
+    "deleted: deleted, the retirement leaves no trace and the next reader "
+    "remounts the route -- which is exactly what happened once already "
+    "(SESSIONS.md, 'Desaccord CLOS: _create_datastream_mapping_version'). "
+    "Strict-xfail turns a remount into an UNEXPECTEDLY PASSING failure, so "
+    "the absence stays loud. Replacement: core.render_shares / "
+    "core.render_shares_api."
+))
 def test_unshare_clears_token(client):
     """PATCH share=false -> share_token=NULL cleared in DB."""
     cursor_mock = MagicMock()
@@ -167,6 +208,15 @@ def test_unshare_clears_token(client):
     assert "NULL" in sql or "share_token" in sql
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "Story 50.7 retired this path. Converted to strict-xfail rather than "
+    "deleted: deleted, the retirement leaves no trace and the next reader "
+    "remounts the route -- which is exactly what happened once already "
+    "(SESSIONS.md, 'Desaccord CLOS: _create_datastream_mapping_version'). "
+    "Strict-xfail turns a remount into an UNEXPECTEDLY PASSING failure, so "
+    "the absence stays loud. Replacement: core.render_shares / "
+    "core.render_shares_api."
+))
 def test_new_share_generates_new_token(client):
     """share, unshare, share again -> a NEW token is generated (old link revoked).
 
@@ -199,6 +249,15 @@ def test_new_share_generates_new_token(client):
     assert token1 != token3
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "Story 50.7 retired this path. Converted to strict-xfail rather than "
+    "deleted: deleted, the retirement leaves no trace and the next reader "
+    "remounts the route -- which is exactly what happened once already "
+    "(SESSIONS.md, 'Desaccord CLOS: _create_datastream_mapping_version'). "
+    "Strict-xfail turns a remount into an UNEXPECTEDLY PASSING failure, so "
+    "the absence stays loud. Replacement: core.render_shares / "
+    "core.render_shares_api."
+))
 def test_share_notebook_not_found(client):
     """PATCH share on non-existent notebook -> 404."""
     cursor_mock = MagicMock()
@@ -219,6 +278,15 @@ def test_share_notebook_not_found(client):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "Story 50.7 retired this path. Converted to strict-xfail rather than "
+    "deleted: deleted, the retirement leaves no trace and the next reader "
+    "remounts the route -- which is exactly what happened once already "
+    "(SESSIONS.md, 'Desaccord CLOS: _create_datastream_mapping_version'). "
+    "Strict-xfail turns a remount into an UNEXPECTEDLY PASSING failure, so "
+    "the absence stays loud. Replacement: core.render_shares / "
+    "core.render_shares_api."
+))
 def test_shared_endpoint_returns_last_run(client):
     """GET /shared/{token} -> 200 with notebook + last run data."""
     token = "ValidToken12345678901234567890"
@@ -412,7 +480,17 @@ def test_slide_export_html_returns_html(client):
     """GET /api/notebooks/{id}/runs/{run_id}/export/html -> Content-Type text/html."""
     conn_mock = _make_html_export_cursor("Mon Rapport SEO", "last_7d", "Clics en hausse.")
 
-    with patch("core.db.get_connection", return_value=conn_mock):
+    # AI-120: story 7.4 (AC7) put a scope pre-check in front of this
+    # mutation -- it reads the owning project, then the per-identity ACL.
+    # A mock answering one fixed tuple to every fetchone made that check
+    # read the notebook id as a project and refuse, so the test reported
+    # "notebook not found" for a notebook it had just described. The ACL is
+    # a separate guarantee with its own tests.
+    with (
+        patch("core.db.get_connection", return_value=conn_mock),
+        patch("core.project_access.identity_can_read_project",
+              return_value=True),
+    ):
         resp = client.get("/api/notebooks/nb_TEST/runs/nbrun_001/export/html")
 
     assert resp.status_code == 200
@@ -426,7 +504,17 @@ def test_slide_export_html_contains_title(client):
         "Rapport SEO Hebdo", "last_7d", "Clics en hausse de 10%."
     )
 
-    with patch("core.db.get_connection", return_value=conn_mock):
+    # AI-120: story 7.4 (AC7) put a scope pre-check in front of this
+    # mutation -- it reads the owning project, then the per-identity ACL.
+    # A mock answering one fixed tuple to every fetchone made that check
+    # read the notebook id as a project and refuse, so the test reported
+    # "notebook not found" for a notebook it had just described. The ACL is
+    # a separate guarantee with its own tests.
+    with (
+        patch("core.db.get_connection", return_value=conn_mock),
+        patch("core.project_access.identity_can_read_project",
+              return_value=True),
+    ):
         resp = client.get("/api/notebooks/nb_TEST/runs/nbrun_001/export/html")
 
     assert resp.status_code == 200
@@ -439,7 +527,17 @@ def test_slide_export_html_no_external_refs(client):
     """HTML export has no load-bearing external http(s) references (AD-11)."""
     conn_mock = _make_html_export_cursor("Mon Notebook", "last_30d", "Résumé.")
 
-    with patch("core.db.get_connection", return_value=conn_mock):
+    # AI-120: story 7.4 (AC7) put a scope pre-check in front of this
+    # mutation -- it reads the owning project, then the per-identity ACL.
+    # A mock answering one fixed tuple to every fetchone made that check
+    # read the notebook id as a project and refuse, so the test reported
+    # "notebook not found" for a notebook it had just described. The ACL is
+    # a separate guarantee with its own tests.
+    with (
+        patch("core.db.get_connection", return_value=conn_mock),
+        patch("core.project_access.identity_can_read_project",
+              return_value=True),
+    ):
         resp = client.get("/api/notebooks/nb_TEST/runs/nbrun_001/export/html")
 
     assert resp.status_code == 200

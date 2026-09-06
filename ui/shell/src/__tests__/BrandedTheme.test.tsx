@@ -10,7 +10,8 @@
 
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { useTheme, getContrastRatio } from "@mui/material/styles";
+import { getContrastRatio } from "../color";
+import { useTheme } from "../themeContext";
 import {
   connectorTheme,
   resolveWidgetTheme,
@@ -63,7 +64,7 @@ describe("resolveWidgetTheme (AC3 — fusion des couleurs d'org)", () => {
     // #0F6FFF est lisible sur les deux surfaces → utilisé tel quel (AC4).
     expect(schemes.light.palette.primary.main).toBe(BRAND);
     expect(schemes.dark.palette.primary.main).toBe(BRAND);
-    // contrastText DÉRIVÉ par MUI, jamais demandé à l'org.
+    // contrastText DÉRIVÉ du main, jamais demandé à l'org.
     expect(schemes.light.palette.primary.contrastText).toBeTruthy();
   });
 

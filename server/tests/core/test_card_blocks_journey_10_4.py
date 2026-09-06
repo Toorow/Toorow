@@ -125,6 +125,28 @@ def _ctx(rows, metrics, *, start="2026-07-01", end="2026-07-06"):
 # ---------------------------------------------------------------------------
 
 
+def _shipped_title(block: dict) -> str:
+    """The heading a reader sees when NOBODY named the dimension it declares.
+
+    2026-08-31: these two blocks name a dimension they bind, so they declare it
+    (`title_dimension`) and ship a placeholder; the prose below is the fallback
+    the template ships, which is what these tests were always about. The block
+    SELECTORS moved to the binding for the same reason -- a test that identifies
+    a block by its prose fails the day a client renames the dimension, which is
+    the day the product is working.
+    """
+    ctx = cards_module._BlockContext(
+        current_rows=[],
+        prior_rows=[],
+        rollup={},
+        metric_definitions=None,
+        resolved_metrics=[],
+        start="2026-07-01",
+        end="2026-07-06",
+    )
+    return cards_module._resolve_block_title(block, ctx) or ""
+
+
 class TestEntryPagesBar:
     """AC 1: bar block bound to sessions/landing_page, top 5, GA4-scoped."""
 
@@ -132,7 +154,8 @@ class TestEntryPagesBar:
         tpl = cards_module.get_template("journey")
         return next(
             b for b in tpl.composition
-            if b.get("type") == "bar" and b.get("title") == "Pages d'entrée"
+            if b.get("type") == "bar"
+            and "landing_page" in ((b.get("binding") or {}).get("dimensions") or [])
         )
 
     def test_bar_block_present_in_journey_composition(self):
@@ -140,9 +163,9 @@ class TestEntryPagesBar:
         tpl = cards_module.get_template("journey")
         bar_blocks = [b for b in tpl.composition if b.get("type") == "bar"]
         assert bar_blocks, "No bar block in journey composition"
-        titles = [b.get("title", "") for b in bar_blocks]
-        assert any("Pages d" in t for t in titles), (
-            f"No 'Pages d...' bar found; titles={titles}"
+        titles = [_shipped_title(b) for b in bar_blocks]
+        assert any("Entry pages" in t for t in titles), (
+            f"No 'Entry pages' bar found; titles={titles}"
         )
 
     def test_bar_block_binding_sessions_landing_page(self):
@@ -192,7 +215,8 @@ class TestTopPagesTable:
         tpl = cards_module.get_template("journey")
         return next(
             b for b in tpl.composition
-            if b.get("type") == "table" and b.get("title") == "Pages les plus vues"
+            if b.get("type") == "table"
+            and "page" in ((b.get("binding") or {}).get("dimensions") or [])
         )
 
     def test_table_block_present_in_journey_composition(self):
@@ -200,9 +224,9 @@ class TestTopPagesTable:
         tpl = cards_module.get_template("journey")
         table_blocks = [b for b in tpl.composition if b.get("type") == "table"]
         assert table_blocks, "No table block in journey composition"
-        titles = [b.get("title", "") for b in table_blocks]
-        assert any("Pages les plus vues" in t for t in titles), (
-            f"'Pages les plus vues' not found; titles={titles}"
+        titles = [_shipped_title(b) for b in table_blocks]
+        assert any("Top viewed pages" in t for t in titles), (
+            f"'Top viewed pages' not found; titles={titles}"
         )
 
     def test_table_block_binding_screen_page_views_page(self):
@@ -256,7 +280,8 @@ class TestPartSubtotalDenominator:
         tpl = cards_module.get_template("journey")
         return next(
             b for b in tpl.composition
-            if b.get("type") == "table" and b.get("title") == "Pages les plus vues"
+            if b.get("type") == "table"
+            and "page" in ((b.get("binding") or {}).get("dimensions") or [])
         )
 
     def test_part_pct_denominator_is_top_n_subtotal_not_day_total(self):
@@ -355,14 +380,16 @@ class TestConnectorScopeGA4:
         tpl = cards_module.get_template("journey")
         return next(
             b for b in tpl.composition
-            if b.get("type") == "table" and b.get("title") == "Pages les plus vues"
+            if b.get("type") == "table"
+            and "page" in ((b.get("binding") or {}).get("dimensions") or [])
         )
 
     def _bar_block(self):
         tpl = cards_module.get_template("journey")
         return next(
             b for b in tpl.composition
-            if b.get("type") == "bar" and b.get("title") == "Pages d'entrée"
+            if b.get("type") == "bar"
+            and "landing_page" in ((b.get("binding") or {}).get("dimensions") or [])
         )
 
     def test_top_pages_table_excludes_gsc_page_rows(self):
@@ -471,7 +498,8 @@ class TestDegrade:
         tpl = cards_module.get_template("journey")
         bar_block = next(
             b for b in tpl.composition
-            if b.get("type") == "bar" and b.get("title") == "Pages d'entrée"
+            if b.get("type") == "bar"
+            and "landing_page" in ((b.get("binding") or {}).get("dimensions") or [])
         )
         resolved = cards_module.resolve_block(bar_block, ctx, "")
         data = resolved.get("data") or {}
@@ -484,7 +512,8 @@ class TestDegrade:
         tpl = cards_module.get_template("journey")
         table_block = next(
             b for b in tpl.composition
-            if b.get("type") == "table" and b.get("title") == "Pages les plus vues"
+            if b.get("type") == "table"
+            and "page" in ((b.get("binding") or {}).get("dimensions") or [])
         )
         resolved = cards_module.resolve_block(table_block, ctx, "")
         data = resolved.get("data") or {}
@@ -505,11 +534,13 @@ def test_journey_composition_order():
     kpi_idx = types.index("kpi_row")
     bar_idx = next(
         i for i, b in enumerate(tpl.composition)
-        if b.get("type") == "bar" and b.get("title") == "Pages d'entrée"
+        if b.get("type") == "bar"
+            and "landing_page" in ((b.get("binding") or {}).get("dimensions") or [])
     )
     table_idx = next(
         i for i, b in enumerate(tpl.composition)
-        if b.get("type") == "table" and b.get("title") == "Pages les plus vues"
+        if b.get("type") == "table"
+            and "page" in ((b.get("binding") or {}).get("dimensions") or [])
     )
     comment_idx = len(types) - 1  # comment is last
     assert types[comment_idx] == "comment", "Last block must be comment"
@@ -574,8 +605,8 @@ class TestJourneyCommentWithEntryPage:
         )
         # The top landing page is '/' with 500 sessions
         assert "/" in comment, f"Top entry page '/' not found in comment: {comment!r}"
-        assert "Premi" in comment, (
-            f"'Premiere page d'entree' phrase not found in comment: {comment!r}"
+        assert "Page d'entrée principale" in comment, (
+            f"'Page d'entrée principale' phrase not found in comment: {comment!r}"
         )
         # 500 < 1000 -> no thousands separator inserted by _format_number.
         assert "500" in comment, (
@@ -590,7 +621,7 @@ class TestJourneyCommentWithEntryPage:
         comment = narrative_module.build_journey_comment(
             block_data=bd, rollup=roll, context_events=[], pull_ids=["pull_10_4"]
         )
-        assert "Décroché" in comment or "taux de passage" in comment, (
+        assert "drop-off" in comment or "taux de passage" in comment, (
             f"Drop-off line not found in comment: {comment!r}"
         )
 
@@ -622,7 +653,7 @@ class TestJourneyCommentWithEntryPage:
             block_data=block_data, rollup=roll, context_events=[], pull_ids=["pull_10_4"]
         )
         # No entry bar -> falls back to overall rate or conversions
-        assert "Première page" not in comment, (
+        assert "Page d'entrée principale" not in comment, (
             "Should NOT cite entry page when no landing_page bar"
         )
         # Should still cite conversion rate or conversions total
@@ -642,7 +673,7 @@ class TestJourneyCommentWithEntryPage:
             f"Citation token missing from comment: {comment!r}"
         )
 
-    def test_no_context_events_emits_contexte_manquant(self):
+    def test_no_context_events_emits_contexte_missing(self):
         """AD-9: when no context events, line 3 emits 'Contexte manquant'."""
         rows = _funnel_rows() + _landing_rows()
         bd = self._block_data_with_landing()

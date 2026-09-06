@@ -3,7 +3,15 @@
 ONE Excel reshape engine, exposed as vetted mechanical primitives, consumed by
 both the media-plan import (Story 22.1) and the file-source ingestion producer
 (Epic 22 Phase B). Extracted with NO behaviour change from
-``core.mediaplan_import`` / ``core.mediaplan_store``:
+``core.mediaplan_import`` / ``core.mediaplan_store``.
+
+``core.mediaplan_import`` NO LONGER EXISTS -- it was the second xlsx engine and
+was retired on 2026-08-24 (`file-source-ingestion.md`, amendment « the second
+xlsx engine is retired »). The provenance above is kept because it is true and
+because these primitives are still the reason there was never a second
+merged-cell resolver; what consumes them today is
+``core.file_source_producer`` (daily grain) and ``core.file_source_plan_lines``
+(line grain). The primitives themselves:
 
   * merged-cell resolution -- :func:`resolve_merges`, :func:`cell_resolved`
   * header-row column resolution -- :func:`resolve_column_index`

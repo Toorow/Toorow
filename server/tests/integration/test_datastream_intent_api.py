@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from starlette.testclient import TestClient
@@ -39,7 +40,7 @@ def test_list_requires_viewer_and_denies_without_membership():
         auth,
         database,
         role,
-        patch("core.admin_api.write_audit_row"),
+        patch("core.datastreams_api.write_audit_row"),
         patch("core.datastreams.list_datastreams") as listing,
         client,
     ):
@@ -154,22 +155,33 @@ def test_production_zero_membership_fails_closed_through_real_asgi():
     cur = MagicMock()
     cur.__enter__ = MagicMock(return_value=cur)
     cur.__exit__ = MagicMock(return_value=False)
-    cur.fetchone.return_value = (None, "active")
+    # `SELECT p.org_id, o.status, m.role, m.status` with no membership row: the
+    # strict resolver sees an org whose caller has no ACTIVE membership.
+    cur.fetchone.return_value = ("org_a", "active", None, None)
     conn.cursor.return_value = cur
     context = MagicMock()
     context.__enter__ = MagicMock(return_value=conn)
     context.__exit__ = MagicMock(return_value=False)
     with (
+        # Without a production auth mode the strict resolver refuses before it
+        # queries anything, so the SQL below would never run and the test would
+        # pass while proving nothing about WHERE authority comes from.
+        patch.dict(os.environ, {"TOOROW_AUTH_MODE": "oauth"}),
         patch("core.admin_api._check_auth", new=AsyncMock(return_value=(True, "user-1"))),
         patch("core.db.get_connection", return_value=context),
-        patch("core.admin_api.write_audit_row"),
+        patch("core.datastreams_api.write_audit_row"),
         patch("core.datastreams.list_datastreams") as listing,
         client,
     ):
         response = client.get("/api/datastreams", params={"project_id": "proj_a"})
     assert response.status_code == 404
     listing.assert_not_called()
-    assert "LEFT JOIN app.project_members" in str(cur.execute.call_args.args[0])
+    # Story 46.4 retired `app.project_members`; authority is an ACTIVE
+    # `app.org_members` row plus an exact `app.resource_grants` row, and this
+    # caller has neither.
+    executed = " ".join(str(call.args[0]) for call in cur.execute.call_args_list)
+    assert "app.project_members" not in executed
+    assert "app.org_members" in executed
 
 
 def test_external_bigquery_intent_requires_owner():
@@ -197,7 +209,7 @@ def test_external_bigquery_intent_requires_owner():
         auth,
         database,
         role as role_check,
-        patch("core.admin_api.write_audit_row"),
+        patch("core.datastreams_api.write_audit_row"),
         patch("core.flows.upsert_flow") as upsert,
         client,
     ):
@@ -239,31 +251,107 @@ def test_revision_conflict_is_stable_and_does_not_echo_key():
     assert "same-key" not in response.text
 
 
-def test_versioned_run_and_refetch_never_reach_legacy_queue():
+def test_versioned_run_and_refetch_BOTH_reach_the_queue_through_the_shared_gates():
+    """The two dispatch doors of a versioned stream, at THEIR OWN addresses.
+
+    The re-collection moved to `datastream_collection_api.REFETCH_ROUTE_PATH` in story 58.4; the
+    address is taken from the constant the router itself mounts, so the next move
+    cannot leave this testing a door that is not there.
+
+    REVERSED 2026-08-12. This case asserted `422 dispatch_not_available` on both
+    doors -- the refusal that made this build unable to collect anything at all:
+    the dispatchers only select `nightly|weekly|hourly`, and on the live base the
+    single active, enabled, mapped Datastream is `manual`. So no clock would ever
+    pick it up and both manual doors turned it away. A run is now the same object
+    whoever asks for it: same gates, same declaration, same window resolver
+    (`core.datastream_dispatch`).
+    """
+    from core.datastream_collection_api import REFETCH_ROUTE_PATH
+
     client, auth, database, role = _client(role_allowed=True)
-    versioned = {
-        "id": "ds_01",
+    dispatchable = {
+        "ds_id": "ds_01",
         "project_id": "proj_a",
-        "versioned": True,
+        "module_name": "meta-ads",
         "connection_ref_id": "conn_01",
+        "cr_status": "active",
+        "cr_enabled": True,
+        "enabled": True,
+        "archived_at": None,
+        "lifecycle_state": "active",
+        "source_kind": "connector_pull",
+        "schedule_mode": "manual",
+        "date_window_days": 30,
+        "refetch_days": 3,
+        "window_offset_days": 1,
+        "current_plan_version_id": "dsp_01",
+        "current_mapping_version_id": "dsm_01",
+        "module_enabled": True,
+        "project_status": "active",
+    }
+    refetch_url = REFETCH_ROUTE_PATH.format(project_id="proj_a", datastream_id="ds_01")
+    job = {"job_id": "job_01", "pull_id": "pull_01", "state": "queued"}
+    with (
+        auth,
+        database,
+        role,
+        patch("core.datastream_dispatch.load_dispatch_row", return_value=dispatchable),
+        patch("core.queue.enqueue_pull", return_value=job) as enqueue,
+        # The RUN LINE is story 63.1's subject and not this case's: against a
+        # MagicMock cursor the instrumentation can only answer "no run", which
+        # is exactly what it answers in production when one is already in flight.
+        patch("core.datastream_collection_api._read_active_run", return_value=None),
+        client,
+    ):
+        run_response = client.post("/api/datastreams/ds_01/run", json={"project_id": "proj_a"})
+        refetch_response = client.post(refetch_url, json={"dates": ["2026-07-18"]})
+    assert run_response.status_code == 202, run_response.text
+    assert refetch_response.status_code == 202, refetch_response.text
+    assert enqueue.call_count == 2
+    # The manual run covers the DECLARED retrieval window (30 days), never the
+    # legacy alias standing next to it (3).
+    run_args = enqueue.call_args_list[0].args
+    span = date.fromisoformat(run_args[2]) - date.fromisoformat(run_args[1])
+    assert span.days + 1 == 30
+
+
+def test_a_stopped_datastream_is_refused_by_hand_exactly_as_by_the_clock():
+    """The gate this door never had. A person stops a Datastream; `Run now`
+    used to collect anyway and spend the source account's quota."""
+    client, auth, database, role = _client(role_allowed=True)
+    stopped = {
+        "ds_id": "ds_01",
+        "project_id": "proj_a",
+        "module_name": "meta-ads",
+        "connection_ref_id": "conn_01",
+        "cr_status": "active",
+        "cr_enabled": True,
+        "enabled": False,
+        "archived_at": None,
+        "lifecycle_state": "paused",
+        "source_kind": "connector_pull",
+        "schedule_mode": "nightly",
+        "date_window_days": 30,
+        "refetch_days": 3,
+        "window_offset_days": 1,
+        "current_plan_version_id": "dsp_01",
+        "current_mapping_version_id": "dsm_01",
+        "module_enabled": True,
+        "project_status": "active",
     }
     with (
         auth,
         database,
         role,
-        patch("core.datastreams.get_datastream", return_value=versioned),
+        patch("core.datastream_dispatch.load_dispatch_row", return_value=stopped),
         patch("core.queue.enqueue_pull") as enqueue,
         client,
     ):
-        run_response = client.post("/api/datastreams/ds_01/run", json={"project_id": "proj_a"})
-        refetch_response = client.post(
-            "/api/datastreams/ds_01/refetch",
-            json={"project_id": "proj_a", "dates": ["2026-07-18"]},
-        )
-    assert run_response.status_code == 422
-    assert refetch_response.status_code == 422
-    assert run_response.json()["code"] == "dispatch_not_available"
-    assert refetch_response.json()["code"] == "dispatch_not_available"
+        response = client.post("/api/datastreams/ds_01/run", json={"project_id": "proj_a"})
+    assert response.status_code == 422
+    body = response.json()
+    assert body["code"] == "not_armed"
+    assert "Schedule" in body["message"], "a refusal names the gesture that repairs it"
     enqueue.assert_not_called()
 
 
@@ -283,7 +371,7 @@ def test_nonexistent_project_id_yields_404_not_503_on_list():
     with (
         patch("core.admin_api._check_auth", new=AsyncMock(return_value=(True, "user-1"))),
         patch("core.db.get_connection", return_value=context),
-        patch("core.admin_api.write_audit_row"),
+        patch("core.datastreams_api.write_audit_row"),
         patch("core.datastreams.list_datastreams") as listing,
         client,
     ):
@@ -315,8 +403,8 @@ def test_versioned_delete_requires_owner_and_soft_archives_with_actor():
         patch("core.db.get_connection", return_value=context),
         patch("core.project_access.identity_has_project_role", return_value=True) as role,
         patch("core.datastreams.get_datastream", return_value=existing),
-        patch("core.datastreams.delete_datastream", return_value=True) as delete,
-        patch("core.admin_api.write_audit_row"),
+        patch("core.datastreams.delete_datastream", return_value="archived") as delete,
+        patch("core.datastreams_api.write_audit_row"),
         client,
     ):
         response = client.delete("/api/datastreams/ds_01", params={"project_id": "proj_a"})
@@ -324,3 +412,117 @@ def test_versioned_delete_requires_owner_and_soft_archives_with_actor():
     assert response.json()["status"] == "archived"
     assert role.call_args.args[2] == "owner"
     delete.assert_called_once_with("ds_01", "proj_a", conn, archived_by="owner-1")
+
+
+def test_the_route_reports_the_disposition_it_was_given_not_one_it_guessed():
+    """AI-200, the half the first fix left open.
+
+    `delete_datastream` archives on THREE conditions -- a pull job, an inbound
+    receipt, or a published plan version. The route used to count `app.pull_jobs`
+    itself and infer the answer from that ONE condition, so a datastream whose
+    only history was an inbound receipt was archived and reported as `deleted`.
+    The row survived, the caller was told it was gone, and the QA harness that
+    trusted the word kept trying to clean up something that was still there.
+
+    The fixture below is exactly that case: no pull job, no plan version, and an
+    archive decision coming back from the owner of the decision.
+    """
+    app = build_asgi_app()
+    client = TestClient(app, raise_server_exceptions=True)
+    conn = MagicMock()
+    cur = MagicMock()
+    cur.__enter__ = MagicMock(return_value=cur)
+    cur.__exit__ = MagicMock(return_value=False)
+    cur.fetchone.return_value = (0,)  # zero pull jobs: the old inference said "deleted"
+    conn.cursor.return_value = cur
+    context = MagicMock()
+    context.__enter__ = MagicMock(return_value=conn)
+    context.__exit__ = MagicMock(return_value=False)
+    existing = {
+        "id": "ds_01",
+        "project_id": "proj_a",
+        "current_plan_version_id": None,  # ... and no plan version either
+        "versioned": False,
+    }
+    with (
+        patch("core.admin_api._check_auth", new=AsyncMock(return_value=(True, "owner-1"))),
+        patch("core.db.get_connection", return_value=context),
+        patch("core.project_access.identity_has_project_role", return_value=True),
+        patch("core.datastreams.get_datastream", return_value=existing),
+        patch("core.datastreams.delete_datastream", return_value="archived"),
+        patch("core.datastreams_api.write_audit_row") as audit,
+        client,
+    ):
+        response = client.delete("/api/datastreams/ds_01", params={"project_id": "proj_a"})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "archived", (
+        "the route re-derived the disposition instead of reporting the one it was "
+        "given: a datastream held by an inbound receipt is archived, not deleted"
+    )
+    # The audit row must carry the same word, or the trail records a disposition
+    # that never happened.
+    assert audit.call_args.kwargs["metadata"]["disposition"] == "archived"
+
+
+def test_a_datastream_with_no_history_is_reported_deleted():
+    """The other side of the same coin, so the fix above cannot become blanket."""
+    app = build_asgi_app()
+    client = TestClient(app, raise_server_exceptions=True)
+    conn = MagicMock()
+    cur = MagicMock()
+    cur.__enter__ = MagicMock(return_value=cur)
+    cur.__exit__ = MagicMock(return_value=False)
+    cur.fetchone.return_value = (0,)
+    conn.cursor.return_value = cur
+    context = MagicMock()
+    context.__enter__ = MagicMock(return_value=conn)
+    context.__exit__ = MagicMock(return_value=False)
+    existing = {
+        "id": "ds_01",
+        "project_id": "proj_a",
+        "current_plan_version_id": None,
+        "versioned": False,
+    }
+    with (
+        patch("core.admin_api._check_auth", new=AsyncMock(return_value=(True, "owner-1"))),
+        patch("core.db.get_connection", return_value=context),
+        patch("core.project_access.identity_has_project_role", return_value=True),
+        patch("core.datastreams.get_datastream", return_value=existing),
+        patch("core.datastreams.delete_datastream", return_value="deleted"),
+        patch("core.datastreams_api.write_audit_row"),
+        client,
+    ):
+        response = client.delete("/api/datastreams/ds_01", params={"project_id": "proj_a"})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "deleted"
+
+
+def test_a_missing_datastream_is_still_a_404_after_the_return_type_changed():
+    """`None` replaced `False`; a falsy-but-different value must not become a 200."""
+    app = build_asgi_app()
+    client = TestClient(app, raise_server_exceptions=True)
+    conn = MagicMock()
+    cur = MagicMock()
+    cur.__enter__ = MagicMock(return_value=cur)
+    cur.__exit__ = MagicMock(return_value=False)
+    cur.fetchone.return_value = (0,)
+    conn.cursor.return_value = cur
+    context = MagicMock()
+    context.__enter__ = MagicMock(return_value=conn)
+    context.__exit__ = MagicMock(return_value=False)
+    existing = {"id": "ds_01", "project_id": "proj_a", "current_plan_version_id": None}
+    with (
+        patch("core.admin_api._check_auth", new=AsyncMock(return_value=(True, "owner-1"))),
+        patch("core.db.get_connection", return_value=context),
+        patch("core.project_access.identity_has_project_role", return_value=True),
+        patch("core.datastreams.get_datastream", return_value=existing),
+        patch("core.datastreams.delete_datastream", return_value=None),
+        patch("core.datastreams_api.write_audit_row") as audit,
+        client,
+    ):
+        response = client.delete("/api/datastreams/ds_01", params={"project_id": "proj_a"})
+
+    assert response.status_code == 404
+    audit.assert_not_called()

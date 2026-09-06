@@ -3,10 +3,22 @@ version: 2
 sources:
   - name: raw_youtube
     description: "Immutable raw landing zone for YouTube Analytics data (AD-7: append-only)."
-    schema: main
+    schema: "{{ var('raw_schema', 'main') }}"  # 24.4 AC2: org_<wslug>_raw injected by orchestrator, 'main' without var (bit-identique)
     tables:
       - name: raw_youtube_daily
         description: "Raw YouTube daily metrics (long format: metric/value, optional video breakdown). Append-only (AD-7)."
+      - name: raw_youtube_breakdown
+        description: >
+          Raw YouTube breakdowns: audience, geography, device, traffic source,
+          playback location, subscribed status, and the audience snapshot. One
+          relation for every supported combination -- the (breakdown_dimension,
+          breakdown_value) pair holds them all. Append-only (AD-7).
+      - name: raw_youtube_video_directory
+        description: >
+          Raw video directory: the named uploads of each tracked channel (own
+          and competitors), read from the PUBLIC Data API. One dated snapshot
+          row per (channel, video) with title, publication date, duration and
+          public lifetime view counter. Append-only (AD-7).
 
 models:
   - name: stg_youtube_daily
@@ -15,11 +27,22 @@ models:
       QUALIFY supersede (AD-7): latest pull per grain wins.
       Grain: (project_id, date, channel_id, video, metric). AD-4: additive only;
       ratios computed at the semantic layer, never stored.
+      AI-310: `data_level` (CHANNEL | VIDEO) names WHICH of the two report grains
+      sharing `raw_youtube_daily` a row belongs to, so a series sums one of them
+      and never both. Derived from `video`, never landed -- the level is already
+      what each report profile declares in the manifest.
     columns:
       - name: date
         tests: [not_null]
       - name: channel_id
         tests: [not_null]
+      - name: data_level
+        description: "CHANNEL (channel_daily roll-up) | VIDEO (video_daily). Derived from `video`."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["CHANNEL", "VIDEO"]
       - name: metric
         tests: [not_null]
       - name: pull_id
@@ -30,13 +53,47 @@ models:
           arguments:
             column_name: "project_id || '|' || date || '|' || channel_id || '|' || video || '|' || metric"
 
+  - name: stg_youtube_video_directory
+    description: >
+      Staging: the named uploads of each tracked channel (video directory).
+      QUALIFY supersede (AD-7): latest pull per (project_id, date, channel_id,
+      video) wins. `published_at` is the honest ground for recent-window
+      comparisons; `lifetime_views` is a public all-time counter
+      (aggregation=latest, non-additive) and never a KPI-mart metric.
+    columns:
+      - name: date
+        tests: [not_null]
+      - name: channel_id
+        tests: [not_null]
+      - name: video
+        tests: [not_null]
+      - name: video_title
+        tests: [not_null]
+      - name: pull_id
+        tests: [not_null]
+    tests:
+      - unique:
+          name: stg_youtube_video_directory_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || channel_id || '|' || video"
+
   - name: fact_youtube_daily
     description: >
       Dedicated long-format daily mart for YouTube. All metrics additive.
       Ratio metrics recomputed at the semantic layer, never stored here.
+      AI-310: carries `data_level` so a reader of this mart -- including the
+      connector's own `get_youtube_analytics_report` -- can restrict to the report
+      grain it was asked for instead of summing both.
     columns:
       - name: date
         tests: [not_null]
+      - name: data_level
+        description: "CHANNEL | VIDEO -- the report grain this row belongs to."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["CHANNEL", "VIDEO"]
       - name: metric
         tests: [not_null]
     tests:
@@ -44,3 +101,30 @@ models:
           name: fact_youtube_daily_grain_unique
           arguments:
             column_name: "project_id || '|' || date || '|' || channel_id || '|' || video || '|' || metric"
+
+  - name: stg_youtube_breakdown
+    description: >
+      Staging: YouTube breakdowns and the audience snapshot, in the canonical
+      (breakdown_dimension, breakdown_value) long shape. QUALIFY supersede
+      (AD-7): the latest pull of a series (project_id, date, channel_id,
+      breakdown_dimension, metric) wins, WHOLE.
+      Grain: one row per REPORTED CELL, which is not unique on
+      (project_id, date, channel_id, breakdown_dimension, breakdown_value,
+      metric) -- a profile declaring two dimensions (`audience_device`) reports
+      their cross, and each cell lands once under each dimension, so a marginal
+      is the SUM of its cells. AI-342: the previous supersede kept ONE of them
+      and under-reported `device_type` without saying so.
+      Nothing is aggregated here: `viewer_percentage` is a share and
+      `subscriber_count` a stock -- both declared non-additive in the manifest,
+      and the projection compiler refuses to sum them. `fact_daily_kpi` reads
+      this model for the two ADDITIVE metrics only (`views`,
+      `estimated_minutes_watched`) and sums the cells into marginals.
+    columns:
+      - name: date
+        tests: [not_null]
+      - name: channel_id
+        tests: [not_null]
+      - name: breakdown_dimension
+        tests: [not_null]
+      - name: metric
+        tests: [not_null]

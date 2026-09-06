@@ -40,6 +40,8 @@ from typing import Any
 
 import jsonschema
 
+from core.column_treatments import produced_columns
+
 _PROJECTION_SCHEMA_PATH = (
     Path(__file__).parent / "schemas" / "datastream-projection.schema.json"
 )
@@ -255,12 +257,49 @@ def estimate_cardinality_and_scan(
     est_cardinality = 1
     row_width = 0
     expensive_fields: list[str] = []
+    #  LES DIMENSIONS DONT PERSONNE N'A MESURE LA CARDINALITE. Elles retombent
+    #  sur `unknown`, et le produit de ces defauts N'EST PAS UNE ESTIMATION : le
+    #  flux « audience by age and gender » a rendu 10^12 combinaisons pour ~7 000
+    #  lignes reelles, parce que quatre dimensions non profilees font 1000^4.
+    #  Aucun des douze zeros ne venait des donnees, et le flux etait refuse pour
+    #  toujours -- toute preparation de changement recompile d'abord (mesure du
+    #  2026-08-13). On les NOMME plutot que de les fondre dans un chiffre.
+    unprofiled: list[str] = []
 
     for field_id in grain:
         field = fields_by_id.get(field_id) or {}
         prof = field.get("profile") or {}
-        signal = str(prof.get("cardinality_signal") or "unknown").strip().lower()
-        distinct = _CARDINALITY_SIGNAL_DISTINCT.get(signal, _CARDINALITY_SIGNAL_DISTINCT["unknown"])
+        raw_signal = prof.get("cardinality_signal")
+        signal = str(raw_signal or "unknown").strip().lower()
+        #  UNE DATE SE RECONNAIT A SON TYPE, et le produit n'a pas a le demander.
+        #  Un jour est borne par la fenetre de retention, pas par un placeholder :
+        #  compter une colonne DATE comme `unknown` faisait porter a un axe
+        #  ordinaire le meme risque qu'a un identifiant de visiteur. Le repli
+        #  reste le vocabulaire existant (`medium`) plutot qu'un nombre invente
+        #  ici -- une seconde echelle de cardinalite serait une seconde autorite.
+        #  UN DOMAINE DECLARE EST UNE CARDINALITE CONNUE, et c'est la meilleure
+        #  reponse possible : pas une classe, le compte exact. Les catalogues de
+        #  connecteur declarent deja ces domaines -- « age13-17, age18-24, ... »,
+        #  sept valeurs -- et tant qu'ils ne les portent qu'en prose, personne ne
+        #  peut s'en servir. Ce chemin est le crochet : le jour ou un champ arrive
+        #  avec ses valeurs, il cesse d'etre « a profiler » sans qu'un humain ait
+        #  compte quoi que ce soit.
+        allowed = field.get("allowed_values") or prof.get("allowed_values")
+        declared_distinct: int | None = None
+        if isinstance(allowed, (list, tuple)) and allowed:
+            declared_distinct = len(allowed)
+        elif signal == "unknown" and _type_class(str(field.get("physical_type") or "")) == "date":
+            #  Une date se reconnait a son type ; son domaine, lui, est borne par
+            #  la fenetre et non par une enumeration.
+            signal = "medium"
+            raw_signal = "medium"
+        if declared_distinct is None and (not raw_signal or signal == "unknown"):
+            unprofiled.append(field_id)
+        distinct = (
+            declared_distinct
+            if declared_distinct is not None
+            else _CARDINALITY_SIGNAL_DISTINCT.get(signal, _CARDINALITY_SIGNAL_DISTINCT["unknown"])
+        )
         est_cardinality *= max(1, distinct)
         row_width += _value_width(_type_class(str(field.get("physical_type") or "")))
         if distinct >= _EXPENSIVE_DISTINCT_THRESHOLD:
@@ -278,9 +317,17 @@ def estimate_cardinality_and_scan(
 
     over_card = est_cardinality > max_grain_cardinality
     over_scan = est_scan_bytes > max_scan_bytes
+    #  Un `unknown` ne se lit jamais comme sain, et un chiffre connu jamais comme
+    #  inconnu. Quand une dimension de grain n'a pas de profil, le depassement
+    #  n'est pas mesure : il est SUPPOSE, et la reparation n'est pas d'approuver
+    #  -- approuver un chiffre que personne n'a mesure est la signature d'un
+    #  garde-fou qu'on apprend a contourner. Elle est de profiler les colonnes.
+    measured = not unprofiled
 
     return {
         "estimated_grain_cardinality": int(est_cardinality),
+        "cardinality_is_measured": measured,
+        "unprofiled_grain_fields": sorted(set(unprofiled)),
         "estimated_scan_bytes": int(est_scan_bytes),
         "max_grain_cardinality": int(max_grain_cardinality),
         "max_scan_bytes": int(max_scan_bytes),
@@ -555,34 +602,69 @@ def compile_projection(
         approved=approved,
     )
     if estimate["over_limit"] and not approved:
+        #  MESURE OU SUPPOSITION : le refus le DIT, et il n'offre pas la meme
+        #  reparation. Un depassement dont une dimension de grain n'a pas de
+        #  profil est un produit de valeurs par defaut ; proposer de l'approuver
+        #  demanderait a une personne d'endosser un chiffre que personne n'a
+        #  mesure. La reparation est alors de profiler les colonnes nommees.
+        measured = bool(estimate.get("cardinality_is_measured", True))
+        unprofiled = list(estimate.get("unprofiled_grain_fields") or [])
         if estimate["estimated_grain_cardinality"] > estimate["max_grain_cardinality"]:
+            repair: dict[str, Any] = (
+                {
+                    "approve_or_reduce_grain": {
+                        "estimated_grain_cardinality": estimate[
+                            "estimated_grain_cardinality"
+                        ],
+                        "max_grain_cardinality": estimate["max_grain_cardinality"],
+                    }
+                }
+                if measured
+                else {
+                    "profile_the_grain_columns": {
+                        "unprofiled_grain_fields": unprofiled,
+                        "assumed_distinct_per_field": _CARDINALITY_SIGNAL_DISTINCT["unknown"],
+                        "why": (
+                            "This estimate is a product of default values, not a "
+                            "measurement: profile these columns before anything is "
+                            "approved."
+                        ),
+                    }
+                }
+            )
             issues.append(
                 {
                     "code": REJECT_CARDINALITY_OVER_LIMIT,
                     "path": "$.estimate",
-                    "field_ids": estimate["expensive_fields"],
-                    "repair": {
-                        "approve_or_reduce_grain": {
-                            "estimated_grain_cardinality": estimate[
-                                "estimated_grain_cardinality"
-                            ],
-                            "max_grain_cardinality": estimate["max_grain_cardinality"],
-                        }
-                    },
+                    "field_ids": estimate["expensive_fields"] if measured else unprofiled,
+                    "repair": repair,
                 }
             )
         if estimate["estimated_scan_bytes"] > estimate["max_scan_bytes"]:
+            scan_repair: dict[str, Any] = (
+                {
+                    "approve_or_reduce_scan": {
+                        "estimated_scan_bytes": estimate["estimated_scan_bytes"],
+                        "max_scan_bytes": estimate["max_scan_bytes"],
+                    }
+                }
+                if measured
+                else {
+                    "profile_the_grain_columns": {
+                        "unprofiled_grain_fields": unprofiled,
+                        "why": (
+                            "The scanned bytes follow the grain rows, and the grain "
+                            "rows are assumed rather than measured."
+                        ),
+                    }
+                }
+            )
             issues.append(
                 {
                     "code": REJECT_SCAN_OVER_LIMIT,
                     "path": "$.estimate",
-                    "field_ids": estimate["expensive_fields"],
-                    "repair": {
-                        "approve_or_reduce_scan": {
-                            "estimated_scan_bytes": estimate["estimated_scan_bytes"],
-                            "max_scan_bytes": estimate["max_scan_bytes"],
-                        }
-                    },
+                    "field_ids": estimate["expensive_fields"] if measured else unprofiled,
+                    "repair": scan_repair,
                 }
             )
 
@@ -610,6 +692,17 @@ def compile_projection(
         "estimate": estimate,
         "issues": issues,
     }
+
+    # Story 60.6: a produced column NAMES the columns it came from.
+    #
+    # `full_grain_relation.source_fields` lists the columns that land as
+    # themselves; it cannot express "this concept is three columns joined". The
+    # key is emitted only when the mapping declares a treatment -- an empty list
+    # on every plan in the repository would be a measure nobody took, and the
+    # schema deliberately does not require it.
+    produced = produced_columns(payload)
+    if produced:
+        plan["produced_columns"] = produced
 
     validator = _projection_schema_validator()
     errors = sorted(

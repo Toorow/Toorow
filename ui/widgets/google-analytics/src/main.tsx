@@ -1,4 +1,19 @@
 /**
+ * SUPERSEDED (Story 50.5, AD-2). Replaced on the standard path by the shared
+ * Visualization runtime, served as `ui://core/visualization-runtime`
+ * (`server/core/visualization_runtime_resource.py`, built from
+ * `ui/cards/shell/src/viz/`).
+ *
+ * It is LEFT ON DISK on purpose. This widget is the inventory of what still has
+ * to move: its `KpiTile`, `BreakdownBars`, `CalendarHeatmap` and `SmallMultiples`
+ * are four families the shared registry does not implement yet, and
+ * `ViewTools/aggregation.ts:16-36` sums rows IN THE BROWSER to switch granularity
+ * between day, week and month -- which AD-10
+ * (`docs/product-architecture/visualization-and-rendering.md:366-368`) forbids and
+ * which the shared runtime refuses by construction (it emits
+ * `requestNewExecution` and computes nothing). Deleting this directory would
+ * erase the record of both. Nothing new may be built on it.
+ *
  * Widget entrypoint (T7.2 / AD-11).
  *
  * Story 9.10: data delivery goes through the shared @toorow/shell reader

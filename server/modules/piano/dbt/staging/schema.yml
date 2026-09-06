@@ -3,7 +3,7 @@ version: 2
 sources:
   - name: raw_piano
     description: "Immutable raw landing zone for Piano Analytics daily data (AD-7: append-only)."
-    schema: main  # DuckDB default schema; BigQuery: override via profiles.yml dataset
+    schema: "{{ var('raw_schema', 'main') }}"  # 24.4 AC2: org_<wslug>_raw injected by orchestrator, 'main' without var (bit-identique)
     tables:
       - name: raw_piano_daily
         description: >

@@ -50,12 +50,12 @@ export const FIXTURE_ENVELOPE_EMPTY: CardEnvelope = {
     composition: [
       {
         type: "table",
-        title: "Lignes du plan",
+        title: "Plan lines",
         binding: { source: "plan_lines" },
         data: {
           columns: [
-            { key: "label", label: "Ligne", numeric: false },
-            { key: "budget", label: "Budget (€)", numeric: true },
+            { key: "label", label: "Line", numeric: false },
+            { key: "budget", label: "Budget", numeric: true },
             { key: "pace_pct", label: "Pace (%)", numeric: true },
           ],
           rows: [],
@@ -65,12 +65,12 @@ export const FIXTURE_ENVELOPE_EMPTY: CardEnvelope = {
       },
       {
         type: "table",
-        title: "Rollup par support",
+        title: "Channel rollup",
         binding: { source: "plan_channels" },
         data: {
           columns: [
-            { key: "channel", label: "Support", numeric: false },
-            { key: "budget", label: "Budget (€)", numeric: true },
+            { key: "channel", label: "Channel", numeric: false },
+            { key: "budget", label: "Budget", numeric: true },
           ],
           rows: [],
           estimate_columns: ["extrapolated_spend"],
@@ -98,20 +98,20 @@ export const FIXTURE_ENVELOPE_PACE_NULL: CardEnvelope = {
     composition: [
       {
         type: "table",
-        title: "Lignes du plan",
+        title: "Plan lines",
         binding: { source: "plan_lines" },
         data: {
           columns: [
-            { key: "label", label: "Ligne", numeric: false },
-            { key: "budget", label: "Budget (€)", numeric: true },
+            { key: "label", label: "Line", numeric: false },
+            { key: "budget", label: "Budget", numeric: true },
             { key: "consumed_pct", label: "Consommé (%)", numeric: true },
             { key: "pace_pct", label: "Pace (%)", numeric: true },
             {
               key: "extrapolated_spend",
-              label: "Extrapolé (€) (Estimation)",
+              label: "Extrapolated (Estimate)",
               numeric: true,
             },
-            { key: "is_plan_only", label: "Plan seul", numeric: false },
+            { key: "is_plan_only", label: "Plan only", numeric: false },
           ],
           rows: [
             {
@@ -137,11 +137,11 @@ export const FIXTURE_ENVELOPE_PACE_NULL: CardEnvelope = {
       },
       {
         type: "table",
-        title: "Rollup par support",
+        title: "Channel rollup",
         binding: { source: "plan_channels" },
         data: {
           columns: [
-            { key: "channel", label: "Support", numeric: false },
+            { key: "channel", label: "Channel", numeric: false },
             { key: "pace_pct", label: "Pace (%)", numeric: true },
           ],
           rows: [],

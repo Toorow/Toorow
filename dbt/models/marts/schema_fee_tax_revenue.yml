@@ -1,0 +1,299 @@
+version: 2
+
+# Epic 41 (media cost composition) / Story 41.5 -- the revenue half of the HT/TTC
+# symmetry.
+#
+# A NEW YAML file on purpose, and NOT an addition to schema_fee_tax.yml (which is
+# 41.3's): dbt merges every YAML under model-paths, so keeping each story's entries in
+# its own file is what keeps the "only NEW files" claim checkable with
+# `git diff --name-only`. Asserted by
+# server/tests/conformance/test_epic41_revenue_additive_only.py.
+#
+# Both models are materialized: view IN-FILE. dbt_project.yml defaults marts to `table`
+# and this story may not edit it.
+
+models:
+  - name: fee_tax_revenue_normalized_daily
+    description: >
+      Story 41.5. TWO TAX VIEWS OF THE SAME MONEY per (project, date, connector, metric,
+      currency): Gross Revenue TTC and Net Revenue HT, with a typed basis on every row.
+      landed_revenue_micros is ALWAYS populated (a read of a real fact); every DERIVED
+      column is NULL with a typed gap code when it could not be computed, so a 0 always
+      means "the computation ran and the answer is zero".
+
+      The landed commerce figure is TAX-INCLUSIVE (proven from the shopify / woocommerce
+      / stripe / square manifests) and NO CONNECTOR LANDS A REAL PER-ORDER TAX, so VAT is
+      DERIVED from a declared rate and labelled as such. sales_tax_provenance
+      'measured_order_tax' is DEFINED AND RESERVED and is never emitted today.
+
+      The payment gateway is the opposite case: stripe and square DO land a measured
+      `fees` metric, so the MEASUREMENT WINS and any declared PAYMENT_FEE rule is
+      SUPPRESSED (payment_fee_rule_superseded) -- the two can never double-count.
+
+      Day-one steady state, arbitrated and not a defect: TTC only, HT NULL, gap
+      SALES_TAX_RULE_ABSENT or SOURCE_TYPE_UNRESOLVED, until an operator confirms a VAT
+      rule the warehouse can actually evaluate.
+
+      With the module OFF this view returns ZERO rows.
+    config:
+      materialized: view
+    tests:
+      - unique:
+          name: fee_tax_revenue_normalized_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || connector || '|' || metric || '|' || currency"
+    columns:
+      - name: project_id
+        description: "Owning project. The module is ON for it, by construction."
+        tests: [not_null]
+      - name: date
+        description: "Figure date. A DATE, never an instant (the platform has no hourly grain)."
+        tests: [not_null]
+      - name: connector
+        description: "The revenue emitter. In the grain deliberately: VAT postures and gateway economics differ per source."
+        tests: [not_null]
+      - name: metric
+        description: "The canonical revenue metric, as declared in fee_tax_revenue_scope.csv."
+        tests: [not_null]
+      - name: currency
+        description: "mirror.project_preferences.canonical_currency. fact_daily_kpi carries no currency column: FX was already applied at read."
+        tests: [not_null]
+      - name: revenue_role
+        description: "SALES may be a ROAS numerator. ATTRIBUTED is a channel-CLAIMED overlay (Epic 27 invariant 4) and PLAN is not actuals; neither ever enters the numerator."
+        tests:
+          - not_null
+          - accepted_values:
+              name: fee_tax_revenue_normalized_role_accepted
+              arguments:
+                values: ["SALES", "ATTRIBUTED", "PLAN"]
+      - name: landed_tax_posture
+        description: >
+          What the LANDED figure already contains. TAX_EXCLUSIVE has no seed row today;
+          it is in the vocabulary because a tax-exclusive store is a real, near-term case
+          and the model handles it symmetrically rather than being retrofitted.
+        tests:
+          - not_null
+          - accepted_values:
+              name: fee_tax_revenue_normalized_posture_accepted
+              arguments:
+                values: ["TAX_INCLUSIVE", "TAX_EXCLUSIVE", "UNDECLARED"]
+      - name: landed_revenue_micros
+        description: "ALWAYS populated: a read of a real fact, normalised PER SOURCE ROW then integer-summed. The twin of net_media_micros."
+        tests: [not_null]
+      - name: landed_basis
+        description: "TTC | HT | UNRESOLVED. Derived from landed_tax_posture. An UNRESOLVED row can never reach the alignment view."
+        tests:
+          - not_null
+          - accepted_values:
+              name: fee_tax_revenue_normalized_landed_basis_accepted
+              arguments:
+                values: ["TTC", "HT", "UNRESOLVED"]
+      - name: gross_revenue_ttc_micros
+        description: "The TTC view. A READ when landed_basis='TTC'; DERIVED when 'HT'; NULL when the derivation is impossible."
+      - name: net_revenue_ht_micros
+        description: "The HT view. A READ when landed_basis='HT'; DERIVED when 'TTC'; NULL when impossible. The ROAS numerator."
+      - name: sales_tax_micros
+        description: >
+          gross - net, by EXACT INTEGER SUBTRACTION, so net + tax == gross TO THE MICRO,
+          always. NULL iff either view is NULL. The identity is asserted at a tolerance of
+          exactly ZERO and that tolerance must never be loosened: it holds by
+          construction, not by luck, because the component is subtracted rather than
+          independently rounded.
+      - name: sales_tax_rate
+        description: "The exact rate applied (provenance). NULL when no rule fired."
+      - name: sales_tax_provenance
+        description: >
+          'measured_order_tax' is RESERVED and NEVER emitted today -- no connector lands
+          a per-order tax. Measured 2026-08-10 on a full local build:
+          `SELECT sales_tax_provenance, COUNT(*) FROM fee_tax_revenue_normalized_daily
+          GROUP BY 1` -> ('none', 10), ('derived_declared_rate', 12).
+        tests:
+          - not_null
+          - accepted_values:
+              name: fee_tax_revenue_normalized_tax_provenance_accepted
+              arguments:
+                values:
+                  # RESERVED, NEVER EMITTED -- said HERE, beside the value, because a
+                  # value inside accepted_values reads as COVERAGE and this one has none.
+                  # WHAT WILL EMIT IT: a connector that lands the tax actually charged per
+                  # order. Shopify's API defines total_tax / current_total_tax and
+                  # server/modules/shopify never pulls them, so no staging model emits a
+                  # tax field at all. The day one does, the reserved branch at
+                  # fee_tax_revenue_normalized_daily.sql:850-857 activates and the
+                  # measurement supersedes the derivation.
+                  - measured_order_tax
+                  - derived_declared_rate
+                  - none
+      - name: payment_fee_micros
+        description: "A KEEP_SEPARATE overlay: NEVER deducted from either revenue column. NULL means undeclared and unmeasured, which is not the claim 'zero'."
+      - name: payment_fee_provenance
+        description: "Where the fee came from. A measured gateway fee BEATS a declared rule and suppresses it."
+        tests:
+          - not_null
+          - accepted_values:
+              name: fee_tax_revenue_normalized_fee_provenance_accepted
+              arguments:
+                values: ["measured_gateway_fee", "derived_rule", "none"]
+      - name: payment_fee_rule_superseded
+        description: "TRUE when a measured fee suppressed a declared PAYMENT_FEE rule, so the two can never double-count."
+        tests: [not_null]
+      - name: transaction_count
+        description: "The count a PER_TRANSACTION rule multiplies. NULL when the connector declares none or none landed -- NEVER assumed to be 1."
+      - name: net_cash_received_ttc_micros
+        description: "gross_revenue_ttc_micros - payment_fee_micros, TTC side only. NULL if either is NULL."
+      - name: applied_rule_ids
+        description: "'|'-joined SORTED ids of the rules that ACTUALLY CONTRIBUTED (AD-9). '' when none; never NULL. A suppressed or refused rule is deliberately absent."
+        tests: [not_null]
+      - name: applied_rule_count
+        description: "COUNT of the same set."
+        tests: [not_null]
+      - name: gap_codes
+        description: "'|'-joined, sorted, distinct typed gaps. '' (never NULL) when complete."
+        tests: [not_null]
+      - name: is_normalization_complete
+        description: "TRUE iff gap_codes is empty. The bridge's own gap_code NEVER drives it."
+        tests: [not_null]
+      - name: gap_sales_tax_rule_absent
+        description: "The DAY-ONE HOT PATH: no confirmed in-window SALES_TAX rule matched, so HT cannot be derived."
+        tests: [not_null]
+      - name: gap_vat_rate_invalid
+        description: "A matched SALES_TAX rule has rate IS NULL or rate < 0. There is no upper bound: 1 + rate cannot reach zero."
+        tests: [not_null]
+      - name: gap_revenue_tax_posture_undeclared
+        description: "We cannot even say whether the landed figure is TTC. Both derived columns NULL, and the row can never reach the alignment view."
+        tests: [not_null]
+      - name: gap_revenue_form_unsupported
+        description: "A matched revenue rule uses a form no revenue evaluator routes. Refused and typed, NEVER silently worth 0."
+        tests: [not_null]
+      - name: gap_transaction_count_unavailable
+        description: "A PER_TRANSACTION rule fired and no real count is available. NULL, never an assumed 1 -- which on a 4 000-order day would be wrong by 4 000x."
+        tests: [not_null]
+      - name: gap_source_type_unresolved
+        description: "attr_source_type is NULL on every row today (nothing writes app.datastream_source_types). NULL reads UNRESOLVED, NEVER known-false."
+        tests: [not_null]
+      - name: gap_currency_mismatch
+        description: "A FLAT / PER_TRANSACTION rule declared in another currency. REFUSED, not summed and NOT CONVERTED (Epic 39.10)."
+        tests: [not_null]
+      - name: gap_country_unresolved
+        tests: [not_null]
+      - name: gap_market_unresolved
+        tests: [not_null]
+      - name: gap_placement_type_unresolved
+        tests: [not_null]
+      - name: gap_tax_code_unresolved
+        tests: [not_null]
+      - name: gap_condition_key_unknown
+        tests: [not_null]
+      - name: gap_datastream_scope_ambiguous
+        tests: [not_null]
+      - name: gap_rule_scope_unresolved
+        tests: [not_null]
+
+  - name: fee_tax_revenue_alignment_daily
+    description: >
+      Story 41.5. HT revenue against HT cost, TTC revenue against TTC cost, at
+      (project_id, date, tax_basis, currency) -- AT MOST TWO ROWS PER PROJECT-DAY.
+
+      TAX HOMOGENEITY IS THE JOIN KEY: both sides are unpivoted into two basis rows and
+      joined ON tax_basis, so a mixed HT/TTC pair is UNCONSTRUCTIBLE rather than
+      filtered, and an UNRESOLVED basis produces no unpivoted row at all.
+
+      GRAIN HONESTY: there is NO honest function from a day-total commerce figure to a
+      campaign, so the COST side is collapsed UP to the revenue side's grain and this
+      model carries NO connector / breakdown_dimension / breakdown_value column at all --
+      AC4 is enforced by the ABSENCE OF THE COLUMNS, not by a filter someone can relax.
+
+      An incomplete cost ladder makes cost_micros NULL and therefore the ratio NULL. That
+      is deliberate: summing only the complete rows would understate cost and OVERSTATE
+      ROAS -- a flattering lie. cost_row_count / cost_complete_row_count let a surface say
+      "ROAS unavailable -- 8 of 11 cost rows composed".
+
+      CONSUMERS MUST NEVER AVERAGE revenue_cost_ratio. To get a period figure, SUM
+      revenue_micros and cost_micros across days and DIVIDE ONCE. Averaging a ratio is the
+      same error AD-4 forbids for stored ratios, committed one layer out.
+
+      Same-day revenue against same-day spend is a CONVENTION, not a causal attribution:
+      conversion lag means a day's sales are not that day's spend's return. The model
+      reports the convention exactly and does not model lag.
+    config:
+      materialized: view
+    tests:
+      - unique:
+          name: fee_tax_revenue_alignment_daily_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || tax_basis || '|' || currency"
+    columns:
+      - name: project_id
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: tax_basis
+        description: >
+          HT | TTC. 'UNRESOLVED' IS DELIBERATELY NOT ACCEPTED -- this accepted_values test
+          IS acceptance criterion 2 expressed as a schema test: a row whose basis could
+          not be typed must not exist here at all.
+        tests:
+          - not_null
+          - accepted_values:
+              name: fee_tax_revenue_alignment_tax_basis_accepted
+              arguments:
+                values: ["HT", "TTC"]
+      - name: currency
+        tests: [not_null]
+      - name: revenue_source
+        description: "The ONE winning commerce connector for the day (metric_source_priority). It can change day to day, and the bases differ (orders created vs payments settled), so a series that crosses a change mixes two populations."
+      - name: revenue_source_priority
+        description: "The declared priority of the winner; 99 when the seed ranks it nowhere."
+      - name: revenue_micros
+        description: "net_revenue_ht_micros on the HT row, gross_revenue_ttc_micros on the TTC row. NULL when the revenue side could not be normalized."
+      - name: cost_micros
+        description: "subtotal_ht_micros on the HT row, total_ttc_micros on the TTC row, from fee_tax_ladder_rollup's global row. NULL whenever the ladder is incomplete."
+      - name: revenue_cost_ratio
+        description: "SUM-THEN-DIVIDE, in a view, at one grain. Unit-free (the micros cancel). NULL when cost is 0 or NULL -- never infinity. NEVER average it."
+      - name: ratio_kind
+        description: >
+          roas_ht = performance and margin (Net Revenue HT over Total Cost HT).
+          cash_cover_ttc = TREASURY: money in including the customer's VAT over money out
+          including the agency's VAT -- two different taxes on two different flows. Naming
+          it 'roas' would invite a reader to treat a cash ratio as performance.
+        tests:
+          - accepted_values:
+              name: fee_tax_revenue_alignment_ratio_kind_accepted
+              arguments:
+                values: ["roas_ht", "cash_cover_ttc"]
+      - name: gross_margin_micros
+        description: "revenue_micros - cost_micros, EXACT integer subtraction, HT ROW ONLY. NULL on every TTC row: a margin across two different tax flows is not a margin."
+      - name: cost_row_count
+        description: "How many ladder rows the project-day had."
+        tests: [not_null]
+      - name: cost_complete_row_count
+        description: "How many of them composed. The pair is what lets a surface be honest instead of blank."
+        tests: [not_null]
+      - name: is_cost_complete
+        tests: [not_null]
+      - name: is_revenue_complete
+        tests: [not_null]
+      - name: is_revenue_posture_undeclared
+        description: >
+          Story 48.4, criterion [4]. TRUE when the winning revenue source never declared
+          whether its landed figure includes tax, so no HT/TTC comparison against cost is
+          possible. A TYPED column and not only a substring of gap_codes, because a
+          surface must be able to say WHY the ratio is refused without parsing a string --
+          and because "we cannot know the basis" is a different statement, with a
+          different remedy, from "something upstream was incomplete".
+        tests: [not_null]
+      - name: is_alignment_complete
+        tests: [not_null]
+      - name: gap_codes
+        description: "COST_LADDER_INCOMPLETE | COST_SIDE_ABSENT | RATIO_UNDEFINED_ZERO_COST | REVENUE_NORMALIZATION_INCOMPLETE | REVENUE_SIDE_ABSENT | REVENUE_TAX_POSTURE_UNDECLARED, '|'-joined and sorted."
+        tests: [not_null]
+      - name: cost_gap_codes
+        description: "The rollup's own gap string, carried as provenance."
+        tests: [not_null]
+      - name: revenue_gap_codes
+        description: >
+          The normalized model's gap string, carried as provenance. Aggregated with MAX
+          and not MIN: the empty string is the smallest string, so MIN reported a clean
+          '' whenever ANY contributing row of the winner was clean, masking its gapped
+          siblings. MAX returns '' only when every contributing row is clean.
+        tests: [not_null]

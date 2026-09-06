@@ -114,6 +114,150 @@ def test_429_breaker(connector):
     assert raised.value.retry_after == 7
 
 
+# ---------------------------------------------------------------------------
+# L'organisation arrive par le parametre declare, jamais par `selection`.
+#
+# `selection` (celui du PLAN, core/schemas/datastream-intent.schema.json,
+# $defs.selection, additionalProperties: false) ne porte que selection_mode /
+# metrics / dimensions / grain / filters -- aucune organisation. Et
+# core/queue.py ne remplit jamais job["selection"]. L'URN choisie par
+# l'operateur arrive par account_topology.pull_parameter.
+#
+# Forme de l'identifiant : LinkedIn adresse organizationalEntity par une URN
+# COMPLETE (`urn:li:organization:<id>`), jamais par un entier nu -- la research
+# le dit ("Select an organization URN and URL-encode URNs"). Le connecteur ne
+# doit donc rien reconstruire a partir d'un id nu.
+# ---------------------------------------------------------------------------
+
+ORG_URN = "urn:li:organization:123"
+
+
+@pytest.fixture()
+def http(connector, monkeypatch, tmp_path):
+    monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "test.duckdb"))
+    monkeypatch.setattr(connector, "_token", lambda connection_id: "t")
+    client = MagicMock()
+    client.request.return_value = Response(
+        payload={"elements": [{"followerGains": {"organicFollowerGain": 4}}], "paging": {}}
+    )
+    monkeypatch.setattr(connector.httpx, "Client", lambda *a, **k: client)
+    return client
+
+
+def test_manifest_declares_the_pull_parameter(connector):
+    manifest = json.loads((MODULE_DIR / "manifest.json").read_text(encoding="utf-8"))
+    declared = manifest["account_topology"].get("pull_parameter")
+    assert declared == "organization_urn", (
+        "Les trois endpoints organiques filtrent sur q=organizationalEntity + "
+        "une URN d'organisation ; le manifeste doit nommer ce parametre pour que "
+        "core/queue.py::_account_kwargs sache le remplir."
+    )
+    import inspect
+
+    for name in (
+        "pull",
+        "pull_follower_statistics",
+        "pull_page_statistics",
+        "pull_organic_share_statistics",
+    ):
+        params = inspect.signature(getattr(connector, name)).parameters
+        assert declared in params, f"{name}() n'accepte pas {declared!r}"
+        assert params[declared].default is None, (
+            f"{name}(): {declared} doit etre OPTIONNEL -- le worker ne passe le "
+            f"compte que si une selection existe."
+        )
+
+
+def test_topology_contract_is_valid(connector):
+    from core.account_topology import get_topology, validate_topology
+
+    manifest = json.loads((MODULE_DIR / "manifest.json").read_text(encoding="utf-8"))
+    assert validate_topology(manifest["account_topology"]) == []
+    assert get_topology(manifest) is not None
+
+
+def test_discovery_id_is_the_full_urn(connector):
+    """core ne retient que `id` (_flatten_account_ids). Un id synthetique
+    ('linkedin_pages_selection_1') serait stocke tel quel puis repasse a pull()
+    -- et LinkedIn refuserait un organizationalEntity qui n'est pas une URN."""
+    client = MagicMock()
+    client.request.return_value = Response(
+        payload={"elements": [{"organization": ORG_URN, "organizationName": "Page"}]}
+    )
+    row = connector.discover_accounts("c", _client=client, _token_value="t")[0]
+    assert row["id"] == ORG_URN
+    assert row["label"] == "Page"
+
+
+def test_pull_targets_the_organization_passed_as_a_parameter(connector, http):
+    connector.pull(
+        "conn",
+        "2026-07-01",
+        "2026-07-01",
+        "proj",
+        "pull-1",
+        organization_urn=ORG_URN,
+        selection={"lifetime": True},
+    )
+    params = http.request.call_args.kwargs["params"]
+    assert params["organizationalEntity"] == ORG_URN
+    assert params["q"] == "organizationalEntity"
+
+
+def test_pull_without_an_organization_raises_a_named_typed_error(connector, http):
+    with pytest.raises(connector.LinkedInPagesOnboardingError) as raised:
+        connector.pull("conn", "2026-07-01", "2026-07-01", "proj", "pull-1")
+    assert "organization_urn" in str(raised.value)
+    http.request.assert_not_called()
+
+
+def test_a_bare_id_is_refused_not_rebuilt_into_an_urn(connector, http):
+    """Ne pas fabriquer 'urn:li:organization:' + id : une URN d'organizationBrand
+    ou une URN d'un autre type se ferait passer pour une organisation."""
+    with pytest.raises(connector.LinkedInPagesCompatibilityError) as raised:
+        connector.pull(
+            "conn", "2026-07-01", "2026-07-01", "proj", "pull-1", organization_urn="123"
+        )
+    assert "urn:li:" in str(raised.value)
+    http.request.assert_not_called()
+
+
+def test_the_report_selection_can_no_longer_smuggle_an_organization(connector, http):
+    with pytest.raises(connector.LinkedInPagesOnboardingError):
+        connector.pull(
+            "conn",
+            "2026-07-01",
+            "2026-07-01",
+            "proj",
+            "pull-1",
+            selection={"organization_urn": ORG_URN, "lifetime": True},
+        )
+    http.request.assert_not_called()
+
+
+def test_report_selection_keys_still_reach_the_request(connector, http):
+    connector.pull_page_statistics(
+        "conn",
+        "2026-07-01",
+        "2026-07-01",
+        "proj",
+        "pull-1",
+        organization_urn=ORG_URN,
+        selection={"lifetime": True, "facet": "country"},
+    )
+    params = http.request.call_args.kwargs["params"]
+    assert params["facet"] == "country"
+    assert params["organizationalEntity"] == ORG_URN
+
+
+def test_no_environment_fallback_for_the_organization(connector, http, monkeypatch):
+    monkeypatch.setenv("LINKEDIN_ORGANIZATION_URN", ORG_URN)
+    with pytest.raises(connector.LinkedInPagesOnboardingError):
+        connector.pull("conn", "2026-07-01", "2026-07-01", "proj", "pull-1")
+    source = (MODULE_DIR / "connector.py").read_text(encoding="utf-8")
+    assert "LINKEDIN_ORGANIZATION_URN" not in source
+
+
 def test_catalog_zero_planned_video_unavailable_and_negative_likes():
     catalog = json.loads((MODULE_DIR / "api_catalog.json").read_text())
     manifest = json.loads((MODULE_DIR / "manifest.json").read_text())

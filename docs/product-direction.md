@@ -24,6 +24,17 @@ model, verify its quality and make it safely queryable by an agent. The agent
 loads only the relevant business context, cites provenance and serves both a
 compact explanation and an interactive visual result.
 
+## Product differentiation
+
+Toorow optimizes time-to-governed-value. A connector is not only an extraction
+adapter: its capabilities and expert mappings combine with observed source
+metadata, shared versioned knowledge and enabled Project capabilities to produce
+a reviewable configuration proposal. The operator confirms decisions and
+exceptions instead of rebuilding the model from an empty form.
+
+Presets remain transparent, editable and versioned. They never apply silently,
+and the resulting Project configuration keeps its provenance.
+
 ## Product interface and distribution
 
 - Visible application and administration copy is English.
@@ -124,3 +135,7 @@ A proposed feature should improve at least one of: trustworthy data onboarding,
 semantic consistency, operator control, context quality, measurable reliability
 or safe connector reach. It must preserve project isolation, provenance,
 single-writer ownership and the dual-channel MCP response contract.
+
+The concise product, view and capability control map lives in
+[`docs/product-architecture/`](./product-architecture/README.md). Detailed
+contracts and delivery stories attach to that map rather than redefining it.

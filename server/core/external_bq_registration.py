@@ -61,6 +61,20 @@ from typing import Any
 
 from ulid import ULID
 
+from core.audit import declare_action
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12) : declarees ICI, a cote du code qui les ecrit, et non
+# dans `core/audit.py`. Ce fichier etait un carrefour -- 43 editions de 29
+# sujets depuis juin, dont 34 n'ajoutaient qu'une constante -- et 45 % des
+# actions reellement ecrites en production n'y etaient meme pas declarees,
+# parce que la liste etait trop loin pour valoir le detour. `write_audit_row`
+# refuse desormais une action que personne n'a declaree.
+ACTION_EXTERNAL_BQ_OBSERVATION_FAILED = declare_action("datastream.external_bq.observation.failed")
+ACTION_EXTERNAL_BQ_OBSERVED = declare_action("datastream.external_bq.observed")
+
+
 # ---------------------------------------------------------------------------
 # NO-WRITE GUARANTEE -- the structural proof that this module cannot mutate the
 # external object. Every SQL string this module emits is checked against this
@@ -586,8 +600,6 @@ def record_observation(
     blocking verdict); never coerced to 0.
     """
     from core.audit import (  # noqa: PLC0415
-        ACTION_EXTERNAL_BQ_OBSERVATION_FAILED,
-        ACTION_EXTERNAL_BQ_OBSERVED,
         insert_audit_row,
     )
 

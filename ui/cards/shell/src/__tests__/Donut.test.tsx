@@ -25,7 +25,7 @@ describe("Donut", () => {
   it("renders the total in the centre of the SVG", () => {
     render(<Donut slices={SLICES} unit="conv" ariaLabel="Donut" />);
     const svg = screen.getByTestId("donut").querySelector("svg");
-    // Total = 600+250+150 = 1000 => fr-FR "1 000"
+    // Total = 600+250+150 = 1000 => "1,000" on FORMATTER_LOCALE
     expect(svg?.textContent).toContain("1");
   });
 
@@ -36,9 +36,9 @@ describe("Donut", () => {
     expect(legend).toHaveTextContent("Payant");
     expect(legend).toHaveTextContent("Direct");
     // Percentages: 600/1000=60%, 250/1000=25%, 150/1000=15%
-    expect(legend).toHaveTextContent("60 %");
-    expect(legend).toHaveTextContent("25 %");
-    expect(legend).toHaveTextContent("15 %");
+    expect(legend).toHaveTextContent("60%");
+    expect(legend).toHaveTextContent("25%");
+    expect(legend).toHaveTextContent("15%");
   });
 
   it("renders the designed empty state when slices is empty", () => {

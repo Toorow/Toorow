@@ -5,6 +5,7 @@ import json
 from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock
 
+from core import entry_api  # AD-43 : le handler vit chez son sujet
 from starlette.requests import Request
 
 
@@ -47,7 +48,6 @@ def test_hosted_entry_state_distinguishes_entitlement_from_uninvited(monkeypatch
 
     monkeypatch.setenv("TOOROW_DEPLOYMENT_MODE", "hosted")
     monkeypatch.setenv("TOOROW_AUTH_MODE", "static")
-    monkeypatch.setenv("TOOROW_CANONICAL_IDENTITY_ENABLED", "1")
     monkeypatch.setattr(
         admin_api,
         "_check_canonical_principal",
@@ -55,13 +55,13 @@ def test_hosted_entry_state_distinguishes_entitlement_from_uninvited(monkeypatch
     )
     cursor = _install_db(monkeypatch, (False, True))
 
-    ready = asyncio.run(admin_api._get_entry_state(_request()))
+    ready = asyncio.run(entry_api._get_entry_state(_request()))
 
     assert json.loads(ready.body)["state"] == "hosted_entry_ready"
     assert cursor.execute.call_args.args[1] == ("person_1", "person_1")
 
     cursor.fetchone.return_value = (False, False)
-    uninvited = asyncio.run(admin_api._get_entry_state(_request()))
+    uninvited = asyncio.run(entry_api._get_entry_state(_request()))
     assert json.loads(uninvited.body)["state"] == "invitation_required"
 
 
@@ -70,7 +70,6 @@ def test_self_hosted_entry_state_requires_setup_until_claimed(monkeypatch):
 
     monkeypatch.setenv("TOOROW_DEPLOYMENT_MODE", "self_hosted")
     monkeypatch.setenv("TOOROW_AUTH_MODE", "static")
-    monkeypatch.setenv("TOOROW_CANONICAL_IDENTITY_ENABLED", "1")
     monkeypatch.setattr(
         admin_api,
         "_check_canonical_principal",
@@ -78,43 +77,50 @@ def test_self_hosted_entry_state_requires_setup_until_claimed(monkeypatch):
     )
     cursor = _install_db(monkeypatch, (False, False))
 
-    setup = asyncio.run(admin_api._get_entry_state(_request()))
+    setup = asyncio.run(entry_api._get_entry_state(_request()))
     assert json.loads(setup.body)["state"] == "setup_required"
     assert cursor.execute.call_args.args[1] == ("person_1", "person_1")
 
     cursor.fetchone.return_value = (True, True)
-    claimed = asyncio.run(admin_api._get_entry_state(_request()))
+    claimed = asyncio.run(entry_api._get_entry_state(_request()))
     assert json.loads(claimed.body)["state"] == "scoped"
 
     cursor.fetchone.return_value = (True, False)
-    uninvited = asyncio.run(admin_api._get_entry_state(_request()))
+    uninvited = asyncio.run(entry_api._get_entry_state(_request()))
     assert json.loads(uninvited.body)["state"] == "invitation_required"
 
 
-def test_legacy_identity_mode_preserves_existing_scope_and_blocks_new_setup(monkeypatch):
+def test_entry_state_has_no_second_identity_and_never_reads_a_raw_subject(monkeypatch):
+    """REPLACES `test_legacy_identity_mode_preserves_existing_scope_and_blocks_new_setup`.
+
+    That test proved the branch removed on 2026-08-24: with the identity flag
+    off -- its DEFAULT -- this route authenticated through
+    `authenticate_api_request`, looked `app.org_members` up on the RAW OIDC
+    subject, and answered `scoped` when it matched. It was a true proof of a real
+    path, so it is replaced rather than deleted: what it proved must now be
+    proved IMPOSSIBLE.
+
+    Two assertions, one per half of what disappeared. The canonical resolver is
+    the only door -- a caller it refuses gets 401, never a second lookup -- and
+    no query is issued on an identity nothing resolved.
+    """
     from core import admin_api, api_auth
 
     monkeypatch.setenv("TOOROW_DEPLOYMENT_MODE", "self_hosted")
     monkeypatch.setenv("TOOROW_AUTH_MODE", "static")
-    monkeypatch.setenv("TOOROW_CANONICAL_IDENTITY_ENABLED", "0")
+    legacy = AsyncMock(return_value=(True, "legacy-subject"))
+    monkeypatch.setattr(api_auth, "authenticate_api_request", legacy)
     monkeypatch.setattr(
-        api_auth,
-        "authenticate_api_request",
-        AsyncMock(return_value=(True, "legacy-subject")),
+        admin_api, "_check_canonical_principal", AsyncMock(return_value=(False, None))
     )
-    canonical = AsyncMock()
-    monkeypatch.setattr(admin_api, "_check_canonical_principal", canonical)
     cursor = _install_db(monkeypatch, (True,))
 
-    existing = asyncio.run(admin_api._get_entry_state(_request()))
+    refused = asyncio.run(entry_api._get_entry_state(_request()))
 
-    assert json.loads(existing.body)["state"] == "scoped"
-    assert cursor.execute.call_args.args[1] == ("legacy-subject",)
-    canonical.assert_not_awaited()
-
-    cursor.fetchone.return_value = (False,)
-    fresh = asyncio.run(admin_api._get_entry_state(_request()))
-    assert json.loads(fresh.body)["state"] == "identity_activation_required"
+    assert refused.status_code == 401
+    assert json.loads(refused.body)["code"] == "unauthorized"
+    legacy.assert_not_awaited()
+    cursor.execute.assert_not_called()
 
 
 def test_disabled_auth_hosted_mode_preserves_local_first_scope(monkeypatch):
@@ -126,13 +132,13 @@ def test_disabled_auth_hosted_mode_preserves_local_first_scope(monkeypatch):
     monkeypatch.setattr(admin_api, "_check_canonical_principal", canonical)
     cursor = _install_db(monkeypatch, (False,))
 
-    first_scope = asyncio.run(admin_api._get_entry_state(_request()))
+    first_scope = asyncio.run(entry_api._get_entry_state(_request()))
 
     assert json.loads(first_scope.body)["state"] == "local_entry_ready"
     canonical.assert_not_awaited()
 
     cursor.fetchone.return_value = (True,)
-    scoped = asyncio.run(admin_api._get_entry_state(_request()))
+    scoped = asyncio.run(entry_api._get_entry_state(_request()))
     assert json.loads(scoped.body)["state"] == "scoped"
 
 

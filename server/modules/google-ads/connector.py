@@ -1,7 +1,8 @@
 """Google Ads connector -- Story 26.2 (GAQL catalog-first, API v24).
 
-Exposes a ``mcp_app: FastMCP`` instance that the core loader mounts under the
-``google-ads`` namespace (AD-2). Built to the epic-25 industrial standard from
+Exposes a ``mcp_app: FastMCP`` instance as the conformance surface (AD-1
+envelope); since AD-42 the core no longer mounts it — execution uses the
+Datastream-parameterized core tools. Built to the epic-25 industrial standard from
 day one: generated api_catalog.json (v24 protos: 278 metrics + 151 segments +
 26 structural dimensions, ZERO planned), enum-keyed error_map, MCC -> client
 account topology, and a catalog_driven profile whose GAQL is built from the
@@ -55,7 +56,9 @@ from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-# Module-level FastMCP instance -- the public surface the loader mounts.
+# Module-level FastMCP instance, kept as the conformance surface (AD-1 envelope,
+# validated by server/tests/conformance/test_envelope.py). Since AD-42 the core
+# no longer mounts it: execution uses the Datastream-parameterized core tools.
 mcp_app = FastMCP("google-ads")
 
 # ---------------------------------------------------------------------------
@@ -317,7 +320,9 @@ def _resolve_customer_selection(
 
         resolved = token_service.resolve_connection_by_nango_id(connection_id)
         if resolved is not None:
-            selected = account_topology.resolve_selected_account(resolved.id)
+            selected = account_topology.resolve_selected_account(
+                resolved.id, connector="google-ads"
+            )
     except (LookupError, ValueError) as exc:
         # Review 26.2 F-10: only EXPECTED resolution misses are downgraded to
         # the actionable "no selected account" error below (unknown connection
@@ -382,6 +387,53 @@ _CATALOG_STRUCTURE_TOKENS: dict[str, str] = {
     "campaign_id": "campaign.id",
     "campaign_name": "campaign.name",
 }
+
+# Story 39.7: this connector's declared time context -- mirrors manifest.json
+# source_capabilities.time_context. The report timezone is an ACCOUNT setting
+# (customer.time_zone; api_catalog.json customer_time_zone: "Account reporting
+# time zone. Daily rows are bucketed in this zone.", selectable FROM all five
+# profile resources per the generated selectable_set rules). It is captured AT
+# PULL by selecting customer.time_zone alongside the report fields -- no extra
+# API call, and the zone rides every result row.
+_TIME_CONTEXT = {"locus": "account", "fallback": "gap"}
+
+# The (field_id, GAQL token) pair appended to every pull SELECT so the report
+# timezone is captured live at pull (Story 39.7). An ATTRIBUTE of customer, not
+# a segment: it never splits report rows, so totals stay byte-identical.
+_TIME_ZONE_PAIR = ("customer_time_zone", "customer.time_zone")
+
+
+def _with_time_zone_capture(pairs: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Append the report-timezone capture pair to a pull SELECT (Story 39.7).
+
+    Idempotent: a catalog selection that already carries customer_time_zone as
+    a dimension is not duplicated (the GAQL would select the field twice).
+    """
+    if any(field_id == _TIME_ZONE_PAIR[0] for field_id, _token in pairs):
+        return pairs
+    return [*pairs, _TIME_ZONE_PAIR]
+
+
+def _observed_report_timezone(canonical_rows: list[dict]) -> str | None:
+    """The zone a pull OBSERVED, for the worker to record (AI-161, Story 39.7).
+
+    Every result row carries the same account zone (the timezone is a property
+    of the datastream, not of the row), so the first captured one stands for
+    the pull; an empty window captured nothing and resolves to None -- a
+    RESULT (the gap), never a silence. Resolved through the GENERIC contract
+    (core owns validate/fallback/gap), never hardcoded.
+    """
+    from core import report_timezone as _rtz  # noqa: PLC0415
+
+    captured = next(
+        (
+            row.get("customer_time_zone")
+            for row in canonical_rows
+            if row.get("customer_time_zone")
+        ),
+        None,
+    )
+    return _rtz.resolve_capture(_TIME_CONTEXT, captured)["report_timezone"]
 
 
 def _profile_request_fields(profile_id: str) -> list[tuple[str, str]]:
@@ -910,38 +962,48 @@ def _canonical_metric_names(metric_field_ids: list[str]) -> list[str]:
 # supersedes per grain x metric (QUALIFY, AD-7).
 # ---------------------------------------------------------------------------
 
-_RAW_CREATE_DDL = """
-CREATE TABLE IF NOT EXISTS raw_google_ads_daily (
-    date                  VARCHAR,
-    data_level            VARCHAR,
-    customer_id           VARCHAR,
-    campaign_id           VARCHAR,
-    campaign_name         VARCHAR,
-    ad_group_id           VARCHAR,
-    ad_group_name         VARCHAR,
-    ad_id                 VARCHAR,
-    criterion_id          VARCHAR,
-    keyword_text          VARCHAR,
-    search_term           VARCHAR,
-    segments_json         VARCHAR,
-    attributes_json       VARCHAR,
-    metric                VARCHAR,
-    value_num             DOUBLE,
-    cost_source_currency  VARCHAR,
-    pull_id               VARCHAR,
-    loaded_at             VARCHAR,
-    project_id            VARCHAR
-)
-"""
+_RAW_TABLE = "raw_google_ads_daily"
 
-_RAW_INSERT_SQL = """
-INSERT INTO raw_google_ads_daily
-    (date, data_level, customer_id, campaign_id, campaign_name, ad_group_id,
-     ad_group_name, ad_id, criterion_id, keyword_text, search_term,
-     segments_json, attributes_json, metric, value_num, cost_source_currency,
-     pull_id, loaded_at, project_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-"""
+# THE RAW TABLE, DECLARED ONCE. `core.raw_landing` renders the DuckDB DDL and
+# INSERT from this list, and the BigQuery landing is handed the same list, so the
+# two backends cannot end up describing the same table differently.
+#
+# They did. Until 2026-08-17 the BigQuery branch carried its own transcription of
+# these columns and had drifted to `metric_name` / `metric_value` / `currency`,
+# while this DDL and `stg_google_ads_daily.sql` both read `metric` / `value_num`
+# / `cost_source_currency`. Production runs `TOOROW_DB_MODE=bigquery`, so the
+# drifted copy was the live one: the pull landed rows, and not one column the
+# staging model selects existed in the table it had written.
+#
+# The names here are the ones dbt reads. `tests/conformance/
+# test_raw_table_has_one_declaration.py` compares this declaration, the landing
+# and the staging model on every run.
+_RAW_COLUMNS = [
+    ("date", "STRING"),
+    ("data_level", "STRING"),
+    ("customer_id", "STRING"),
+    ("campaign_id", "STRING"),
+    ("campaign_name", "STRING"),
+    ("ad_group_id", "STRING"),
+    ("ad_group_name", "STRING"),
+    ("ad_id", "STRING"),
+    ("criterion_id", "STRING"),
+    ("keyword_text", "STRING"),
+    ("search_term", "STRING"),
+    ("segments_json", "STRING"),
+    ("attributes_json", "STRING"),
+    ("metric", "STRING"),
+    ("value_num", "FLOAT"),
+    ("cost_source_currency", "STRING"),
+    ("pull_id", "STRING"),
+    ("loaded_at", "STRING"),
+    ("project_id", "STRING"),
+    # Story 39.7: report-timezone provenance (CAPTURE only, E39-AD2 -- never a
+    # day-grain conversion, HG-4). Resolved per row through
+    # core.report_timezone.resolve_capture; NULL when undetermined (fail-closed
+    # TIMEZONE_GAP, never a silent 'UTC'). Additive: no existing total moves.
+    ("report_timezone", "STRING"),
+]
 
 # Canonical (post-transform) keys that land in dedicated grain columns.
 _STRUCTURE_COLUMNS = (
@@ -950,6 +1012,9 @@ _STRUCTURE_COLUMNS = (
 )
 _NON_SEGMENT_KEYS = set(_STRUCTURE_COLUMNS) | {
     "customer_currency_code", "pull_id", "connector", "data_level",
+    # Story 39.7: the captured account report timezone is per-row PROVENANCE,
+    # never a grain-bearing segment (it lands in the report_timezone column).
+    "customer_time_zone",
 }
 
 
@@ -978,7 +1043,7 @@ def _insert_raw_rows(
     partition -- a re-pull with a changed status keeps the SAME grain, so the
     QUALIFY keeps one row per grain and metrics are never double-counted.
     """
-    if db_mode != "duckdb":
+    if db_mode not in ("duckdb", "bigquery"):
         raise ValueError(
             f"_insert_raw_rows: unsupported db_mode {db_mode!r} at P-dev "
             "(BigQuery path not yet implemented)"
@@ -986,6 +1051,12 @@ def _insert_raw_rows(
     from core import warehouse_write  # noqa: PLC0415
 
     metric_set = list(dict.fromkeys(metric_names))
+    # Story 39.7: resolve the per-row report timezone through the GENERIC
+    # time-context capture contract (core owns validate/fallback/gap; the
+    # connector supplies its own captured zone -- customer.time_zone, selected
+    # alongside the report fields at pull). Undetermined => resolved None =>
+    # NULL (a read-time TIMEZONE_GAP), NEVER a silent default (E39-NFR02).
+    from core import report_timezone as _rtz  # noqa: PLC0415
     # Story 26.6 Part A: descriptive-mutable attributes (status/type enums) are
     # split OUT of segments_json into attributes_json (latest-wins, NEVER in the
     # dbt supersede partition) so a re-pull with a changed status can never fork
@@ -1012,6 +1083,9 @@ def _insert_raw_rows(
             json.dumps(attribute_items, sort_keys=True) if attribute_items else None
         )
         currency = row.get("customer_currency_code") or None
+        report_timezone = _rtz.resolve_capture(
+            _TIME_CONTEXT, row.get("customer_time_zone")
+        )["report_timezone"]
         for metric in metric_set:
             value = row.get(metric)
             if value is None:
@@ -1050,15 +1124,36 @@ def _insert_raw_rows(
                     pull_id,
                     loaded_at,
                     project_id,
+                    report_timezone,
                 )
             )
 
-    con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
-    con.execute(_RAW_CREATE_DDL)
-    if values:
-        con.executemany(_RAW_INSERT_SQL, values)
-    con.close()
-    return len(values)
+    from core import raw_landing  # noqa: PLC0415 -- AD-2
+
+    if db_mode == "bigquery":
+        raw_landing.land_raw_rows(
+            _RAW_TABLE,
+            [raw_landing.row_from_values(_RAW_COLUMNS, v) for v in values],
+            columns=_RAW_COLUMNS,
+            project_id=project_id,
+            backend="bigquery",
+        )
+        return len(values)
+    else:
+        con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
+        con.execute(raw_landing.duckdb_ddl(_RAW_TABLE, _RAW_COLUMNS))
+        # Story 39.7 migration guard: additive report_timezone provenance column
+        # on tables created before 39.7. Idempotent; NULL default (fail-closed
+        # TIMEZONE_GAP, never a silent 'UTC'). E39-NFR06: additive column, no
+        # existing total moves.
+        con.execute(
+            "ALTER TABLE raw_google_ads_daily ADD COLUMN IF NOT EXISTS "
+            "report_timezone VARCHAR"
+        )
+        if values:
+            con.executemany(raw_landing.duckdb_insert(_RAW_TABLE, _RAW_COLUMNS), values)
+        con.close()
+        return len(values)
 
 
 # ---------------------------------------------------------------------------
@@ -1103,7 +1198,7 @@ def _pull(
     db_mode = _get_db_mode()
     duckdb_path = _get_duckdb_path()
 
-    pairs = _profile_request_fields(profile)
+    pairs = _with_time_zone_capture(_profile_request_fields(profile))
     query = _build_gaql([token for _fid, token in pairs], resource, date_from, date_to)
 
     api_rows, pages, truncated = _search(connection_id, cid, query, login_cid)
@@ -1133,6 +1228,10 @@ def _pull(
         "date_to": date_to,
         "pages": pages,
         "truncated": truncated,
+        # AI-161 (Story 39.7): the zone this pull OBSERVED, returned so the
+        # worker records it as boundary evidence. None is a RESULT (the zone
+        # was undetermined), recorded as the gap it is.
+        "report_timezone": _observed_report_timezone(canonical_rows),
     }
 
 
@@ -1381,6 +1480,10 @@ def pull_catalog_daily(
         seen_ids.add(field_id)
         pairs.append((field_id, source_fields.get(field_id, field_id)))
 
+    # Story 39.7: capture the account report timezone live at pull (attribute
+    # of customer -- never splits report rows, totals stay byte-identical).
+    pairs = _with_time_zone_capture(pairs)
+
     query = _build_gaql(
         [token for _fid, token in pairs], from_resource, date_from, date_to
     )
@@ -1411,6 +1514,10 @@ def pull_catalog_daily(
         "date_to": date_to,
         "pages": pages,
         "truncated": truncated,
+        # AI-161 (Story 39.7): the zone this pull OBSERVED, returned so the
+        # worker records it as boundary evidence. None is a RESULT (the zone
+        # was undetermined), recorded as the gap it is.
+        "report_timezone": _observed_report_timezone(canonical_rows),
     }
 
 
@@ -1685,12 +1792,12 @@ def _query_bigquery(sql: str, params: dict) -> list[dict]:
     return [dict(zip(cols, row)) for row in result]
 
 
-def _get_mart_table(db_mode: str) -> str:
+def _get_mart_table(db_mode: str, project_id: str | None) -> str:
     """Fully-qualified mart table reference per engine (F-02)."""
     if db_mode == "duckdb":
         from core import warehouse_tenancy  # noqa: PLC0415
 
-        return f"{warehouse_tenancy.mart_prefix(None)}fact_daily_kpi"
+        return f"{warehouse_tenancy.mart_prefix(project_id)}fact_daily_kpi"
     dataset = os.environ.get("BQ_MARTS_DATASET", "marts")
     gcp_project = os.environ.get("GCP_PROJECT", "")
     prefix = f"{gcp_project}.{dataset}" if gcp_project else dataset
@@ -1721,7 +1828,7 @@ def _query_mart(date_from: str, date_to: str, project_id: str = "default") -> li
     # AD-12: MCP server reads marts only -- never raw_* tables or CSV
     """
     db_mode = _get_db_mode()
-    table = _get_mart_table(db_mode)
+    table = _get_mart_table(db_mode, project_id)
 
     if db_mode == "duckdb":
         sql = _MART_QUERY.format(table=table, p_project="?", p_from="?", p_to="?")

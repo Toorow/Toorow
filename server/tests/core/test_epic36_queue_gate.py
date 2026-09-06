@@ -9,11 +9,32 @@ def test_topology_guard_revalidates_exact_account_before_enqueue(monkeypatch):
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
     monkeypatch.setenv("TOOROW_EPIC36_PRODUCTION_ENABLED", "true")
+    # THE CURSOR ANSWERS BY QUERY, NOT BY POSITION. `side_effect=[...]` pinned
+    # this test to the exact NUMBER and ORDER of reads the guard made the day it
+    # was written. A read added since exhausted the list, `StopIteration` was
+    # swallowed by `_resolve_selected_account`'s "best effort, never fails a
+    # pull" `except` -- the empty `resolve_selected_account_failed:` in the log
+    # is that exception's blank message -- and the guard short-circuited on
+    # `account_not_selected` before ever reaching the access resolver this test
+    # exists to exercise. A red about nothing the test claims to defend.
     conn = MagicMock()
     cur = MagicMock()
     cur.__enter__.return_value = cur
     cur.__exit__.return_value = False
-    cur.fetchone.side_effect = [("acct-1",), ("org-1",)]
+
+    def _answer():
+        last = cur.execute.call_args_list[-1:]
+        sql = " ".join(str(call.args[0]) for call in last)
+        if "connection_account_scope" in sql or "credential_accounts" in sql:
+            return ("acct-1",)
+        return ("org-1",)
+
+    cur.fetchone.side_effect = _answer
+    # 2026-08-30: the credential-wide fallback COUNTS its candidates (`fetchall`)
+    # instead of taking the freshest one, so a fixture has to say how many there
+    # are. One ready account of this connector -- no ambiguity, and this subject
+    # is about the access decision that follows, not about the count.
+    cur.fetchall.return_value = [("acct-1", "google-ads")]
     conn.cursor.return_value = cur
 
     monkeypatch.setattr(db, "get_connection", lambda: nullcontext(conn))
@@ -24,7 +45,10 @@ def test_topology_guard_revalidates_exact_account_before_enqueue(monkeypatch):
         lambda _conn, _id: {"provider": "google-ads", "project_id": "proj-1"},
     )
     monkeypatch.setattr(account_topology, "get_topology_for_provider", lambda _p: {})
-    monkeypatch.setattr(account_topology, "has_ready_scope", lambda _id, _conn: True)
+    # Account-exact since migration 211: the guard resolves WHICH account this
+    # enqueue is about (the Datastream's, or the credential's verified one when
+    # it names none) and asks whether THAT account is ready.
+    monkeypatch.setattr(account_topology, "is_account_ready", lambda _id, _acct, _conn: True)
     resolver = MagicMock(
         return_value=project_access.AccessDecision(False, "account_exposure_required")
     )

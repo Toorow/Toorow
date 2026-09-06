@@ -44,9 +44,68 @@ def test_account_discovery_is_oauth_account_only(connector):
     client.request.return_value = Response(payload={"id": 7, "companyName": "Agency"})
     result = connector.discover_accounts("conn", _client=client, _token_value="token")
     assert result == [
-        {"id": "brevo_account_selection_1", "account_id": "7", "display_name": "Agency", "plan": []}
+        {"id": "7", "account_id": "7", "display_name": "Agency", "plan": []}
     ]
     assert client.request.call_args.args[1].endswith("/account")
+
+
+def test_the_manifest_declares_the_parameter_that_carries_the_account():
+    """Le compte arrive par le nom declare, jamais par la selection de rapport."""
+    manifest = json.loads((MODULE_DIR / "manifest.json").read_text())
+    assert manifest["account_topology"]["pull_parameter"] == "account_id"
+
+
+def test_pull_reads_the_account_from_its_declared_parameter(connector, monkeypatch):
+    """Le compte choisi atteint la donnee landee -- c'est la colonne account_id."""
+    landed: list[dict] = []
+    monkeypatch.setattr(connector, "_token", lambda connection_id: "tok")
+    monkeypatch.setattr(
+        connector, "paginate_offset", lambda *a, **k: [{"id": 1, "sent": 3, "date": "2026-07-01"}]
+    )
+    monkeypatch.setattr(connector, "_land", lambda rows, context: landed.append(context) or 1)
+    connector.pull("conn", "2026-07-01", "2026-07-02", "proj_EXAMPLE", "pull-1", account_id="7")
+    assert landed[0]["account_id"] == "7"
+
+
+def test_a_missing_account_is_typed_and_names_the_selection(connector):
+    with pytest.raises(connector.BrevoOnboardingError, match="account_id"):
+        connector.pull("conn", "2026-07-01", "2026-07-02", "proj_EXAMPLE", "pull-1")
+
+
+def test_no_environment_fallback_for_the_account(connector, monkeypatch):
+    monkeypatch.setenv("BREVO_ACCOUNT_ID", "leak")
+    with pytest.raises(connector.BrevoOnboardingError):
+        connector.pull("conn", "2026-07-01", "2026-07-02", "proj_EXAMPLE", "pull-1")
+
+
+def test_unknown_granted_scopes_do_not_read_as_zero_scopes(connector, monkeypatch):
+    """L'ensemble des scopes accordes n'a AUCUN canal vers pull().
+
+    Il vivait dans `selection["granted_scopes"]`, que le plan ne produit pas.
+    Traiter << je ne sais pas >> comme << aucun scope >> refusait 100 % des
+    pulls ; l'arbitre reel est le 403 du provider, deja typé par error_map.
+    """
+    monkeypatch.setattr(connector, "_token", lambda connection_id: "tok")
+    monkeypatch.setattr(connector, "paginate_offset", lambda *a, **k: [])
+    monkeypatch.setattr(connector, "_land", lambda rows, context: 0)
+    result = connector.pull_contact_list_growth(
+        "conn", "2026-07-01", "2026-07-02", "proj_EXAMPLE", "pull-1", account_id="7"
+    )
+    assert result["pull_id"] == "pull-1"
+
+
+def test_declared_scopes_are_still_enforced(connector, monkeypatch):
+    monkeypatch.setattr(connector, "_token", lambda connection_id: "tok")
+    with pytest.raises(connector.BrevoScopeError, match="events:read"):
+        connector.pull_transactional_events(
+            "conn",
+            "2026-07-01",
+            "2026-07-02",
+            "proj_EXAMPLE",
+            "pull-1",
+            account_id="7",
+            granted_scopes=["account:read"],
+        )
 
 
 def test_campaign_offset_pagination(connector):

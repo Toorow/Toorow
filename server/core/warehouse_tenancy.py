@@ -36,6 +36,17 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+#: WHERE EVERY DATASET OF THIS PLATFORM LIVES -- one name, because the second
+#: place that decided it decided differently and nothing could see it.
+#: `raw_landing._land_bigquery` created the raw zone by ID with no location, so
+#: BigQuery applied its own default (US) while this module pinned EU on the
+#: zones IT provisions ("decision actée spike §4 + archi §6") and the nightly's
+#: dbt profile queries in EU. BigQuery does not read across locations: measured
+#: 2026-08-24, the two live `raw_proj_*` zones are US, everything else is EU, and
+#: the nightly answered `Not found: Dataset toorow:raw_proj_… was not found in
+#: location EU` on the only staging model the live Project has (AI-314).
+BIGQUERY_LOCATION = "EU"
+
 # ---------------------------------------------------------------------------
 # Flag & legacy constants (AC2)
 # ---------------------------------------------------------------------------
@@ -94,6 +105,11 @@ class OrgSchemas:
     warehouse_slug: str
     raw: str
     marts: str
+
+    @property
+    def expected_marts(self) -> str:
+        """The ONE marts dataset an org-scoped outbound read may ever open."""
+        return f"org_{self.warehouse_slug}_marts"
 
 
 _SQL_BY_PROJECT = """
@@ -274,6 +290,195 @@ def list_active_orgs(conn=None) -> list[OrgSchemas]:
 
 
 # ---------------------------------------------------------------------------
+# The tenancy the LIVE deployment uses -- per PROJECT (AI-166, 2026-08-17)
+# ---------------------------------------------------------------------------
+#
+# `list_active_orgs` above answers "which orgs exist" and composes
+# ``org_<wslug>_raw`` / ``org_<wslug>_marts``. Those datasets are provisioned
+# shells: measured 2026-08-17, `org_toorow_raw` and `org_toorow_marts` hold ZERO
+# tables, while the rows live in `raw_proj_*` -- the shape the resolvers below
+# return with TOOROW_ORG_SCHEMAS OFF, which is the flag's live value.
+#
+# A nightly build addressed at the org zones therefore reads an empty dataset and
+# writes an empty one. `list_active_projects` returns the zones the read layer
+# actually addresses, composed by the SAME resolvers the readers call -- so if
+# the flag is ever flipped ON, the builder follows the readers instead of
+# disagreeing with them.
+
+
+@dataclass(frozen=True)
+class ProjectZones:
+    """The three warehouse zones of ONE project, named as the READ layer names them.
+
+    Every field comes from the ``bigquery_*_dataset`` resolvers below -- never
+    composed here (single naming point, epic-24 invariant).
+    """
+
+    project_id: str
+    raw: str
+    staging: str
+    marts: str
+
+
+#: Active projects of active orgs. An archived project (or a project of an
+#: archived org) keeps its datasets until the human-gated drop but is not
+#: rebuilt nightly -- the same rule `_SQL_ACTIVE_ORGS` applies one level up.
+_SQL_ACTIVE_PROJECTS = """
+    SELECT p.id
+    FROM app.projects p
+    JOIN app.organizations o ON o.id = p.org_id
+    WHERE p.status = 'active' AND o.status = 'active'
+    ORDER BY p.id
+"""
+
+
+def list_active_projects(conn=None) -> list[ProjectZones]:
+    """Return the warehouse zones of every ACTIVE project (AI-166 fan-out).
+
+    NEVER raises: on any DB error (or psycopg absent) returns [] with a WARNING,
+    exactly like ``list_active_orgs`` -- the nightly loop degrades to "no
+    project fan-out" instead of crashing.
+    """
+    try:
+        if conn is not None:
+            with conn.cursor() as cur:
+                cur.execute(_SQL_ACTIVE_PROJECTS)
+                rows = cur.fetchall()
+        else:
+            from core.db import get_connection  # noqa: PLC0415 -- optional dep
+
+            with get_connection() as own_conn, own_conn.cursor() as cur:
+                cur.execute(_SQL_ACTIVE_PROJECTS)
+                rows = cur.fetchall()
+    except Exception as exc:  # noqa: BLE001 -- degradation contract (never crash nightly)
+        _warn_once(
+            "listactiveprojects:dberr",
+            "warehouse_tenancy: list_active_projects failed: %s (no project fan-out)",
+            exc,
+        )
+        return []
+
+    zones: list[ProjectZones] = []
+    for row in rows:
+        project_id = str(row[0])
+        zones.append(
+            ProjectZones(
+                project_id=project_id,
+                raw=bigquery_raw_dataset(project_id, conn=conn),
+                staging=bigquery_staging_dataset(project_id, conn=conn),
+                marts=bigquery_marts_dataset(project_id, conn=conn),
+            )
+        )
+    return zones
+
+
+# ---------------------------------------------------------------------------
+# The marts zone of ONE project, for a governed OUTBOUND read (story 62.3)
+# ---------------------------------------------------------------------------
+#
+# THE PHYSICS DECIDES WHETHER PROJECT SCOPE EXISTS AT ALL, and it is not the
+# same answer under the two values of TOOROW_ORG_SCHEMAS:
+#
+#   flag OFF (the live value)  -> `bigquery_marts_dataset` returns
+#       ``marts_<project_id>``: one dataset per PROJECT, so a reader added to it
+#       reads that project and nothing else. Project scope is real.
+#   flag ON                    -> it returns ``org_<wslug>_marts``: ONE dataset
+#       per ORG holding every project of that org. A "project" grant on it would
+#       hand the neighbour's rows to the same reader. Project scope is NOT
+#       representable, and the only honest answer is a refusal that says so --
+#       never a grant that quietly opens more than it names.
+#
+# `project_marts_scope` returns exactly one of those two verdicts. It NEVER
+# invents a per-project dataset that the read layer does not address.
+
+
+@dataclass(frozen=True)
+class ProjectMarts:
+    """The marts dataset of ONE project, named as the READ layer names it."""
+
+    project_id: str
+    org_id: str
+    warehouse_slug: str
+    marts: str
+
+    @property
+    def expected_marts(self) -> str:
+        """The ONE marts dataset a project-scoped outbound read may ever open."""
+        return f"marts_{self.project_id}"
+
+
+#: Why a resolved dataset cannot carry a durable outbound read. Each value is a
+#: SENTENCE for the person, naming the gesture -- never a state of deployment.
+PROJECT_SCOPE_UNAVAILABLE = (
+    "This deployment keeps one marts dataset per organization "
+    "({dataset}), which holds every project of the organization. A read opened "
+    "from this project would also open its neighbours, so it is refused. Open "
+    "the read from Organization settings, or ask for per-project marts datasets "
+    "before granting from here."
+)
+
+
+def project_marts_scope(project_id: str, conn=None) -> tuple["ProjectMarts | None", str | None]:
+    """Return the project marts zone, or the sentence that refuses project scope.
+
+    Exactly one of the two is not None. A read path: nothing is written here.
+    """
+    if not project_id:
+        return None, "Name the project whose published marts are being opened."
+    resolved = resolve_org_schemas(project_id=project_id, conn=conn, fresh=True)
+    dataset = bigquery_marts_dataset(project_id, conn=conn)
+    if dataset != f"marts_{project_id}":
+        return None, PROJECT_SCOPE_UNAVAILABLE.format(dataset=dataset)
+    if resolved is None:
+        return None, (
+            "This project is not attached to an organization yet, so its marts "
+            "dataset cannot be named. Attach the project to an organization, "
+            "then request the read again."
+        )
+    return (
+        ProjectMarts(
+            project_id=project_id,
+            org_id=resolved.org_id,
+            warehouse_slug=resolved.warehouse_slug,
+            marts=dataset,
+        ),
+        None,
+    )
+
+
+#: A name that says "this will be thrown away". A dashboard bound to one of
+#: these breaks the week it is rebuilt, which is the open question the reference
+#: case never answered -- so the product answers it by refusing the target.
+_SLATE_TOKENS = ("sandbox", "scratch", "tmp", "temp", "throwaway", "wip")
+_SLATE_DATE_SUFFIX = re.compile(
+    r"_(?:19|20)\d{2}(?:[_-]?(?:0[1-9]|1[0-2])(?:[_-]?(?:0[1-9]|[12]\d|3[01]))?)$"
+)
+
+
+def slate_dataset_reason(dataset_id: str) -> str | None:
+    """Return the refusal sentence when *dataset_id* is a slate name, else None."""
+    name = (dataset_id or "").strip().lower()
+    if not name:
+        return "Name the dataset the read opens."
+    tokens = set(name.split("_"))
+    hit = next((token for token in _SLATE_TOKENS if token in tokens), None)
+    if hit is not None:
+        return (
+            f"{dataset_id!r} is a scratch name (it contains {hit!r}), and a "
+            "dashboard bound to it breaks the day it is rebuilt. Rename the "
+            "project or organization to the name the reporting should keep, "
+            "then request the read again."
+        )
+    if _SLATE_DATE_SUFFIX.search(name):
+        return (
+            f"{dataset_id!r} ends in a date, so it names one build rather than a "
+            "durable table. Rename the project or organization to a name without "
+            "a date, then request the read again."
+        )
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Data-plane schema provisioning / drop (Story 24.2)
 # ---------------------------------------------------------------------------
 
@@ -312,6 +517,14 @@ def bq_provisioning_enabled() -> bool:
     return os.environ.get(_BQ_PROVISION_ENV, "0").strip().lower() in ("1", "true")
 
 
+def configured_bigquery_project() -> str:
+    """Return the explicitly configured security boundary for BigQuery writes."""
+    project = os.environ.get("GOOGLE_CLOUD_PROJECT", "").strip()
+    if not project:
+        raise RuntimeError("GOOGLE_CLOUD_PROJECT is required for BigQuery mutations")
+    return project
+
+
 def _provision_bigquery_datasets(schemas: OrgSchemas) -> None:  # pragma: no cover -- AI-08 gate
     """Create BigQuery datasets for *schemas* (gated by TOOROW_BQ_PROVISION_ENABLED).
 
@@ -320,11 +533,11 @@ def _provision_bigquery_datasets(schemas: OrgSchemas) -> None:  # pragma: no cov
     """
     from google.cloud import bigquery  # noqa: PLC0415
 
-    project = os.environ.get("GOOGLE_CLOUD_PROJECT", "toorow")
-    client = bigquery.Client()
+    project = configured_bigquery_project()
+    client = bigquery.Client(project=project)
     for dataset_id in (schemas.raw, schemas.marts):
         ds = bigquery.Dataset(f"{project}.{dataset_id}")
-        ds.location = "EU"
+        ds.location = BIGQUERY_LOCATION
         client.create_dataset(ds, exists_ok=True)
     logger.info(
         "warehouse_tenancy: bigquery datasets provisioned raw=%s marts=%s",
@@ -340,8 +553,8 @@ def _drop_bigquery_datasets(schemas: OrgSchemas) -> None:  # pragma: no cover --
     """
     from google.cloud import bigquery  # noqa: PLC0415
 
-    project = os.environ.get("GOOGLE_CLOUD_PROJECT", "toorow")
-    client = bigquery.Client()
+    project = configured_bigquery_project()
+    client = bigquery.Client(project=project)
     for dataset_id in (schemas.raw, schemas.marts):
         client.delete_dataset(
             f"{project}.{dataset_id}",
@@ -355,55 +568,155 @@ def _drop_bigquery_datasets(schemas: OrgSchemas) -> None:  # pragma: no cover --
     )
 
 
-def _simulate_bq_iam_grant(
-    org_schemas: OrgSchemas, principal: str, action: str
-) -> None:
-    """Story 24.5 (AC6-AC7): log-only stub for BigQuery IAM grant/revoke.
+def _validate_dataset_access_target(org_schemas: OrgSchemas | ProjectMarts) -> None:
+    """Refuse every dataset except the resolved marts dataset of THIS scope.
 
-    Validates that the target dataset is exclusively ``marts`` (never raw,
-    never mirror_*) then emits an INFO trace.  action ∈ "grant" | "revoke".
-
-    The real SDK call is commented out below (AI-08 gate -- Phase B only).
-    Import of google.cloud is intentionally absent: this stub MUST NOT import
-    the SDK regardless of env flags so that tests can assert_not_called without
-    needing to patch sys.modules.
+    Two scopes reach here and each one names its own single legal dataset
+    through ``expected_marts``: an organization opens ``org_<wslug>_marts``, a
+    project opens ``marts_<project_id>``. Nothing else passes -- not raw, not a
+    mirror, not staging, not a neighbour's dataset, and not a scratch name.
     """
-    # Guard: dataset must be the marts schema only (AC7 invariant). raise, not
-    # assert -- the guard must survive `python -O` (review 24.5 F-6).
-    if not org_schemas.marts.endswith("_marts"):
-        raise ValueError(
-            f"bq_iam_simulate: dataset {org_schemas.marts!r} does not end with"
-            " '_marts' -- only marts datasets may receive IAM grants"
-        )
     if "_raw" in org_schemas.marts:
         raise ValueError(
-            f"bq_iam_simulate: refusing to grant on raw dataset {org_schemas.marts!r}"
+            f"dataset access: refusing raw dataset {org_schemas.marts!r}"
         )
     if "mirror_" in org_schemas.marts:
         raise ValueError(
-            f"bq_iam_simulate: refusing to grant on mirror dataset {org_schemas.marts!r}"
+            f"dataset access: refusing mirror dataset {org_schemas.marts!r}"
         )
+    if "staging" in org_schemas.marts:
+        raise ValueError(
+            f"dataset access: refusing staging dataset {org_schemas.marts!r}"
+        )
+    slate = slate_dataset_reason(org_schemas.marts)
+    if slate is not None:
+        raise ValueError(f"dataset access: {slate}")
+    expected = getattr(org_schemas, "expected_marts", None)
+    if expected is None:  # pragma: no cover -- defensive: an unknown scope object
+        expected = f"org_{org_schemas.warehouse_slug}_marts"
+    if org_schemas.marts != expected:
+        raise ValueError(
+            f"dataset access: refusing foreign or malformed dataset "
+            f"{org_schemas.marts!r}; resolved marts is {expected!r}"
+        )
+
+
+def mutate_bigquery_dataset_access(
+    org_schemas: OrgSchemas | ProjectMarts,
+    principal: str,
+    action: str,
+    *,
+    client=None,
+) -> dict[str, Any]:
+    """Grant or revoke read access on exactly one resolved marts dataset.
+
+    BigQuery's Python client exposes dataset ACLs through ``access_entries``;
+    its IAM policy methods are table-only.  The dataset object returned by
+    ``get_dataset`` carries the current ETag, and passing that same object to
+    ``update_dataset`` makes the replacement conditional while preserving all
+    unrelated access entries.
+    """
+    if action not in {"grant", "revoke"}:
+        raise ValueError("dataset access action must be 'grant' or 'revoke'")
+    _validate_dataset_access_target(org_schemas)
+
+    try:
+        principal_kind, principal_id = principal.split(":", 1)
+    except ValueError as exc:
+        raise ValueError("dataset access principal must be type:identifier") from exc
+    entity_type = {
+        "user": "userByEmail",
+        "serviceAccount": "userByEmail",
+        "group": "groupByEmail",
+    }.get(principal_kind)
+    if entity_type is None or not principal_id:
+        raise ValueError("unsupported dataset access principal")
+
+    from google.cloud import bigquery  # noqa: PLC0415
+
+    project = configured_bigquery_project()
+    if client is None:
+        client = bigquery.Client(project=project)
+    dataset_ref = f"{project}.{org_schemas.marts}"
+    dataset = client.get_dataset(dataset_ref)
+    entries = list(dataset.access_entries or ())
+
+    def is_target(entry) -> bool:
+        return (
+            entry.role == "READER"
+            and entry.entity_type == entity_type
+            and entry.entity_id == principal_id
+        )
+
+    changed = False
+    if action == "grant":
+        if not any(is_target(entry) for entry in entries):
+            entries.append(bigquery.AccessEntry("READER", entity_type, principal_id))
+            changed = True
+    else:
+        retained = [entry for entry in entries if not is_target(entry)]
+        changed = len(retained) != len(entries)
+        entries = retained
+
+    if changed:
+        if not getattr(dataset, "etag", None):
+            raise RuntimeError("BigQuery dataset response has no ETag; refusing ACL update")
+        dataset.access_entries = entries
+        client.update_dataset(dataset, ["access_entries"])
     logger.info(
-        "bq_iam_simulate: %s role/bigquery.dataViewer on %s for %s",
+        "dataset_access: %s roles/bigquery.dataViewer on %s for %s changed=%s",
         action,
-        org_schemas.marts,
+        dataset_ref,
         principal,
+        changed,
     )
-    # Phase B: appel réel (AI-08 -- non exécuté en dev/CI)
-    # from google.cloud import bigquery_v2  # noqa: PLC0415
-    # client = bigquery_v2.AnalyticsHubServiceClient()
-    # project = os.environ.get("GOOGLE_BQ_PROJECT", "toorow")
-    # resource = f"projects/{project}/datasets/{org_schemas.marts}"
-    # policy = client.get_iam_policy(resource=resource)
-    # member = principal  # e.g. "serviceAccount:sa@project.iam.gserviceaccount.com"
-    # if action == "grant":
-    #     policy.bindings.add(role="roles/bigquery.dataViewer", members=[member])
-    # else:
-    #     # revoke: remove member from binding
-    #     for b in policy.bindings:
-    #         if b.role == "roles/bigquery.dataViewer":
-    #             b.members.discard(member)
-    # client.set_iam_policy(resource=resource, policy=policy)
+    return {
+        "dataset_id": org_schemas.marts,
+        "dataset_ref": dataset_ref,
+        "role": "roles/bigquery.dataViewer",
+        "changed": changed,
+    }
+
+
+def read_bigquery_dataset_access(
+    org_schemas: OrgSchemas | ProjectMarts,
+    principal: str,
+    *,
+    client=None,
+) -> dict[str, Any]:
+    """Read the exact reader entry used to reconcile an ambiguous mutation."""
+    _validate_dataset_access_target(org_schemas)
+    try:
+        principal_kind, principal_id = principal.split(":", 1)
+    except ValueError as exc:
+        raise ValueError("dataset access principal must be type:identifier") from exc
+    entity_type = {
+        "user": "userByEmail",
+        "serviceAccount": "userByEmail",
+        "group": "groupByEmail",
+    }.get(principal_kind)
+    if entity_type is None or not principal_id:
+        raise ValueError("unsupported dataset access principal")
+
+    from google.cloud import bigquery  # noqa: PLC0415
+
+    project = configured_bigquery_project()
+    if client is None:
+        client = bigquery.Client(project=project)
+    dataset_ref = f"{project}.{org_schemas.marts}"
+    dataset = client.get_dataset(dataset_ref)
+    present = any(
+        entry.role == "READER"
+        and entry.entity_type == entity_type
+        and entry.entity_id == principal_id
+        for entry in (dataset.access_entries or ())
+    )
+    return {
+        "dataset_id": org_schemas.marts,
+        "dataset_ref": dataset_ref,
+        "role": "roles/bigquery.dataViewer",
+        "present": present,
+    }
 
 
 def provision_org_schemas(org_id: str, conn=None) -> dict[str, Any]:
@@ -552,6 +865,30 @@ def mart_prefix(project_id: str | None = None, conn=None) -> str:
     return f"{resolved.marts}."
 
 
+def bigquery_raw_dataset(project_id: str, conn=None) -> str:
+    """BigQuery RAW dataset id for *project_id* (the landing zone, AD-7).
+
+    The exact mirror of ``bigquery_marts_dataset`` for the other half of the
+    warehouse. Marts had a resolver and raw did not, which was fine for as long
+    as nothing could write raw to BigQuery at all.
+
+    Flag OFF (default): the legacy ``raw_<project_id>``.
+    Flag ON: ``org_<wslug>_raw``; unresolvable -> legacy + WARNING.
+    """
+    if not org_schemas_enabled():
+        return f"raw_{project_id}"
+    resolved = resolve_org_schemas(project_id=project_id, conn=conn)
+    if resolved is None:
+        _warn_once(
+            f"noschema:raw_dataset:{project_id}",
+            "warehouse_tenancy: raw dataset unresolvable for project_id=%s"
+            " -- falling back to legacy",
+            project_id,
+        )
+        return f"raw_{project_id}"
+    return resolved.raw
+
+
 def bigquery_marts_dataset(project_id: str, conn=None) -> str:
     """BigQuery marts dataset id for *project_id*.
 
@@ -564,3 +901,103 @@ def bigquery_marts_dataset(project_id: str, conn=None) -> str:
     if resolved is None:
         return f"marts_{project_id}"
     return resolved.marts
+
+
+# ---------------------------------------------------------------------------
+# The two zones the read layer could not address until story 58.3
+# ---------------------------------------------------------------------------
+#
+# Marts had a prefix and a dataset, raw had a dataset, and STAGING had nothing at
+# all -- `grep -rn "main_staging\|_staging\." server/core/*.py` answered 0 on
+# 2026-08-06. That was fine while nothing read below the mart; the day-grain
+# `Collected` / `Mapped` reading has to address both zones, and composing their
+# names at the call site is exactly what this module exists to prevent.
+#
+# THE RULE IS THE DBT MACRO'S, NOT AN INVENTION. `dbt/macros/generate_schema_name.sql`
+# is "the ONLY place in the whole dbt project where the org_<wslug>_<custom>
+# composition lives", and it states both halves: without `var('org')` dbt's own
+# behaviour (dbt-duckdb: ``main`` / ``main_staging`` / ``main_marts``), with it
+# ``org_<wslug>[_<custom>]``. Verified on a built fixture the same day: the schemas
+# present are `main`, `main_staging`, `main_marts`, `org_test_staging`,
+# `org_test_marts`, and the raw relations sit in `main` WITHOUT a prefix.
+#
+# The DuckDB raw zone resolves to ``OrgSchemas.raw`` rather than to the macro's
+# bare ``org_<wslug>``, because that is where the rows actually are:
+# `warehouse_write.open_raw_writer` puts every connector's landing on that schema
+# (search_path), and a reader must address the writer's zone, not the one a model
+# would default to.
+
+#: Exact legacy DuckDB schemas of the two zones (dbt-duckdb, no ``--vars``).
+LEGACY_DUCKDB_RAW_SCHEMA = "main"
+LEGACY_DUCKDB_STAGING_SCHEMA = "main_staging"
+
+
+def raw_schema(project_id: str | None = None, conn=None) -> str:
+    """DuckDB schema holding the RAW landings of *project_id*.
+
+    Flag OFF (default): ``main`` -- where every connector lands today.
+    Flag ON: ``org_<wslug>_raw``, the schema `open_raw_writer` writes into;
+    unresolvable -> legacy + WARNING, like every other resolver here.
+    """
+    if not org_schemas_enabled():
+        return LEGACY_DUCKDB_RAW_SCHEMA
+    resolved = resolve_org_schemas(project_id=project_id, conn=conn)
+    if resolved is None:
+        _warn_once(
+            f"noschema:raw_schema:{project_id}",
+            "warehouse_tenancy: raw schema unresolvable for project_id=%s"
+            " -- falling back to legacy",
+            project_id,
+        )
+        return LEGACY_DUCKDB_RAW_SCHEMA
+    return resolved.raw
+
+
+def staging_schema(project_id: str | None = None, conn=None) -> str:
+    """DuckDB schema holding the STAGING models of *project_id*.
+
+    Flag OFF (default): ``main_staging``. Flag ON: ``org_<wslug>_staging``, the
+    name the dbt macro composes for a node whose custom schema is ``staging``.
+    """
+    if not org_schemas_enabled():
+        return LEGACY_DUCKDB_STAGING_SCHEMA
+    resolved = resolve_org_schemas(project_id=project_id, conn=conn)
+    if resolved is None:
+        _warn_once(
+            f"noschema:staging_schema:{project_id}",
+            "warehouse_tenancy: staging schema unresolvable for project_id=%s"
+            " -- falling back to legacy",
+            project_id,
+        )
+        return LEGACY_DUCKDB_STAGING_SCHEMA
+    return f"org_{resolved.warehouse_slug}_staging"
+
+
+def raw_prefix(project_id: str | None = None, conn=None) -> str:
+    """``raw_schema`` as a query prefix, trailing dot included -- `mart_prefix`'s twin."""
+    return f"{raw_schema(project_id, conn)}."
+
+
+def staging_prefix(project_id: str | None = None, conn=None) -> str:
+    """``staging_schema`` as a query prefix, trailing dot included."""
+    return f"{staging_schema(project_id, conn)}."
+
+
+def bigquery_staging_dataset(project_id: str, conn=None) -> str:
+    """BigQuery staging dataset id for *project_id*.
+
+    The third member of the family, composed the same way as its two siblings:
+    legacy ``staging_<project_id>`` beside ``raw_<project_id>`` and
+    ``marts_<project_id>``; ``org_<wslug>_staging`` under the flag, which is what
+    the dbt macro writes.
+
+    NOT EXERCISED BY ANY TEST OF THIS REPOSITORY, and that is stated rather than
+    implied: there is no GCP dataset to point at here, and a mocked client would
+    prove only that the name can be formatted.
+    """
+    if not org_schemas_enabled():
+        return f"staging_{project_id}"
+    resolved = resolve_org_schemas(project_id=project_id, conn=conn)
+    if resolved is None:
+        return f"staging_{project_id}"
+    return f"org_{resolved.warehouse_slug}_staging"

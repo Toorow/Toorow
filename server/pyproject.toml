@@ -40,8 +40,11 @@ dependencies = [
     "cryptography>=44.0",
     # Story 11.1 — YAML frontmatter validation in context_store.py
     "pyyaml>=6.0",
-    # Story 22.2 — Excel media-plan import parser (multi-sheet + merged-cell
-    # resolution via openpyxl merged_cells). Runtime dep in mediaplan_import.py.
+    # Excel ingestion (multi-sheet + merged-cell resolution via openpyxl
+    # merged_cells). The Story 22.2 parser that first required it,
+    # `mediaplan_import.py`, was retired on 2026-08-24 with the second xlsx
+    # engine; the dependency stays because the ONE engine is built on it —
+    # `core/reshape/`, `file_source_producer.py`, `file_source_plan_lines.py`.
     "openpyxl>=3.1",
     # Epic 38 — inbound quarantine store (GcsQuarantineStore): read/write the
     # delivered file bytes + manifest in the private EU quarantine bucket. Imported
@@ -54,6 +57,48 @@ dependencies = [
     # ImportError inside the non-blocking provisioning try/except, so the 201 was
     # still returned and the org silently had no warehouse.
     "google-cloud-bigquery>=3.25",
+    # Story 56.2/56.3 (AD-36) -- the execution substrate. `_create_push_task`
+    # imports google.cloud.tasks_v2 and raises EnvironmentError without it, so an
+    # undeclared dependency here does not degrade the push backend: it makes the
+    # FIRST enqueue after the flip fail, and every one after it.
+    "google-cloud-tasks>=2.16",
+    # AI-117 -- the platform clock registry (core/platform_clocks.py). The five
+    # Cloud Scheduler jobs that drive the whole platform existed ONLY in GCP:
+    # nothing could read their cadence, edit them, fire one, or notice that one
+    # had been changed by hand. `observe`/`apply`/`run_now` import
+    # google.cloud.scheduler_v1 lazily, so a dev machine that never reconciles
+    # does not need it -- but without it declared here, the deployment that DOES
+    # reconcile answers `unknown` on every clock forever, which is fail-closed
+    # and useless. Same reasoning as google-cloud-tasks two lines above.
+    "google-cloud-scheduler>=2.13",
+    # Story 56.7 -- facts published to N subscribers. Same reasoning: publish_fact
+    # imports google.cloud.pubsub_v1 only when PUBSUB_TOPIC is set, so a dev
+    # machine never needs it at runtime -- but the deployment that sets the topic
+    # does, and the outbox drainer would fail every row without it.
+    "google-cloud-pubsub>=2.21",
+    # The BigQuery Storage Write API, used by core.raw_landing's `storage_write`
+    # mode. A separate distribution from google-cloud-bigquery: rows go as
+    # protobuf over gRPC rather than JSON over HTTPS, which is what buys the
+    # cheaper per-GB rate and exactly-once commits. Imported lazily, so DuckDB
+    # deployments never load it -- but a deployment that selects storage_write
+    # without it fails closed at landing rather than silently downgrading to the
+    # legacy streaming path (which is billed differently and only at-least-once).
+    "google-cloud-bigquery-storage>=2.25",
+    # AI-278 — the per-tenant key store in production (SecretManagerKeyBackend).
+    # Imported lazily so a dev machine on TENANT_KEY_BACKEND=local never loads
+    # it, but a deployment that sets secret_manager cannot read ANY sealed
+    # credential without it — and the local backend it would otherwise fall back
+    # to writes its keys to a container filesystem that dies with the instance,
+    # which is how every Google authorization silently became unreadable.
+    "google-cloud-secret-manager>=2.20",
+    # Story 38.12 — the SPSS .sav adapter. Imported LAZILY in core.inbound_sav,
+    # so a deployment without it still starts and still ingests CSV/TSV/XLSX;
+    # what it loses is .sav, and it says so with a stable code
+    # (`sav_reader_unavailable`) rather than reporting the file as corrupt. It is
+    # a hard dependency here rather than an extra because the inbound connector
+    # advertises .sav in its accepted formats, and a format the catalogue offers
+    # and the runtime cannot read is a promise the product does not keep.
+    "pyreadstat>=1.2",
 ]
 
 # Story 5.1 — OTel/Langfuse tracing is an OPTIONAL extra. CI does NOT install it;
@@ -78,6 +123,18 @@ dev = [
     # in-memory span exporter (no live Langfuse). Production still treats OTel as
     # an optional extra; tracing tests importorskip when the SDK is absent.
     "opentelemetry-sdk>=1.43,<2.0",
+    # AI-74 — sans ces deux-la, la suite n'est pas MESURABLE.
+    #
+    # pytest-timeout : un test qui pend doit ECHOUER, pas bloquer la session.
+    #   Mesure du 2026-07-31 : avec TEST_POSTGRES_DSN pointant un hote qui ne
+    #   repond pas, UN SEUL fichier (tests/core/test_epic38_connector_domain.py)
+    #   n'avait pas fini en 600 s -- libpq attend ~130 s par connexion, et il y a
+    #   135 appels a psycopg.connect() dans tests/core. C'est cela, et non le
+    #   volume de tests, qui produisait les « 40 minutes sans terminer ».
+    # pytest-xdist : la suite entiere en parallele. Mesure du 2026-07-31 sur
+    #   tests/core : 337 s en serie, 215 s avec -n 8.
+    "pytest-timeout>=2.4",
+    "pytest-xdist>=3.8",
 ]
 
 [build-system]
@@ -88,7 +145,44 @@ build-backend = "hatchling.build"
 packages = ["core", "inbound"]
 
 [tool.pytest.ini_options]
+# ── AI-74 : rendre la suite mesurable ────────────────────────────────────────
+#
+# Commande de reference (mesuree 2026-07-31, voir server/tests/conftest.py) :
+#
+#     cd server && uv run python -m pytest tests -q -n 8
+#
+# Boucle serree, sans les quatre modules lents (marker `slow`, liste et raison
+# dans server/tests/conftest.py) :
+#
+#     cd server && uv run python -m pytest tests -q -n 8 -m "not slow"
+#
+# Couches selectionnables (posees AUTOMATIQUEMENT a la collecte, aucun fichier
+# de test a annoter -- cf. pytest_collection_modifyitems) :
+#     -m unit   pas de TestClient, pas de Postgres
+#     -m seam   monte l'app ASGI (starlette TestClient)
+#     -m pg     exige un vrai Postgres (TEST_POSTGRES_DSN)
+#     -m slow   > 5 s mesurees
+#
+# `timeout` : un test qui pend ECHOUE au lieu de bloquer la session. Sur Windows
+# la seule methode disponible est `thread` (SIGALRM n'existe pas) : en serie elle
+# tue le processus APRES avoir imprime la pile du test coupable -- ce qui nomme le
+# blocage au lieu de le subir ; sous xdist elle ne tue que le worker, xdist le
+# relance et le test est compte en echec. C'est la raison pour laquelle la
+# commande de reference est parallele.
+#
+# 180 s : la valeur mesuree la plus haute est 70,9 s
+# (tests/core/test_linkedin_ads_connector.py::test_near_cap_warning_logged),
+# soit une marge de 2,5x sous contention.
+timeout = 180
+timeout_method = "thread"
+addopts = "--strict-markers -ra"
 markers = [
+    # ── couches, posees automatiquement a la collecte (AI-74) ────────────────
+    "unit: ne monte pas l'app ASGI et ne touche pas Postgres",
+    "seam: monte l'app ASGI (starlette TestClient) -- couche de couture HTTP",
+    "pg: exige un vrai Postgres (TEST_POSTGRES_DSN) ; se saute, en le DISANT, si la base ne repond pas",
+    "slow: > 5 s mesurees le 2026-07-31 ; hors du chemin par defaut UNIQUEMENT avec -m 'not slow'",
+    # ── couches declarees a la main dans les fichiers ────────────────────────
     "conformance_layer_1: manifest schema validation layer",
     "conformance_layer_2: envelope shape validation layer",
     "conformance_layer_3: single-file bundle check layer",
@@ -96,6 +190,8 @@ markers = [
     "conformance_layer_5: context-event golden fixture layer (Story 4.5)",
     "conformance_layer_6: report-pack definition validation layer (Story 6.1)",
     "integration: integration tests requiring DuckDB/dbt infrastructure",
+    "pg_owner: live-Postgres test whose fixture does DDL; needs the schema owner",
+    "pg_app_role: live-Postgres test asserting RLS; needs a non-owner application role",
     "isolation: cross-project isolation suite (Story 7.4) — requires TEST_POSTGRES_DSN and the two-project fixture; a failing isolation test FAILS the CI build (FR12, AD-5)",
     "live_postgres: E2E tests requiring a live Postgres + DuckDB environment (Story 8.10); skipped in CI",
     "live_pg: tests requiring a live Postgres (Epic 38 inbound); skipped unless a DSN is provided",

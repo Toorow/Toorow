@@ -75,7 +75,7 @@
       "tier": "core"
     },
     {
-      "description": "Provider country value.",
+      "description": "Country name (e.g. 'France', 'United States'); FILTER_COUNTRY_ID is the separate provider identifier.",
       "exposure": "exposed",
       "field_id": "country",
       "kind": "dimension",

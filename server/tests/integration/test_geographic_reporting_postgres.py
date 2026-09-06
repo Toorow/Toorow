@@ -2,10 +2,41 @@
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 
 import psycopg
 import pytest
+
+
+@contextlib.contextmanager
+def _refused(conn, error=psycopg.errors.CheckViolation):
+    """Expect *error*, and leave the transaction USABLE afterwards.
+
+    ``live_postgres`` hands out a plain (non-autocommit) connection, so a
+    constraint violation aborts the whole transaction: every statement after it
+    raises ``InFailedSqlTransaction`` until the block ends. A test that asserts one
+    refusal and then keeps going therefore fails on its SECOND set-up statement, and
+    the failure names the set-up rather than the constraint -- which is how
+    `test_migration_102_rejects_duplicate_market_ids_and_empty_members` reported
+    "transaction is aborted" for a check that had worked perfectly.
+
+    The SAVEPOINT is what makes the refusal local: it rolls back to just before the
+    statement, so the rest of the test runs against a live transaction. Applied to
+    EVERY expected refusal in this file, not only to the one that was red -- the
+    others were one added statement away from the same failure.
+    """
+
+    savepoint = f"sp_{uuid.uuid4().hex[:12]}"
+    with conn.cursor() as cur:
+        cur.execute(f"SAVEPOINT {savepoint}")
+    try:
+        with pytest.raises(error):
+            yield
+    finally:
+        with conn.cursor() as cur:
+            cur.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+            cur.execute(f"RELEASE SAVEPOINT {savepoint}")
 
 
 def _insert_project(conn) -> str:
@@ -13,9 +44,8 @@ def _insert_project(conn) -> str:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO app.projects
-                (id, name, slug, status, currency, timezone, created_by, org_id)
-            VALUES (%s, 'Geo test', %s, 'active', 'EUR', 'Europe/Paris', 'pytest',
+            INSERT INTO app.projects (id, name, slug, status, created_by, org_id)
+            VALUES (%s, 'Geo test', %s, 'active', 'pytest',
                 'org_test_fixture')
             """,
             (project_id, f"geo-{uuid.uuid4().hex[:12]}"),
@@ -46,7 +76,7 @@ def test_migration_057_gives_legacy_rows_global_defaults(live_postgres):
 def test_migration_057_rejects_empty_local_markets(live_postgres):
     project_id = _insert_project(live_postgres)
 
-    with pytest.raises(psycopg.errors.CheckViolation):
+    with _refused(live_postgres):
         with live_postgres.cursor() as cur:
             cur.execute(
                 """
@@ -93,7 +123,7 @@ def test_migration_102_accepts_a_multi_country_market(live_postgres):
 def test_migration_102_rejects_overlapping_markets(live_postgres):
     project_id = _insert_project(live_postgres)
 
-    with pytest.raises(psycopg.errors.CheckViolation):
+    with _refused(live_postgres):
         _insert_local_markets(
             live_postgres,
             project_id,
@@ -106,7 +136,7 @@ def test_migration_102_rejects_overlapping_markets(live_postgres):
 def test_migration_102_rejects_duplicate_market_ids_and_empty_members(live_postgres):
     project_id = _insert_project(live_postgres)
 
-    with pytest.raises(psycopg.errors.CheckViolation):
+    with _refused(live_postgres):
         _insert_local_markets(
             live_postgres,
             project_id,
@@ -116,7 +146,7 @@ def test_migration_102_rejects_duplicate_market_ids_and_empty_members(live_postg
         )
 
     project_id = _insert_project(live_postgres)
-    with pytest.raises(psycopg.errors.CheckViolation):
+    with _refused(live_postgres):
         _insert_local_markets(
             live_postgres,
             project_id,
@@ -128,5 +158,5 @@ def test_migration_102_rejects_duplicate_market_ids_and_empty_members(live_postg
 def test_migration_102_requires_markets_in_local_mode(live_postgres):
     project_id = _insert_project(live_postgres)
 
-    with pytest.raises(psycopg.errors.CheckViolation):
+    with _refused(live_postgres):
         _insert_local_markets(live_postgres, project_id, ["FR"], "[]")

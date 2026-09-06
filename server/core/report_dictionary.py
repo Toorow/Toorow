@@ -61,11 +61,44 @@ def register_dimensions(dimensions) -> None:
     Idempotent; lowercases and dedups. Used to add connector-declared breakdown
     dimensions (from manifest.canonical_dimension_mapping) to the report
     dimension vocabulary.
+
+    ``_NON_DIMENSION_SEEDS`` is enforced HERE TOO, and it was not.
+
+    There are two ways a name can enter the dimension vocabulary: a
+    ``dim_<name>.csv`` seed, and a connector manifest. ``_load_dimension_dictionary``
+    excluded ``metric`` / ``project`` / ``event_type``; this function excluded
+    nothing. So the rule held on one entry point and not the other, and the
+    manifest was the unguarded one.
+
+    That was not theoretical. Two installed connectors -- ``brevo`` and
+    ``taboola`` -- list ``event_type`` in their ``canonical_dimension_mapping``,
+    so importing ``core.main`` (which runs the real loader over
+    ``server/modules/``) made ``is_known_dimension("event_type")`` return True in
+    the running server. Epic 31 makes an event a first-class declaration of its
+    own -- ``canonical_event_mapping``, ``kind: event``, ``dim_event_type`` --
+    precisely so an event type is never comparable as a report breakdown.
+    ``server/tests/core/test_event_contract.py`` pins that invariant, and it was
+    being read as a flaky test: it passes alone and fails once anything in the
+    session has loaded a manifest. It was not flaky. It was right.
+
+    A rejected name is logged rather than raised: the loader wraps this call in a
+    best-effort ``except`` (``core/loader.py:569``), so raising would be swallowed
+    and the connector would load with the leak intact and no trace.
     """
     for dim in dimensions or []:
         name = str(dim).strip().lower()
-        if name:
-            _registered_dimensions.add(name)
+        if not name:
+            continue
+        if name in _NON_DIMENSION_SEEDS:
+            logger.warning(
+                "report_dictionary: refusing to register %r as a report dimension "
+                "-- it is not a breakdown (see epic 31). A connector manifest "
+                "declaring it in canonical_dimension_mapping should declare it in "
+                "canonical_event_mapping instead.",
+                name,
+            )
+            continue
+        _registered_dimensions.add(name)
 
 
 @functools.lru_cache(maxsize=1)

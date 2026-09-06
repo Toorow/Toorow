@@ -78,6 +78,44 @@ def _tf_row(
 
 
 # ---------------------------------------------------------------------------
+# active target-binding read projection
+# ---------------------------------------------------------------------------
+
+
+class TestActiveTargetBindingsProjection:
+    def test_merges_current_executable_versioned_and_legacy_bindings(self):
+        from core.datamodel import _active_target_bindings_cte
+
+        sql, params = _active_target_bindings_cte("proj_x")
+        normalized = " ".join(sql.lower().split())
+
+        assert params == ["proj_x", "proj_x"]
+        assert normalized.count("and ds.project_id = %s") == 2
+        assert "app.datastream_mappings" in normalized
+        assert "app.datastream_mapping_versions" in normalized
+        assert "not exists" not in normalized
+        assert "mv.id = ds.current_mapping_version_id" in normalized
+        assert "mv.executable = true" in normalized
+        assert "jsonb_typeof(mv.mapping_payload -> 'fields') = 'array'" in normalized
+        assert "nullif(source_field.value ->> 'field_id', '') is not null" in normalized
+        assert "mapping_payload -> 'grain'" in normalized
+        assert "? (source_field.value ->> 'field_id')" in normalized
+        assert "mdm.dictionary_field_name" in normalized
+        assert "->> 'mdm_target'" in normalized
+        assert "'confirmed', 'resolved'" in normalized
+        assert "row_number() over" in normalized
+        assert "representation_rank = 1" in normalized
+
+    def test_unscoped_projection_adds_no_project_parameters(self):
+        from core.datamodel import _active_target_bindings_cte
+
+        sql, params = _active_target_bindings_cte(None)
+
+        assert params == []
+        assert "AND ds.project_id = %s" not in sql
+
+
+# ---------------------------------------------------------------------------
 # list_target_fields
 # ---------------------------------------------------------------------------
 
@@ -159,6 +197,36 @@ class TestListTargetFields:
         result = list_target_fields(conn)
         assert isinstance(result[0]["used_by_count"], int)
         assert result[0]["used_by_count"] == 5
+
+    def test_returns_compact_datastream_attribution_for_the_table(self):
+        from core.datamodel import list_target_fields
+
+        base_row, _ = _tf_row(used_by_count=2)
+        attributions = [
+            {
+                "datastream_id": "ds_001",
+                "datastream_name": "Meta Ads",
+                "module_name": "meta-ads",
+                "enabled": True,
+            },
+            {
+                "datastream_id": "ds_002",
+                "datastream_name": "Google Ads",
+                "module_name": "google-ads",
+                "enabled": True,
+            },
+        ]
+        conn, cur = _make_conn(fetchall_rows=[base_row + ("approved", 2, attributions)])
+        cur.description = _TF_COLS + [
+            ("status",),
+            ("used_by_count",),
+            ("used_by",),
+        ]
+
+        result = list_target_fields(conn, project_id="proj_a")
+
+        assert result[0]["used_by_count"] == 2
+        assert result[0]["used_by"] == attributions
 
     # AI-49: module filter tests
     def test_module_filter_added_to_params(self):
@@ -358,6 +426,26 @@ class TestGetTargetField:
         assert result["used_by_count"] == 0
         assert len(result["used_by"]) == 0
 
+    def test_project_scope_is_applied_before_detail_attribution_materializes(self):
+        from core.datamodel import get_target_field
+
+        tf_row, _ = _tf_row(name="clicks")
+        cur1 = MagicMock()
+        cur1.fetchone.return_value = tf_row
+        cur1.description = _TF_COLS
+        cur2 = MagicMock()
+        cur2.fetchall.return_value = []
+        cur2.description = []
+        conn = MagicMock()
+        conn.cursor.side_effect = [_make_ctx(cur1), _make_ctx(cur2)]
+
+        get_target_field("clicks", conn, project_id="proj_a")
+
+        sql, params = cur2.execute.call_args[0]
+        assert params == ["proj_a", "proj_a", "clicks"]
+        assert sql.count("AND ds.project_id = %s") == 2
+        assert "app.datastream_mapping_versions" in sql
+
 
 def _make_ctx(cur):
     """Wrap a cursor mock into a context-manager-compatible object."""
@@ -391,10 +479,15 @@ class TestDetectConflicts:
             {"module_name": "google-ads", "datastream_name": "Google Ads"},
         ]
         result = _detect_conflicts(field, used_by)
-        assert len(result) == 1
-        assert result[0]["code"] == "CURRENCY_CONFLICT"
-        assert "Meta Ads" in result[0]["affected_streams"]
-        assert "Google Ads" in result[0]["affected_streams"]
+        # 2026-08-01 : ce test assertait l'EXCLUSIVITE (`len(result) == 1`), donc il
+        # epinglait au passage le silence sur des fuseaux inconnus -- ces deux flux
+        # n'ont pas de `report_timezone`, et depuis la story 48.3 c'est un signal
+        # advisory a part entiere. On asserte la PRESENCE et la forme du conflit de
+        # devise, ce que le test voulait dire ; pas l'absence de tout autre signal.
+        currency = [c for c in result if c["code"] == "CURRENCY_CONFLICT"]
+        assert len(currency) == 1
+        assert "Meta Ads" in currency[0]["affected_streams"]
+        assert "Google Ads" in currency[0]["affected_streams"]
 
     def test_decimal_conflict_two_modules(self):
         """Decimal fields with >1 module also trigger currency conflict."""
@@ -594,21 +687,21 @@ class TestUpdateTargetField:
         from core.datamodel import update_target_field
 
         conn = MagicMock()
-        with pytest.raises(ValueError, match="immuable"):
+        with pytest.raises(ValueError, match="immutable"):
             update_target_field("clicks", {"name": "new_name"}, conn)
 
     def test_immutable_data_type_raises(self):
         from core.datamodel import update_target_field
 
         conn = MagicMock()
-        with pytest.raises(ValueError, match="immuable"):
+        with pytest.raises(ValueError, match="immutable"):
             update_target_field("clicks", {"data_type": "string"}, conn)
 
     def test_immutable_field_kind_raises(self):
         from core.datamodel import update_target_field
 
         conn = MagicMock()
-        with pytest.raises(ValueError, match="immuable"):
+        with pytest.raises(ValueError, match="immutable"):
             update_target_field("clicks", {"field_kind": "dimension"}, conn)
 
     def test_update_display_name(self):
@@ -1210,7 +1303,7 @@ class TestDeleteTargetField:
         conn = MagicMock()
         conn.cursor.side_effect = [_make_ctx(cur1)]
 
-        with pytest.raises(ValueError, match="introuvable"):
+        with pytest.raises(ValueError, match="not found"):
             delete_target_field("no_such_field", "jean@test", conn)
 
     def test_delete_already_deleted_field_raises_value_error(self):
@@ -1229,12 +1322,12 @@ class TestDeleteTargetField:
         conn = MagicMock()
         conn.cursor.side_effect = [_make_ctx(cur1)]
 
-        with pytest.raises(ValueError, match="introuvable"):
+        with pytest.raises(ValueError, match="not found"):
             delete_target_field("gone", "jean@test", conn)
 
         conn.commit.assert_not_called()
 
-    def test_delete_field_in_use_fr_message(self):
+    def test_delete_field_in_use_message(self):
         """The FieldInUseError message is in French and mentions the used-by count."""
         from core.datamodel import FieldInUseError, delete_target_field
 
@@ -1252,8 +1345,11 @@ class TestDeleteTargetField:
 
         msg = str(exc_info.value)
         assert "7" in msg  # count clearly visible
-        # Message is in French (at least one accented word expected)
-        assert any(ch in msg for ch in "éèàùîôêâûçÉÈÀÙÎÔÊÂÛÇ")
+        # The product speaks English. This assertion used to require the opposite
+        # -- "at least one accented word expected" -- which is why translating the
+        # message broke it: the test encoded the rule the repo has since replaced.
+        assert not any(ch in msg for ch in "éèàùîôêâûçÉÈÀÙÎÔÊÂÛÇ"), msg
+        assert "is used by" in msg
 
     def test_delete_identity_is_persisted_in_version_and_audit(self):
         """The real caller identity lands on the version row AND the audit call."""
@@ -1418,10 +1514,20 @@ class TestCreateTargetFieldStatus:
 
 class TestReportChainApprovedFilter:
     def test_fetch_target_fields_filters_approved_only(self):
-        """_fetch_target_fields must include AND status='approved' in the SQL."""
+        """A DRAFT dictionary row must never reach the chain (story 13.1).
+
+        This assertion used to read `"approved" in executed_sqls[0]`, which was
+        true only while the helper issued exactly one statement against
+        `app.target_fields`. Story 49.3 put the Semantic Model in front of it, so
+        the FIRST statement is now the Concept read and the position no longer
+        names the rule. What the rule actually says is checked here instead: the
+        `app.target_fields` statement -- whichever one it is -- carries the
+        approved filter, and it is REACHED (an assertion on a statement nobody
+        runs proves nothing).
+        """
         from core.report_chain import _fetch_target_fields
 
-        executed_sqls: list[str] = []
+        executed: list[tuple[str, dict]] = []
 
         conn = MagicMock()
         cur = MagicMock()
@@ -1433,14 +1539,21 @@ class TestReportChainApprovedFilter:
         cur.description = []
 
         def capture(sql, params=None):
-            executed_sqls.append(sql)
+            executed.append((sql, dict(params or {})))
 
         cur.execute.side_effect = capture
 
         _fetch_target_fields(["clicks", "cost"], conn)
 
-        assert executed_sqls, "execute() was not called"
-        sql = executed_sqls[0]
+        dictionary = [
+            (sql, params) for sql, params in executed
+            if "app.target_fields" in sql
+        ]
+        assert dictionary, "report_chain no longer reads app.target_fields at all"
+        sql, params = dictionary[0]
         assert "approved" in sql.lower(), (
-            "Expected AND status='approved' filter in report_chain._fetch_target_fields SQL"
+            "Expected the approved filter in the app.target_fields statement"
+        )
+        assert params.get("approved_only") is True, (
+            "The approved filter is parameterised; a False parameter disarms it"
         )

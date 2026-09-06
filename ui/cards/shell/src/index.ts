@@ -27,16 +27,56 @@ export { default as Funnel } from "./Funnel";
 export { default as CardFeedbackBar } from "./CardFeedbackBar";
 export { default as DataTable } from "./DataTable";
 export { default as CardComposition } from "./CardComposition";
+// AI-271 — the honest state a card shows when the host injected no envelope.
+// It replaces the fixture fallback that every entrypoint used to render.
+export { default as NoEnvelope } from "./NoEnvelope";
+export type { NoEnvelopeProps } from "./NoEnvelope";
 // Epic 23 — extended viz primitives (Stories 23.2-23.5) + the theme-driven
 // color contract every primitive reads (Story 23.1; org branding via
 // meta.branding → WidgetShell ThemeProvider → getVizPalette).
-export { getVizPalette } from "./vizTheme";
+// `readCssVizTheme` is exported for Story 50.5: the shared Visualization runtime
+// reads the LIVE CSS custom properties instead of a MUI ThemeProvider, and it must
+// read them through THIS function. A second palette reader over a second variable
+// set is the failure `vizTheme.ts:1-8` exists to forbid.
+export { getVizPalette, readCssVizTheme } from "./vizTheme";
+export type { VizThemeInput } from "./vizTheme";
+// Story 50.5 — the shared Visualization runtime is exported under @toorow/card-shell/viz
+// to keep ECharts out of card primitive bundles.
 export { default as MatrixHeatmap } from "./MatrixHeatmap";
 export { default as OverlayBarChart } from "./OverlayBarChart";
 export { default as ValueGrid } from "./ValueGrid";
 export { default as DotMatrix } from "./DotMatrix";
 export { default as RankedList } from "./RankedList";
 export { default as KpiDeltaFooter } from "./KpiDeltaFooter";
+// Story 76-8 — THE variation legend, one for every primitive that colours a
+// verdict (epic 76: the colour semantics of a variation must be legended), plus
+// ONE function that decides that verdict and the derivation that tells a card
+// which conventions it has in force. Exported so a card App can mount the legend
+// in its footer, never so a second one can be written.
+export { default as VariationLegend } from "./VariationLegend";
+export type { VariationLegendProps, VariationConvention } from "./VariationLegend";
+export { verdictTone, verdictColor, changeMark } from "./verdictTone";
+export type { Verdict, VerdictDirection, VerdictOptions } from "./verdictTone";
+export { variationConventions } from "./variationConventions";
+// Story 76-8 — the ONE formatter set, exported so a CARD (not only the shared
+// Visualization runtime) reaches it. Before this, every card template grouped
+// its own numbers on a locale of its own while its deltas went through
+// `toFixed`, so a single card could show two decimal conventions at once.
+export {
+  FORMATTER_LOCALE,
+  NBSP,
+  NO_VALUE,
+  formatCompact,
+  formatCurrency,
+  formatMeasure,
+  formatNumber,
+  formatPercent,
+  formatValue,
+  isCurrencyCode,
+  unitWorthShowing,
+} from "./viz/theme/formatters";
+export type { ValueFormatOptions } from "./viz/theme/formatters";
+export { metricUnitSuffix } from "./types";
 export { CARD_METRIC_LABELS, metricLabel } from "./types";
 export type {
   CardEnvelope,

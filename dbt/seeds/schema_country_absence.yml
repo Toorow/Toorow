@@ -1,0 +1,64 @@
+version: 2
+
+# Story 58.5 -- the country-absence fixture declares itself HERE and not in
+# dbt/seeds/schema.yml. That file is frozen by
+# tests/conformance/test_epic41_verification_overlay_additive.py
+# (`_SHARED_CONFIG_FILES`): a story adds its seed entries in its OWN schema file,
+# which is what schema_epic41.yml / schema_epic41_verification.yml already do and
+# what that guard's own failure message instructs.
+
+seeds:
+  - name: country_absence_fixture
+    description: >
+      Story 58.5 country-absence fixture (namespaced __country_absence__ / connectors
+      __country_src_a__ / __country_src_b__). THE ROW WITH NO COUNTRY, AS VERSIONED DATA.
+      The defect story 58.5 repairs was latent on both of its paths -- measured 2026-08-07,
+      zero staging rows with no country on the ga4 side and zero rows at all on the cm360
+      side -- so every guard over it was green while proving nothing, and a fixture that had
+      to be landed by hand would have left it that way on any fresh checkout. `dbt seed`
+      loads this in EVERY environment, exactly like epic39_validation_fixture, so
+      test_country_bucket_absence.sql has rows to look at wherever it runs.
+      The three rows are the three outcomes of `country_bucket()` and the test replays the
+      macro over them: a resolved value keeps its canonical code; an UNRESOLVED value stays
+      NULL under the fail-closed form (so normalize_dimension's vocabulary guard still
+      breaks the build) and keeps its raw spelling under the observable form; an ABSENT
+      value -- no canonical, no source -- answers the declared sentinel and the row is kept.
+      The namespaced keys keep it OUT of fact_daily_kpi / int_country_daily_kpi (which UNION
+      module STAGING, never seeds), so it can never perturb a production total -- the same
+      isolation discipline as epic39_validation_fixture.
+    columns:
+      - name: project_id
+        description: "Namespaced fixture project (__country_absence__ only)."
+        tests:
+          - not_null
+          - accepted_values:
+              name: country_absence_fixture_project_namespaced
+              arguments:
+                values: ["__country_absence__"]
+      - name: connector
+        description: "Namespaced fixture connector key -- never a production connector."
+        tests:
+          - not_null
+          - accepted_values:
+              name: country_absence_fixture_connector_namespaced
+              arguments:
+                values: ["__country_src_a__", "__country_src_b__"]
+      - name: date
+        description: "Figure date (grain)."
+        tests:
+          - not_null
+      - name: scenario
+        description: >
+          Which of the three outcomes this row stands for. The test keys its
+          anti-vacuity guard on `absent`: without at least one such row the whole
+          file would be a zero-row pass.
+        tests:
+          - not_null
+          - accepted_values:
+              name: country_absence_fixture_scenario_accepted
+              arguments:
+                values: ["resolved", "unresolved", "absent"]
+      - name: value
+        description: "Additive value, summed by the no-loss identity of the test."
+        tests:
+          - not_null

@@ -1,0 +1,1977 @@
+{
+  "schema_version": "feedback-review-fixture.v1",
+  "collection": {
+    "schema_version": "feedback-review-collection.v1",
+    "project_id": "proj_FIXTURE_1",
+    "normalized_filters": {
+      "observed_from": "2026-08-10T12:00:00Z",
+      "observed_to": "2026-08-10T12:00:00Z"
+    },
+    "limit": 50,
+    "items": [
+      {
+        "schema_version": "feedback-review-detail.v1",
+        "id": "rsfb_FIXTURE_2",
+        "source": "anonymous_share",
+        "target_schema_version": "exact-feedback.v1",
+        "polarity": "negative",
+        "comment": "This observed step needs review.",
+        "actor": null,
+        "actor_source": null,
+        "observed_surface": "share",
+        "interaction_ref": "afi_FIXTURE_1",
+        "w3c_trace_id": null,
+        "result": {
+          "id": "qr_FIXTURE_3",
+          "outcome": "success",
+          "query_spec_version_id": "qsv_FIXTURE_4",
+          "content_hash": "787b8d03f2bcbd07fe7bcb536fb711c71b274e4aaef86deb5d5f3efb30549df4"
+        },
+        "render": {
+          "render_id": "rnd_FIXTURE_5",
+          "visualization_spec_version_id": "vsv_FIXTURE_6",
+          "renderer_build_id": "table/toorow-table@1.0.0",
+          "runtime_build_id": "@toorow/card-shell/viz@0.1.0+f87912546265",
+          "theme_version": "viz-theme@1",
+          "formatter_version": "viz-formatters@1"
+        },
+        "target": {
+          "kind": "path_step",
+          "ordinal": 0
+        },
+        "semantic_view": {
+          "id": "sv_FIXTURE_7",
+          "version_id": "svv_FIXTURE_8"
+        },
+        "ai_path": "aip_FIXTURE_9",
+        "business_domain": null,
+        "capability": null,
+        "result_type": null,
+        "classification": {
+          "skills": {
+            "state": "attributed",
+            "versions": []
+          },
+          "capability": {
+            "key": "country",
+            "state": "attributed",
+            "version_id": "pcv_FIXTURE_10"
+          },
+          "result_type": {
+            "state": "attributed",
+            "value": "table"
+          },
+          "semantic_view": {
+            "id": "sv_FIXTURE_7",
+            "state": "attributed",
+            "version_id": "svv_FIXTURE_8"
+          },
+          "schema_version": "evaluation-classification.v1",
+          "business_domains": {
+            "state": "attributed",
+            "versions": [
+              {
+                "id": "bd_FIXTURE_11",
+                "version_number": 1
+              }
+            ]
+          },
+          "classification_hash": "b269bee0961c0ab3f4793e9d63bfa590c5c7e886e5451fe2b29e8c96f335b0f2"
+        },
+        "visible_versions": {
+          "render_id": "rnd_FIXTURE_5",
+          "result_id": "qr_FIXTURE_3",
+          "ai_path_id": "aip_FIXTURE_9",
+          "theme_version": "viz-theme@1",
+          "runtime_build_id": "@toorow/card-shell/viz@0.1.0+f87912546265",
+          "semantic_view_id": "sv_FIXTURE_7",
+          "formatter_version": "viz-formatters@1",
+          "renderer_build_id": "table/toorow-table@1.0.0",
+          "result_content_hash": "787b8d03f2bcbd07fe7bcb536fb711c71b274e4aaef86deb5d5f3efb30549df4",
+          "ai_path_content_hash": "dea068326dcf92f17e0cc6fece311e1240351db29032b5b841799f09c2b42cb6",
+          "query_spec_version_id": "qsv_FIXTURE_4",
+          "semantic_view_version_id": "svv_FIXTURE_8",
+          "visualization_spec_version_id": "vsv_FIXTURE_6",
+          "query_spec_version_content_hash": "c194b2ab6ed8222b8c7856597e3b50f73c7c85e617beb58a14115772c80cf7a2",
+          "semantic_view_version_content_hash": "86e4eb2ea769006439bf235afa68fff26aeb69c8ad7d7165de3121ef14a30511"
+        },
+        "visible_versions_hash": "4969b1d3f8e2b510df36649ff2fb217af06730bd5660bd430b2efe7f6f7c85ae",
+        "visible_versions_hash_kind": "evidence_manifest",
+        "visible_versions_hash_valid": null,
+        "version_divergence": [],
+        "observed_at": "2026-08-10T12:00:00Z",
+        "created_at": "2026-08-10T12:00:00Z",
+        "evidence_lenses": {
+          "render": {
+            "state": "observed",
+            "render_id": "rnd_FIXTURE_5",
+            "visualization_spec_version_id": "vsv_FIXTURE_6",
+            "renderer_build_id": "table/toorow-table@1.0.0",
+            "runtime_build_id": "@toorow/card-shell/viz@0.1.0+f87912546265",
+            "theme_version": "viz-theme@1",
+            "formatter_version": "viz-formatters@1"
+          },
+          "datum_mark": {
+            "state": "not_targeted"
+          },
+          "mcp_app_behavior": {
+            "state": "unverifiable",
+            "reason": "mcp_app_evidence_owner_not_delivered",
+            "owner_stories": [
+              "50.6"
+            ],
+            "detail": "Render/Result parity, drill-down and host fallback have no server-owned evidence yet, so the MCP App behaviour dimension carries no machine evidence. A reviewer may still record a human verdict on it; the two are reported under different names and never merged."
+          },
+          "server_owned_path_evidence": {
+            "state": "observed",
+            "reason": null,
+            "owner_stories": [],
+            "detail": null
+          }
+        },
+        "owner_links": [
+          {
+            "workspace": "analyze",
+            "section": "explore",
+            "object_type": "result",
+            "object_id": "qr_FIXTURE_3",
+            "version_id": null,
+            "tab": null
+          },
+          {
+            "workspace": "governance",
+            "section": "semantic-model",
+            "object_type": "semantic-view",
+            "object_id": "sv_FIXTURE_7",
+            "version_id": "svv_FIXTURE_8",
+            "tab": "versions"
+          },
+          {
+            "workspace": "analyze",
+            "section": "explore",
+            "object_type": "query-spec",
+            "object_id": "qs_FIXTURE_12",
+            "version_id": "qsv_FIXTURE_4",
+            "tab": "query"
+          },
+          {
+            "workspace": "governance",
+            "section": "master-data",
+            "object_type": "business-domain",
+            "object_id": "bd_FIXTURE_11",
+            "version_id": "bd_FIXTURE_11:1",
+            "tab": "versions"
+          },
+          {
+            "workspace": "analyze",
+            "section": "renders",
+            "object_type": "render",
+            "object_id": "rnd_FIXTURE_5",
+            "version_id": null,
+            "tab": null
+          },
+          {
+            "workspace": "test",
+            "section": "regression-runs",
+            "object_type": "trace-observation",
+            "object_id": "aip_FIXTURE_9",
+            "version_id": null,
+            "tab": "timeline"
+          }
+        ],
+        "unavailable_owner_links": [
+          {
+            "target": "context-hub",
+            "state": "unverifiable",
+            "reason": "context_version_set_owner_not_delivered",
+            "owner_stories": [
+              "51.2"
+            ],
+            "detail": "The Context Version Set resolved for an execution is Story 51.2's object. Without it there is no exact context identity to deep-link to, so no Context Hub link is offered rather than one that points at `latest`."
+          },
+          {
+            "target": "capability",
+            "state": "unverifiable",
+            "reason": "capability_version_route_unavailable",
+            "owner_stories": [],
+            "detail": "The classification pins an exact capability version, but the shell has no version-addressable capability object. No moving capability link is emitted."
+          },
+          {
+            "target": "visualization-spec-version",
+            "state": "unverifiable",
+            "reason": "visualization_spec_version_route_unavailable",
+            "owner_stories": [],
+            "detail": "The exact Visualization Spec version is pinned, but Analyze / Renders has no Visualization Spec object route. No inert owner link is emitted."
+          }
+        ],
+        "review": {
+          "current_state": "triaged",
+          "current_version_id": "fbrv_FIXTURE_13"
+        },
+        "blocking_use": "Prioritizes investigation; never proves correctness or regression alone."
+      },
+      {
+        "schema_version": "feedback-review-detail.v1",
+        "id": "fba_FIXTURE_14",
+        "source": "authenticated",
+        "target_schema_version": "exact-feedback.v1",
+        "polarity": "positive",
+        "comment": "This workbench value is useful.",
+        "actor": "owner@example.com",
+        "actor_source": "user",
+        "observed_surface": "console",
+        "interaction_ref": "afi_FIXTURE_2",
+        "w3c_trace_id": null,
+        "result": {
+          "id": "qr_FIXTURE_3",
+          "outcome": "success",
+          "query_spec_version_id": "qsv_FIXTURE_4",
+          "content_hash": "787b8d03f2bcbd07fe7bcb536fb711c71b274e4aaef86deb5d5f3efb30549df4"
+        },
+        "render": null,
+        "target": {
+          "kind": "datum",
+          "row_index": 1,
+          "field": "sessions"
+        },
+        "semantic_view": {
+          "id": "sv_FIXTURE_7",
+          "version_id": "svv_FIXTURE_8"
+        },
+        "ai_path": "aip_FIXTURE_9",
+        "business_domain": null,
+        "capability": null,
+        "result_type": null,
+        "classification": {
+          "skills": {
+            "state": "attributed",
+            "versions": []
+          },
+          "capability": {
+            "key": "country",
+            "state": "attributed",
+            "version_id": "pcv_FIXTURE_10"
+          },
+          "result_type": {
+            "state": "attributed",
+            "value": "table"
+          },
+          "semantic_view": {
+            "id": "sv_FIXTURE_7",
+            "state": "attributed",
+            "version_id": "svv_FIXTURE_8"
+          },
+          "schema_version": "evaluation-classification.v1",
+          "business_domains": {
+            "state": "attributed",
+            "versions": [
+              {
+                "id": "bd_FIXTURE_11",
+                "version_number": 1
+              }
+            ]
+          },
+          "classification_hash": "b269bee0961c0ab3f4793e9d63bfa590c5c7e886e5451fe2b29e8c96f335b0f2"
+        },
+        "visible_versions": {
+          "result_id": "qr_FIXTURE_3",
+          "ai_path_id": "aip_FIXTURE_9",
+          "semantic_view_id": "sv_FIXTURE_7",
+          "result_content_hash": "787b8d03f2bcbd07fe7bcb536fb711c71b274e4aaef86deb5d5f3efb30549df4",
+          "ai_path_content_hash": "dea068326dcf92f17e0cc6fece311e1240351db29032b5b841799f09c2b42cb6",
+          "query_spec_version_id": "qsv_FIXTURE_4",
+          "semantic_view_version_id": "svv_FIXTURE_8",
+          "query_spec_version_content_hash": "c194b2ab6ed8222b8c7856597e3b50f73c7c85e617beb58a14115772c80cf7a2",
+          "semantic_view_version_content_hash": "86e4eb2ea769006439bf235afa68fff26aeb69c8ad7d7165de3121ef14a30511"
+        },
+        "visible_versions_hash": "6562ee7616bf14af9c6e812f305f18ab906021a7bce17b972c38102f81787d92",
+        "visible_versions_hash_kind": "visible_versions",
+        "visible_versions_hash_valid": true,
+        "version_divergence": [],
+        "observed_at": "2026-08-10T12:00:00Z",
+        "created_at": "2026-08-10T12:00:00Z",
+        "evidence_lenses": {
+          "render": {
+            "state": "unverifiable",
+            "reason": "render_owner_not_delivered",
+            "owner_stories": [
+              "50.4",
+              "50.5",
+              "50.7"
+            ],
+            "detail": "The rendered-artifact object does not exist in this repository and the render stack is not installed. Its pin is declared by migration 153 and held NULL, so no fidelity claim about a rendered artifact can be made."
+          },
+          "datum_mark": {
+            "state": "observed",
+            "locator": {
+              "kind": "datum",
+              "row_index": 1,
+              "field": "sessions"
+            }
+          },
+          "mcp_app_behavior": {
+            "state": "unverifiable",
+            "reason": "mcp_app_evidence_owner_not_delivered",
+            "owner_stories": [
+              "50.6"
+            ],
+            "detail": "Render/Result parity, drill-down and host fallback have no server-owned evidence yet, so the MCP App behaviour dimension carries no machine evidence. A reviewer may still record a human verdict on it; the two are reported under different names and never merged."
+          },
+          "server_owned_path_evidence": {
+            "state": "observed",
+            "reason": null,
+            "owner_stories": [],
+            "detail": null
+          }
+        },
+        "owner_links": [
+          {
+            "workspace": "analyze",
+            "section": "explore",
+            "object_type": "result",
+            "object_id": "qr_FIXTURE_3",
+            "version_id": null,
+            "tab": null
+          },
+          {
+            "workspace": "governance",
+            "section": "semantic-model",
+            "object_type": "semantic-view",
+            "object_id": "sv_FIXTURE_7",
+            "version_id": "svv_FIXTURE_8",
+            "tab": "versions"
+          },
+          {
+            "workspace": "analyze",
+            "section": "explore",
+            "object_type": "query-spec",
+            "object_id": "qs_FIXTURE_12",
+            "version_id": "qsv_FIXTURE_4",
+            "tab": "query"
+          },
+          {
+            "workspace": "governance",
+            "section": "master-data",
+            "object_type": "business-domain",
+            "object_id": "bd_FIXTURE_11",
+            "version_id": "bd_FIXTURE_11:1",
+            "tab": "versions"
+          },
+          {
+            "workspace": "test",
+            "section": "regression-runs",
+            "object_type": "trace-observation",
+            "object_id": "aip_FIXTURE_9",
+            "version_id": null,
+            "tab": "timeline"
+          }
+        ],
+        "unavailable_owner_links": [
+          {
+            "target": "render",
+            "state": "unverifiable",
+            "reason": "render_owner_not_delivered",
+            "owner_stories": [
+              "50.4",
+              "50.5",
+              "50.7"
+            ],
+            "detail": "The rendered-artifact object does not exist in this repository and the render stack is not installed. Its pin is declared by migration 153 and held NULL, so no fidelity claim about a rendered artifact can be made."
+          },
+          {
+            "target": "context-hub",
+            "state": "unverifiable",
+            "reason": "context_version_set_owner_not_delivered",
+            "owner_stories": [
+              "51.2"
+            ],
+            "detail": "The Context Version Set resolved for an execution is Story 51.2's object. Without it there is no exact context identity to deep-link to, so no Context Hub link is offered rather than one that points at `latest`."
+          },
+          {
+            "target": "capability",
+            "state": "unverifiable",
+            "reason": "capability_version_route_unavailable",
+            "owner_stories": [],
+            "detail": "The classification pins an exact capability version, but the shell has no version-addressable capability object. No moving capability link is emitted."
+          }
+        ],
+        "review": {
+          "current_state": "unreviewed",
+          "current_version_id": null
+        },
+        "blocking_use": "Prioritizes investigation; never proves correctness or regression alone."
+      },
+      {
+        "schema_version": "feedback-review-detail.v1",
+        "id": "fba_FIXTURE_15",
+        "source": "authenticated",
+        "target_schema_version": "exact-feedback.v1",
+        "polarity": "positive",
+        "comment": "This exact value is useful.",
+        "actor": "owner@example.com",
+        "actor_source": "user",
+        "observed_surface": "console",
+        "interaction_ref": "afi_FIXTURE_3",
+        "w3c_trace_id": null,
+        "result": {
+          "id": "qr_FIXTURE_3",
+          "outcome": "success",
+          "query_spec_version_id": "qsv_FIXTURE_4",
+          "content_hash": "787b8d03f2bcbd07fe7bcb536fb711c71b274e4aaef86deb5d5f3efb30549df4"
+        },
+        "render": {
+          "render_id": "rnd_FIXTURE_5",
+          "visualization_spec_version_id": "vsv_FIXTURE_6",
+          "renderer_build_id": "table/toorow-table@1.0.0",
+          "runtime_build_id": "@toorow/card-shell/viz@0.1.0+f87912546265",
+          "theme_version": "viz-theme@1",
+          "formatter_version": "viz-formatters@1"
+        },
+        "target": {
+          "kind": "datum",
+          "row_index": 1,
+          "field": "sessions"
+        },
+        "semantic_view": {
+          "id": "sv_FIXTURE_7",
+          "version_id": "svv_FIXTURE_8"
+        },
+        "ai_path": "aip_FIXTURE_9",
+        "business_domain": null,
+        "capability": null,
+        "result_type": null,
+        "classification": {
+          "skills": {
+            "state": "attributed",
+            "versions": []
+          },
+          "capability": {
+            "key": "country",
+            "state": "attributed",
+            "version_id": "pcv_FIXTURE_10"
+          },
+          "result_type": {
+            "state": "attributed",
+            "value": "table"
+          },
+          "semantic_view": {
+            "id": "sv_FIXTURE_7",
+            "state": "attributed",
+            "version_id": "svv_FIXTURE_8"
+          },
+          "schema_version": "evaluation-classification.v1",
+          "business_domains": {
+            "state": "attributed",
+            "versions": [
+              {
+                "id": "bd_FIXTURE_11",
+                "version_number": 1
+              }
+            ]
+          },
+          "classification_hash": "b269bee0961c0ab3f4793e9d63bfa590c5c7e886e5451fe2b29e8c96f335b0f2"
+        },
+        "visible_versions": {
+          "render_id": "rnd_FIXTURE_5",
+          "result_id": "qr_FIXTURE_3",
+          "ai_path_id": "aip_FIXTURE_9",
+          "theme_version": "viz-theme@1",
+          "runtime_build_id": "@toorow/card-shell/viz@0.1.0+f87912546265",
+          "semantic_view_id": "sv_FIXTURE_7",
+          "formatter_version": "viz-formatters@1",
+          "renderer_build_id": "table/toorow-table@1.0.0",
+          "result_content_hash": "787b8d03f2bcbd07fe7bcb536fb711c71b274e4aaef86deb5d5f3efb30549df4",
+          "ai_path_content_hash": "dea068326dcf92f17e0cc6fece311e1240351db29032b5b841799f09c2b42cb6",
+          "query_spec_version_id": "qsv_FIXTURE_4",
+          "semantic_view_version_id": "svv_FIXTURE_8",
+          "visualization_spec_version_id": "vsv_FIXTURE_6",
+          "query_spec_version_content_hash": "c194b2ab6ed8222b8c7856597e3b50f73c7c85e617beb58a14115772c80cf7a2",
+          "semantic_view_version_content_hash": "86e4eb2ea769006439bf235afa68fff26aeb69c8ad7d7165de3121ef14a30511"
+        },
+        "visible_versions_hash": "1c6020777dd598f18dfa66464a99d7a8c6efe5a16945ebab3ad42c811e2da5aa",
+        "visible_versions_hash_kind": "visible_versions",
+        "visible_versions_hash_valid": true,
+        "version_divergence": [],
+        "observed_at": "2026-08-10T12:00:00Z",
+        "created_at": "2026-08-10T12:00:00Z",
+        "evidence_lenses": {
+          "render": {
+            "state": "observed",
+            "render_id": "rnd_FIXTURE_5",
+            "visualization_spec_version_id": "vsv_FIXTURE_6",
+            "renderer_build_id": "table/toorow-table@1.0.0",
+            "runtime_build_id": "@toorow/card-shell/viz@0.1.0+f87912546265",
+            "theme_version": "viz-theme@1",
+            "formatter_version": "viz-formatters@1"
+          },
+          "datum_mark": {
+            "state": "observed",
+            "locator": {
+              "kind": "datum",
+              "row_index": 1,
+              "field": "sessions"
+            }
+          },
+          "mcp_app_behavior": {
+            "state": "unverifiable",
+            "reason": "mcp_app_evidence_owner_not_delivered",
+            "owner_stories": [
+              "50.6"
+            ],
+            "detail": "Render/Result parity, drill-down and host fallback have no server-owned evidence yet, so the MCP App behaviour dimension carries no machine evidence. A reviewer may still record a human verdict on it; the two are reported under different names and never merged."
+          },
+          "server_owned_path_evidence": {
+            "state": "observed",
+            "reason": null,
+            "owner_stories": [],
+            "detail": null
+          }
+        },
+        "owner_links": [
+          {
+            "workspace": "analyze",
+            "section": "explore",
+            "object_type": "result",
+            "object_id": "qr_FIXTURE_3",
+            "version_id": null,
+            "tab": null
+          },
+          {
+            "workspace": "governance",
+            "section": "semantic-model",
+            "object_type": "semantic-view",
+            "object_id": "sv_FIXTURE_7",
+            "version_id": "svv_FIXTURE_8",
+            "tab": "versions"
+          },
+          {
+            "workspace": "analyze",
+            "section": "explore",
+            "object_type": "query-spec",
+            "object_id": "qs_FIXTURE_12",
+            "version_id": "qsv_FIXTURE_4",
+            "tab": "query"
+          },
+          {
+            "workspace": "governance",
+            "section": "master-data",
+            "object_type": "business-domain",
+            "object_id": "bd_FIXTURE_11",
+            "version_id": "bd_FIXTURE_11:1",
+            "tab": "versions"
+          },
+          {
+            "workspace": "analyze",
+            "section": "renders",
+            "object_type": "render",
+            "object_id": "rnd_FIXTURE_5",
+            "version_id": null,
+            "tab": null
+          },
+          {
+            "workspace": "test",
+            "section": "regression-runs",
+            "object_type": "trace-observation",
+            "object_id": "aip_FIXTURE_9",
+            "version_id": null,
+            "tab": "timeline"
+          }
+        ],
+        "unavailable_owner_links": [
+          {
+            "target": "context-hub",
+            "state": "unverifiable",
+            "reason": "context_version_set_owner_not_delivered",
+            "owner_stories": [
+              "51.2"
+            ],
+            "detail": "The Context Version Set resolved for an execution is Story 51.2's object. Without it there is no exact context identity to deep-link to, so no Context Hub link is offered rather than one that points at `latest`."
+          },
+          {
+            "target": "capability",
+            "state": "unverifiable",
+            "reason": "capability_version_route_unavailable",
+            "owner_stories": [],
+            "detail": "The classification pins an exact capability version, but the shell has no version-addressable capability object. No moving capability link is emitted."
+          },
+          {
+            "target": "visualization-spec-version",
+            "state": "unverifiable",
+            "reason": "visualization_spec_version_route_unavailable",
+            "owner_stories": [],
+            "detail": "The exact Visualization Spec version is pinned, but Analyze / Renders has no Visualization Spec object route. No inert owner link is emitted."
+          }
+        ],
+        "review": {
+          "current_state": "unreviewed",
+          "current_version_id": null
+        },
+        "blocking_use": "Prioritizes investigation; never proves correctness or regression alone."
+      },
+      {
+        "schema_version": "feedback-review-detail.v1",
+        "id": "fba_FIXTURE_16",
+        "source": "authenticated",
+        "target_schema_version": "exact-feedback.v1",
+        "polarity": "negative",
+        "comment": "The answer needs clarification.",
+        "actor": "owner@example.com",
+        "actor_source": "user",
+        "observed_surface": "mcp_app",
+        "interaction_ref": "afi_FIXTURE_4",
+        "w3c_trace_id": null,
+        "result": {
+          "id": "qr_FIXTURE_3",
+          "outcome": "success",
+          "query_spec_version_id": "qsv_FIXTURE_4",
+          "content_hash": "787b8d03f2bcbd07fe7bcb536fb711c71b274e4aaef86deb5d5f3efb30549df4"
+        },
+        "render": {
+          "render_id": null,
+          "visualization_spec_version_id": "vsv_FIXTURE_6",
+          "renderer_build_id": "table/toorow-table@1.0.0",
+          "runtime_build_id": "@toorow/card-shell/viz@0.1.0+f87912546265",
+          "theme_version": "viz-theme@1",
+          "formatter_version": "viz-formatters@1"
+        },
+        "target": {
+          "kind": "answer"
+        },
+        "semantic_view": {
+          "id": "sv_FIXTURE_7",
+          "version_id": "svv_FIXTURE_8"
+        },
+        "ai_path": "aip_FIXTURE_9",
+        "business_domain": null,
+        "capability": null,
+        "result_type": null,
+        "classification": {
+          "skills": {
+            "state": "attributed",
+            "versions": []
+          },
+          "capability": {
+            "key": "country",
+            "state": "attributed",
+            "version_id": "pcv_FIXTURE_10"
+          },
+          "result_type": {
+            "state": "attributed",
+            "value": "table"
+          },
+          "semantic_view": {
+            "id": "sv_FIXTURE_7",
+            "state": "attributed",
+            "version_id": "svv_FIXTURE_8"
+          },
+          "schema_version": "evaluation-classification.v1",
+          "business_domains": {
+            "state": "attributed",
+            "versions": [
+              {
+                "id": "bd_FIXTURE_11",
+                "version_number": 1
+              }
+            ]
+          },
+          "classification_hash": "b269bee0961c0ab3f4793e9d63bfa590c5c7e886e5451fe2b29e8c96f335b0f2"
+        },
+        "visible_versions": {
+          "result_id": "qr_FIXTURE_3",
+          "ai_path_id": "aip_FIXTURE_9",
+          "theme_version": "viz-theme@1",
+          "runtime_build_id": "@toorow/card-shell/viz@0.1.0+f87912546265",
+          "semantic_view_id": "sv_FIXTURE_7",
+          "formatter_version": "viz-formatters@1",
+          "renderer_build_id": "table/toorow-table@1.0.0",
+          "result_content_hash": "787b8d03f2bcbd07fe7bcb536fb711c71b274e4aaef86deb5d5f3efb30549df4",
+          "ai_path_content_hash": "dea068326dcf92f17e0cc6fece311e1240351db29032b5b841799f09c2b42cb6",
+          "query_spec_version_id": "qsv_FIXTURE_4",
+          "semantic_view_version_id": "svv_FIXTURE_8",
+          "visualization_spec_version_id": "vsv_FIXTURE_6",
+          "query_spec_version_content_hash": "c194b2ab6ed8222b8c7856597e3b50f73c7c85e617beb58a14115772c80cf7a2",
+          "semantic_view_version_content_hash": "86e4eb2ea769006439bf235afa68fff26aeb69c8ad7d7165de3121ef14a30511"
+        },
+        "visible_versions_hash": "95fdb059f5fa9705af63cc86474c3beaacbe9c1e6ace258f20c6ace11313f5f9",
+        "visible_versions_hash_kind": "visible_versions",
+        "visible_versions_hash_valid": true,
+        "version_divergence": [],
+        "observed_at": "2026-08-10T12:00:00Z",
+        "created_at": "2026-08-10T12:00:00Z",
+        "evidence_lenses": {
+          "render": {
+            "state": "observed",
+            "render_id": null,
+            "visualization_spec_version_id": "vsv_FIXTURE_6",
+            "renderer_build_id": "table/toorow-table@1.0.0",
+            "runtime_build_id": "@toorow/card-shell/viz@0.1.0+f87912546265",
+            "theme_version": "viz-theme@1",
+            "formatter_version": "viz-formatters@1"
+          },
+          "datum_mark": {
+            "state": "not_targeted"
+          },
+          "mcp_app_behavior": {
+            "state": "unverifiable",
+            "reason": "mcp_app_evidence_owner_not_delivered",
+            "owner_stories": [
+              "50.6"
+            ],
+            "detail": "Render/Result parity, drill-down and host fallback have no server-owned evidence yet, so the MCP App behaviour dimension carries no machine evidence. A reviewer may still record a human verdict on it; the two are reported under different names and never merged."
+          },
+          "server_owned_path_evidence": {
+            "state": "observed",
+            "reason": null,
+            "owner_stories": [],
+            "detail": null
+          }
+        },
+        "owner_links": [
+          {
+            "workspace": "analyze",
+            "section": "explore",
+            "object_type": "result",
+            "object_id": "qr_FIXTURE_3",
+            "version_id": null,
+            "tab": null
+          },
+          {
+            "workspace": "governance",
+            "section": "semantic-model",
+            "object_type": "semantic-view",
+            "object_id": "sv_FIXTURE_7",
+            "version_id": "svv_FIXTURE_8",
+            "tab": "versions"
+          },
+          {
+            "workspace": "analyze",
+            "section": "explore",
+            "object_type": "query-spec",
+            "object_id": "qs_FIXTURE_12",
+            "version_id": "qsv_FIXTURE_4",
+            "tab": "query"
+          },
+          {
+            "workspace": "governance",
+            "section": "master-data",
+            "object_type": "business-domain",
+            "object_id": "bd_FIXTURE_11",
+            "version_id": "bd_FIXTURE_11:1",
+            "tab": "versions"
+          },
+          {
+            "workspace": "test",
+            "section": "regression-runs",
+            "object_type": "trace-observation",
+            "object_id": "aip_FIXTURE_9",
+            "version_id": null,
+            "tab": "timeline"
+          }
+        ],
+        "unavailable_owner_links": [
+          {
+            "target": "render",
+            "state": "unverifiable",
+            "reason": "render_owner_not_delivered",
+            "owner_stories": [
+              "50.4",
+              "50.5",
+              "50.7"
+            ],
+            "detail": "The rendered-artifact object does not exist in this repository and the render stack is not installed. Its pin is declared by migration 153 and held NULL, so no fidelity claim about a rendered artifact can be made."
+          },
+          {
+            "target": "context-hub",
+            "state": "unverifiable",
+            "reason": "context_version_set_owner_not_delivered",
+            "owner_stories": [
+              "51.2"
+            ],
+            "detail": "The Context Version Set resolved for an execution is Story 51.2's object. Without it there is no exact context identity to deep-link to, so no Context Hub link is offered rather than one that points at `latest`."
+          },
+          {
+            "target": "capability",
+            "state": "unverifiable",
+            "reason": "capability_version_route_unavailable",
+            "owner_stories": [],
+            "detail": "The classification pins an exact capability version, but the shell has no version-addressable capability object. No moving capability link is emitted."
+          },
+          {
+            "target": "visualization-spec-version",
+            "state": "unverifiable",
+            "reason": "visualization_spec_version_route_unavailable",
+            "owner_stories": [],
+            "detail": "The exact Visualization Spec version is pinned, but Analyze / Renders has no Visualization Spec object route. No inert owner link is emitted."
+          }
+        ],
+        "review": {
+          "current_state": "unreviewed",
+          "current_version_id": null
+        },
+        "blocking_use": "Prioritizes investigation; never proves correctness or regression alone."
+      }
+    ],
+    "truncated": false,
+    "next_cursor": null
+  },
+  "detail": {
+    "schema_version": "feedback-review-detail.v1",
+    "id": "rsfb_FIXTURE_2",
+    "source": "anonymous_share",
+    "target_schema_version": "exact-feedback.v1",
+    "polarity": "negative",
+    "comment": "This observed step needs review.",
+    "actor": null,
+    "actor_source": null,
+    "observed_surface": "share",
+    "interaction_ref": "afi_FIXTURE_1",
+    "w3c_trace_id": null,
+    "result": {
+      "id": "qr_FIXTURE_3",
+      "outcome": "success",
+      "query_spec_version_id": "qsv_FIXTURE_4",
+      "content_hash": "787b8d03f2bcbd07fe7bcb536fb711c71b274e4aaef86deb5d5f3efb30549df4"
+    },
+    "render": {
+      "render_id": "rnd_FIXTURE_5",
+      "visualization_spec_version_id": "vsv_FIXTURE_6",
+      "renderer_build_id": "table/toorow-table@1.0.0",
+      "runtime_build_id": "@toorow/card-shell/viz@0.1.0+f87912546265",
+      "theme_version": "viz-theme@1",
+      "formatter_version": "viz-formatters@1"
+    },
+    "target": {
+      "kind": "path_step",
+      "ordinal": 0
+    },
+    "semantic_view": {
+      "id": "sv_FIXTURE_7",
+      "version_id": "svv_FIXTURE_8"
+    },
+    "ai_path": "aip_FIXTURE_9",
+    "business_domain": null,
+    "capability": null,
+    "result_type": null,
+    "classification": {
+      "skills": {
+        "state": "attributed",
+        "versions": []
+      },
+      "capability": {
+        "key": "country",
+        "state": "attributed",
+        "version_id": "pcv_FIXTURE_10"
+      },
+      "result_type": {
+        "state": "attributed",
+        "value": "table"
+      },
+      "semantic_view": {
+        "id": "sv_FIXTURE_7",
+        "state": "attributed",
+        "version_id": "svv_FIXTURE_8"
+      },
+      "schema_version": "evaluation-classification.v1",
+      "business_domains": {
+        "state": "attributed",
+        "versions": [
+          {
+            "id": "bd_FIXTURE_11",
+            "version_number": 1
+          }
+        ]
+      },
+      "classification_hash": "b269bee0961c0ab3f4793e9d63bfa590c5c7e886e5451fe2b29e8c96f335b0f2"
+    },
+    "visible_versions": {
+      "render_id": "rnd_FIXTURE_5",
+      "result_id": "qr_FIXTURE_3",
+      "ai_path_id": "aip_FIXTURE_9",
+      "theme_version": "viz-theme@1",
+      "runtime_build_id": "@toorow/card-shell/viz@0.1.0+f87912546265",
+      "semantic_view_id": "sv_FIXTURE_7",
+      "formatter_version": "viz-formatters@1",
+      "renderer_build_id": "table/toorow-table@1.0.0",
+      "result_content_hash": "787b8d03f2bcbd07fe7bcb536fb711c71b274e4aaef86deb5d5f3efb30549df4",
+      "ai_path_content_hash": "dea068326dcf92f17e0cc6fece311e1240351db29032b5b841799f09c2b42cb6",
+      "query_spec_version_id": "qsv_FIXTURE_4",
+      "semantic_view_version_id": "svv_FIXTURE_8",
+      "visualization_spec_version_id": "vsv_FIXTURE_6",
+      "query_spec_version_content_hash": "c194b2ab6ed8222b8c7856597e3b50f73c7c85e617beb58a14115772c80cf7a2",
+      "semantic_view_version_content_hash": "86e4eb2ea769006439bf235afa68fff26aeb69c8ad7d7165de3121ef14a30511"
+    },
+    "visible_versions_hash": "4969b1d3f8e2b510df36649ff2fb217af06730bd5660bd430b2efe7f6f7c85ae",
+    "visible_versions_hash_kind": "evidence_manifest",
+    "visible_versions_hash_valid": null,
+    "version_divergence": [],
+    "observed_at": "2026-08-10T12:00:00Z",
+    "created_at": "2026-08-10T12:00:00Z",
+    "evidence_lenses": {
+      "render": {
+        "state": "observed",
+        "render_id": "rnd_FIXTURE_5",
+        "visualization_spec_version_id": "vsv_FIXTURE_6",
+        "renderer_build_id": "table/toorow-table@1.0.0",
+        "runtime_build_id": "@toorow/card-shell/viz@0.1.0+f87912546265",
+        "theme_version": "viz-theme@1",
+        "formatter_version": "viz-formatters@1"
+      },
+      "datum_mark": {
+        "state": "not_targeted"
+      },
+      "mcp_app_behavior": {
+        "state": "unverifiable",
+        "reason": "mcp_app_evidence_owner_not_delivered",
+        "owner_stories": [
+          "50.6"
+        ],
+        "detail": "Render/Result parity, drill-down and host fallback have no server-owned evidence yet, so the MCP App behaviour dimension carries no machine evidence. A reviewer may still record a human verdict on it; the two are reported under different names and never merged."
+      },
+      "server_owned_path_evidence": {
+        "state": "observed",
+        "reason": null,
+        "owner_stories": [],
+        "detail": null
+      }
+    },
+    "owner_links": [
+      {
+        "workspace": "analyze",
+        "section": "explore",
+        "object_type": "result",
+        "object_id": "qr_FIXTURE_3",
+        "version_id": null,
+        "tab": null
+      },
+      {
+        "workspace": "governance",
+        "section": "semantic-model",
+        "object_type": "semantic-view",
+        "object_id": "sv_FIXTURE_7",
+        "version_id": "svv_FIXTURE_8",
+        "tab": "versions"
+      },
+      {
+        "workspace": "analyze",
+        "section": "explore",
+        "object_type": "query-spec",
+        "object_id": "qs_FIXTURE_12",
+        "version_id": "qsv_FIXTURE_4",
+        "tab": "query"
+      },
+      {
+        "workspace": "governance",
+        "section": "master-data",
+        "object_type": "business-domain",
+        "object_id": "bd_FIXTURE_11",
+        "version_id": "bd_FIXTURE_11:1",
+        "tab": "versions"
+      },
+      {
+        "workspace": "analyze",
+        "section": "renders",
+        "object_type": "render",
+        "object_id": "rnd_FIXTURE_5",
+        "version_id": null,
+        "tab": null
+      },
+      {
+        "workspace": "test",
+        "section": "regression-runs",
+        "object_type": "trace-observation",
+        "object_id": "aip_FIXTURE_9",
+        "version_id": null,
+        "tab": "timeline"
+      }
+    ],
+    "unavailable_owner_links": [
+      {
+        "target": "context-hub",
+        "state": "unverifiable",
+        "reason": "context_version_set_owner_not_delivered",
+        "owner_stories": [
+          "51.2"
+        ],
+        "detail": "The Context Version Set resolved for an execution is Story 51.2's object. Without it there is no exact context identity to deep-link to, so no Context Hub link is offered rather than one that points at `latest`."
+      },
+      {
+        "target": "capability",
+        "state": "unverifiable",
+        "reason": "capability_version_route_unavailable",
+        "owner_stories": [],
+        "detail": "The classification pins an exact capability version, but the shell has no version-addressable capability object. No moving capability link is emitted."
+      },
+      {
+        "target": "visualization-spec-version",
+        "state": "unverifiable",
+        "reason": "visualization_spec_version_route_unavailable",
+        "owner_stories": [],
+        "detail": "The exact Visualization Spec version is pinned, but Analyze / Renders has no Visualization Spec object route. No inert owner link is emitted."
+      }
+    ],
+    "review": {
+      "current_state": "triaged",
+      "current_version_id": "fbrv_FIXTURE_13",
+      "versions": [
+        {
+          "id": "fbrv_FIXTURE_13",
+          "version_number": 1,
+          "review_state": "triaged",
+          "affected_dimension": "path_quality",
+          "human_verdict": "fail",
+          "severity": "critical",
+          "reason": "The delivered path step needs an exact owner review.",
+          "reviewer": "owner@example.com",
+          "seed_request": null,
+          "predecessor_version_id": null,
+          "created_at": "2026-08-10T12:00:00Z",
+          "machine_evidence": {
+            "state": "unverifiable",
+            "reason": "evaluation_run_owner_not_delivered",
+            "owner_stories": [
+              "51.2",
+              "51.3"
+            ],
+            "detail": "No Evaluation Run has judged this dimension. The human verdict above stands alone and is reported as such."
+          }
+        }
+      ],
+      "versions_truncated": false,
+      "versions_next_cursor": null
+    },
+    "blocking_use": "Prioritizes investigation; never proves correctness or regression alone.",
+    "project_id": "proj_FIXTURE_1",
+    "automated_verdicts": {
+      "state": "available",
+      "reason": null,
+      "items": [
+        {
+          "run_id": "erun_FIXTURE_17",
+          "case_id": "ecase_FIXTURE_18",
+          "dimension": "path_quality",
+          "verdict": "fail",
+          "reason_code": "expected_path_mismatch",
+          "evidence_refs": {
+            "render_id": "rnd_FIXTURE_5",
+            "result_id": "qr_FIXTURE_3"
+          },
+          "created_at": "2026-08-10T12:00:00Z",
+          "owner_link": {
+            "workspace": "test",
+            "section": "regression-runs",
+            "object_type": "evaluation-run",
+            "object_id": "erun_FIXTURE_17",
+            "version_id": null,
+            "tab": null
+          }
+        }
+      ],
+      "truncated": false
+    }
+  },
+  "authenticated_detail": {
+    "schema_version": "feedback-review-detail.v1",
+    "id": "fba_FIXTURE_14",
+    "source": "authenticated",
+    "target_schema_version": "exact-feedback.v1",
+    "polarity": "positive",
+    "comment": "This workbench value is useful.",
+    "actor": "owner@example.com",
+    "actor_source": "user",
+    "observed_surface": "console",
+    "interaction_ref": "afi_FIXTURE_2",
+    "w3c_trace_id": null,
+    "result": {
+      "id": "qr_FIXTURE_3",
+      "outcome": "success",
+      "query_spec_version_id": "qsv_FIXTURE_4",
+      "content_hash": "787b8d03f2bcbd07fe7bcb536fb711c71b274e4aaef86deb5d5f3efb30549df4"
+    },
+    "render": null,
+    "target": {
+      "kind": "datum",
+      "row_index": 1,
+      "field": "sessions"
+    },
+    "semantic_view": {
+      "id": "sv_FIXTURE_7",
+      "version_id": "svv_FIXTURE_8"
+    },
+    "ai_path": "aip_FIXTURE_9",
+    "business_domain": null,
+    "capability": null,
+    "result_type": null,
+    "classification": {
+      "skills": {
+        "state": "attributed",
+        "versions": []
+      },
+      "capability": {
+        "key": "country",
+        "state": "attributed",
+        "version_id": "pcv_FIXTURE_10"
+      },
+      "result_type": {
+        "state": "attributed",
+        "value": "table"
+      },
+      "semantic_view": {
+        "id": "sv_FIXTURE_7",
+        "state": "attributed",
+        "version_id": "svv_FIXTURE_8"
+      },
+      "schema_version": "evaluation-classification.v1",
+      "business_domains": {
+        "state": "attributed",
+        "versions": [
+          {
+            "id": "bd_FIXTURE_11",
+            "version_number": 1
+          }
+        ]
+      },
+      "classification_hash": "b269bee0961c0ab3f4793e9d63bfa590c5c7e886e5451fe2b29e8c96f335b0f2"
+    },
+    "visible_versions": {
+      "result_id": "qr_FIXTURE_3",
+      "ai_path_id": "aip_FIXTURE_9",
+      "semantic_view_id": "sv_FIXTURE_7",
+      "result_content_hash": "787b8d03f2bcbd07fe7bcb536fb711c71b274e4aaef86deb5d5f3efb30549df4",
+      "ai_path_content_hash": "dea068326dcf92f17e0cc6fece311e1240351db29032b5b841799f09c2b42cb6",
+      "query_spec_version_id": "qsv_FIXTURE_4",
+      "semantic_view_version_id": "svv_FIXTURE_8",
+      "query_spec_version_content_hash": "c194b2ab6ed8222b8c7856597e3b50f73c7c85e617beb58a14115772c80cf7a2",
+      "semantic_view_version_content_hash": "86e4eb2ea769006439bf235afa68fff26aeb69c8ad7d7165de3121ef14a30511"
+    },
+    "visible_versions_hash": "6562ee7616bf14af9c6e812f305f18ab906021a7bce17b972c38102f81787d92",
+    "visible_versions_hash_kind": "visible_versions",
+    "visible_versions_hash_valid": true,
+    "version_divergence": [],
+    "observed_at": "2026-08-10T12:00:00Z",
+    "created_at": "2026-08-10T12:00:00Z",
+    "evidence_lenses": {
+      "render": {
+        "state": "unverifiable",
+        "reason": "render_owner_not_delivered",
+        "owner_stories": [
+          "50.4",
+          "50.5",
+          "50.7"
+        ],
+        "detail": "The rendered-artifact object does not exist in this repository and the render stack is not installed. Its pin is declared by migration 153 and held NULL, so no fidelity claim about a rendered artifact can be made."
+      },
+      "datum_mark": {
+        "state": "observed",
+        "locator": {
+          "kind": "datum",
+          "row_index": 1,
+          "field": "sessions"
+        }
+      },
+      "mcp_app_behavior": {
+        "state": "unverifiable",
+        "reason": "mcp_app_evidence_owner_not_delivered",
+        "owner_stories": [
+          "50.6"
+        ],
+        "detail": "Render/Result parity, drill-down and host fallback have no server-owned evidence yet, so the MCP App behaviour dimension carries no machine evidence. A reviewer may still record a human verdict on it; the two are reported under different names and never merged."
+      },
+      "server_owned_path_evidence": {
+        "state": "observed",
+        "reason": null,
+        "owner_stories": [],
+        "detail": null
+      }
+    },
+    "owner_links": [
+      {
+        "workspace": "analyze",
+        "section": "explore",
+        "object_type": "result",
+        "object_id": "qr_FIXTURE_3",
+        "version_id": null,
+        "tab": null
+      },
+      {
+        "workspace": "governance",
+        "section": "semantic-model",
+        "object_type": "semantic-view",
+        "object_id": "sv_FIXTURE_7",
+        "version_id": "svv_FIXTURE_8",
+        "tab": "versions"
+      },
+      {
+        "workspace": "analyze",
+        "section": "explore",
+        "object_type": "query-spec",
+        "object_id": "qs_FIXTURE_12",
+        "version_id": "qsv_FIXTURE_4",
+        "tab": "query"
+      },
+      {
+        "workspace": "governance",
+        "section": "master-data",
+        "object_type": "business-domain",
+        "object_id": "bd_FIXTURE_11",
+        "version_id": "bd_FIXTURE_11:1",
+        "tab": "versions"
+      },
+      {
+        "workspace": "test",
+        "section": "regression-runs",
+        "object_type": "trace-observation",
+        "object_id": "aip_FIXTURE_9",
+        "version_id": null,
+        "tab": "timeline"
+      }
+    ],
+    "unavailable_owner_links": [
+      {
+        "target": "render",
+        "state": "unverifiable",
+        "reason": "render_owner_not_delivered",
+        "owner_stories": [
+          "50.4",
+          "50.5",
+          "50.7"
+        ],
+        "detail": "The rendered-artifact object does not exist in this repository and the render stack is not installed. Its pin is declared by migration 153 and held NULL, so no fidelity claim about a rendered artifact can be made."
+      },
+      {
+        "target": "context-hub",
+        "state": "unverifiable",
+        "reason": "context_version_set_owner_not_delivered",
+        "owner_stories": [
+          "51.2"
+        ],
+        "detail": "The Context Version Set resolved for an execution is Story 51.2's object. Without it there is no exact context identity to deep-link to, so no Context Hub link is offered rather than one that points at `latest`."
+      },
+      {
+        "target": "capability",
+        "state": "unverifiable",
+        "reason": "capability_version_route_unavailable",
+        "owner_stories": [],
+        "detail": "The classification pins an exact capability version, but the shell has no version-addressable capability object. No moving capability link is emitted."
+      }
+    ],
+    "review": {
+      "current_state": "unreviewed",
+      "current_version_id": null,
+      "versions": [],
+      "versions_truncated": false,
+      "versions_next_cursor": null
+    },
+    "blocking_use": "Prioritizes investigation; never proves correctness or regression alone.",
+    "project_id": "proj_FIXTURE_1",
+    "automated_verdicts": {
+      "state": "unavailable",
+      "reason": "current_objective_review_unavailable",
+      "items": [],
+      "truncated": false
+    }
+  },
+  "aggregates": {
+    "schema_version": "feedback-aggregate.v1",
+    "compatibility_schema_version": "feedback-compatibility.v1",
+    "project_id": "proj_FIXTURE_1",
+    "normalized_filters": {
+      "observed_from": "2026-08-10T12:00:00Z",
+      "observed_to": "2026-08-10T12:00:00Z"
+    },
+    "scope": {
+      "eligible_interactions": 4,
+      "annotated_interactions": 4,
+      "annotations": 4,
+      "coverage": 1.0,
+      "coverage_state": "stated",
+      "coverage_reason": null
+    },
+    "axes": {
+      "business_domain": {
+        "buckets": [
+          {
+            "key": {
+              "version_number": 1,
+              "business_domain_id": "bd_FIXTURE_11"
+            },
+            "attributed": true,
+            "unattributed_reason": null,
+            "positive": 0,
+            "negative": 1,
+            "annotations": 1,
+            "annotated_interactions": 1,
+            "eligible_interactions": 1,
+            "coverage": 1.0,
+            "coverage_state": "stated",
+            "coverage_reason": null,
+            "unresolved_critical_negatives": 0,
+            "normalized_filters": {
+              "observed_from": "2026-08-10T12:00:00Z",
+              "observed_to": "2026-08-10T12:00:00Z"
+            },
+            "compatibility_key": "a31a3ce772fcbf3840fce438234d041695d8c39370314c6aa3da1dcbf72cdbe2"
+          },
+          {
+            "key": {
+              "version_number": 1,
+              "business_domain_id": "bd_FIXTURE_11"
+            },
+            "attributed": true,
+            "unattributed_reason": null,
+            "positive": 0,
+            "negative": 1,
+            "annotations": 1,
+            "annotated_interactions": 1,
+            "eligible_interactions": 1,
+            "coverage": 1.0,
+            "coverage_state": "stated",
+            "coverage_reason": null,
+            "unresolved_critical_negatives": 1,
+            "normalized_filters": {
+              "observed_from": "2026-08-10T12:00:00Z",
+              "observed_to": "2026-08-10T12:00:00Z"
+            },
+            "compatibility_key": "6d63b901e599d430beea18de1cd9c1c428bbe0d836a51ec3bc9626c0bee006e7"
+          },
+          {
+            "key": {
+              "version_number": 1,
+              "business_domain_id": "bd_FIXTURE_11"
+            },
+            "attributed": true,
+            "unattributed_reason": null,
+            "positive": 1,
+            "negative": 0,
+            "annotations": 1,
+            "annotated_interactions": 1,
+            "eligible_interactions": 1,
+            "coverage": 1.0,
+            "coverage_state": "stated",
+            "coverage_reason": null,
+            "unresolved_critical_negatives": 0,
+            "normalized_filters": {
+              "observed_from": "2026-08-10T12:00:00Z",
+              "observed_to": "2026-08-10T12:00:00Z"
+            },
+            "compatibility_key": "9fecbdabb13b6883fd88995c09542837193d10886a90cddc691554faf8d11652"
+          },
+          {
+            "key": {
+              "version_number": 1,
+              "business_domain_id": "bd_FIXTURE_11"
+            },
+            "attributed": true,
+            "unattributed_reason": null,
+            "positive": 1,
+            "negative": 0,
+            "annotations": 1,
+            "annotated_interactions": 1,
+            "eligible_interactions": 1,
+            "coverage": 1.0,
+            "coverage_state": "stated",
+            "coverage_reason": null,
+            "unresolved_critical_negatives": 0,
+            "normalized_filters": {
+              "observed_from": "2026-08-10T12:00:00Z",
+              "observed_to": "2026-08-10T12:00:00Z"
+            },
+            "compatibility_key": "0554ea78e73223ee014b9ef31099efa7224bbfcacf19cd2d13285fb9a1cfcb65"
+          }
+        ],
+        "buckets_are_exclusive": false,
+        "buckets_overlap_note": "Buckets overlap and must not be summed."
+      },
+      "skill": {
+        "buckets": [
+          {
+            "key": null,
+            "attributed": false,
+            "unattributed_reason": "skill_unavailable",
+            "positive": 0,
+            "negative": 1,
+            "annotations": 1,
+            "annotated_interactions": 1,
+            "eligible_interactions": 1,
+            "coverage": 1.0,
+            "coverage_state": "stated",
+            "coverage_reason": null,
+            "unresolved_critical_negatives": 0,
+            "normalized_filters": {
+              "observed_from": "2026-08-10T12:00:00Z",
+              "observed_to": "2026-08-10T12:00:00Z"
+            },
+            "compatibility_key": "a31a3ce772fcbf3840fce438234d041695d8c39370314c6aa3da1dcbf72cdbe2"
+          },
+          {
+            "key": null,
+            "attributed": false,
+            "unattributed_reason": "skill_unavailable",
+            "positive": 0,
+            "negative": 1,
+            "annotations": 1,
+            "annotated_interactions": 1,
+            "eligible_interactions": 1,
+            "coverage": 1.0,
+            "coverage_state": "stated",
+            "coverage_reason": null,
+            "unresolved_critical_negatives": 1,
+            "normalized_filters": {
+              "observed_from": "2026-08-10T12:00:00Z",
+              "observed_to": "2026-08-10T12:00:00Z"
+            },
+            "compatibility_key": "6d63b901e599d430beea18de1cd9c1c428bbe0d836a51ec3bc9626c0bee006e7"
+          },
+          {
+            "key": null,
+            "attributed": false,
+            "unattributed_reason": "skill_unavailable",
+            "positive": 1,
+            "negative": 0,
+            "annotations": 1,
+            "annotated_interactions": 1,
+            "eligible_interactions": 1,
+            "coverage": 1.0,
+            "coverage_state": "stated",
+            "coverage_reason": null,
+            "unresolved_critical_negatives": 0,
+            "normalized_filters": {
+              "observed_from": "2026-08-10T12:00:00Z",
+              "observed_to": "2026-08-10T12:00:00Z"
+            },
+            "compatibility_key": "9fecbdabb13b6883fd88995c09542837193d10886a90cddc691554faf8d11652"
+          },
+          {
+            "key": null,
+            "attributed": false,
+            "unattributed_reason": "skill_unavailable",
+            "positive": 1,
+            "negative": 0,
+            "annotations": 1,
+            "annotated_interactions": 1,
+            "eligible_interactions": 1,
+            "coverage": 1.0,
+            "coverage_state": "stated",
+            "coverage_reason": null,
+            "unresolved_critical_negatives": 0,
+            "normalized_filters": {
+              "observed_from": "2026-08-10T12:00:00Z",
+              "observed_to": "2026-08-10T12:00:00Z"
+            },
+            "compatibility_key": "0554ea78e73223ee014b9ef31099efa7224bbfcacf19cd2d13285fb9a1cfcb65"
+          }
+        ],
+        "buckets_are_exclusive": false,
+        "buckets_overlap_note": "Buckets overlap and must not be summed."
+      },
+      "semantic_view": {
+        "buckets": [
+          {
+            "key": {
+              "semantic_view_id": "sv_FIXTURE_7",
+              "semantic_view_version_id": "svv_FIXTURE_8"
+            },
+            "attributed": true,
+            "unattributed_reason": null,
+            "positive": 0,
+            "negative": 1,
+            "annotations": 1,
+            "annotated_interactions": 1,
+            "eligible_interactions": 1,
+            "coverage": 1.0,
+            "coverage_state": "stated",
+            "coverage_reason": null,
+            "unresolved_critical_negatives": 0,
+            "normalized_filters": {
+              "observed_from": "2026-08-10T12:00:00Z",
+              "observed_to": "2026-08-10T12:00:00Z"
+            },
+            "compatibility_key": "a31a3ce772fcbf3840fce438234d041695d8c39370314c6aa3da1dcbf72cdbe2"
+          },
+          {
+            "key": {
+              "semantic_view_id": "sv_FIXTURE_7",
+              "semantic_view_version_id": "svv_FIXTURE_8"
+            },
+            "attributed": true,
+            "unattributed_reason": null,
+            "positive": 0,
+            "negative": 1,
+            "annotations": 1,
+            "annotated_interactions": 1,
+            "eligible_interactions": 1,
+            "coverage": 1.0,
+            "coverage_state": "stated",
+            "coverage_reason": null,
+            "unresolved_critical_negatives": 1,
+            "normalized_filters": {
+              "observed_from": "2026-08-10T12:00:00Z",
+              "observed_to": "2026-08-10T12:00:00Z"
+            },
+            "compatibility_key": "6d63b901e599d430beea18de1cd9c1c428bbe0d836a51ec3bc9626c0bee006e7"
+          },
+          {
+            "key": {
+              "semantic_view_id": "sv_FIXTURE_7",
+              "semantic_view_version_id": "svv_FIXTURE_8"
+            },
+            "attributed": true,
+            "unattributed_reason": null,
+            "positive": 1,
+            "negative": 0,
+            "annotations": 1,
+            "annotated_interactions": 1,
+            "eligible_interactions": 1,
+            "coverage": 1.0,
+            "coverage_state": "stated",
+            "coverage_reason": null,
+            "unresolved_critical_negatives": 0,
+            "normalized_filters": {
+              "observed_from": "2026-08-10T12:00:00Z",
+              "observed_to": "2026-08-10T12:00:00Z"
+            },
+            "compatibility_key": "9fecbdabb13b6883fd88995c09542837193d10886a90cddc691554faf8d11652"
+          },
+          {
+            "key": {
+              "semantic_view_id": "sv_FIXTURE_7",
+              "semantic_view_version_id": "svv_FIXTURE_8"
+            },
+            "attributed": true,
+            "unattributed_reason": null,
+            "positive": 1,
+            "negative": 0,
+            "annotations": 1,
+            "annotated_interactions": 1,
+            "eligible_interactions": 1,
+            "coverage": 1.0,
+            "coverage_state": "stated",
+            "coverage_reason": null,
+            "unresolved_critical_negatives": 0,
+            "normalized_filters": {
+              "observed_from": "2026-08-10T12:00:00Z",
+              "observed_to": "2026-08-10T12:00:00Z"
+            },
+            "compatibility_key": "0554ea78e73223ee014b9ef31099efa7224bbfcacf19cd2d13285fb9a1cfcb65"
+          }
+        ],
+        "buckets_are_exclusive": true,
+        "buckets_overlap_note": null
+      },
+      "capability": {
+        "buckets": [
+          {
+            "key": {
+              "capability": "country",
+              "version_id": "pcv_FIXTURE_10"
+            },
+            "attributed": true,
+            "unattributed_reason": null,
+            "positive": 0,
+            "negative": 1,
+            "annotations": 1,
+            "annotated_interactions": 1,
+            "eligible_interactions": 1,
+            "coverage": 1.0,
+            "coverage_state": "stated",
+            "coverage_reason": null,
+            "unresolved_critical_negatives": 0,
+            "normalized_filters": {
+              "observed_from": "2026-08-10T12:00:00Z",
+              "observed_to": "2026-08-10T12:00:00Z"
+            },
+            "compatibility_key": "a31a3ce772fcbf3840fce438234d041695d8c39370314c6aa3da1dcbf72cdbe2"
+          },
+          {
+            "key": {
+              "capability": "country",
+              "version_id": "pcv_FIXTURE_10"
+            },
+            "attributed": true,
+            "unattributed_reason": null,
+            "positive": 0,
+            "negative": 1,
+            "annotations": 1,
+            "annotated_interactions": 1,
+            "eligible_interactions": 1,
+            "coverage": 1.0,
+            "coverage_state": "stated",
+            "coverage_reason": null,
+            "unresolved_critical_negatives": 1,
+            "normalized_filters": {
+              "observed_from": "2026-08-10T12:00:00Z",
+              "observed_to": "2026-08-10T12:00:00Z"
+            },
+            "compatibility_key": "6d63b901e599d430beea18de1cd9c1c428bbe0d836a51ec3bc9626c0bee006e7"
+          },
+          {
+            "key": {
+              "capability": "country",
+              "version_id": "pcv_FIXTURE_10"
+            },
+            "attributed": true,
+            "unattributed_reason": null,
+            "positive": 1,
+            "negative": 0,
+            "annotations": 1,
+            "annotated_interactions": 1,
+            "eligible_interactions": 1,
+            "coverage": 1.0,
+            "coverage_state": "stated",
+            "coverage_reason": null,
+            "unresolved_critical_negatives": 0,
+            "normalized_filters": {
+              "observed_from": "2026-08-10T12:00:00Z",
+              "observed_to": "2026-08-10T12:00:00Z"
+            },
+            "compatibility_key": "9fecbdabb13b6883fd88995c09542837193d10886a90cddc691554faf8d11652"
+          },
+          {
+            "key": {
+              "capability": "country",
+              "version_id": "pcv_FIXTURE_10"
+            },
+            "attributed": true,
+            "unattributed_reason": null,
+            "positive": 1,
+            "negative": 0,
+            "annotations": 1,
+            "annotated_interactions": 1,
+            "eligible_interactions": 1,
+            "coverage": 1.0,
+            "coverage_state": "stated",
+            "coverage_reason": null,
+            "unresolved_critical_negatives": 0,
+            "normalized_filters": {
+              "observed_from": "2026-08-10T12:00:00Z",
+              "observed_to": "2026-08-10T12:00:00Z"
+            },
+            "compatibility_key": "0554ea78e73223ee014b9ef31099efa7224bbfcacf19cd2d13285fb9a1cfcb65"
+          }
+        ],
+        "buckets_are_exclusive": true,
+        "buckets_overlap_note": null
+      },
+      "result_type": {
+        "buckets": [
+          {
+            "key": {
+              "result_type": "table"
+            },
+            "attributed": true,
+            "unattributed_reason": null,
+            "positive": 0,
+            "negative": 1,
+            "annotations": 1,
+            "annotated_interactions": 1,
+            "eligible_interactions": 1,
+            "coverage": 1.0,
+            "coverage_state": "stated",
+            "coverage_reason": null,
+            "unresolved_critical_negatives": 0,
+            "normalized_filters": {
+              "observed_from": "2026-08-10T12:00:00Z",
+              "observed_to": "2026-08-10T12:00:00Z"
+            },
+            "compatibility_key": "a31a3ce772fcbf3840fce438234d041695d8c39370314c6aa3da1dcbf72cdbe2"
+          },
+          {
+            "key": {
+              "result_type": "table"
+            },
+            "attributed": true,
+            "unattributed_reason": null,
+            "positive": 0,
+            "negative": 1,
+            "annotations": 1,
+            "annotated_interactions": 1,
+            "eligible_interactions": 1,
+            "coverage": 1.0,
+            "coverage_state": "stated",
+            "coverage_reason": null,
+            "unresolved_critical_negatives": 1,
+            "normalized_filters": {
+              "observed_from": "2026-08-10T12:00:00Z",
+              "observed_to": "2026-08-10T12:00:00Z"
+            },
+            "compatibility_key": "6d63b901e599d430beea18de1cd9c1c428bbe0d836a51ec3bc9626c0bee006e7"
+          },
+          {
+            "key": {
+              "result_type": "table"
+            },
+            "attributed": true,
+            "unattributed_reason": null,
+            "positive": 1,
+            "negative": 0,
+            "annotations": 1,
+            "annotated_interactions": 1,
+            "eligible_interactions": 1,
+            "coverage": 1.0,
+            "coverage_state": "stated",
+            "coverage_reason": null,
+            "unresolved_critical_negatives": 0,
+            "normalized_filters": {
+              "observed_from": "2026-08-10T12:00:00Z",
+              "observed_to": "2026-08-10T12:00:00Z"
+            },
+            "compatibility_key": "9fecbdabb13b6883fd88995c09542837193d10886a90cddc691554faf8d11652"
+          },
+          {
+            "key": {
+              "result_type": "table"
+            },
+            "attributed": true,
+            "unattributed_reason": null,
+            "positive": 1,
+            "negative": 0,
+            "annotations": 1,
+            "annotated_interactions": 1,
+            "eligible_interactions": 1,
+            "coverage": 1.0,
+            "coverage_state": "stated",
+            "coverage_reason": null,
+            "unresolved_critical_negatives": 0,
+            "normalized_filters": {
+              "observed_from": "2026-08-10T12:00:00Z",
+              "observed_to": "2026-08-10T12:00:00Z"
+            },
+            "compatibility_key": "0554ea78e73223ee014b9ef31099efa7224bbfcacf19cd2d13285fb9a1cfcb65"
+          }
+        ],
+        "buckets_are_exclusive": true,
+        "buckets_overlap_note": null
+      }
+    },
+    "truncated": false,
+    "next_cursor": null,
+    "blocking_use": "Prioritizes investigation; never proves correctness or regression alone."
+  },
+  "critical_negatives": {
+    "schema_version": "feedback-critical-negatives.v1",
+    "project_id": "proj_FIXTURE_1",
+    "items": [
+      {
+        "schema_version": "feedback-review-detail.v1",
+        "id": "rsfb_FIXTURE_2",
+        "source": "anonymous_share",
+        "target_schema_version": "exact-feedback.v1",
+        "polarity": "negative",
+        "comment": "This observed step needs review.",
+        "actor": null,
+        "actor_source": null,
+        "observed_surface": "share",
+        "interaction_ref": "afi_FIXTURE_1",
+        "w3c_trace_id": null,
+        "result": {
+          "id": "qr_FIXTURE_3",
+          "outcome": "success",
+          "query_spec_version_id": "qsv_FIXTURE_4",
+          "content_hash": "787b8d03f2bcbd07fe7bcb536fb711c71b274e4aaef86deb5d5f3efb30549df4"
+        },
+        "render": {
+          "render_id": "rnd_FIXTURE_5",
+          "visualization_spec_version_id": "vsv_FIXTURE_6",
+          "renderer_build_id": "table/toorow-table@1.0.0",
+          "runtime_build_id": "@toorow/card-shell/viz@0.1.0+f87912546265",
+          "theme_version": "viz-theme@1",
+          "formatter_version": "viz-formatters@1"
+        },
+        "target": {
+          "kind": "path_step",
+          "ordinal": 0
+        },
+        "semantic_view": {
+          "id": "sv_FIXTURE_7",
+          "version_id": "svv_FIXTURE_8"
+        },
+        "ai_path": "aip_FIXTURE_9",
+        "business_domain": null,
+        "capability": null,
+        "result_type": null,
+        "classification": {
+          "skills": {
+            "state": "attributed",
+            "versions": []
+          },
+          "capability": {
+            "key": "country",
+            "state": "attributed",
+            "version_id": "pcv_FIXTURE_10"
+          },
+          "result_type": {
+            "state": "attributed",
+            "value": "table"
+          },
+          "semantic_view": {
+            "id": "sv_FIXTURE_7",
+            "state": "attributed",
+            "version_id": "svv_FIXTURE_8"
+          },
+          "schema_version": "evaluation-classification.v1",
+          "business_domains": {
+            "state": "attributed",
+            "versions": [
+              {
+                "id": "bd_FIXTURE_11",
+                "version_number": 1
+              }
+            ]
+          },
+          "classification_hash": "b269bee0961c0ab3f4793e9d63bfa590c5c7e886e5451fe2b29e8c96f335b0f2"
+        },
+        "visible_versions": {
+          "render_id": "rnd_FIXTURE_5",
+          "result_id": "qr_FIXTURE_3",
+          "ai_path_id": "aip_FIXTURE_9",
+          "theme_version": "viz-theme@1",
+          "runtime_build_id": "@toorow/card-shell/viz@0.1.0+f87912546265",
+          "semantic_view_id": "sv_FIXTURE_7",
+          "formatter_version": "viz-formatters@1",
+          "renderer_build_id": "table/toorow-table@1.0.0",
+          "result_content_hash": "787b8d03f2bcbd07fe7bcb536fb711c71b274e4aaef86deb5d5f3efb30549df4",
+          "ai_path_content_hash": "dea068326dcf92f17e0cc6fece311e1240351db29032b5b841799f09c2b42cb6",
+          "query_spec_version_id": "qsv_FIXTURE_4",
+          "semantic_view_version_id": "svv_FIXTURE_8",
+          "visualization_spec_version_id": "vsv_FIXTURE_6",
+          "query_spec_version_content_hash": "c194b2ab6ed8222b8c7856597e3b50f73c7c85e617beb58a14115772c80cf7a2",
+          "semantic_view_version_content_hash": "86e4eb2ea769006439bf235afa68fff26aeb69c8ad7d7165de3121ef14a30511"
+        },
+        "visible_versions_hash": "4969b1d3f8e2b510df36649ff2fb217af06730bd5660bd430b2efe7f6f7c85ae",
+        "visible_versions_hash_kind": "evidence_manifest",
+        "visible_versions_hash_valid": null,
+        "version_divergence": [],
+        "observed_at": "2026-08-10T12:00:00Z",
+        "created_at": "2026-08-10T12:00:00Z",
+        "evidence_lenses": {
+          "render": {
+            "state": "observed",
+            "render_id": "rnd_FIXTURE_5",
+            "visualization_spec_version_id": "vsv_FIXTURE_6",
+            "renderer_build_id": "table/toorow-table@1.0.0",
+            "runtime_build_id": "@toorow/card-shell/viz@0.1.0+f87912546265",
+            "theme_version": "viz-theme@1",
+            "formatter_version": "viz-formatters@1"
+          },
+          "datum_mark": {
+            "state": "not_targeted"
+          },
+          "mcp_app_behavior": {
+            "state": "unverifiable",
+            "reason": "mcp_app_evidence_owner_not_delivered",
+            "owner_stories": [
+              "50.6"
+            ],
+            "detail": "Render/Result parity, drill-down and host fallback have no server-owned evidence yet, so the MCP App behaviour dimension carries no machine evidence. A reviewer may still record a human verdict on it; the two are reported under different names and never merged."
+          },
+          "server_owned_path_evidence": {
+            "state": "observed",
+            "reason": null,
+            "owner_stories": [],
+            "detail": null
+          }
+        },
+        "owner_links": [
+          {
+            "workspace": "analyze",
+            "section": "explore",
+            "object_type": "result",
+            "object_id": "qr_FIXTURE_3",
+            "version_id": null,
+            "tab": null
+          },
+          {
+            "workspace": "governance",
+            "section": "semantic-model",
+            "object_type": "semantic-view",
+            "object_id": "sv_FIXTURE_7",
+            "version_id": "svv_FIXTURE_8",
+            "tab": "versions"
+          },
+          {
+            "workspace": "analyze",
+            "section": "explore",
+            "object_type": "query-spec",
+            "object_id": "qs_FIXTURE_12",
+            "version_id": "qsv_FIXTURE_4",
+            "tab": "query"
+          },
+          {
+            "workspace": "governance",
+            "section": "master-data",
+            "object_type": "business-domain",
+            "object_id": "bd_FIXTURE_11",
+            "version_id": "bd_FIXTURE_11:1",
+            "tab": "versions"
+          },
+          {
+            "workspace": "analyze",
+            "section": "renders",
+            "object_type": "render",
+            "object_id": "rnd_FIXTURE_5",
+            "version_id": null,
+            "tab": null
+          },
+          {
+            "workspace": "test",
+            "section": "regression-runs",
+            "object_type": "trace-observation",
+            "object_id": "aip_FIXTURE_9",
+            "version_id": null,
+            "tab": "timeline"
+          }
+        ],
+        "unavailable_owner_links": [
+          {
+            "target": "context-hub",
+            "state": "unverifiable",
+            "reason": "context_version_set_owner_not_delivered",
+            "owner_stories": [
+              "51.2"
+            ],
+            "detail": "The Context Version Set resolved for an execution is Story 51.2's object. Without it there is no exact context identity to deep-link to, so no Context Hub link is offered rather than one that points at `latest`."
+          },
+          {
+            "target": "capability",
+            "state": "unverifiable",
+            "reason": "capability_version_route_unavailable",
+            "owner_stories": [],
+            "detail": "The classification pins an exact capability version, but the shell has no version-addressable capability object. No moving capability link is emitted."
+          },
+          {
+            "target": "visualization-spec-version",
+            "state": "unverifiable",
+            "reason": "visualization_spec_version_route_unavailable",
+            "owner_stories": [],
+            "detail": "The exact Visualization Spec version is pinned, but Analyze / Renders has no Visualization Spec object route. No inert owner link is emitted."
+          }
+        ],
+        "review": {
+          "current_state": "triaged",
+          "current_version_id": "fbrv_FIXTURE_13"
+        },
+        "blocking_use": "Prioritizes investigation; never proves correctness or regression alone."
+      }
+    ],
+    "truncated": false,
+    "next_cursor": null,
+    "seed_target_owner_story": "51.1"
+  },
+  "review_command": {
+    "schema_version": "feedback-review-command.v1",
+    "expected_head": null,
+    "retry_key": "fixture-share-review-retry",
+    "state": "triaged",
+    "affected_dimension": "path_quality",
+    "human_verdict": "fail",
+    "severity": "critical",
+    "reason": "The delivered path step needs an exact owner review."
+  },
+  "review_receipt": {
+    "schema_version": "feedback-review-receipt.v1",
+    "status": "recorded",
+    "feedback_id": "rsfb_FIXTURE_2",
+    "review_version_id": "fbrv_FIXTURE_13",
+    "version_number": 1,
+    "predecessor_version_id": null
+  }
+}

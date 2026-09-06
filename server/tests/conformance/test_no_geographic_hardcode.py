@@ -28,15 +28,19 @@ _MIGRATIONS = _REPO_ROOT / "infra" / "nango" / "migrations"
 _GEO_MODULES = (
     "geographic_reporting.py",
     "geographic_semantics.py",
-    "geographic_change.py",
     "geographic_conformance.py",
     "market_governance.py",
     "country_vocabulary.py",
+    # Story 48.2: the module that ships the presets is IN the scan. It was
+    # absent before, so the blanket ban below passed by omission rather than by
+    # design -- a rule that cannot see the file it governs proves nothing.
+    "country_registry.py",
 )
 
-# The two synthetic reporting groupings are NOT markets: they are computed
-# read-layer buckets, never budgetable, and are allowed to be named in code.
-_ALLOWED_MARKET_IDS = {"__other_markets__", "__unknown_market__"}
+# Unknown is a computed read-layer bucket, never budgetable, and is allowed to
+# be named in code. `__other_markets__` is gone: Rest of World is a governed
+# node with a per-Project id, so no market id is nameable in code any more.
+_ALLOWED_MARKET_IDS = {"__unknown__"}
 
 
 def _geo_sources() -> list[tuple[Path, str]]:
@@ -84,16 +88,21 @@ def test_no_module_level_market_composition_ships_in_code() -> None:
     )
 
 
-def test_no_preset_or_default_market_list_is_declared() -> None:
-    """No constant may name itself a market/geography preset or default."""
+def test_no_default_market_selection_ships_as_a_platform_constant() -> None:
+    """A DEFAULT market selection is still banned. A PRESET no longer is.
 
-    pattern = re.compile(
-        r"^\s*(?P<name>[A-Z][A-Z0-9_]*)\s*(?::[^=]+)?=",
-        re.MULTILINE,
-    )
+    Story 37.9 banned the word `PRESET` outright, which was the only tool
+    available when nothing could hold provenance. Story 48.2 (AC4) replaces the
+    word-ban with the three properties that made a preset dangerous, proven
+    below: it must not self-apply, must not stay a live dependency, and must
+    not carry a client alias at platform scope. What stays banned is a
+    *default* -- a composition the platform picks when the client picked none.
+    """
+
+    pattern = re.compile(r"^\s*(?P<name>[A-Z][A-Z0-9_]*)\s*(?::[^=]+)?=", re.MULTILINE)
     banned = re.compile(
-        r"(PRESET|DEFAULT_MARKET|MARKET_DEFAULT|DEFAULT_COUNTRIES|"
-        r"DEFAULT_COUNTRY_CODES|PRIORITY_COUNTRIES|MARKET_TEMPLATE)",
+        r"(DEFAULT_MARKET|MARKET_DEFAULT|DEFAULT_COUNTRIES|"
+        r"DEFAULT_COUNTRY_CODES|PRIORITY_COUNTRIES)",
         re.IGNORECASE,
     )
     offenders: list[str] = []
@@ -103,27 +112,114 @@ def test_no_preset_or_default_market_list_is_declared() -> None:
             if banned.search(name):
                 offenders.append(f"{path.name}:{name}")
     assert not offenders, (
-        "a market preset / default ships as a platform constant: " + ", ".join(offenders)
+        "a market default ships as a platform constant: " + ", ".join(offenders)
     )
 
 
-def test_no_iso_code_tuple_masquerades_as_a_tracked_set() -> None:
-    """No shipped constant may hold a list of ISO codes as a tracked selection.
+def test_no_shipped_preset_applies_itself() -> None:
+    """A preset is read to build a draft, and is never consulted again."""
 
-    A bare ``('FR', 'DE', 'IT')`` at module level in the geography layer is a
-    tracked-market selection the platform chose. The legal set comes from the
-    seed at runtime, never from a literal.
+    from core import country_registry as cr
+
+    # Storing every preset is a write to an immutable table and nothing else:
+    # no registry, no node and no version is created as a side effect. The only
+    # function that mints Project objects is materialize_preset, which an
+    # operator calls with an explicit preset id.
+    source = (_SERVER_CORE / "country_registry.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    seeding = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "seed_country_presets"
+    )
+    called = {
+        node.func.id
+        for node in ast.walk(seeding)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert not ({"create_node", "create_draft_version", "create_registry"} & called), (
+        "seeding a preset creates Project objects: a preset that applies itself "
+        "is an authority nobody chose"
+    )
+    assert cr.COUNTRY_PRESETS, "the presets exist and are inert, not absent"
+
+
+def test_no_preset_remains_a_live_dependency_of_what_it_produced() -> None:
+    """Materializing records provenance, and nothing reads the preset again."""
+
+
+    source = (_SERVER_CORE / "country_registry.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    projecting = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "build_projection"
+    )
+    text = ast.dump(projecting)
+    assert "preset" not in text.lower(), (
+        "the read-time projection consults a preset: a materialized draft must "
+        "have no live dependency on what it was seeded from"
+    )
+    # Provenance is retained -- the distinction is 'recorded', not 'wired'.
+    assert "origin_preset_version_id" in source
+
+
+def test_no_preset_ships_a_client_alias_at_platform_scope() -> None:
+    """A preset names canonical codes. Spelling repair stays a scoped decision."""
+
+    from core import country_registry as cr
+    from core.country_vocabulary import get_supported_country_codes
+
+    legal = get_supported_country_codes()
+    for preset in cr.COUNTRY_PRESETS:
+        for member in preset.members:
+            assert member.value in legal, (
+                f"preset {preset.preset_key} names {member.value!r}, which is not a "
+                "canonical code -- a provider spelling must never ship at platform scope"
+            )
+
+
+def _preset_line_range(source: str) -> tuple[int, int] | None:
+    """The lines the shipped preset catalogue occupies, if this module has one."""
+
+    tree = ast.parse(source)
+    for node in tree.body:
+        targets = getattr(node, "targets", None) or (
+            [node.target] if isinstance(node, ast.AnnAssign) else []
+        )
+        for target in targets:
+            if isinstance(target, ast.Name) and target.id == "COUNTRY_PRESETS":
+                return node.lineno, (node.end_lineno or node.lineno)
+    return None
+
+
+def test_no_iso_code_tuple_masquerades_as_a_tracked_set() -> None:
+    """A literal ISO list is a platform-chosen SELECTION -- except inside a preset.
+
+    A bare ``('FR', 'DE', 'IT')`` in the geography layer is a tracked-market
+    selection the platform made for the client, and stays banned.
+
+    A preset is the one legitimate exception, and the reason is precisely why
+    Story 37.9 banned presets and Story 48.2 (AC4) un-banned them under
+    conditions: a preset's members MUST be explicit literals, because "exact
+    members visible before use" is the property that makes it inspectable. What
+    makes it safe is not hiding the list -- it is that the list is offered,
+    versioned, provenance-bearing, and never applied without an explicit act.
+    Those three properties are proven above, one test each.
     """
 
     code_re = re.compile(r"^[A-Z]{2}$")
     offenders: list[str] = []
     for path, source in _geo_sources():
+        exempt = _preset_line_range(source)
         tree = ast.parse(source, filename=str(path))
         for node in ast.walk(tree):
             if not isinstance(node, (ast.List, ast.Tuple, ast.Set)):
                 continue
             elts = node.elts
             if len(elts) < 2:
+                continue
+            if exempt and exempt[0] <= node.lineno <= exempt[1]:
                 continue
             if all(
                 isinstance(el, ast.Constant)
@@ -189,11 +285,9 @@ def test_market_ids_named_in_code_are_only_the_synthetic_groupings() -> None:
 
     from core import geographic_semantics as gs
 
-    assert gs.OTHER_MARKETS in _ALLOWED_MARKET_IDS
-    assert gs.UNKNOWN_MARKET in _ALLOWED_MARKET_IDS
-    descriptors = gs.market_bucket_descriptors(_global_posture())
-    # Global posture -> no descriptor at all: the platform proposes no market.
-    assert descriptors == []
+    assert gs.UNKNOWN_BUCKET_ID in _ALLOWED_MARKET_IDS
+    # Rest of World is no longer nameable in code: its id is minted per Project.
+    assert not hasattr(gs, "OTHER_MARKETS")
 
 
 def _global_posture():

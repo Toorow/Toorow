@@ -2,7 +2,7 @@
  * WidgetShell — shared wrapper for all Connector widgets (Story 8.8 redesign).
  *
  * Provides:
- *   1. MUI ThemeProvider with connectorTheme (Plus Jakarta Sans Variable via tokens)
+ *   1. ThemeProvider with connectorTheme (Plus Jakarta Sans Variable via tokens)
  *   2. Automatic light/dark re-theming via hostContext CSS vars (AC2 / UX-DR5)
  *   3. Stale badge + alert rendering from meta envelope (AC5 / AD-9)
  *   4. auth_expired reconnect affordance (AC5 / AD-15)
@@ -16,16 +16,12 @@
  *
  * hostContext binding (T5.3): MutationObserver on document.documentElement
  * watching for `data-color-scheme` attribute changes + MCP Apps SDK 1.7
- * `mcp:hostContextChange` event. Both drive MUI's useColorScheme() hook.
+ * `mcp:hostContextChange` event. Both drive the useColorScheme() hook.
  */
 
 import { useEffect, useMemo } from "react";
-import { ThemeProvider, CssBaseline } from "@mui/material";
-import { useColorScheme } from "@mui/material/styles";
-import Alert from "@mui/material/Alert";
-import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
-import Chip from "@mui/material/Chip";
+import { ThemeProvider, useColorScheme } from "./themeContext";
+import { Alert, Box, Button, Chip } from "./primitives";
 import { resolveWidgetTheme } from "./theme";
 import FeedbackBar from "./FeedbackBar";
 import ExportButton from "./ExportButton";
@@ -37,7 +33,7 @@ import type { WidgetShellProps } from "./types";
 import "./fonts.css";
 
 /**
- * Inner component that reads/writes the MUI color scheme.
+ * Inner component that reads/writes the active color scheme.
  * Must be rendered inside ThemeProvider to access useColorScheme().
  */
 function HostContextBridge({ children, meta, adminConsoleUrl, feedbackContext, exportContext }: WidgetShellProps) {
@@ -45,10 +41,10 @@ function HostContextBridge({ children, meta, adminConsoleUrl, feedbackContext, e
 
   useEffect(() => {
     /**
-     * Sync MUI color scheme with the host's data-color-scheme attribute.
-     * Re-entry guard: MUI itself writes data-color-scheme back to <html>
-     * after setColorScheme(), which re-fires the observer. Track the last
-     * applied value and skip no-op applications.
+     * Sync the color scheme with the host's data-color-scheme attribute.
+     * Re-entry guard: setColorScheme() writes data-color-scheme back to <html>
+     * (as MUI's `colorSchemeSelector: "data"` did), which re-fires the observer.
+     * Track the last applied value and skip no-op applications.
      */
     let lastApplied: string | null = null;
     function applyColorScheme(scheme: string) {
@@ -248,7 +244,7 @@ export default function WidgetShell(props: WidgetShellProps) {
    * Story 23.1 (AC2/AC3): the SINGLE theme injection point (AD-11).
    * Without meta.branding this is `connectorTheme` by reference (bit-identical);
    * with branding, a memoized branded theme (resolveWidgetTheme caches on the
-   * 3 color values — no createTheme per re-render).
+   * 3 color values — no rebuild per re-render).
    */
   const branding = props.meta?.branding;
   const theme = useMemo(
@@ -257,8 +253,6 @@ export default function WidgetShell(props: WidgetShellProps) {
   );
   return (
     <ThemeProvider theme={theme}>
-      {/* CssBaseline normalises browser defaults (sets body bg transparent per theme) */}
-      <CssBaseline />
       <HostContextBridge {...props} />
     </ThemeProvider>
   );

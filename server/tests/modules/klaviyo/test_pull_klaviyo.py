@@ -119,6 +119,68 @@ def test_pull_401_raises_auth_expired_with_payload_preserved(
 
 
 # ---------------------------------------------------------------------------
+# 422 → InvalidRequestError (AI-114: a judgment that used to be DOUBLY dead)
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_pull_422_is_invalid_request_not_a_retryable_unknown(
+    connector, tmp_path, monkeypatch
+):
+    """AI-114 (2026-08-01): this verdict is NEW because the old one never fired.
+
+    manifest.error_map carried a bare "422" key, and it was dead twice over:
+    core.pull_errors.classify_http_error only ever looks up
+    "<status>:<provider_code>", AND _post_reporting called it WITHOUT passing
+    the map at all. So a Klaviyo 422 came out `unclassified`, whose retryable
+    flag is True -- the worker re-sent a request the API had already refused as
+    unprocessable.
+
+    SUITE, le meme jour (AI-116). Le verdict a MIGRE de `_STATUS_OVERRIDES` vers
+    `core.pull_errors._base_class_for_status` : 422 (Unprocessable Entity) est une
+    semantique HTTP generique, pas une lecture propre a Klaviyo, et le laisser
+    chez un seul module signifiait que les 37 autres continuaient a rejouer un
+    422 jusqu'au dead_letter. La derniere assertion de ce test disait
+    << sans la surcharge, core repondrait unclassified >> : elle prouvait que la
+    surcharge portait quelque chose. Elle dit maintenant l'inverse -- core le
+    porte pour tout le monde -- et c'est un renforcement, pas un relachement : le
+    comportement observable du pull, lui, n'a pas bouge d'un iota.
+
+    Ce qui NE migre pas, et le test voisin le garde : le 404, dont six modules
+    donnent deux lectures opposees trois contre trois.
+    """
+    monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
+    monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "kl_422.duckdb"))
+    monkeypatch.setenv("KLAVIYO_CONVERSION_METRIC_ID", "ABCDEF123")
+
+    body = {"errors": [{"status": "422", "code": "invalid", "detail": "bad interval"}]}
+    respx.post(_KLAVIYO_CAMPAIGN_URL).mock(return_value=httpx.Response(422, json=body))
+    respx.post(_KLAVIYO_FLOW_URL).mock(return_value=httpx.Response(422, json=body))
+
+    from core.pull_errors import InvalidRequestError, classify_http_error
+
+    with patch("core.nango_client.get_fresh_token", return_value="fake-klaviyo-key"):
+        with pytest.raises(InvalidRequestError) as exc_info:
+            connector.pull(
+                connection_id="conn_kl_test",
+                date_from="2026-07-01",
+                date_to="2026-07-01",
+                project_id="jean-klaviyo",
+                pull_id="pull_kl_422",
+                conversion_metric_id="ABCDEF123",
+            )
+
+    err = exc_info.value
+    assert err.error_class == "invalid_request"
+    assert err.retryable is False
+    assert err.provider_status == 422
+    assert err.provider_payload == body
+    # What core would have said on its own -- i.e. what the dead key produced.
+    assert classify_http_error(422, body).error_class == "invalid_request"
+    assert classify_http_error(422, body).retryable is False
+
+
+# ---------------------------------------------------------------------------
 # 429 → RateLimitError (breaker path — does NOT go through classify_http_error)
 # ---------------------------------------------------------------------------
 

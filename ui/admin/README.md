@@ -44,4 +44,6 @@ Response shape:
 
 A future admin panel component for dead-letter jobs would call
 `GET /api/jobs?state=dead_letter` on mount and render the job list
-(similar to `ConnectionsList.tsx` pattern for connections).
+(similar to the `authorizations/AuthorizationsPanel.tsx` pattern for
+credentials — `ConnectionsList.tsx`, which this line used to name, was deleted
+on 2026-08-17 as an orphan).

@@ -19,6 +19,7 @@ Covers:
 
 from __future__ import annotations
 
+import datetime as dt
 from unittest.mock import MagicMock
 
 import pytest
@@ -120,7 +121,7 @@ def test_transition_state_rejects_illegal_transition(monkeypatch):
     # Return a row with state NOT_INSTALLED.
     row = ("cin_TESTID01ABCDEFGHIJKLMNOPQ", "NOT_INSTALLED", None, None, None)
     lock_cur = _cur(row)
-    conn = _conn_with(lock_cur)
+    conn = _conn_with(lock_cur, _cur(None))
 
     with pytest.raises(ci.ConnectorInstallationConflict, match="not allowed"):
         ci.transition_state(
@@ -144,7 +145,7 @@ def test_transition_state_rejects_disabled_as_source(monkeypatch):
 
     row = ("cin_TESTID01ABCDEFGHIJKLMNOPQ", "DISABLED", None, None, None)
     lock_cur = _cur(row)
-    conn = _conn_with(lock_cur)
+    conn = _conn_with(lock_cur, _cur(None))
 
     with pytest.raises(ci.ConnectorInstallationConflict, match="not allowed"):
         ci.transition_state(
@@ -182,7 +183,7 @@ def test_transition_state_legal_routes_through_execute_operation(monkeypatch):
         target_state="READY",
         responsible_actor="automated",
         blocking_cause=None,
-        last_verified_at=None,
+        last_verified_at=dt.datetime(2026, 8, 1, tzinfo=dt.UTC),
         actor="platform-admin@test",
         idempotency_key="ik-test-3",
         host_context={},
@@ -195,7 +196,97 @@ def test_transition_state_legal_routes_through_execute_operation(monkeypatch):
     assert len(capture.get("specs", [])) == 1
     spec = capture["specs"][0]
     assert spec.command_type == "connector.state.changed"
+    assert spec.request_payload["last_verified_at"] == "2026-08-01T00:00:00+00:00"
 
+
+
+def test_transition_retry_replays_after_state_already_reached(monkeypatch):
+    from types import SimpleNamespace
+
+    from core import connector_installation as ci
+
+    timestamp = dt.datetime(2026, 8, 1, tzinfo=dt.UTC)
+    replayed = {
+        "state": "READY",
+        "responsible_actor": "automated",
+        "blocking_cause": None,
+        "last_verified_at": timestamp.isoformat(),
+    }
+    conn = _conn_with(
+        _cur(("cin_TESTID01ABCDEFGHIJKLMNOPQ", "READY", "automated", None, timestamp)),
+        _cur((replayed, "request-hash")),
+    )
+    monkeypatch.setattr(
+        ci,
+        "prepare_operation",
+        lambda _spec: SimpleNamespace(
+            idempotency_key_hash="key-hash",
+            request_hash="request-hash",
+        ),
+    )
+    monkeypatch.setattr(
+        ci,
+        "execute_operation",
+        lambda *_args, **_kwargs: pytest.fail("replay must not insert an operation"),
+    )
+
+    result = ci.transition_state(
+        conn,
+        environment="production",
+        connector_name="test-connector",
+        target_state="READY",
+        responsible_actor="automated",
+        blocking_cause=None,
+        last_verified_at=timestamp,
+        actor="platform-admin@test",
+        idempotency_key="ik-retry",
+        host_context={},
+        trace_id=None,
+    )
+
+    assert result == {
+        "state": "READY",
+        "safe_next_action": ci._SAFE_NEXT_ACTIONS["READY"],
+        "responsible_actor": "automated",
+        "blocking_cause": None,
+        "last_verified_at": timestamp.isoformat(),
+    }
+
+
+def test_transition_retry_rejects_conflicting_payload(monkeypatch):
+    from types import SimpleNamespace
+
+    from core import connector_installation as ci
+    from core.operations import OperationIdempotencyConflict
+
+    timestamp = dt.datetime(2026, 8, 1, tzinfo=dt.UTC)
+    conn = _conn_with(
+        _cur(("cin_TESTID01ABCDEFGHIJKLMNOPQ", "READY", "automated", None, timestamp)),
+        _cur(({"state": "READY"}, "original-request-hash")),
+    )
+    monkeypatch.setattr(
+        ci,
+        "prepare_operation",
+        lambda _spec: SimpleNamespace(
+            idempotency_key_hash="key-hash",
+            request_hash="changed-request-hash",
+        ),
+    )
+
+    with pytest.raises(OperationIdempotencyConflict):
+        ci.transition_state(
+            conn,
+            environment="production",
+            connector_name="test-connector",
+            target_state="READY",
+            responsible_actor="platform_support",
+            blocking_cause=None,
+            last_verified_at=timestamp,
+            actor="platform-admin@test",
+            idempotency_key="ik-retry",
+            host_context={},
+            trace_id=None,
+        )
 
 # ---------------------------------------------------------------------------
 # (b) apply_installation idempotency + conflict 409.
@@ -208,8 +299,16 @@ def test_apply_installation_returns_existing_when_row_present(monkeypatch):
 
     capture: dict = {}
     _stub_operation(monkeypatch, ci, capture=capture)
-    existing_row = ("cin_TESTID01ABCDEFGHIJKLMNOPQ", "DOMAIN_PENDING", "platform_admin", None, None)
-    conn = _conn_with(_cur(existing_row))
+    existing_row = (
+        "cin_TESTID01ABCDEFGHIJKLMNOPQ",
+        "DOMAIN_PENDING",
+        "platform_admin",
+        "domain_configuration_pending",
+        None,
+    )
+    existing_cur = _cur(existing_row)
+    existing_cur.rowcount = 0
+    conn = _conn_with(existing_cur)
 
     result = ci.apply_installation(
         conn,
@@ -224,8 +323,8 @@ def test_apply_installation_returns_existing_when_row_present(monkeypatch):
     )
 
     assert result["state"] == "DOMAIN_PENDING"
-    # review M2: existing-row path writes NO new operation (assert, don't just comment).
-    assert capture.get("specs", []) == []
+    # The operation seam sees the key before row-level reconciliation.
+    assert len(capture.get("specs", [])) == 1
 
 
 def test_apply_installation_inserts_new_row(monkeypatch):
@@ -235,9 +334,8 @@ def test_apply_installation_inserts_new_row(monkeypatch):
     capture: dict = {}
     _stub_operation(monkeypatch, ci, capture=capture)
 
-    no_row_cur = _cur(None)  # SELECT check returns None.
     insert_cur = _cur(None)
-    conn = _conn_with(no_row_cur, insert_cur)
+    conn = _conn_with(insert_cur)
 
     result = ci.apply_installation(
         conn,
@@ -256,10 +354,11 @@ def test_apply_installation_inserts_new_row(monkeypatch):
     assert len(capture.get("specs", [])) == 1
     spec = capture["specs"][0]
     assert spec.command_type == "connector.install.applied"
-    assert spec.effective_org_id == "platform"
+    assert spec.effective_org_id is None
     # AC5: initial apply binds DOMAIN_PENDING (never READY); no random id hashed (H1).
     assert spec.request_payload["target_state"] == "DOMAIN_PENDING"
     assert "installation_id" not in spec.request_payload
+    assert spec.request_payload["blocking_cause"] == "domain_configuration_pending"
     assert capture["changes"][0].result["state"] == "DOMAIN_PENDING"
 
 
@@ -480,6 +579,44 @@ def test_post_installation_missing_idempotency_key_gets_422(monkeypatch):
     assert body["code"] == "missing_header"
 
 
+@pytest.mark.parametrize(
+    ("payload", "status"),
+    [
+        ([], 400),
+        ("not-an-object", 400),
+        ({"responsible_actor": []}, 422),
+        ({"blocking_cause": {}}, 422),
+    ],
+)
+def test_post_installation_rejects_invalid_json_shapes(
+    monkeypatch, _client, payload, status
+):
+    _patch_auth(monkeypatch, authorized=True, identity="admin@toorow.io")
+    _patch_admin(monkeypatch, is_admin=True)
+
+    response = _client.post(
+        "/api/connectors/test-connector/installation",
+        headers={"Idempotency-Key": "ik-valid"},
+        json=payload,
+    )
+    assert response.status_code == status
+    assert response.json()["code"] == "invalid_body"
+
+
+@pytest.mark.parametrize("key", ["   ", "x" * 256])
+def test_post_installation_rejects_invalid_idempotency_key(
+    monkeypatch, _client, key
+):
+    _patch_auth(monkeypatch, authorized=True, identity="admin@toorow.io")
+    _patch_admin(monkeypatch, is_admin=True)
+
+    response = _client.post(
+        "/api/connectors/test-connector/installation",
+        headers={"Idempotency-Key": key},
+        json={},
+    )
+    assert response.status_code == 422
+
 def test_post_installation_conflict_returns_409(monkeypatch):
     """Conflicting Idempotency-Key returns 409."""
     import contextlib
@@ -580,44 +717,33 @@ def test_get_catalog_availability_missing_row_is_unavailable(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_refuse_activation_raises_when_not_ready(monkeypatch):
-    import core.connector_installation as ci_mod
+def test_refuse_activation_raises_when_not_ready():
     from core.connector_installation_api import (
         ConnectorNotReady,
         refuse_activation_unless_ready,
     )
 
     for state in ("NOT_INSTALLED", "DOMAIN_PENDING", "VERIFYING", "DEGRADED", "DISABLED"):
-        model = {
-            "state": state,
-            "safe_next_action": "",
-            "responsible_actor": None,
-            "blocking_cause": None,
-            "last_verified_at": None,
-        }
-        monkeypatch.setattr(ci_mod, "get_installation_state", lambda conn, _m=model, **kw: _m)
-        monkeypatch.setenv("TOOROW_ENVIRONMENT", "production")
-
         with pytest.raises(ConnectorNotReady):
-            refuse_activation_unless_ready(MagicMock(), connector_name="test-connector")
+            refuse_activation_unless_ready(
+                _conn_with(_cur((state,))),
+                connector_name="test-connector",
+                environment="production",
+            )
 
 
-def test_refuse_activation_does_not_raise_when_ready(monkeypatch):
-    import core.connector_installation as ci_mod
+def test_refuse_activation_holds_share_lock_when_ready():
     from core.connector_installation_api import refuse_activation_unless_ready
 
-    ready_model = {
-        "state": "READY",
-        "safe_next_action": "no action required",
-        "responsible_actor": "automated",
-        "blocking_cause": None,
-        "last_verified_at": None,
-    }
-    monkeypatch.setattr(ci_mod, "get_installation_state", lambda conn, **kw: ready_model)
-    monkeypatch.setenv("TOOROW_ENVIRONMENT", "production")
+    ready_cur = _cur(("READY",))
+    refuse_activation_unless_ready(
+        _conn_with(ready_cur),
+        connector_name="test-connector",
+        environment="production",
+    )
 
-    # Should not raise.
-    refuse_activation_unless_ready(MagicMock(), connector_name="test-connector")
+    sql = " ".join(str(ready_cur.execute.call_args.args[0]).split())
+    assert sql.endswith("FOR SHARE")
 
 
 # ---------------------------------------------------------------------------
@@ -649,7 +775,7 @@ def test_safe_read_model_shape():
     model = _safe_read_model(
         state="DEGRADED",
         responsible_actor="platform_admin",
-        blocking_cause="route misconfigured",
+        blocking_cause="domain_route_misconfigured",
         last_verified_at=None,
     )
     assert set(model.keys()) == {
@@ -660,8 +786,38 @@ def test_safe_read_model_shape():
         "last_verified_at",
     }
     assert model["state"] == "DEGRADED"
-    assert model["blocking_cause"] == "route misconfigured"
+    assert model["blocking_cause"] == "domain_route_misconfigured"
 
+
+
+def test_safe_read_model_redacts_legacy_free_text():
+    from core.connector_installation import _safe_read_model
+
+    model = _safe_read_model(
+        state="DEGRADED",
+        responsible_actor="person@example.com",
+        blocking_cause="token=super-secret",
+        last_verified_at=None,
+    )
+
+    assert model["responsible_actor"] == "platform_support"
+    assert model["blocking_cause"] == "dependency_unavailable"
+    assert "secret" not in repr(model)
+
+
+def test_installation_metadata_accepts_only_closed_classifications():
+    from core.connector_installation import (
+        ConnectorInstallationValidationError,
+        normalize_responsible_actor,
+        validate_blocking_cause_code,
+    )
+
+    with pytest.raises(ConnectorInstallationValidationError):
+        normalize_responsible_actor(
+            "person@example.com", default="platform_support"
+        )
+    with pytest.raises(ConnectorInstallationValidationError):
+        validate_blocking_cause_code("api_key=secret")
 
 # ---------------------------------------------------------------------------
 # (h) Audit / outbox written through execute_operation (AC1).
@@ -687,7 +843,7 @@ def test_transition_state_audit_recorded_via_execute_operation(monkeypatch):
         connector_name="test-connector",
         target_state="DEGRADED",
         responsible_actor="platform_admin",
-        blocking_cause="upstream error",
+        blocking_cause="verification_failed",
         last_verified_at=None,
         actor="platform-admin@test",
         idempotency_key="ik-audit-test",
@@ -783,6 +939,8 @@ def test_mcp_tool_returns_same_model_as_rest(monkeypatch):
     monkeypatch.setattr(ci_mod, "get_installation_state",
                         lambda conn, *, environment, connector_name: ready_model)
     monkeypatch.setenv("TOOROW_ENVIRONMENT", "production")
+    monkeypatch.setattr("core.operations_mcp._identity", lambda: "admin@toorow.io")
+    monkeypatch.setattr("core.super_admin.is_super_admin", lambda _identity: True)
 
     @contextlib.contextmanager
     def fake_conn():
@@ -818,6 +976,8 @@ def test_mcp_tool_not_installed_returns_unavailable(monkeypatch):
     monkeypatch.setattr(ci_mod, "get_installation_state",
                         lambda conn, *, environment, connector_name: None)
     monkeypatch.setenv("TOOROW_ENVIRONMENT", "production")
+    monkeypatch.setattr("core.operations_mcp._identity", lambda: "admin@toorow.io")
+    monkeypatch.setattr("core.super_admin.is_super_admin", lambda _identity: True)
 
     @contextlib.contextmanager
     def fake_conn():
@@ -832,84 +992,115 @@ def test_mcp_tool_not_installed_returns_unavailable(monkeypatch):
     assert data["catalog_availability"] == "unavailable"
 
 
+def test_mcp_tool_denies_operations_profile_without_platform_admin(monkeypatch):
+    from fastmcp.exceptions import ToolError
+
+    handler = _register_operations_tools()["get_connector_installation_status"]
+    monkeypatch.setattr("core.operations_mcp._identity", lambda: "tenant@example.com")
+    monkeypatch.setattr("core.super_admin.is_super_admin", lambda _identity: False)
+
+    with pytest.raises(ToolError, match="not_found"):
+        handler("test-connector")
+
 # ---------------------------------------------------------------------------
 # Live-PG-gated: UNIQUE constraint + immutability trigger (Task 6).
 # ---------------------------------------------------------------------------
 
 import os as _os  # noqa: E402
 
-_DSN = _os.environ.get("TEST_POSTGRES_DSN") or _os.environ.get("PLATFORM_DB_URL")
+_DSN = _os.environ.get("TEST_POSTGRES_DSN")
 
 requires_postgres = pytest.mark.skipif(
     not _DSN,
-    reason="TEST_POSTGRES_DSN/PLATFORM_DB_URL not set -- live Postgres constraint test skipped",
+    reason="TEST_POSTGRES_DSN not set -- live Postgres constraint test skipped",
 )
 
-_MIGRATION = (
+_MIGRATION_178 = (
     __import__("pathlib").Path(__file__).resolve().parents[3]
     / "infra"
     / "nango"
     / "migrations"
-    / "082_connector_installation_state.sql"
+    / "178_connector_installation_transition_guard.sql"
 )
 
 
-def _apply_migration(conn) -> None:
+def test_corrective_migration_guards_operation_backed_transitions():
+    sql = _MIGRATION_178.read_text(encoding="utf-8")
+    assert "BEFORE INSERT OR UPDATE OR DELETE" in sql
+    assert "fresh operation" in sql
+    assert "illegal connector installation state transition" in sql
+    assert "effective_org_id" in sql
+
+    assert "NEW.responsible_actor IS NULL" in sql
+    assert "NEW.last_verified_at IS NOT NULL" in sql
+
+def _insert_operation(conn, *, command_type: str) -> str:
+    import hashlib
+
+    from ulid import ULID
+
+    operation_id = f"op_{ULID()}"
+    digest = hashlib.sha256(operation_id.encode()).hexdigest()
     with conn.cursor() as cur:
-        cur.execute(_MIGRATION.read_text(encoding="utf-8"))
-    conn.commit()
+        cur.execute(
+            "INSERT INTO app.operations "
+            "(id, effective_org_id, command_type, actor, resource_path, "
+            "host_context, versions, request_hash, provider_references, "
+            "confirmation_mode, idempotency_key_hash, state) "
+            "VALUES (%s, NULL, %s, 'test', '[\"platform:test\"]'::jsonb, "
+            "'{}'::jsonb, '{}'::jsonb, %s, '{}'::jsonb, 'server', %s, 'pending')",
+            (operation_id, command_type, digest, digest),
+        )
+    return operation_id
 
 
 def _insert_installation(conn, *, env: str, name: str, inst_id: str) -> None:
+    operation_id = _insert_operation(conn, command_type="connector.install.applied")
     with conn.cursor() as cur:
         cur.execute(
             "INSERT INTO app.connector_installations "
-            "(id, environment, connector_name, state) "
-            "VALUES (%s, %s, %s, 'NOT_INSTALLED')",
-            (inst_id, env, name),
+            "(id, environment, connector_name, state, blocking_cause, "
+            "responsible_actor, operation_id) "
+            "VALUES (%s, %s, %s, 'DOMAIN_PENDING', "
+            "'domain_configuration_pending', 'platform_admin', %s)",
+            (inst_id, env, name, operation_id),
         )
-    conn.commit()
 
 
 @requires_postgres
 def test_live_unique_constraint_rejects_duplicate():
-    """UNIQUE (environment, connector_name) is enforced by the DB."""
     import psycopg
+    from ulid import ULID
 
-    with psycopg.connect(_DSN) as conn:
-        _apply_migration(conn)
-        from ulid import ULID
+    conn = psycopg.connect(_DSN)
+    try:
         env = f"test-{ULID()}"
         name = f"connector-{ULID()}"
-        id1 = f"cin_{ULID()}"
-        id2 = f"cin_{ULID()}"
+        _insert_installation(conn, env=env, name=name, inst_id=f"cin_{ULID()}")
 
-        # First insert succeeds.
-        _insert_installation(conn, env=env, name=name, inst_id=id1)
-
-        # Second insert on the same (env, name) must raise unique violation.
         with pytest.raises(Exception) as exc_info:
-            _insert_installation(conn, env=env, name=name, inst_id=id2)
-        assert "uq_connector_installations_env_name" in str(exc_info.value).lower() or (
-            "unique" in str(exc_info.value).lower()
-        )
+            _insert_installation(conn, env=env, name=name, inst_id=f"cin_{ULID()}")
+        assert "unique" in str(exc_info.value).lower()
+    finally:
+        conn.rollback()
+        conn.close()
 
 
 @requires_postgres
 def test_live_immutability_trigger_blocks_identity_mutation():
-    """protect_connector_installation freezes id/environment/connector_name."""
     import psycopg
+    from ulid import ULID
 
-    with psycopg.connect(_DSN) as conn:
-        _apply_migration(conn)
-        from ulid import ULID
-        env = f"test-{ULID()}"
-        name = f"connector-{ULID()}"
+    conn = psycopg.connect(_DSN)
+    try:
         inst_id = f"cin_{ULID()}"
+        _insert_installation(
+            conn,
+            env=f"test-{ULID()}",
+            name=f"connector-{ULID()}",
+            inst_id=inst_id,
+        )
 
-        _insert_installation(conn, env=env, name=name, inst_id=inst_id)
-
-        # Attempt to mutate `connector_name` (frozen identity column) -> trigger fires.
         with conn.cursor() as cur:
             with pytest.raises(Exception, match="immutable"):
                 cur.execute(
@@ -917,48 +1108,115 @@ def test_live_immutability_trigger_blocks_identity_mutation():
                     "SET connector_name = %s WHERE id = %s",
                     ("mutated-name", inst_id),
                 )
+    finally:
         conn.rollback()
+        conn.close()
 
 
 @requires_postgres
-def test_live_immutability_trigger_allows_state_update():
-    """Mutable columns (state, blocking_cause, etc.) may be updated."""
+def test_live_state_update_requires_fresh_operation():
     import psycopg
+    from ulid import ULID
 
-    with psycopg.connect(_DSN) as conn:
-        _apply_migration(conn)
-        from ulid import ULID
-        env = f"test-{ULID()}"
-        name = f"connector-{ULID()}"
+    conn = psycopg.connect(_DSN)
+    try:
         inst_id = f"cin_{ULID()}"
+        _insert_installation(
+            conn,
+            env=f"test-{ULID()}",
+            name=f"connector-{ULID()}",
+            inst_id=inst_id,
+        )
 
-        _insert_installation(conn, env=env, name=name, inst_id=inst_id)
+        with conn.cursor() as cur:
+            with pytest.raises(Exception, match="fresh operation"):
+                cur.execute(
+                    "UPDATE app.connector_installations "
+                    "SET state = 'VERIFYING', updated_at = NOW() WHERE id = %s",
+                    (inst_id,),
+                )
+    finally:
+        conn.rollback()
+        conn.close()
 
-        # Updating `state` (mutable) must succeed.
+
+@requires_postgres
+def test_live_legal_state_update_accepts_new_platform_operation():
+    import psycopg
+    from ulid import ULID
+
+    conn = psycopg.connect(_DSN)
+    try:
+        inst_id = f"cin_{ULID()}"
+        _insert_installation(
+            conn,
+            env=f"test-{ULID()}",
+            name=f"connector-{ULID()}",
+            inst_id=inst_id,
+        )
+        transition_op = _insert_operation(
+            conn, command_type="connector.state.changed"
+        )
+
         with conn.cursor() as cur:
             cur.execute(
                 "UPDATE app.connector_installations "
-                "SET state = 'DOMAIN_PENDING', updated_at = NOW() "
-                "WHERE id = %s",
-                (inst_id,),
+                "SET state = 'VERIFYING', blocking_cause = NULL, "
+                "operation_id = %s, updated_at = NOW() WHERE id = %s",
+                (transition_op, inst_id),
             )
             assert cur.rowcount == 1
-        conn.commit()
+    finally:
+        conn.rollback()
+        conn.close()
+
+
+@requires_postgres
+def test_live_illegal_state_jump_is_rejected():
+    import psycopg
+    from ulid import ULID
+
+    conn = psycopg.connect(_DSN)
+    try:
+        inst_id = f"cin_{ULID()}"
+        _insert_installation(
+            conn,
+            env=f"test-{ULID()}",
+            name=f"connector-{ULID()}",
+            inst_id=inst_id,
+        )
+        transition_op = _insert_operation(
+            conn, command_type="connector.state.changed"
+        )
+
+        with conn.cursor() as cur:
+            with pytest.raises(Exception, match="illegal"):
+                cur.execute(
+                    "UPDATE app.connector_installations "
+                    "SET state = 'READY', blocking_cause = NULL, "
+                    "last_verified_at = NOW(), responsible_actor = 'automated', "
+                    "operation_id = %s, updated_at = NOW() WHERE id = %s",
+                    (transition_op, inst_id),
+                )
+    finally:
+        conn.rollback()
+        conn.close()
 
 
 @requires_postgres
 def test_live_delete_rejected_by_trigger():
-    """DELETE on connector_installations is rejected (append-only)."""
     import psycopg
+    from ulid import ULID
 
-    with psycopg.connect(_DSN) as conn:
-        _apply_migration(conn)
-        from ulid import ULID
-        env = f"test-{ULID()}"
-        name = f"connector-{ULID()}"
+    conn = psycopg.connect(_DSN)
+    try:
         inst_id = f"cin_{ULID()}"
-
-        _insert_installation(conn, env=env, name=name, inst_id=inst_id)
+        _insert_installation(
+            conn,
+            env=f"test-{ULID()}",
+            name=f"connector-{ULID()}",
+            inst_id=inst_id,
+        )
 
         with conn.cursor() as cur:
             with pytest.raises(Exception, match="append-only"):
@@ -966,4 +1224,6 @@ def test_live_delete_rejected_by_trigger():
                     "DELETE FROM app.connector_installations WHERE id = %s",
                     (inst_id,),
                 )
+    finally:
         conn.rollback()
+        conn.close()

@@ -8,10 +8,8 @@
  * Zero server round-trip (AD-10).
  */
 
-import ToggleButton from "@mui/material/ToggleButton";
-import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
-
 /** Human-readable French display names for known connector IDs. */
+import { ToggleButton, ToggleButtonGroup } from "@toorow/shell";
 export const TOOROW_LABELS: Record<string, string> = {
   "google-analytics": "Google Analytics",
   "meta-ads": "Meta Ads",

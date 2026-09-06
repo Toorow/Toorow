@@ -37,13 +37,17 @@ from datetime import date, timedelta
 from pathlib import Path
 
 # AI-54 : end_date figee pour la REGENERATION des fixtures de conformance
-# (tests/fixtures/golden_pull.json + expected_facts.json) -- passer explicitement
-# end_date=DEFAULT_SEED_END_DATE dans ce chemin-la uniquement.
-# review-15-3 F-1 : le DEFAUT runtime reste date.today() comme GA4/TikTok, sinon la
-# fenetre du seed derive des autres connecteurs et le test dedup devient vide
-# (F-2 : plus aucune date partagee avec GA4/Meta une fois l'horloge avancee).
-# NE PAS changer cette constante sans regenerer les fixtures.
-DEFAULT_SEED_END_DATE: date = date(2026, 7, 19)
+# (tests/fixtures/golden_pull.json + expected_facts.json).
+# AI-213 (2026-08-17, AI-66 motif) : cette ancre est desormais aussi le DEFAUT.
+# L'argument de review-15-3 F-1 ("rester sur date.today() comme GA4/TikTok pour
+# partager la fenetre") s'est inverse : GA4 est ancre depuis AI-66 et TOUS les
+# generateurs partagent maintenant la meme ancre via TOOROW_SEED_END_DATE, donc
+# c'est date.today() qui faisait deriver la fenetre -- machine-jour-local.
+# Override via env TOOROW_SEED_END_DATE pour un run ad hoc.
+# NE PAS changer le defaut sans regenerer les fixtures.
+DEFAULT_SEED_END_DATE: date = date.fromisoformat(
+    os.environ.get("TOOROW_SEED_END_DATE", "2026-07-19")
+)
 
 WEEKDAY_MULTIPLIERS: dict[int, float] = {
     0: 1.02,  # Lundi (B2B : commence la semaine)
@@ -120,11 +124,10 @@ def generate_rows(
 
     Les lignes correspondent au shape _parse_report_row() output (AI-54 fixture
     honnete) : la fixture golden de conformance est une slice de ce meme generateur.
-    end_date par defaut = date.today() (pattern GA4/TikTok, review-15-3 F-1) ;
-    les fixtures passent explicitement end_date=DEFAULT_SEED_END_DATE.
+    end_date par defaut = DEFAULT_SEED_END_DATE (AI-213 : ancre, jamais date.today()).
     """
     if end_date is None:
-        end_date = date.today()
+        end_date = DEFAULT_SEED_END_DATE
     if rng is None:
         # Graine fixe -> donnees deterministes (fixtures/tests reproductibles).
         rng = random.Random(15_3_2026)
@@ -174,11 +177,10 @@ def generate_multigrain_rows(
     Lecon review-15-2 F-1 : les lignes campaign_group sont des roll-ups EXACTS
     des campagnes du groupe. SUM(campaigns) == campaign_group total par (date, metrique).
     Chaque grain est estampille de son data_level.
-    end_date par defaut = date.today() (pattern GA4/TikTok, review-15-3 F-1) ;
-    les fixtures passent explicitement end_date=DEFAULT_SEED_END_DATE.
+    end_date par defaut = DEFAULT_SEED_END_DATE (AI-213 : ancre, jamais date.today()).
     """
     if end_date is None:
-        end_date = date.today()
+        end_date = DEFAULT_SEED_END_DATE
     if rng is None:
         rng = random.Random(15_3_2026)
 

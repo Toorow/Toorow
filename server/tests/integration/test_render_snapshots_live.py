@@ -24,6 +24,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.conftest import purge_fixture_project
+
 pytestmark = pytest.mark.skipif(
     not os.environ.get("TEST_POSTGRES_DSN"),
     reason="TEST_POSTGRES_DSN not set -- live Postgres test skipped",
@@ -65,7 +67,9 @@ def _cleanup(conn, *project_ids):
     for pid in project_ids:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM app.render_snapshots WHERE project_id = %s", (pid,))
-            cur.execute("DELETE FROM app.projects WHERE id = %s", (pid,))
+            # AI-291: le graphe prend le relais si une table gouvernee
+            # ajoutee depuis retient le projet en ON DELETE RESTRICT.
+            purge_fixture_project(cur.connection, pid)
         conn.commit()
 
 

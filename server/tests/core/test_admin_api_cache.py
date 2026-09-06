@@ -226,7 +226,7 @@ class TestCacheRebuild:
             _auth_ok(),
             patch.dict(os.environ, env, clear=False),
             patch("core.cache_warehouse.rebuild_cache", return_value=rebuild_result),
-            patch("core.admin_api.write_audit_row") as audit_mock,
+            patch("core.platform_maintenance_api.write_audit_row") as audit_mock,
         ):
             client = _build_client()
             resp = client.post(
@@ -247,7 +247,7 @@ class TestCacheRebuild:
         with (
             _auth_ok(),
             patch.dict(os.environ, {"TOOROW_CACHE_ENABLED": "false"}, clear=False),
-            patch("core.admin_api.write_audit_row") as audit_mock,
+            patch("core.platform_maintenance_api.write_audit_row") as audit_mock,
         ):
             client = _build_client()
             resp = client.post(
@@ -323,7 +323,7 @@ class TestCacheRebuild:
                 "core.cache_warehouse.rebuild_cache",
                 side_effect=RuntimeError("unexpected explosion"),
             ),
-            patch("core.admin_api.write_audit_row"),
+            patch("core.platform_maintenance_api.write_audit_row"),
         ):
             client = _build_client()
             resp = client.post(

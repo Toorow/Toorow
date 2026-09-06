@@ -83,6 +83,10 @@ KNOWN_REQUEST_STYLES = frozenset(
         "metrics_dimensions",
         "dimensions_only",
         "report_statistics",
+        "async_report_columns",
+        "columns_json",
+        "list_objects",
+        "path_get",
         "none",
     }
 )

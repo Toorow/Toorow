@@ -8,10 +8,9 @@
  * État vide designé quand slices est vide ou total = 0.
  */
 
-import { useTheme, alpha } from "@mui/material/styles";
-import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
 import { getVizPalette } from "./vizTheme";
+import { formatPercent, formatValue } from "./viz/theme/formatters";
+import { Box, Typography, alpha, useTheme } from "@toorow/shell";
 
 export interface DonutSlice {
   label: string;
@@ -125,7 +124,7 @@ export default function Donut({
   const innerR = size * 0.28;
 
   const arcs = buildArcs(slices, total, cx, cy, r, innerR, viz.categorical);
-  const totalFmt = total.toLocaleString("fr-FR");
+  const totalFmt = formatValue(total);
 
   return (
     <Box data-testid="donut" sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
@@ -197,10 +196,10 @@ export default function Donut({
               variant="caption"
               sx={{ fontVariantNumeric: "lining-nums tabular-nums", ml: 0.5 }}
             >
-              {arc.value.toLocaleString("fr-FR")}
+              {formatValue(arc.value)}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              ({arc.pct} %)
+              ({formatPercent(arc.pct, { digits: 0 })})
             </Typography>
           </Box>
         ))}

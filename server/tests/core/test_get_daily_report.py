@@ -19,6 +19,20 @@ import pytest
 from core.main import get_daily_report, mcp
 from core.metrics import log_tool_metrics
 
+from tests.support.statement_router import StatementInventory, UnknownStatement
+
+# THE STATEMENTS THE DAILY-REPORT PATH MAKES against the platform database. Two
+# of them were recognised and the rest fell into an `else` that answered no rows
+# with a stale three-column description -- so a briefing query that moved would
+# have reported "no briefing" rather than failing (AI-317).
+_DAILY_REPORT = StatementInventory(
+    "BriefingCursor",
+    briefing="from app.morning_briefings",
+    briefing_write="insert into app.morning_briefings",
+    confidence_pulls="pull_verifications",
+    confidence_names="toorow_name",
+)
+
 
 @pytest.fixture(autouse=True)
 def _offline_platform_db(monkeypatch):
@@ -27,7 +41,7 @@ def _offline_platform_db(monkeypatch):
     def _offline_connection():
         raise RuntimeError("platform database unavailable in unit test")
 
-    monkeypatch.setattr("core.main._resolve_project", lambda project_id: project_id)
+    monkeypatch.setattr("core.main._resolve_project", lambda project_id, identity=None: project_id)
     monkeypatch.setattr("core.db.get_connection", _offline_connection)
     monkeypatch.setattr("core.main._fetch_context_events", lambda *args, **kwargs: [])
 
@@ -136,7 +150,7 @@ def test_no_rows_returns_empty_state_not_error(monkeypatch):
     assert result.is_error is False
     summary_text = result.content[0].text
     # Empty-state summary (French)
-    assert "Aucune donnée" in summary_text
+    assert "Aucune donnée disponible" in summary_text
     # structuredContent envelope is present with empty rows
     envelope = result.structured_content
     assert envelope is not None
@@ -434,13 +448,27 @@ def test_confidence_scoped_to_requested_connector_single(monkeypatch):
     )
 
     assert result.is_error is False
-    # The confidence query must have scoped to connector_name (AI-21 fix)
+    # The confidence query must scope to the requested connector (AI-21 fix).
+    #
+    # This assertion used to look for the literal "connector_name", and stayed
+    # GREEN for as long as the query was broken: `app.connection_ref` has no such
+    # column (it is `provider`), so every call raised UndefinedColumn and was
+    # swallowed by `except Exception: return None`. Matching on a string that the
+    # database rejects proves the string was typed, not that the filter works.
+    # Story 53.3 also adds the project and window scope, asserted here so a future
+    # widening back to the organization fails loudly.
     single_connector_queries = [
-        q for q in captured_queries if "connector_name" in q and "= %s" in q
+        q for q in captured_queries if "r.provider = %s" in q
     ]
     assert single_connector_queries, (
-        "AI-21: confidence query must filter by connector_name for single-connector requests. "
-        f"Captured queries: {captured_queries}"
+        "AI-21: the confidence query must filter by the connector column that "
+        f"actually exists (`provider`). Captured queries: {captured_queries}"
+    )
+    scoped = single_connector_queries[0]
+    assert "ds.project_id = %s" in scoped, "53.3: completeness must be project-scoped"
+    assert "pj.date_from" in scoped, "53.3: completeness must be window-scoped"
+    assert "owner_org_id" not in scoped, (
+        "53.3: the org-wide scope is the defect -- one authorization serves several projects"
     )
 
 
@@ -768,21 +796,17 @@ def _make_briefing_cursor(briefing_row=None, existing_confidence_rows=None):
         def execute(self, sql, params=None):
             sql_upper = sql.strip().upper()
             self._sql_calls.append(sql_upper)
-            if "FROM APP.MORNING_BRIEFINGS" in sql_upper:
+            statement = _DAILY_REPORT.match(sql)
+            if statement == "briefing":
                 self.morning_briefings_selects[0] += 1
-                if briefing_row is not None:
-                    self._results = [briefing_row]
-                    self.description = [("id",), ("insights",), ("built_at",)]
-                else:
-                    self._results = []
-            elif "PULL_VERIFICATIONS" in sql_upper or "TOOROW_NAME" in sql_upper:
-                if existing_confidence_rows:
-                    self._results = existing_confidence_rows
-                else:
-                    self._results = []
+                self._results = [briefing_row] if briefing_row is not None else []
+                self.description = [("id",), ("insights",), ("built_at",)]
+            elif statement in {"confidence_pulls", "confidence_names"}:
+                self._results = list(existing_confidence_rows or [])
                 self.description = [("connector_name",), ("ratio",)]
             else:
                 self._results = []
+                self.description = None
 
         def fetchone(self):
             return self._results[0] if self._results else None
@@ -893,9 +917,25 @@ def test_briefing_absent_no_change(monkeypatch):
         f"Summary must NOT contain briefing header when no briefing exists. Got:\n{summary[:200]}"
     )
     # Empty-state French summary (existing behavior)
-    assert "Aucune donnée" in summary, (
+    assert "Aucune donnée disponible" in summary, (
         f"Empty-state summary must be present when no rows. Got:\n{summary[:200]}"
     )
+
+
+def test_the_briefing_fake_refuses_a_statement_the_report_never_declared():
+    """AI-317: "no briefing" and "the briefing query moved" must not read alike.
+
+    The old `else` answered no rows AND kept the previous three-column
+    description, so an unrecognised statement produced the exact shape of an
+    empty briefing -- and `test_briefing_fetch_is_one_select` would have counted
+    one SELECT that no longer existed.
+    """
+    cursor_cls = _make_briefing_cursor(None)
+    cursor = cursor_cls()
+    with pytest.raises(UnknownStatement) as raised:
+        cursor.execute("SELECT id FROM app.evening_briefings WHERE project_id = %s")
+    assert "app.evening_briefings" in str(raised.value)
+    assert "confidence_pulls" in str(raised.value)
 
 
 def test_briefing_fetch_is_one_select(monkeypatch):
@@ -908,8 +948,10 @@ def test_briefing_fetch_is_one_select(monkeypatch):
             self.description = [("id",), ("insights",), ("built_at",)]
 
         def execute(self, sql, params=None):
-            sql_upper = sql.strip().upper()
-            if "FROM APP.MORNING_BRIEFINGS" in sql_upper:
+            # Same inventory as `BriefingCursor` (AI-317): this test measures a
+            # count of ONE statement, so a statement it cannot name is exactly
+            # the thing that would make the count wrong without failing.
+            if _DAILY_REPORT.match(sql) == "briefing":
                 morning_briefings_selects[0] += 1
             self._results = []
 

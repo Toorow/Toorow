@@ -43,7 +43,19 @@ stg_series AS (
         date,
         '{{ mart_metric }}'  AS metric,
         '{{ dimension }}'    AS breakdown_dimension,
-        SUM(CAST({{ stg_col }} AS DOUBLE)) AS stg_total
+        -- The mart applies `fx_convert_at_read` to `cost` (Story 48.3); this side
+        -- must apply the SAME expression or the comparison measures the exchange
+        -- rate instead of the grain. Measured 2026-08-04 before the repair:
+        -- mart 339.6272 vs staging 369.16 on 90 rows -- a ratio of exactly 0.92,
+        -- the USD->EUR seed rate. The grain filter was never at fault; the test
+        -- was comparing a converted total to a native one and calling it a bleed.
+        -- Using the macro on both sides also matches its NULL propagation, so an
+        -- unconvertible row is excluded from BOTH totals rather than one.
+        {%- if mart_metric == 'cost' %}
+        SUM({{ fx_convert_at_read(stg_col) }}) AS stg_total
+        {%- else %}
+        SUM(CAST({{ stg_col }} AS {{ toorow_float_type() }})) AS stg_total
+        {%- endif %}
     FROM {{ ref('stg_meta_ads_daily') }}
     WHERE data_level = '{{ data_level }}'
       AND {{ dimension }} IS NOT NULL

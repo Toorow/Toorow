@@ -394,7 +394,10 @@ def test_project_connection_state_uses_canonical_exact_account_grant_authority()
     assert state == ("meta_ads", "active", True, "ok")
     sql, params = cursor.execute.call_args.args
     assert "connection_account_scope" in sql
-    assert params == ("proj-viewer", "cref-owner")
+    # The two NULLs are the optional account filter: an authorization can hold
+    # several verified accounts since migration 211, so the query takes one that
+    # the caller names -- and, when it names none, the most recently verified.
+    assert params == ("proj-viewer", None, None, "cref-owner")
     resolve.assert_called_once_with(
         "member@example.com",
         conn,

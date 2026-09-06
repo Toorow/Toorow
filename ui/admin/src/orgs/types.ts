@@ -1,8 +1,7 @@
 /**
  * Organization domain types — the canonical `Org` shape returned by
  * GET/PATCH /api/organizations. Lives here (not in a legacy page) so the v3
- * org surfaces (OrgSettings, OrgDetailPanel) own their contract with no
- * dependency on removed legacy screens.
+ * org surfaces own their contract with no dependency on removed legacy screens.
  */
 export interface Org {
   id: string;

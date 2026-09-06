@@ -657,6 +657,7 @@ def _live_cleanup(ledger_ref: str) -> None:
 
 
 @pg_available
+@pytest.mark.pg_owner
 def test_live_claim_insert_conflict_put_get_round_trip(monkeypatch):
     """F-4 round-trip: claim insert -> claim conflict (rowcount=0) -> put
     update -> get, checking column order and created_at preservation."""
@@ -711,6 +712,7 @@ def test_live_claim_insert_conflict_put_get_round_trip(monkeypatch):
 
 
 @pg_available
+@pytest.mark.pg_owner
 def test_live_stale_takeover_and_terminal_reclaim(monkeypatch):
     """Claim state machine on the real table: stale 'submitting' takeover
     (F-2) and reclaim of a terminal row, both preserving created_at."""

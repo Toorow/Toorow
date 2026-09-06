@@ -22,6 +22,12 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Callable
 
+# The notes this module appends to a narrative prompt ARE narrative: they reach
+# the reader through the same channel as the lines `narrative.py` composes. They
+# are rendered from the one catalogue, in the reader's language
+# (docs/product-architecture/analyze-and-test.md, amendment 2026-08-25).
+from core.narrative_phrases import phrase
+
 logger = logging.getLogger(__name__)
 
 # NFR1 P1 gate: hard ceiling on the LLM summary line count (AD-1).
@@ -101,39 +107,65 @@ def _apply_ordering(rows: list[dict], order_by: str) -> list[dict]:
     return sorted(rows, key=lambda r: (r.get(field) is None, r.get(field)), reverse=descending)
 
 
-def _rollup(rows: list[dict], report: dict) -> dict[str, float]:
-    """Compute per-metric rollups. Additive metrics are summed; non-additive
-    metrics use the same weighted logic as rollup.compute_rollup (AD-4):
-    average_position is impression-weighted (SUM(value*impressions)/SUM(impressions),
-    falling back to simple mean when impressions rows are unavailable); other
-    non-additive metrics (ratios from semantic views) are averaged row-by-row."""
-    from core import report_dictionary  # noqa: PLC0415
+def _rollup(
+    rows: list[dict],
+    report: dict,
+    *,
+    date_from: str = "",
+    date_to: str = "",
+    project_id: str = "",
+    route_resolver=None,
+) -> tuple[dict[str, float], dict[str, dict]]:
+    """Project ``rollup.compute_rollup`` onto the envelope's flat metric map.
+
+    THE DEFECT THIS FUNCTION EXISTS TO CLOSE, and it was inside this function. It
+    computed its own aggregation -- ``sums[metric] / counts[metric]`` for anything
+    ``report_dictionary.is_non_additive`` declared -- which is the unweighted mean of
+    the per-day x per-connector values. That is the exact number CAV-03 was closed for
+    in `552ffe1`, and closing it in `rollup.py` left it published from here: on two days
+    of `ctr` (5/10 then 10/1000) this returned **0.255** while ``compute_rollup``
+    returned **0.01485**, and it was 0.255 that reached ``build_envelope``'s
+    ``data["metrics"]``. `test_rollup.py` forbade the number in one module while the
+    other emitted it.
+
+    It now computes NOTHING. It calls the one authority and projects the result, so a
+    change to the aggregation rule cannot land on one surface and miss the other.
+
+    Returns ``(values, not_combinable)``:
+
+    * ``values`` -- the flat ``{metric: float}`` map the report envelope has always
+      published, unchanged in shape;
+    * ``not_combinable`` -- ``{metric: {status, check, per_source, source_systems}}``
+      for every metric the reconciliation gate REFUSED. Those metrics are absent from
+      ``values``, and this second map is why that absence does not read as "no data".
+      Silently omitting a refused total would trade a wrong number for a missing one
+      with no way to tell them apart.
+    """
     from core import rollup as rollup_module  # noqa: PLC0415
 
-    sums: dict[str, float] = {}
-    counts: dict[str, int] = {}
-    for row in rows:
-        metric = row.get("metric")
-        if metric is None:
-            continue
-        value = float(row.get("value") or 0)
-        sums[metric] = sums.get(metric, 0.0) + value
-        counts[metric] = counts.get(metric, 0) + 1
+    computed = rollup_module.compute_rollup(
+        rows,
+        list(report.get("metrics", [])),
+        date_from,
+        date_to,
+        project_id,
+        sorted({r.get("pull_id") for r in rows if r.get("pull_id")}),
+        route_resolver=route_resolver,
+    )
 
-    rollup: dict[str, float] = {}
-    for metric in report.get("metrics", []):
-        if metric not in sums:
+    values: dict[str, float] = {}
+    not_combinable: dict[str, dict] = {}
+    for metric, entry in computed.items():
+        if entry.get("combination_refused"):
+            not_combinable[metric] = {
+                "status": entry["combination_refused"],
+                "check": entry.get("combination_check"),
+                "per_source": entry.get("per_source") or {},
+                "source_systems": entry.get("source_systems") or [],
+            }
             continue
-        if metric == "average_position":
-            # G-02: use the same impression-weighted helper as rollup.compute_rollup (AD-4).
-            weighted = rollup_module._weighted_avg_position(rows)
-            if weighted is not None:
-                rollup[metric] = weighted
-        elif report_dictionary.is_non_additive(metric) and counts[metric]:
-            rollup[metric] = sums[metric] / counts[metric]
-        else:
-            rollup[metric] = sums[metric]
-    return rollup
+        values[metric] = entry["value"]
+    return values, not_combinable
 
 
 def build_summary(
@@ -143,8 +175,10 @@ def build_summary(
     end: str,
     module_name: str,
     *,
+    project_id: str = "",
     context_events: list[dict] | None = None,
     llm_commentary_guidelines: str | None = None,
+    context_events_unavailable: dict | None = None,
 ) -> str:
     """Build the ≤30-line LLM summary as a deterministic what+why narrative (Story 6.4).
 
@@ -158,6 +192,14 @@ def build_summary(
     R6: when ``llm_commentary_guidelines`` is provided (from the merged flow.report
     override), it is appended to ``narrative_prompt`` so the LLM receives agent-set
     commentary grounding ("les définitions pour les comments du llm").
+
+    ``project_id`` (story 53.2) is the Project the report belongs to, and it used to be
+    a hardcoded ``""`` at the ``compute_rollup`` call below. That single empty string
+    disabled two things at once: the reconciliation gate could not bind (a resolver
+    needs a project), and ``rollup.declared_non_additive_metrics("")`` returns
+    ``frozenset()`` by its own first line, so the per-Project additivity story 60.2
+    delivered was dead on this path -- a client metric declared non-additive was summed
+    in every report while the same metric was correctly refused on the card beside it.
     """
     from core import narrative as narrative_module  # noqa: PLC0415
     from core import rollup as rollup_module  # noqa: PLC0415
@@ -165,9 +207,18 @@ def build_summary(
     prompt = (report.get("narrative_prompt") or "").strip() or None
     # R6: append llm_commentary_guidelines to the prompt so the LLM narrative is
     # grounded by the operator-set directives (Epic 8 R6, Story 8.8).
+    #
+    # Framed, not merely appended (story 53.5, CAV-18): the frame says this text is
+    # an INSTRUCTION and not evidence, so a directive like "attribute drops to
+    # seasonality" cannot reach the model indistinguishable from the deterministic
+    # cited comment beside it. `narrative.GUIDANCE_FRAME` is shared with
+    # `cards._build_summary` so the two cannot drift on the wording that carries
+    # the constraint.
     _guidelines = (llm_commentary_guidelines or "").strip()
     if _guidelines:
-        _sep = "\n\nDirectives de commentaire: " if prompt else "Directives de commentaire: "
+        from core.narrative import GUIDANCE_FRAME  # noqa: PLC0415
+
+        _sep = ("\n\n" + GUIDANCE_FRAME) if prompt else GUIDANCE_FRAME
         prompt = (prompt or "") + _sep + _guidelines
 
     if not rows:
@@ -175,32 +226,36 @@ def build_summary(
         # and still state context absence (AD-9). Built via the narrative builder so
         # the 30-line cap and structure are consistent.
         return narrative_module.build_narrative(
-            project_id="",
+            project_id=project_id,
             report_id=report.get("id"),
             rollup={},
             context_events=context_events or [],
             alerts=[],
             as_of=None,
             narrative_prompt=(
-                ((prompt + " ") if prompt else "")
-                + "Aucune donnée disponible pour la période demandée."
+                ((prompt + " ") if prompt else "") + phrase("summary_no_data")
             ).strip(),
+            context_unavailable=context_events_unavailable,
         )
+
+    from core.metric_reconciliation import route_status_resolver  # noqa: PLC0415
 
     metrics = list(report.get("metrics", []))
     pull_ids = sorted({r.get("pull_id") for r in rows if r.get("pull_id")})
     rollup = rollup_module.compute_rollup(
-        rows, metrics, start, end, "", pull_ids
+        rows, metrics, start, end, project_id, pull_ids,
+        route_resolver=route_status_resolver(project_id),
     )
 
     return narrative_module.build_narrative(
-        project_id="",
+        project_id=project_id,
         report_id=report.get("id"),
         rollup=rollup,
         context_events=context_events or [],
         alerts=[],
         as_of=None,
         narrative_prompt=prompt,
+        context_unavailable=context_events_unavailable,
     )
 
 
@@ -217,6 +272,7 @@ def build_envelope(
     alerts: list[dict] | None = None,
     confidence: dict | None = None,
     metric_definitions: dict | None = None,
+    business_context_paths: list[dict] | None = None,
 ) -> dict:
     """Build the canonical AD-1 envelope for a report (data channel).
 
@@ -242,7 +298,21 @@ def build_envelope(
     }
 
     meta: dict = {
-        "freshness": {"last_pull": last_pull, "cadence_hours": 24, "stale_since": None},
+        "freshness": {
+            "last_pull": last_pull,
+            "cadence_hours": 24,
+            # Not evaluated HERE, and that stays true: this builder does not
+            # reach a database. `core.health_enrichment` is the one evaluator,
+            # and since AI-273 it is called at the exit of `get_card` and of
+            # `render_report`, not only from `get_daily_report` -- so the False
+            # below is now a starting value that a look can overturn, rather
+            # than the final word on a card frozen into a shared Render. When
+            # the look does not happen (no DB, unreadable window, no connection
+            # over it) it survives, and an unevaluated null must never read as
+            # "evaluated, and fresh" (README.md:123, invariant 8).
+            "stale_since": None,
+            "stale_since_evaluated": False,
+        },
         "provenance": provenance,
         "alerts": alerts or [],
         "trace_id": trace_id,
@@ -259,25 +329,52 @@ def build_envelope(
     }
     if confidence is not None:
         meta["confidence"] = confidence
+    if business_context_paths is not None:
+        meta["business_context_paths"] = business_context_paths
+
+    from core.metric_reconciliation import route_status_resolver  # noqa: PLC0415
+
+    metric_values, not_combinable = _rollup(
+        rows,
+        report,
+        date_from=start,
+        date_to=end,
+        project_id=project_id,
+        route_resolver=route_status_resolver(project_id),
+    )
 
     data: dict = {
         "report_id": f"{module_name}/{report.get('id')}",
         "date_range": {"start": start, "end": end},
         "connectors": [module_name],
-        "metrics": _rollup(rows, report),
+        "metrics": metric_values,
         "rows": rows,
     }
+    # A metric the reconciliation gate refused is NOT in `metrics` -- there is no
+    # number to put there. It is named here with each source's own figure, so its
+    # absence reads as "several sources, no rule to combine them" and not as "no
+    # data" (analyze-and-test.md: "or is combined at all where no reconciliation
+    # rule resolves the overlap"). Omitted entirely when nothing was refused.
+    if not_combinable:
+        data["metrics_not_combinable"] = not_combinable
     # R6: inject metric_definitions when non-empty so the widget's tooltips and
     # direction-tint logic light up (Epic 8, Story 8.8). Key is omitted entirely
     # when no definitions exist (backward-compatible with pre-R6 envelopes).
     if metric_definitions:
         data["metric_definitions"] = metric_definitions
 
-    return {
-        "schema_version": "1",
-        "meta": meta,
-        "data": data,
-    }
+    # AI-275 / CAV-17 -- CONSTRUCTED, never assembled. This was a dict literal, so
+    # it walked past every assertion pinned on the constructor: the figure it
+    # carries reached a reader with no word about which engine produced it, and no
+    # test could tell. `ANALYTICAL_PATH_MART` is imported rather than retyped --
+    # two hand-written copies of a relation name is how a disclosure starts
+    # describing a path that moved.
+    from core.envelope import ANALYTICAL_PATH_MART  # noqa: PLC0415
+    from core.envelope import build_envelope as _build_ad1_envelope  # noqa: PLC0415
+
+    return _build_ad1_envelope(
+        meta=meta, data=data, analytical_path=ANALYTICAL_PATH_MART
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -387,54 +484,42 @@ def _fetch_deployment_events(
     date_from: str,
     date_to: str,
     *,
-    duckdb_path: str = "",
+    identity: str | None = None,
 ) -> list[dict]:
-    """Fetch deployment/release context events from DuckDB mirror (Story 6.3, T5.1).
+    """The deployment/release context events of the window (Story 6.3, T5.1).
 
-    Reads from ``mirror.context_events`` filtered by type IN ('deployment', 'release').
-    Returns [] gracefully when mirror is absent (same pattern as fetch_context_events).
+    AI-344 (context-hub.md, amendment of 2026-09-01): served by the ONE
+    context-event read -- the DuckDB mirror when the deployment keeps one, else
+    the record ``app.context_events`` through the caller's scoped connection --
+    and filtered here to ``type IN ('deployment', 'release')``. It used to read
+    the mirror alone and answer ``[]`` when there was none, so on every
+    deployment without a mirror this report said "no deployment in the window"
+    about windows it had never read.
+
+    Raises ``ContextEventsUnavailable`` when neither store can serve: the
+    caller says so beside the report, never "no deployment found".
     AD-2: no module-specific strings.
     """
-    import os  # noqa: PLC0415
+    from core.context_events import fetch_context_events  # noqa: PLC0415
 
-    import duckdb  # noqa: PLC0415
-
-    db_path = duckdb_path or os.environ.get("TOOROW_DUCKDB_PATH", "")
-    if not db_path or not __import__("os").path.exists(db_path):
-        return []
-    try:
-        con = duckdb.connect(db_path, read_only=True)
-        try:
-            rel = con.execute(
-                """
-                SELECT id, project_id, event_date, type, label
-                FROM mirror.context_events
-                WHERE project_id = ?
-                  AND event_date BETWEEN ? AND ?
-                  AND type IN ('deployment', 'release')
-                ORDER BY event_date ASC
-                """,
-                [project_id, date_from, date_to],
-            )
-            cols = [d[0] for d in rel.description]
-            events: list[dict] = []
-            for row in rel.fetchall():
-                record: dict = {}
-                for col, val in zip(cols, row):
-                    record[col] = str(val) if col == "event_date" and val is not None else val
-                events.append(record)
-            return events
-        finally:
-            con.close()
-    except Exception:
-        return []
-
+    return [
+        {
+            "id": e.get("id"),
+            "project_id": e.get("project_id"),
+            "event_date": e.get("event_date"),
+            "type": e.get("type"),
+            "label": e.get("label"),
+        }
+        for e in fetch_context_events(project_id, date_from, date_to, identity=identity)
+        if e.get("type") in ("deployment", "release")
+    ]
 
 def _compute_post_deploy_regressions(
     rows: list[dict],
     date_from: str,
     date_to: str,
     project_id: str = "",
+    identity: str | None = None,
     **_kw,
 ) -> list[dict]:
     """Compute per-event, per-page regression deltas around deployment events (T5.2).
@@ -446,8 +531,14 @@ def _compute_post_deploy_regressions(
 
     When no events are found: returns rows unchanged and sets marker for the
     envelope to include ``data.context_events = []`` and a narrative note (AD-9).
+
+    When the events could NOT be read (AI-344): rows unchanged, tagged with
+    ``_deploy_events_unavailable = {reason, repair}`` so the envelope says the
+    window was not read -- never ``context_events = []``.
     """
     from collections import defaultdict  # noqa: PLC0415
+
+    from core.context_events import ContextEventsUnavailable  # noqa: PLC0415
 
     try:
         date.fromisoformat(date_to)
@@ -455,7 +546,10 @@ def _compute_post_deploy_regressions(
     except (ValueError, TypeError):
         return rows
 
-    events = _fetch_deployment_events(project_id, date_from, date_to)
+    try:
+        events = _fetch_deployment_events(project_id, date_from, date_to, identity=identity)
+    except ContextEventsUnavailable as unavailable:
+        return [dict(row, _deploy_events_unavailable=unavailable.payload) for row in rows]
 
     if not events:
         # AD-9 explicit absence: tag each row so the caller can surface the note.
@@ -566,6 +660,43 @@ POST_PROCESSORS: dict[str, Callable] = {
 }
 
 
+def _load_geography_projection(project_id: str):
+    """The Project's published Country meaning, or None when it has none.
+
+    Read here rather than passed in, because the caller used to pass
+    ``project_preferences``-derived posture -- the mutable field Story 48.2
+    retires as an authority. Returning None is a real answer ("this Project has
+    published no Country version"), and the caller must not turn it into a
+    default grouping.
+
+    A read failure is also None: a report that cannot reach Governance renders
+    the retained country rows ungrouped rather than failing, and says so through
+    the absent ``geography`` block. It never guesses a grouping.
+    """
+
+    try:
+        from core.country_registry import load_projection  # noqa: PLC0415
+        from core.db import get_connection  # noqa: PLC0415
+
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT state
+                    FROM app.project_capabilities
+                    WHERE project_id = %s AND capability_key = 'country'
+                    """,
+                    (project_id,),
+                )
+                row = cur.fetchone()
+            if row is None or str(row[0]) not in {"ready", "degraded"}:
+                return None
+            return load_projection(conn, project_id=project_id)
+    except Exception:  # noqa: BLE001
+        logger.warning("reports: geography projection unavailable project=%s", project_id)
+        return None
+
+
 def render_report(
     loaded_modules: list,
     project_id: str,
@@ -577,7 +708,14 @@ def render_report(
     today: date | None = None,
     metric_definitions: dict | None = None,
     llm_commentary_guidelines: str | None = None,
+    # Superseded by the published Country hierarchy version and IGNORED. Kept
+    # only so the existing caller keeps type-checking until the route owner
+    # drops the argument; it selects nothing, so there is no dual-read.
     geographic_posture: object | None = None,
+    # AI-344: the caller the context-event read opens its scoped connection for
+    # when the deployment keeps no DuckDB mirror. Without it, a report whose
+    # post-processor needs the events says they were unavailable.
+    identity: str | None = None,
 ) -> tuple[str, dict, str]:
     """Render a report pack end-to-end.
 
@@ -622,51 +760,59 @@ def render_report(
     # rows; compute_rollup (inside build_summary) receives all_rows for delta computation.
     from core import rollup as _rollup_module  # noqa: PLC0415
     _current_rows, _prior_rows = _rollup_module._split_periods(all_rows, start, end)
-    # Story 37.3: a Local-market report pins the exact country partition and
-    # classifies retained country rows at read time. Global posture remains a no-op.
+    # Story 48.2: the split is driven by the PUBLISHED Country hierarchy
+    # version, not by `project_preferences.geographic_mode`. That mutable field
+    # could change between two runs of the same report with nothing recording
+    # which grouping produced which number; every semantic row now names the
+    # exact version that classified it.
+    #
+    # No published version means the Project has no governed Country meaning
+    # yet. The honest answer is then to leave the country rows exactly as
+    # retained -- never to invent a `global` posture and present ungrouped data
+    # as if grouping had been considered.
     _geo_result = None
-    if geographic_posture is not None:
-        from core.geographic_reporting import LOCAL_MARKETS  # noqa: PLC0415
-        from core.geographic_semantics import group_market_reporting_rows  # noqa: PLC0415
+    _geo_projection = _load_geography_projection(project_id)
+    if _geo_projection is not None:
+        from core.geographic_semantics import group_geography_reporting_rows  # noqa: PLC0415
 
-        if getattr(geographic_posture, "mode", None) == LOCAL_MARKETS:
-            # Story 37.9: resolution reads the client's CONFIRMED conformance
-            # mappings on top of the shared seed, so a spelling repaired once is
-            # applied at the NEXT READ with no fact rewrite. Fail-soft: an
-            # unavailable MDM layer degrades to seed-only (more Unknown, never a
-            # guess and never a failed report).
+        # Story 37.9, kept: resolution reads the client's CONFIRMED conformance
+        # mappings on top of the platform vocabulary, so a spelling repaired
+        # once is applied at the NEXT READ with no fact rewrite. Fail-soft here
+        # is deliberate and bounded: an unavailable MDM layer degrades to
+        # vocabulary-only, which produces MORE Unknown -- never a guess, and
+        # never a failed report.
+        _country_resolver = None
+        try:
+            from core.geographic_conformance import make_country_resolver  # noqa: PLC0415
+
+            _country_resolver = make_country_resolver(project_id=project_id)
+        except Exception:  # noqa: BLE001
             _country_resolver = None
+        _geo_result = group_geography_reporting_rows(
+            _current_rows, _geo_projection, resolver=_country_resolver
+        )
+        _prior_geo_result = group_geography_reporting_rows(
+            _prior_rows, _geo_projection, resolver=_country_resolver
+        )
+        _current_rows = list(_geo_result.rows)
+        _prior_rows = list(_prior_geo_result.rows)
+        # The dead end closes here: unresolved spellings become governed
+        # 'proposed' suggestions and a dq_geography firing visible to the
+        # Epic 13 monitors and get_data_quality_report.
+        if _geo_result.data_quality:
             try:
-                from core.geographic_conformance import make_country_resolver  # noqa: PLC0415
+                from core.geographic_conformance import (  # noqa: PLC0415
+                    record_unmapped_country_evidence,
+                )
 
-                _country_resolver = make_country_resolver(project_id=project_id)
+                record_unmapped_country_evidence(
+                    project_id,
+                    _geo_result.data_quality,
+                    window_date=str(end),
+                    emit_firing=False,
+                )
             except Exception:  # noqa: BLE001
-                _country_resolver = None
-            _geo_result = group_market_reporting_rows(
-                _current_rows, geographic_posture, resolver=_country_resolver
-            )
-            _prior_geo_result = group_market_reporting_rows(
-                _prior_rows, geographic_posture, resolver=_country_resolver
-            )
-            _current_rows = list(_geo_result.rows)
-            _prior_rows = list(_prior_geo_result.rows)
-            # The dead end closes here: unresolved spellings become governed
-            # 'proposed' suggestions and a dq_geography firing visible to the
-            # Epic 13 monitors and get_data_quality_report.
-            if _geo_result.data_quality:
-                try:
-                    from core.geographic_conformance import (  # noqa: PLC0415
-                        record_unmapped_country_evidence,
-                    )
-
-                    record_unmapped_country_evidence(
-                        project_id,
-                        _geo_result.data_quality,
-                        window_date=str(end),
-                        emit_firing=False,
-                    )
-                except Exception:  # noqa: BLE001
-                    pass
+                pass
 
     # rows = current-window rows (for post-processors, ordering, top_n, envelope data.rows)
     rows = _current_rows
@@ -675,18 +821,34 @@ def render_report(
     post_proc = POST_PROCESSORS.get(report.get("id", ""))
     post_deploy_events: list[dict] | None = None
     no_deploy_events = False
+    deploy_events_unavailable: dict | None = None
     if post_proc is not None:
-        rows = post_proc(rows, start, end, project_id=project_id)
-        # post_deploy_regressions tags rows with _no_deploy_events when no events found.
+        rows = post_proc(rows, start, end, project_id=project_id, identity=identity)
+        # post_deploy_regressions tags rows with _no_deploy_events when no events
+        # found, and with _deploy_events_unavailable when they could not be read
+        # (AI-344) -- two different facts, said differently downstream.
         if report.get("id") == "post_deploy_regressions":
-            if rows and rows[0].get("_no_deploy_events"):
+            if rows and rows[0].get("_deploy_events_unavailable"):
+                deploy_events_unavailable = rows[0]["_deploy_events_unavailable"]
+                rows = [
+                    {k: v for k, v in r.items() if k != "_deploy_events_unavailable"}
+                    for r in rows
+                ]
+            elif rows and rows[0].get("_no_deploy_events"):
                 no_deploy_events = True
                 # Strip the internal marker from rows before envelope build.
                 rows = [{k: v for k, v in r.items() if k != "_no_deploy_events"} for r in rows]
                 post_deploy_events = []
             else:
                 # Collect deployment events for envelope context_events.
-                post_deploy_events = _fetch_deployment_events(project_id, start, end)
+                from core.context_events import ContextEventsUnavailable  # noqa: PLC0415
+
+                try:
+                    post_deploy_events = _fetch_deployment_events(
+                        project_id, start, end, identity=identity
+                    )
+                except ContextEventsUnavailable as unavailable:
+                    deploy_events_unavailable = unavailable.payload
 
     order_by = report.get("layout", {}).get("order_by", "")
     rows = _apply_ordering(rows, order_by)
@@ -704,10 +866,8 @@ def render_report(
         absent_metrics = [m for m in report.get("metrics", []) if m not in result_metrics]
         if absent_metrics:
             report = dict(report)  # shallow copy; don't mutate the registry
-            absent_note = (
-                " [Données partielles : "
-                + ", ".join(absent_metrics)
-                + " non disponibles.]"
+            absent_note = phrase(
+                "report_partial_data_note", metrics=", ".join(absent_metrics)
             )
             report["narrative_prompt"] = (
                 (report.get("narrative_prompt") or "") + absent_note
@@ -717,8 +877,14 @@ def render_report(
     if no_deploy_events:
         report = dict(report)
         report["narrative_prompt"] = (
+            (report.get("narrative_prompt") or "") + phrase("report_no_deploy_events")
+        )[:200]
+    elif deploy_events_unavailable is not None:
+        # AI-344: not "aucun déploiement" -- the window was not read.
+        report = dict(report)
+        report["narrative_prompt"] = (
             (report.get("narrative_prompt") or "")
-            + " Aucun déploiement trouvé dans la fenêtre. Contexte manquant."
+            + phrase("report_deploy_events_unavailable")
         )[:200]
 
     # Determine connectors present in the result rows for envelope metadata.
@@ -733,47 +899,96 @@ def render_report(
     # only current-window rows (passed as `rows`).
     summary = build_summary(
         report, _current_rows + _prior_rows, start, end, module_name,
+        project_id=project_id,
         context_events=post_deploy_events or None,
         llm_commentary_guidelines=llm_commentary_guidelines,
+        context_events_unavailable=deploy_events_unavailable,
     )
     envelope = build_envelope(
         report, rows, module_name, start, end, project_id, trace_id=trace_id,
         context_events=post_deploy_events,
         metric_definitions=metric_definitions,
     )
-    if _geo_result is not None:
-        from core.geographic_semantics import market_bucket_descriptors  # noqa: PLC0415
+    # AI-273. `build_envelope` above ships `stale_since_evaluated: False`, and
+    # until this line nothing downstream ever turned it True on this path: a
+    # rendered report frozen into a shared Render said "nobody checked" forever.
+    # The SAME evaluator `get_daily_report` uses, with this call's own window --
+    # a second one would let a report and the card built from its rows disagree
+    # about their own freshness. See `cards._evaluate_freshness` for the shape.
+    try:
+        from core.health_enrichment import enrich_envelope_with_health  # noqa: PLC0415
 
-        # Story 37.8: the split is expressed as client-defined MARKETS -- stable
-        # id, operator label and member country codes -- not as raw ISO codes.
-        _geo_buckets = market_bucket_descriptors(geographic_posture)
+        enrich_envelope_with_health(envelope, project_id, date_from=start, date_to=end)
+    except Exception:  # noqa: BLE001
+        # No-op on an unreachable DB or an unreadable window: the envelope keeps
+        # the builder's `False`, which is what it read before this existed.
+        logger.debug("reports: freshness not evaluated for project_id=%s", project_id)
+
+    # AI-297. `build_envelope` above takes a `confidence` parameter and this call
+    # never filled it -- a socket cut and left empty since Story 4.2, so a
+    # rendered report carried no completeness, no traceability and no
+    # `limiting_term`. `compute_confidence` had exactly ONE caller in the
+    # repository (`get_daily_report`), the same shape AI-273 found for freshness:
+    # the surfaces that get frozen into a shared Render were the ones that never
+    # asked.
+    #
+    # AFTER the health enrichment, never before, and that order is the point.
+    # `stale_since` is handed over so the two halves of "how fresh is this" cannot
+    # answer in opposite directions in one payload -- a set `stale_since` beside a
+    # freshness term of 1.0 is the exact contradiction story 53.3 closed on the
+    # daily-report path. The health verdict caps the freshness term.
+    try:
+        from core import confidence as confidence_module  # noqa: PLC0415
+
+        computed = confidence_module.compute_confidence(
+            project_id,
+            result_connectors,
+            rows=rows,
+            date_from=start,
+            date_to=end,
+            stale_since=((envelope.get("meta") or {}).get("freshness") or {}).get("stale_since"),
+        )
+        if computed is not None:
+            envelope.setdefault("meta", {})["confidence"] = computed
+    except Exception:  # noqa: BLE001
+        # Best-effort, exactly as on the daily-report path: no `confidence` key
+        # rather than a number nobody could stand behind.
+        logger.debug("reports: confidence not computed for project_id=%s", project_id)
+    if _geo_result is not None and _geo_projection is not None:
+        from core.geographic_semantics import (  # noqa: PLC0415
+            geography_bucket_descriptors,
+            reconciliation,
+        )
+
+        # Story 37.8, kept by 48.2: the split is expressed as governed MARKETS
+        # -- stable id and operator label -- never as raw ISO codes. What 48.2
+        # adds is the version that produced it and the proof that the buckets
+        # add up, so a reader can check the split instead of trusting it.
+        _geo_buckets = geography_bucket_descriptors(_geo_projection)
         envelope["data"]["geography"] = {
-            "mode": getattr(geographic_posture, "mode"),
+            "geography_hierarchy_version_id": _geo_projection.hierarchy_version_id,
+            "vocabulary_version_id": _geo_projection.vocabulary_version_id,
             "country_partition": _geo_result.country_partition,
             "country_partition_available": any(
                 row.get("breakdown_dimension") == "market" for row in rows
             ),
             "excluded_parallel_rows": _geo_result.excluded_parallel_rows,
-            "coverage": dict(
-                getattr(
-                    geographic_posture,
-                    "coverage",
-                    {"status": "unavailable", "datastreams": []},
-                )
-            ),
             "buckets": _geo_buckets,
             "markets": [
-                {
-                    "id": bucket["id"],
-                    "label": bucket["label"],
-                    "country_codes": bucket["country_codes"],
-                }
+                {"id": bucket["id"], "label": bucket["label"]}
                 for bucket in _geo_buckets
-                if bucket["kind"] == "tracked"
+                if bucket["kind"] in {"market", "region"}
             ],
             "bindable_market_ids": [
                 bucket["id"] for bucket in _geo_buckets if bucket["bindable"]
             ],
+            "rest_of_world": {
+                "id": _geo_projection.rest_of_world_id,
+                "label": _geo_projection.rest_of_world_label,
+                "default_drill": _geo_projection.rest_of_world_drill,
+                "country_codes": list(_geo_projection.rest_of_world_members()),
+            },
+            "reconciliation": reconciliation(_geo_result),
         }
         envelope["meta"]["alerts"].extend(_geo_result.data_quality)
     # Override connectors in data envelope when multi-connector.
@@ -791,6 +1006,65 @@ def render_report(
             }
             for e in post_deploy_events
         ]
+    if report.get("id") == "post_deploy_regressions" and deploy_events_unavailable is not None:
+        # No `context_events` key at all: an empty list would claim the window
+        # was read. The reason and the repair travel instead.
+        envelope["data"]["context_events_unavailable"] = deploy_events_unavailable
 
     widget_uri = loaded.manifest.get("widget_ref") or DEFAULT_REPORT_WIDGET_URI
+    summary = _state_the_limiting_term(summary, envelope)
     return summary, envelope, widget_uri
+
+
+def _state_the_limiting_term(summary: str, envelope: dict) -> str:
+    """Say, in the text channel, which term is holding this report back (AI-297).
+
+    `compute_confidence` argues at length in its own docstring for why
+    `limiting_term` exists: a single number over three different natures --
+    completeness, freshness, traceability -- compensates, and `overview.md:32-34`
+    refuses that collapse. « Naming the limiter is the minimum that keeps the
+    number readable. »
+
+    Nothing named it. Measured 2026-08-16: `limiting_term` appeared in
+    `core/confidence.py`, where it is computed, and NOWHERE ELSE in the server --
+    no summary, no screen, no widget. The disclosure that was designed to keep a
+    number honest was itself unreadable, which makes the number it guards worse
+    than absent: present, and trusted.
+
+    THE TEXT CHANNEL, and not a fourth structured key. `meta.confidence` already
+    carries every term for the model; what was missing is the sentence a PERSON
+    reads. AD-1 splits the two channels precisely so a disclosure can be said in
+    words on one and be machine-readable on the other.
+
+    Silent when there is nothing to disclose -- no confidence computed, or no
+    term known well enough to be the weakest. A line that said "limiting term:
+    none" on every unmeasured report would be noise, and noise is how a real
+    disclosure stops being read.
+    """
+    confidence = (envelope.get("meta") or {}).get("confidence")
+    if not isinstance(confidence, dict):
+        return summary
+    limiting = confidence.get("limiting_term")
+    if not limiting:
+        return summary
+
+    value = confidence.get(limiting)
+    unknown = confidence.get("unknown_terms") or []
+    line = phrase("report_limiting_term", term=limiting)
+    if isinstance(value, (int, float)):
+        line += phrase("report_limiting_term_value", value=value)
+    if unknown:
+        # An unknown term is why `score` is None, and a reader who sees only the
+        # limiter would otherwise wonder where the overall number went.
+        line += phrase(
+            "report_limiting_term_unmeasured",
+            terms=", ".join(str(u) for u in unknown),
+        )
+
+    lines = summary.splitlines()
+    if len(lines) >= _MAX_LINES:
+        # The 30-line ceiling is NFR1 and it is not negotiable for a disclosure:
+        # a summary that grew past it would be truncated somewhere else, and the
+        # thing dropped would be chosen by an accident of length.
+        return summary
+    return "\n".join([*lines, line])

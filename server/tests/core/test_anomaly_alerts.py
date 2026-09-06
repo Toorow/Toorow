@@ -4,7 +4,7 @@ Tests per AC10:
   - test_anomaly_detected_above_threshold: mart row at z=4.0 -> firing written.
   - test_no_anomaly_below_threshold: z=2.9 in mart -> no firing (below threshold).
   - test_context_event_cited_in_message: anomaly date has context_event -> label cited.
-  - test_context_missing_when_no_event: no context event -> "contexte manquant".
+  - test_context_missing_when_no_event: no context event -> "contexte missing".
   - test_causal_language_absent: prohibited words not in any generated message (AD-9).
   - test_ranked_by_zscore_magnitude: multiple anomalies returned sorted by |z| DESC.
   - test_anomaly_type_in_firing: firing row has type='anomaly' in INSERT SQL.
@@ -33,6 +33,14 @@ os.environ.setdefault("SCHEDULER_ENABLED", "false")
 os.environ.setdefault("ANOMALY_ALERTS_ENABLED", "false")
 
 from core import anomaly_alerts  # noqa: E402
+
+# Imported BEFORE any `patch("ulid.ULID")` below: `core.audit` binds `ULID` at
+# module level, and a first import made INSIDE a patched block would freeze the
+# mock into it for the rest of the session -- every later audit row of the run
+# then carried `audit_TESTULID01` and the second one violated the primary key
+# (measured 2026-09-01 on the pg-gated record fixture of
+# `test_mirror_fetch_context_events.py`).
+from core import audit as _audit_bound_to_the_real_ulid  # noqa: E402, F401
 
 # ---------------------------------------------------------------------------
 # Test helpers
@@ -76,8 +84,14 @@ def _make_duck_conn(anomaly_rows=None, context_rows=None):
     call_count = [0]
 
     def execute_side_effect(sql, params=None):
-        call_count[0] += 1
         result = MagicMock()
+        if "information_schema" in sql:
+            # The catalogue probes (table present, columns present): this fixture
+            # models a SYNCED mirror, so the walk runs there -- AI-344 sends it to
+            # the record only when the table is absent.
+            result.fetchall = MagicMock(return_value=[(1,)])
+            return result
+        call_count[0] += 1
         if call_count[0] == 1:
             # First call: anomalies_daily query
             result.fetchall = MagicMock(return_value=anomaly_rows or [])
@@ -483,3 +497,149 @@ class TestGracefulDegradation:
             result = anomaly_alerts.evaluate_anomalies()
 
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# AI-344 (2026-09-01) -- the candidate-cause walk is the SAME defect as
+# `fetch_context_events`: on a deployment that keeps no DuckDB mirror it read
+# nothing and said "Contexte manquant." The walk now runs on the record when the
+# warehouse carries no `mirror.context_events`, and when neither store can serve
+# the anomaly keeps its verdict and says the walk did not run.
+# ---------------------------------------------------------------------------
+
+_RECORD_COLS = ("id", "project_id", "event_date", "type", "label", "platform", "value",
+                "source", "metric")
+
+
+def _warehouse_without_the_mirror():
+    """A warehouse connection whose catalogue has no `mirror.context_events`."""
+    duck = MagicMock()
+
+    def _execute(sql, params=None):
+        res = MagicMock()
+        res.fetchall = MagicMock(return_value=[])
+        return res
+
+    duck.execute = MagicMock(side_effect=_execute)
+    return duck
+
+
+def _record_with(rows):
+    """A Postgres connection whose only read answers *rows* in the record's shape."""
+    from datetime import date as _date  # noqa: PLC0415
+
+    cur = _make_cursor(rows=rows, description=[(c,) for c in _RECORD_COLS])
+    cur.fetchall = MagicMock(return_value=rows)
+    conn = _make_pg_conn(cur)
+    conn.record_date = _date
+    return conn
+
+
+class TestCandidateCauseWalkReadsTheRecord:
+    def test_no_mirror_reads_the_record_with_both_discriminants(self):
+        from datetime import date as _date
+
+        from core.briefing import CONTEXT_BASIS_METRIC, CONTEXT_BASIS_PLATFORM
+
+        rows = [
+            ("evt_a", "proj1", _date(2026, 7, 12), "campaign_launch", "Campaign launch",
+             "google-analytics", None, "manual", None),
+            ("evt_b", "proj1", _date(2026, 7, 12), "release", "Meta creative swap",
+             "meta-ads", None, "manual", None),
+            ("evt_c", "proj1", _date(2026, 7, 12), "business", "Cost cap raised",
+             None, None, "manual", "cost"),
+        ]
+        pg = _record_with(rows)
+        labels, pairing = anomaly_alerts._fetch_context_events_for_anomaly(
+            "proj1", _date(2026, 7, 12), _warehouse_without_the_mirror(),
+            connector="google-analytics", metric="sessions",
+            record_connection=lambda: pg,
+        )
+        # Another platform is out; another metric is out; "none" stays.
+        assert labels == ["Campaign launch"]
+        assert CONTEXT_BASIS_PLATFORM in pairing["basis"]
+        assert CONTEXT_BASIS_METRIC in pairing["basis"]
+        assert "unavailable" not in pairing
+        sql = pg.cursor().execute.call_args[0][0]
+        assert "app.context_events" in sql and "retired_at IS NULL" in sql
+
+    def test_no_mirror_and_no_record_says_unavailable_not_no_cause(self):
+        from datetime import date as _date
+
+        labels, pairing = anomaly_alerts._fetch_context_events_for_anomaly(
+            "proj1", _date(2026, 7, 12), _warehouse_without_the_mirror(),
+            connector="google-analytics",
+        )
+        assert labels == []
+        assert set(pairing["unavailable"]) == {"reason", "repair"}
+        assert pairing["unscoped_dimensions"]
+
+        anomaly = {
+            "metric": "sessions", "zscore": 4.0, "window_date": "2026-07-12",
+            "context_events": labels, "context_pairing": pairing,
+        }
+        line = anomaly_alerts.format_anomaly_line(anomaly)
+        assert "Contexte manquant" not in line
+        assert "Contexte non lu" in line
+        widget = anomaly_alerts._build_widget_alert(anomaly)
+        assert widget["context_missing"] is False
+        assert widget["context_unavailable"] == pairing["unavailable"]
+        assert "Contexte manquant" not in widget["message"]
+
+    def test_a_record_that_cannot_be_reached_is_unavailable_with_the_repair(self):
+        from datetime import date as _date
+
+        def _refused():
+            raise ConnectionRefusedError("connection refused")
+
+        labels, pairing = anomaly_alerts._fetch_context_events_for_anomaly(
+            "proj1", _date(2026, 7, 12), _warehouse_without_the_mirror(),
+            record_connection=_refused,
+        )
+        assert labels == []
+        assert "could not be reached" in pairing["unavailable"]["reason"]
+        assert "PLATFORM_DB_URL" in pairing["unavailable"]["repair"]
+
+    def test_the_verdict_still_fires_when_the_walk_reads_the_record(self):
+        """End to end: no mirror table in the warehouse, rows in the record --
+        the firing carries the labels, the record connection is opened ONCE for
+        the scan and closed with it."""
+        from datetime import date as _date
+
+        anomaly_row = ("proj1", "google-analytics", "sessions", 12000.0, 3000.0, 4.0)
+        duck = _make_duck_conn(anomaly_rows=[anomaly_row])
+
+        def _duck_execute(sql, params=None):
+            res = MagicMock()
+            if "information_schema" in sql:
+                res.fetchall = MagicMock(return_value=[])  # no mirror here
+            else:
+                res.fetchall = MagicMock(return_value=[anomaly_row])
+            return res
+
+        duck.execute = MagicMock(side_effect=_duck_execute)
+        pg = _record_with([
+            ("evt_a", "proj1", _date(2026, 7, 12), "campaign_launch", "Campaign launch",
+             None, None, "manual", None),
+        ])
+        opened: list = []
+
+        def _open():
+            opened.append(1)
+            return _pg_conn_ctx(pg)
+
+        with (
+            patch.dict(
+                os.environ,
+                {"ANOMALY_ALERTS_ENABLED": "true", "TOOROW_DUCKDB_PATH": "/fake.duckdb"},
+            ),
+            patch("duckdb.connect", return_value=duck),
+            patch("core.db.get_connection", side_effect=_open),
+        ):
+            result = anomaly_alerts.evaluate_anomalies(evaluation_date=_date(2026, 7, 12))
+
+        assert len(result) == 1
+        assert result[0]["context_events"] == ["Campaign launch"]
+        assert "unavailable" not in result[0]["context_pairing"]
+        # One connection for the walk, one for the firing write -- never one per row.
+        assert len(opened) == 2

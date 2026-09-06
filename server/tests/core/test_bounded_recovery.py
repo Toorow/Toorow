@@ -28,6 +28,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from core import bounded_recovery as br
+from core import pull_window
 
 # ---------------------------------------------------------------------------
 # Fake connection helper (MagicMock cursor context manager).
@@ -137,19 +138,39 @@ def test_adjacent_reloads_tile_without_overlap():
 # ---------------------------------------------------------------------------
 
 
-def test_synchronize_interval_ends_yesterday_and_uses_refetch_depth():
-    today = date(2026, 7, 23)
-    iv = br.synchronize_interval(today, refetch_days=3)
-    assert iv == {"from": "2026-07-20", "to": "2026-07-22"}  # 3 days ending yesterday.
+def test_synchronize_interval_ends_on_the_reference_day_and_uses_the_declaration():
+    iv = br.synchronize_interval(date(2026, 7, 22), {"date_window_days": 3})
+    assert iv == {"from": "2026-07-20", "to": "2026-07-22"}  # 3 days ending J-1.
 
 
-def test_synchronize_interval_falls_back_to_default_depth():
-    today = date(2026, 7, 23)
-    iv = br.synchronize_interval(today, refetch_days=None)
-    # DEFAULT_SYNCHRONIZE_DAYS days ending yesterday.
+def test_synchronize_obeys_the_retrieval_window_and_not_its_legacy_alias():
+    """CORRIGÉ le 2026-08-12: this read `refetch_days` alone.
+
+    A person who set thirty days on the Schedule panel and pressed
+    `Synchronize now` collected three -- the legacy alias, which AI-46
+    arbitrated away in the dispatcher and in three other doors. One resolver,
+    one answer, whoever asks.
+    """
+    iv = br.synchronize_interval(
+        date(2026, 7, 22), {"date_window_days": 30, "refetch_days": 3}
+    )
+    span = (date.fromisoformat(iv["to"]) - date.fromisoformat(iv["from"])).days + 1
+    assert span == 30, "the window a person set is the window that is collected"
+
+
+def test_synchronize_honours_the_extraction_offset_of_a_lagging_source():
+    """AI-145: a source with a two-to-three day lag ends its window at J-3."""
+    iv = br.synchronize_interval(
+        date(2026, 7, 22), {"date_window_days": 7, "window_offset_days": 3}
+    )
+    assert iv == {"from": "2026-07-14", "to": "2026-07-20"}
+
+
+def test_synchronize_falls_back_to_the_one_defensive_default():
+    iv = br.synchronize_interval(date(2026, 7, 22), None)
     assert iv["to"] == "2026-07-22"
     span = (date.fromisoformat(iv["to"]) - date.fromisoformat(iv["from"])).days + 1
-    assert span == br.DEFAULT_SYNCHRONIZE_DAYS
+    assert span == pull_window.DEFENSIVE_WINDOW_DAYS
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +267,7 @@ def _patch_target(monkeypatch, **over):
 
 def test_assemble_synchronize_states_interval_and_versions(monkeypatch):
     _patch_target(monkeypatch)
-    monkeypatch.setattr(br, "_load_refetch_days", lambda conn, ds: 3)
+    monkeypatch.setattr(br, "_load_declared_window", lambda conn, ds: {"date_window_days": 3})
     monkeypatch.setattr(br, "_server_estimated_points", lambda *args, **kwargs: 5)
     conn, _ = _fake_conn()
 
@@ -297,10 +318,59 @@ def test_assemble_reload_rejects_overwide_range(monkeypatch):
     assert exc.value.code == "forbidden_interval"
 
 
-def test_assemble_reprocess_blocks_when_retention_missing(monkeypatch):
+def _patch_eligibility(monkeypatch, plan):
+    """Substitute the ONE eligibility decision `assemble_proposal` now asks for.
+
+    Amended 2026-08-17 (67-15b). This branch used to answer from
+    `_load_retained_source` + `evaluate_reprocess_retention` -- a published
+    execution's `source_schema_hash` against the chosen mapping's. That is the
+    connector-landing form of the question, and it refused every real reprocess
+    as `incompatible_schema` because a managed feed's mapping versions carry no
+    such hash. Prepare now asks `datastream_reprocess`, which is what dispatch
+    asks too: one question with one answer, instead of two halves that
+    disagreed. The two pure functions it replaced are still exercised by their
+    own tests below.
+    """
+    from core import datastream_reprocess as dr
+
+    monkeypatch.setattr(dr, "evaluate_reprocess_plan", lambda conn, **kwargs: plan)
+
+
+def _eligible_plan(**overrides):
+    from core import datastream_reprocess as dr
+
+    base = {
+        "state": dr.STATE_AVAILABLE,
+        "mode": "managed_feed",
+        "datastream_id": "ds-1",
+        "project_id": "proj-1",
+        "org_id": "org-1",
+        "plan_version_id": "p1",
+        "from_mapping_version_id": "m1",
+        "to_mapping_version_id": "m2",
+        "artifact": dr.RetainedArtifact(
+            raw_import_id="inbraw_1", content_hash="c" * 64,
+            quarantine_uri="gs://q/1", filename="delivery.csv",
+            published_relation="main.managed_feed_ds_1",
+            published_ledger_id="mfl_1", published_execution_id="dse_OLD",
+            superseded_relation="execution/dse_OLD/candidate/relation",
+        ),
+        "mapping_gate": dr.decide_mapping_gate(
+            published_mapping_version_id="m1", chosen_mapping_version_id="m2", actor="u"
+        ),
+    }
+    base.update(overrides)
+    return dr.ReprocessPlan(**base)
+
+
+def test_assemble_reprocess_blocks_when_nothing_is_retained(monkeypatch):
+    """The refusal reaching the caller is the ENGINE's -- code and sentence alike."""
+    from core import datastream_reprocess as dr
+
     _patch_target(monkeypatch)
-    monkeypatch.setattr(br, "_load_retained_source", lambda conn, ds: None)
-    monkeypatch.setattr(br, "_load_mapping_source_schema_hash", lambda conn, mv: "a" * 64)
+    _patch_eligibility(monkeypatch, dr.ReprocessPlan(
+        state=dr.REFUSAL_ARTIFACT_NOT_RETAINED, message=dr._ARTIFACT_NOT_RETAINED,
+    ))
     conn, _ = _fake_conn()
 
     with pytest.raises(br.BoundedRecoveryError) as exc:
@@ -309,16 +379,18 @@ def test_assemble_reprocess_blocks_when_retention_missing(monkeypatch):
             actor="u", reason=None, date_from=None, date_to_exclusive=None,
             partition=None, chosen_mapping_version_id="m2",
         )
-    assert exc.value.code == "retention_unavailable"
+    assert exc.value.code == "artifact_not_retained"
+    # And it names the gesture, never the table that happened to be empty.
+    assert "Re-import" in exc.value.message
 
 
-def test_assemble_reprocess_blocks_on_incompatible_schema(monkeypatch):
+def test_assemble_reprocess_blocks_when_the_source_would_be_called(monkeypatch):
+    from core import datastream_reprocess as dr
+
     _patch_target(monkeypatch)
-    monkeypatch.setattr(br, "_load_retained_source", lambda conn, ds: {
-        "execution_id": "dse_OLD", "mapping_version_id": "m1",
-        "row_count": 100, "state": "published", "source_schema_hash": "a" * 64,
-    })
-    monkeypatch.setattr(br, "_load_mapping_source_schema_hash", lambda conn, mv: "b" * 64)
+    _patch_eligibility(monkeypatch, dr.ReprocessPlan(
+        state=dr.REFUSAL_SOURCE_WOULD_BE_CALLED, message=dr._SOURCE_WOULD_BE_CALLED,
+    ))
     conn, _ = _fake_conn()
 
     with pytest.raises(br.BoundedRecoveryError) as exc:
@@ -327,16 +399,13 @@ def test_assemble_reprocess_blocks_on_incompatible_schema(monkeypatch):
             actor="u", reason=None, date_from=None, date_to_exclusive=None,
             partition=None, chosen_mapping_version_id="m2",
         )
-    assert exc.value.code == "incompatible_schema"
+    assert exc.value.code == "source_would_be_called"
+    assert "Day-by-day coverage" in exc.value.message
 
 
-def test_assemble_reprocess_pins_chosen_mapping_when_compatible(monkeypatch):
+def test_assemble_reprocess_pins_the_chosen_mapping_and_states_its_gate(monkeypatch):
     _patch_target(monkeypatch)
-    monkeypatch.setattr(br, "_load_retained_source", lambda conn, ds: {
-        "execution_id": "dse_OLD", "mapping_version_id": "m1",
-        "row_count": 100, "state": "published", "source_schema_hash": "c" * 64,
-    })
-    monkeypatch.setattr(br, "_load_mapping_source_schema_hash", lambda conn, mv: "c" * 64)
+    _patch_eligibility(monkeypatch, _eligible_plan())
     conn, _ = _fake_conn()
 
     proposal = br.assemble_proposal(
@@ -348,7 +417,41 @@ def test_assemble_reprocess_pins_chosen_mapping_when_compatible(monkeypatch):
     assert proposal.target_versions["mapping_version_id"] == "m2"
     assert proposal.interval["calls_provider"] is False
     assert proposal.interval["retained_execution_id"] == "dse_OLD"
+    assert proposal.interval["retained_raw_import_id"] == "inbraw_1"
     assert proposal.impact["calls_provider"] is False
+    # A DIFFERENT mapping means a person confirms, and the proposal SAYS so --
+    # the gate is the one thing about a reprocess that its scope cannot show.
+    assert proposal.impact["mapping_gate"]["state"] == "passed"
+    assert proposal.impact["mapping_gate"]["from_mapping_version_id"] == "m1"
+    assert proposal.impact["supersedes_output_relation"] == (
+        "execution/dse_OLD/candidate/relation"
+    )
+
+
+def test_assemble_reprocess_records_a_skipped_gate_rather_than_omitting_it(monkeypatch):
+    """Same mapping in and out: nothing to decide, and the skip is still written."""
+    from core import datastream_reprocess as dr
+
+    _patch_target(monkeypatch)
+    _patch_eligibility(monkeypatch, _eligible_plan(
+        to_mapping_version_id="m1",
+        mapping_gate=dr.decide_mapping_gate(
+            published_mapping_version_id="m1", chosen_mapping_version_id="m1", actor="u"
+        ),
+    ))
+    conn, _ = _fake_conn()
+
+    proposal = br.assemble_proposal(
+        conn, org_id="org-1", datastream_id="ds-1", kind=br.KIND_REPROCESS,
+        actor="u", reason=None, date_from=None, date_to_exclusive=None,
+        partition=None, chosen_mapping_version_id="m1",
+    )
+    gate = proposal.impact["mapping_gate"]
+    assert gate["state"] == "skipped"
+    assert gate["reason"] == "mapping_unchanged"
+    # Attributed and dated: "nobody looked" and "somebody established there was
+    # nothing to look at" are different facts a week later.
+    assert gate["decided_by"] == "u" and gate["decided_at"]
 
 
 # ---------------------------------------------------------------------------
@@ -356,35 +459,56 @@ def test_assemble_reprocess_pins_chosen_mapping_when_compatible(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_prepare_persists_immutable_proposal_and_returns_stated_fields(monkeypatch):
-    from core import operations_mcp
+def test_prepare_refuses_the_three_verbs_and_freezes_nothing(monkeypatch):
+    """Story 63.7: a proposal is a promise that confirming it does something.
+
+    None of the three verbs has an engine in this build -- no `enqueue`, no
+    `advance_state`, no worker reading `recovery_kind` -- so the candidate they
+    minted stayed in `created`, an ACTIVE state, and
+    `uq_datastream_executions_active` then answered 409 to every later
+    publication while `open_collection_run` returned `None` every following
+    night. The refusal happens at prepare, before an immutable proposal is
+    frozen and before a person reads a scope they cannot act on.
+    """
+    from core import operations_mcp, run_origins
 
     _patch_target(monkeypatch)
-    monkeypatch.setattr(br, "_load_refetch_days", lambda conn, ds: 3)
+    monkeypatch.setattr(br, "_load_declared_window", lambda conn, ds: {"date_window_days": 3})
     monkeypatch.setattr(br, "_server_estimated_points", lambda *args, **kwargs: 5)
-    inserted = {}
-
-    def fake_insert(conn, payload, idem):
-        inserted["payload"] = payload
-        inserted["idem"] = idem
-        return "prep_NEW"
-
-    monkeypatch.setattr(operations_mcp, "_insert_preparation", fake_insert)
+    inserted = MagicMock(side_effect=AssertionError("nothing may be frozen"))
+    monkeypatch.setattr(operations_mcp, "_insert_preparation", inserted)
     conn, _ = _fake_conn()
 
-    out = br.prepare_bounded_recovery(
-        conn, org_id="org-1", datastream_id="ds-1", kind=br.KIND_SYNCHRONIZE,
-        actor="user-1", reason="late data", today=date(2026, 7, 23),
+    # AMENDED 2026-08-17 (67-15b): `Reprocess` is BUILT and no longer refuses
+    # here -- `core.datastream_reprocess` replays the retained artifact through
+    # the import path that lands, promotes and publishes. The two that remain are
+    # RETIRED, not unbuilt, and that is a different sentence for a different
+    # reason: the schedule and `Day-by-day coverage` already deliver them.
+    #
+    # The loop reads the REGISTRY rather than a hand-written pair, so the day a
+    # third verb gains an engine this test follows instead of asserting a stale
+    # list. `REFUSED_ORIGINS` is the same source `_refuse_without_engine` reads.
+    refused_kinds = [
+        kind for kind, origin in br._ORIGIN_BY_KIND.items()
+        if not run_origins.has_engine(origin)
+    ]
+    assert br.KIND_REPROCESS not in refused_kinds, (
+        "Reprocess has an engine since 67-15b; if it lost one, say why here"
     )
-    assert out["preparation_id"] == "prep_NEW"
-    for field in ("kind", "target", "target_versions", "interval", "impact",
-                  "quota", "lock_ref", "rollback_ref", "reason", "expires_in_seconds"):
-        assert field in out, field
-    # The immutable proposal payload records the requesting actor + never publishes.
-    assert inserted["payload"]["actor"] == "user-1"
-    assert inserted["payload"]["impact"]["touches_published_pointer"] is False
-    # The idempotency key is deterministic over the immutable proposal fingerprint.
-    assert inserted["idem"].startswith("operations.recovery:org-1:ds-1:synchronize:")
+    for kind in refused_kinds:
+        with pytest.raises(br.BoundedRecoveryError) as refused:
+            br.prepare_bounded_recovery(
+                conn, org_id="org-1", datastream_id="ds-1", kind=kind,
+                actor="user-1", reason="late data", today=date(2026, 7, 23),
+                date_from="2026-07-01", date_to_exclusive="2026-07-06",
+            )
+        assert refused.value.code == run_origins.NO_ENGINE
+        # The sentence names the verb that was pressed and what did NOT happen.
+        assert refused.value.message.startswith(
+            run_origins.label_for(br._ORIGIN_BY_KIND[kind])
+        )
+        assert "Nothing was created." in refused.value.message
+    inserted.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -529,6 +653,19 @@ def test_confirm_routes_exactly_one_operation_and_records_audit_fields(monkeypat
     assert marked["op_id"] == "op-1"
 
 
+def test_confirm_reports_unknown_when_durable_trace_is_missing(monkeypatch):
+    from core import operations, operations_mcp
+
+    op = operations.OperationResult("op-1", "succeeded", {}, "a", "b", False)
+    captured, _ = _wire_confirm(monkeypatch, _prep_row(), _live_target(), op)
+    monkeypatch.setattr(operations_mcp, "_load_operation_trace", lambda conn, op_id: None)
+    conn, _ = _fake_conn()
+    with pytest.raises(br.BoundedRecoveryError) as exc:
+        _confirm(conn)
+    assert exc.value.code == "outcome_unknown"
+    assert captured["calls"] == 1
+
+
 def test_duplicate_confirm_replays_original_operation(monkeypatch):
     from core import operations
 
@@ -608,98 +745,96 @@ def test_confirm_reprocess_skips_quota_and_exposure_gates(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_reprocess_dispatch_creates_candidate_without_provider_or_queue(monkeypatch):
-    import core.datastream_publication as pub
+def test_dispatch_refuses_and_mints_nothing_whatever_the_verb(monkeypatch):
+    """The confirm path refuses too, because frozen proposals outlive the change.
 
-    created = {}
-    monkeypatch.setattr(
-        pub, "create_execution",
-        lambda **kw: created.update(kw) or {"id": "dse_new", "state": "created"},
-    )
-    # A provider dispatch / queue enqueue MUST NOT be called by reprocess.
+    `app.operation_preparations` holds proposals frozen before story 63.7, and a
+    confirm reads one of those. Refusing only at prepare would leave every one of
+    them able to inflict the same damage: one non-terminal execution nothing
+    advances, and a Datastream that answers 409 to its own next publication.
+    """
+    import core.datastream_publication as pub
+    from core import run_origins
+
+    minted = MagicMock(side_effect=AssertionError("nothing may be minted"))
+    monkeypatch.setattr(pub, "create_execution", minted)
+    commit_spy = MagicMock(side_effect=AssertionError("commit_publication must not be called"))
+    monkeypatch.setattr(pub, "commit_publication", commit_spy, raising=False)
+    # And no provider pull either -- the refusal costs a provider call as little
+    # as the reprocess it replaces.
     import sys
     import types
 
     fake_queue = types.ModuleType("core.queue")
-    fake_queue.enqueue_pull = MagicMock(
-        side_effect=AssertionError("reprocess must not enqueue a provider pull")
-    )
+    fake_queue.enqueue_pull = MagicMock(side_effect=AssertionError("no pull may be enqueued"))
     monkeypatch.setitem(sys.modules, "core.queue", fake_queue)
 
-    commit_spy = MagicMock(side_effect=AssertionError("commit_publication must not be called"))
-    monkeypatch.setattr(pub, "commit_publication", commit_spy, raising=False)
+    # AMENDED 2026-08-17 (67-15b): `reprocess` is no longer in this table. It has
+    # an engine, so it is DISPATCHED -- the test below proves it is routed to that
+    # engine and not quietly handled here. What stays is the pair that is retired.
+    cases = {
+        "reload": _prep_row(
+            kind="reload", state="confirmed", operation_id="op-1",
+            interval={"from": "2026-07-01", "to": "2026-07-05",
+                      "to_exclusive": "2026-07-06",
+                      "windows": [{"date_from": "2026-07-01", "date_to": "2026-07-05"}],
+                      "partition": None},
+        ),
+        "synchronize": _prep_row(),
+    }
+    for kind, prep in cases.items():
+        conn, cur = _fake_conn()
+        result = br._dispatch_bounded_recovery(conn, "op-1", prep, _live_target())
 
-    conn, cur = _fake_conn()
-    prep = _prep_row(kind="reprocess",
-                     target_versions={"plan_version_id": "p1",
-                                      "mapping_version_id": "m2",
-                                      "policy_version": "pol-1"},
-                     interval={"retained_execution_id": "dse_OLD",
-                               "chosen_mapping_version_id": "m2",
-                               "calls_provider": False})
-    result = br._dispatch_bounded_recovery(conn, "op-1", prep, _live_target())
+        assert result.outcome == "failed", kind
+        assert result.result["reason"] == run_origins.NO_ENGINE, kind
+        # The REFUSING path carries an origin too -- this is the moment a person
+        # asks why, so it is the last moment to be silent about which treatment
+        # they asked for.
+        assert result.result["origin"] == br._ORIGIN_BY_KIND[kind], kind
+        assert result.result["execution_id"] is None, kind
+        assert "Nothing was created." in result.result["message"], kind
+        # AC4 still holds, and now trivially: no SQL touched the published
+        # pointer, because no candidate was written at all.
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list if c.args)
+        assert "current_published_execution_id" not in sql, kind
 
-    assert result.outcome == "succeeded"
-    assert result.result["execution_id"] == "dse_new"
-    assert result.result["calls_provider"] is False
-    # The candidate is created against the CHOSEN mapping (m2), no provider call.
-    assert created["mapping_version_id"] == "m2"
-    assert created["projection_plan"]["recovery_kind"] == "reprocess"
-    assert created["projection_plan"]["calls_provider"] is False
+    minted.assert_not_called()
+    commit_spy.assert_not_called()
     fake_queue.enqueue_pull.assert_not_called()
-    commit_spy.assert_not_called()
 
 
-def test_reload_dispatch_carries_half_open_windows_and_supersedes_only_scope(monkeypatch):
-    import core.datastream_publication as pub
+def test_dispatch_routes_reprocess_to_its_engine_by_the_registry(monkeypatch):
+    """The built verb reaches `datastream_reprocess`, chosen by `has_engine`.
 
-    created = {}
-    monkeypatch.setattr(
-        pub, "create_execution",
-        lambda **kw: created.update(kw) or {"id": "dse_new", "state": "created"},
+    Routed by the registry lookup the refusal already used, not by a second
+    `if kind == "reprocess"`. A second branch is how the console and the server
+    came to disagree about which verbs could run in the first place -- one table
+    decides, and both halves read it.
+    """
+    from core import datastream_reprocess as dr
+
+    seen = {}
+
+    def _fake_dispatch(conn, **kwargs):
+        seen.update(kwargs)
+        return "ROUTED"
+
+    monkeypatch.setattr(dr, "dispatch_reprocess", _fake_dispatch)
+    prep = _prep_row(
+        kind="reprocess",
+        target_versions={"plan_version_id": "p1", "mapping_version_id": "m2",
+                         "policy_version": "pol-1"},
+        interval={"retained_execution_id": "dse_OLD",
+                  "chosen_mapping_version_id": "m2", "calls_provider": False},
     )
-    commit_spy = MagicMock(side_effect=AssertionError("commit_publication must not be called"))
-    monkeypatch.setattr(pub, "commit_publication", commit_spy, raising=False)
-
-    conn, cur = _fake_conn()
-    prep = _prep_row(kind="reload",
-                     state="confirmed", operation_id="op-1",
-                     interval={"from": "2026-07-01", "to": "2026-07-05",
-                               "to_exclusive": "2026-07-06",
-                               "windows": [{"date_from": "2026-07-01",
-                                            "date_to": "2026-07-05"}],
-                               "partition": None})
-    result = br._dispatch_bounded_recovery(conn, "op-1", prep, _live_target())
-
-    assert result.outcome == "succeeded"
-    plan = created["projection_plan"]
-    # AC2: the candidate carries the half-open windows so it supersedes ONLY that scope.
-    assert plan["recovery_kind"] == "reload"
-    assert plan["half_open_range"] == {"from": "2026-07-01", "to_exclusive": "2026-07-06"}
-    assert plan["windows"] == [{"date_from": "2026-07-01", "date_to": "2026-07-05"}]
-    # AC4: no SQL issued via conn touched the published pointer.
-    sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list if c.args)
-    assert "current_published_execution_id" not in sql
-    commit_spy.assert_not_called()
-
-
-def test_dispatch_candidate_rejection_stays_unpublished(monkeypatch):
-    # AC4: an invalid candidate (create_execution rejects) yields a failed outcome
-    # and NEVER publishes -- the current version stays authoritative.
-    import core.datastream_publication as pub
-
-    def boom(**kw):
-        raise pub.PublicationError("projection_not_executable", "bad plan")
-
-    monkeypatch.setattr(pub, "create_execution", boom)
-    commit_spy = MagicMock(side_effect=AssertionError("commit_publication must not be called"))
-    monkeypatch.setattr(pub, "commit_publication", commit_spy, raising=False)
-
     conn, _ = _fake_conn()
-    result = br._dispatch_bounded_recovery(conn, "op-1", _prep_row(), _live_target())
-    assert result.outcome == "failed"
-    assert result.result["reason"] == "candidate_rejected"
-    commit_spy.assert_not_called()
+    assert br._dispatch_bounded_recovery(conn, "op-9", prep, _live_target()) == "ROUTED"
+    # The mapping the PROPOSAL pinned travels, not whatever is live at this
+    # instant: a governed act does not re-resolve its own inputs after a person
+    # confirmed different ones.
+    assert seen["chosen_mapping_version_id"] == "m2"
+    assert seen["operation_id"] == "op-9"
 
 
 # ---------------------------------------------------------------------------

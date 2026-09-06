@@ -49,7 +49,7 @@ describe("CardShell", () => {
 
   it("renders a freshness badge from meta.freshness.last_pull", () => {
     renderShell();
-    expect(screen.getByTestId("card-freshness-badge")).toHaveTextContent("MAJ 2026-07-13");
+    expect(screen.getByTestId("card-freshness-badge")).toHaveTextContent("Updated 2026-07-13");
   });
 
   it("renders the deterministic cited comment in the comment slot", () => {

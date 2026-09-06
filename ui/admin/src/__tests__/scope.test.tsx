@@ -71,6 +71,10 @@ const ONE_PROJECT = { projects: [{ id: "proj_a", name: "Acme Growth", org_id: "o
 
 beforeEach(() => {
   localStorage.clear();
+  // jsdom keeps one URL for the whole file, and since Story 46.1 the router
+  // really reads it: without this, a test inherits the canonical route the
+  // PREVIOUS test bootstrapped into and resolves against the wrong organization.
+  window.history.replaceState({}, "", "/");
 });
 
 afterEach(() => {
@@ -173,13 +177,17 @@ describe("ScopeProvider states", () => {
     expect(screen.getByTestId("orgs")).toHaveTextContent("1");
   });
 
-  it("is ready immediately from the orgs override without any fetch", () => {
+  it("is ready from the orgs override without any fetch", async () => {
     const mock = vi.fn();
     vi.stubGlobal("fetch", mock);
     renderScope([
       { id: "o1", name: "Override Org", branding: null, projects: [{ id: "p1", name: "P1" }] },
     ]);
-    expect(screen.getByTestId("state")).toHaveTextContent("ready");
+    // Story 46.1 made `/` an explicit bootstrap: the scope resolves, then the
+    // entry replaces itself with the first authorized canonical route. So
+    // "ready" arrives one turn later than it used to -- what this still pins is
+    // that the override is the ONLY source and no request is made for it.
+    await waitFor(() => expect(screen.getByTestId("state")).toHaveTextContent("ready"));
     expect(screen.getByTestId("org")).toHaveTextContent("Override Org");
     expect(mock).not.toHaveBeenCalled();
   });

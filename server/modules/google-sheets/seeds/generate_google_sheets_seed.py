@@ -30,9 +30,14 @@ from datetime import date, timedelta
 from pathlib import Path
 
 # AI-54 : end_date figee pour la REGENERATION des fixtures de conformance.
-# review-15-3 F-1 pattern : le DEFAUT runtime reste date.today() pour les pulls.
-# NE PAS changer cette constante sans regenerer les fixtures.
-DEFAULT_SEED_END_DATE: date = date(2026, 7, 19)
+# AI-213 (2026-08-17, AI-66 motif) : cette ancre est desormais aussi le DEFAUT --
+# un generateur de seed qui retombe sur date.today() rend le corpus
+# machine-jour-local, donc le mart et les fixtures d'evals underivables.
+# Override via env TOOROW_SEED_END_DATE pour un run ad hoc.
+# NE PAS changer le defaut sans regenerer les fixtures.
+DEFAULT_SEED_END_DATE: date = date.fromisoformat(
+    os.environ.get("TOOROW_SEED_END_DATE", "2026-07-19")
+)
 
 # Quelques canaux/lignes representatifs d'un plan media.
 # Format : (sheet_row_id, budget_base, revenue_target_ratio, conversion_target)
@@ -65,10 +70,10 @@ def generate_rows(
     """Retourne des lignes Google Sheets raw au shape _parse_sheet_row() output.
 
     La fixture golden de conformance est une slice de ce meme generateur (AI-54).
-    end_date par defaut = date.today() ; les fixtures passent DEFAULT_SEED_END_DATE.
+    end_date par defaut = DEFAULT_SEED_END_DATE (AI-213 : ancre, jamais date.today()).
     """
     if end_date is None:
-        end_date = date.today()
+        end_date = DEFAULT_SEED_END_DATE
     if rng is None:
         rng = random.Random(_RNG_SEED)
 
@@ -114,7 +119,7 @@ def generate_api_payload(
     La premiere liste est le header ; les suivantes sont les lignes de donnees.
     """
     if end_date is None:
-        end_date = date.today()
+        end_date = DEFAULT_SEED_END_DATE
     if rng is None:
         rng = random.Random(_RNG_SEED)
 

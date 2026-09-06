@@ -15,7 +15,7 @@ The nightly scheduler (`SCHEDULER_ENABLED=true`) triggers an automated evaluatio
 2. **Quality & Anomaly Checks**: Evaluates data freshness, volume checks, and z-score anomaly detectors.
 3. **Briefing Synthesis**: Compiles daily KPI deltas, flagged anomalies, and active business context into a structured morning briefing.
 
-AI agents can query the latest morning briefing using the core MCP tool `get_morning_briefing(project_id)`.
+An agent asks `get_daily_insight_readiness(project_id)` whether there is anything to say, composes the narrative with `preview_daily_insight(project_id, payload)`, and publishes it with `publish_daily_insights(project_id, insight_date)`. A published narrative is withdrawn with `retract_daily_insight` — an audited transition, never a deletion.
 
 ---
 
@@ -29,7 +29,7 @@ When an agent analyzes metric anomalies, toorow correlates performance shifts ag
 
 ## 3. FastMCP Dual-Channel Response Model
 
-Every MCP data tool in toorow enforces a dual-channel output model (AD-1):
+Every MCP data tool in toorow enforces a dual-channel output model:
 
 - **Text Channel**: A concise, structured narrative text summary (≤ 30 lines) optimized for insertion directly into the LLM context window.
 - **Structured Content Channel (`structuredContent`)**: A complete JSON envelope containing raw metric arrays, data provenance, freshness timestamps, and quality alerts, rendered visually by MCP App widgets in compatible host interfaces.
@@ -46,7 +46,7 @@ Every MCP data tool in toorow enforces a dual-channel output model (AD-1):
     Understand z-score thresholds and severity levels for anomaly alerts.
   </Card>
   <Card title="Security Constraints" icon="shield-check" href="/constraints">
-    Examine FastMCP dual-channel response rules and AD-5 tenant isolation.
+    Examine FastMCP dual-channel response rules and tenant isolation.
   </Card>
   <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
     Test MCP tool responses locally with the FastMCP dev server.

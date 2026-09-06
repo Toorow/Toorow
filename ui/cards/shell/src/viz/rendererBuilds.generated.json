@@ -1,0 +1,126 @@
+{
+  "_generated_by": "ui/cards/shell/scripts/emit-renderer-builds.mjs -- do not edit",
+  "runtime_build": "@toorow/card-shell/viz@0.1.0+87c254baf75d",
+  "builds": [
+    {
+      "id": "area/toorow-echarts-area@1.0.0",
+      "family": "area",
+      "renderer_id": "toorow-echarts-area",
+      "runtime_build": "@toorow/card-shell/viz@0.1.0+87c254baf75d",
+      "theme_version": "viz-theme@1",
+      "formatter_version": "viz-formatters@1",
+      "responsive_profiles": [
+        "console",
+        "mcp-inline",
+        "mcp-fullscreen",
+        "mcp-pip",
+        "share"
+      ]
+    },
+    {
+      "id": "bar/toorow-echarts-bar@1.0.0",
+      "family": "bar",
+      "renderer_id": "toorow-echarts-bar",
+      "runtime_build": "@toorow/card-shell/viz@0.1.0+87c254baf75d",
+      "theme_version": "viz-theme@1",
+      "formatter_version": "viz-formatters@1",
+      "responsive_profiles": [
+        "console",
+        "mcp-inline",
+        "mcp-fullscreen",
+        "mcp-pip",
+        "share"
+      ]
+    },
+    {
+      "id": "kpi/toorow-kpi@1.0.0",
+      "family": "kpi",
+      "renderer_id": "toorow-kpi",
+      "runtime_build": "@toorow/card-shell/viz@0.1.0+87c254baf75d",
+      "theme_version": "viz-theme@1",
+      "formatter_version": "viz-formatters@1",
+      "responsive_profiles": [
+        "console",
+        "mcp-inline",
+        "mcp-fullscreen",
+        "mcp-pip",
+        "share"
+      ]
+    },
+    {
+      "id": "line/toorow-echarts-line@1.0.0",
+      "family": "line",
+      "renderer_id": "toorow-echarts-line",
+      "runtime_build": "@toorow/card-shell/viz@0.1.0+87c254baf75d",
+      "theme_version": "viz-theme@1",
+      "formatter_version": "viz-formatters@1",
+      "responsive_profiles": [
+        "console",
+        "mcp-inline",
+        "mcp-fullscreen",
+        "mcp-pip",
+        "share"
+      ]
+    },
+    {
+      "id": "scatter/toorow-echarts-scatter@1.0.0",
+      "family": "scatter",
+      "renderer_id": "toorow-echarts-scatter",
+      "runtime_build": "@toorow/card-shell/viz@0.1.0+87c254baf75d",
+      "theme_version": "viz-theme@1",
+      "formatter_version": "viz-formatters@1",
+      "responsive_profiles": [
+        "console",
+        "mcp-inline",
+        "mcp-fullscreen",
+        "mcp-pip",
+        "share"
+      ]
+    },
+    {
+      "id": "stacked_bar/toorow-echarts-stacked-bar@1.0.0",
+      "family": "stacked_bar",
+      "renderer_id": "toorow-echarts-stacked-bar",
+      "runtime_build": "@toorow/card-shell/viz@0.1.0+87c254baf75d",
+      "theme_version": "viz-theme@1",
+      "formatter_version": "viz-formatters@1",
+      "responsive_profiles": [
+        "console",
+        "mcp-inline",
+        "mcp-fullscreen",
+        "mcp-pip",
+        "share"
+      ]
+    },
+    {
+      "id": "table/toorow-table@1.0.0",
+      "family": "table",
+      "renderer_id": "toorow-table",
+      "runtime_build": "@toorow/card-shell/viz@0.1.0+87c254baf75d",
+      "theme_version": "viz-theme@1",
+      "formatter_version": "viz-formatters@1",
+      "responsive_profiles": [
+        "console",
+        "mcp-inline",
+        "mcp-fullscreen",
+        "mcp-pip",
+        "share"
+      ]
+    },
+    {
+      "id": "waterfall/toorow-echarts-waterfall@1.0.0",
+      "family": "waterfall",
+      "renderer_id": "toorow-echarts-waterfall",
+      "runtime_build": "@toorow/card-shell/viz@0.1.0+87c254baf75d",
+      "theme_version": "viz-theme@1",
+      "formatter_version": "viz-formatters@1",
+      "responsive_profiles": [
+        "console",
+        "mcp-inline",
+        "mcp-fullscreen",
+        "mcp-pip",
+        "share"
+      ]
+    }
+  ]
+}

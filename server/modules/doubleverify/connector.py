@@ -1,8 +1,9 @@
 """DoubleVerify connector.
 
 Media-quality / verification measurement: viewability, fraud/SIVT, brand
-suitability, authentic, geo. Exposes ``mcp_app: FastMCP`` mounted by the core
-loader under the ``doubleverify`` namespace (AD-2).
+suitability, authentic, geo. Exposes ``mcp_app: FastMCP`` as the conformance
+surface (AD-1 envelope); since AD-42 the core no longer mounts it — execution
+uses the Datastream-parameterized core tools.
 
 # AD-12: the MCP server reads ONLY the fact_daily_kpi mart -- never raw_* tables.
 # AD-3: the token (DV Access Token Hash) comes from Nango immediately before use,
@@ -52,7 +53,9 @@ from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-# Module-level FastMCP instance -- the public surface the loader mounts.
+# Module-level FastMCP instance, kept as the conformance surface (AD-1 envelope,
+# validated by server/tests/conformance/test_envelope.py). Since AD-42 the core
+# no longer mounts it: execution uses the Datastream-parameterized core tools.
 mcp_app = FastMCP("doubleverify")
 
 # ---------------------------------------------------------------------------
@@ -124,12 +127,12 @@ def _query_bigquery(sql: str, params: dict) -> list[dict]:
     return [dict(zip(cols, row)) for row in result]
 
 
-def _get_mart_table(db_mode: str) -> str:
+def _get_mart_table(db_mode: str, project_id: str | None) -> str:
     """Fully-qualified fact_daily_kpi reference per engine (AD-12)."""
     if db_mode == "duckdb":
         from core import warehouse_tenancy  # noqa: PLC0415
 
-        return f"{warehouse_tenancy.mart_prefix(None)}fact_daily_kpi"
+        return f"{warehouse_tenancy.mart_prefix(project_id)}fact_daily_kpi"
     dataset = os.environ.get("BQ_MARTS_DATASET", "marts")
     gcp_project = os.environ.get("GCP_PROJECT", "")
     prefix = f"{gcp_project}.{dataset}" if gcp_project else dataset
@@ -142,6 +145,16 @@ def _get_mart_table(db_mode: str) -> str:
 # ---------------------------------------------------------------------------
 
 _ERROR_MAP: dict | None = None
+
+# AI-114 (2026-08-01) -- status-level judgment, NOT a provider refinement.
+# `manifest.error_map` has one reader (core.pull_errors.classify_http_error) and
+# one key grammar, "<status>:<provider_code>". The former bare key "404" was
+# therefore DEAD: the map was handed to core, core only ever looked up
+# "<status>:<code>", and a 404 came out `unclassified` -- i.e. retryable, for a
+# request id that will never exist again (DV expires them after 30 days). The
+# judgment is right and now applies: an unknown/expired request id is a
+# malformed request.
+_STATUS_OVERRIDES: dict[int, str] = {404: "invalid_request"}
 
 
 def _load_error_map() -> dict:
@@ -248,7 +261,7 @@ def _melt_wide_to_long(wide_rows: list[dict]) -> list[dict]:
 def _insert_raw_rows(long_rows: list[dict], pull_id: str, project_id: str) -> int:
     """Insert long-format rows into raw_doubleverify_daily (DuckDB at P3-dev)."""
     db_mode = _get_db_mode()
-    if db_mode != "duckdb":
+    if db_mode not in ("duckdb", "bigquery"):
         raise ValueError(
             f"_insert_raw_rows: unsupported db_mode {db_mode!r} at P3-dev "
             "(BigQuery landing path not yet implemented)"
@@ -257,8 +270,6 @@ def _insert_raw_rows(long_rows: list[dict], pull_id: str, project_id: str) -> in
     from core import warehouse_write  # noqa: PLC0415
 
     loaded_at = datetime.now(tz=timezone.utc).isoformat().replace("+00:00", "Z")
-    con = warehouse_write.open_raw_writer(_get_duckdb_path(), project_id=project_id)
-    con.execute(_RAW_CREATE_DDL)
     values = [
         (
             r.get("date", ""),
@@ -272,10 +283,47 @@ def _insert_raw_rows(long_rows: list[dict], pull_id: str, project_id: str) -> in
         )
         for r in long_rows
     ]
-    if values:
-        con.executemany(_RAW_INSERT_SQL, values)
-    con.close()
-    return len(values)
+    if db_mode == "bigquery":
+        from core.raw_landing import land_raw_rows  # noqa: PLC0415
+
+        raw_rows = [
+            {
+                "date": v[0],
+                "metric": v[1],
+                "value": v[2],
+                "breakdown_dimension": v[3],
+                "breakdown_value": v[4],
+                "pull_id": v[5],
+                "loaded_at": v[6],
+                "project_id": v[7],
+            }
+            for v in values
+        ]
+        columns = [
+            ("date", "STRING"),
+            ("metric", "STRING"),
+            ("value", "FLOAT"),
+            ("breakdown_dimension", "STRING"),
+            ("breakdown_value", "STRING"),
+            ("pull_id", "STRING"),
+            ("loaded_at", "STRING"),
+            ("project_id", "STRING"),
+        ]
+        land_raw_rows(
+            "raw_doubleverify_daily",
+            raw_rows,
+            columns=columns,
+            project_id=project_id,
+            backend="bigquery",
+        )
+        return len(values)
+    else:
+        con = warehouse_write.open_raw_writer(_get_duckdb_path(), project_id=project_id)
+        con.execute(_RAW_CREATE_DDL)
+        if values:
+            con.executemany(_RAW_INSERT_SQL, values)
+        con.close()
+        return len(values)
 
 
 # ---------------------------------------------------------------------------
@@ -414,13 +462,20 @@ def _raise_for_status(resp: httpx.Response, provider: str) -> None:
         raise RateLimitError(provider, retry_after)
 
     if resp.status_code >= 300:
-        from core.pull_errors import classify_http_error  # noqa: PLC0415
+        from core import pull_errors  # noqa: PLC0415
 
         try:
             _body = resp.json()
         except Exception:
             _body = resp.text
-        raise classify_http_error(resp.status_code, _body, _load_error_map())
+        override = pull_errors.error_for_class(
+            _STATUS_OVERRIDES.get(resp.status_code), resp.status_code, _body
+        )
+        if override is not None:
+            raise override
+        raise pull_errors.classify_http_error(
+            resp.status_code, _body, _load_error_map()
+        )
 
 
 def pull_catalog_daily(
@@ -519,7 +574,7 @@ _MART_QUERY = """
 
 def _query_mart(date_from: str, date_to: str, project_id: str) -> list[dict]:
     db_mode = _get_db_mode()
-    table = _get_mart_table(db_mode)
+    table = _get_mart_table(db_mode, project_id)
     if db_mode == "duckdb":
         sql = _MART_QUERY.format(table=table, p_project="?", p_from="?", p_to="?")
         return _query_duckdb(sql, [project_id, date_from, date_to], _get_duckdb_path())

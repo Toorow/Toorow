@@ -14,9 +14,10 @@
 
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { ThemeProvider, createTheme } from "@mui/material/styles";
+
 import EventAnnotationOverlay from "../EventAnnotationOverlay";
 import type { ContextEventMeta } from "../types";
+import { ThemeProvider, createTheme } from "@toorow/shell";
 
 function renderOverlay(events: ContextEventMeta[], domain: string[] = []) {
   const theme = createTheme();

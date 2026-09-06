@@ -139,9 +139,9 @@ def test_measure_null_unchanged():
         {
             "code": "MEASURE_NULL",
             "message": (
-                "La sémantique d'agrégation (measure) n'est pas définie pour ce champ "
-                "numérique. Les consommateurs pourraient appliquer une agrégation incorrecte "
-                "(somme vs moyenne). Définissez 'measure' pour sécuriser les rollups."
+                "The aggregation semantics (measure) are not defined for this "
+                "numeric field. Consumers could apply the wrong aggregation "
+                "(sum vs average). Set 'measure' to make rollups safe."
             ),
             "affected_streams": ["GA"],
         }

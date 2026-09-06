@@ -85,7 +85,7 @@
       "tier": "core"
     },
     {
-      "description": "Country breakdown.",
+      "description": "ISO 3166-1 alpha-2 country code (e.g. 'FR', 'US'); comparison is case-insensitive.",
       "exposure": "exposed",
       "field_id": "country",
       "kind": "dimension",

@@ -1,7 +1,15 @@
 [
   {
+    "connector": "amazon-dsp",
+    "total_conversions": 2.0
+  },
+  {
+    "connector": "google-ads",
+    "total_conversions": 152.77
+  },
+  {
     "connector": "google-analytics",
-    "total_conversions": 47322.0
+    "total_conversions": 45441.0
   },
   {
     "connector": "linkedin-ads",
@@ -9,7 +17,15 @@
   },
   {
     "connector": "meta-ads",
-    "total_conversions": 10776.0
+    "total_conversions": 7488.0
+  },
+  {
+    "connector": "microsoft-ads",
+    "total_conversions": 340.20000000000005
+  },
+  {
+    "connector": "pinterest-ads",
+    "total_conversions": 65.0
   },
   {
     "connector": "tiktok-ads",

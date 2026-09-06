@@ -23,12 +23,12 @@ const FIXTURE_NO_COMPOSITION: CardEnvelope = {
 describe("KPI card App — fallback path (no composition)", () => {
   it("renders the title, question and hero numbers from the envelope (fallback)", () => {
     render(<App envelope={FIXTURE_NO_COMPOSITION} />);
-    expect(screen.getByTestId("card-title")).toHaveTextContent("Synthèse KPI");
-    // sessions hero value 42150 -> fr-FR "42 150"
+    expect(screen.getByTestId("card-title")).toHaveTextContent("KPI Overview");
+    // sessions hero value 42150 -> "42,150" on FORMATTER_LOCALE (story 76-8)
     const tiles = screen.getAllByTestId("kpi-metric-tile");
     expect(tiles.length).toBe(3);
     const sessionsTile = tiles.find((t) => t.getAttribute("data-metric") === "sessions")!;
-    expect(within(sessionsTile).getByTestId("kpi-hero-value").textContent).toMatch(/42\s?150/);
+    expect(within(sessionsTile).getByTestId("kpi-hero-value").textContent).toBe("42,150");
   });
 
   it("renders the deterministic cited comment (AD-9) via CardShell (fallback)", () => {
@@ -44,7 +44,7 @@ describe("KPI card App — fallback path (no composition)", () => {
       .getAllByTestId("kpi-metric-tile")
       .find((t) => t.getAttribute("data-metric") === "sessions")!;
     const deltaText = within(sessionsTile).getByTestId("kpi-delta-text");
-    expect(deltaText).toHaveTextContent("+10.0 %");
+    expect(deltaText).toHaveTextContent("+10.0%");
     const color = getComputedStyle(deltaText).color;
     // theme success token (#3E9B6E — sage green, brand refresh)
     expect(color).toMatch(/rgb\(62,\s?155,\s?110\)/);
@@ -56,7 +56,7 @@ describe("KPI card App — fallback path (no composition)", () => {
       .getAllByTestId("kpi-metric-tile")
       .find((t) => t.getAttribute("data-metric") === "active_users")!;
     const deltaText = within(usersTile).getByTestId("kpi-delta-text");
-    expect(deltaText).toHaveTextContent("-2.0 %");
+    expect(deltaText).toHaveTextContent("-2.0%");
     const color = getComputedStyle(deltaText).color;
     // theme error token (#D64550 — raspberry, brand refresh)
     expect(color).toMatch(/rgb\(214,\s?69,\s?80\)/);
@@ -75,7 +75,7 @@ describe("KPI card App — fallback path (no composition)", () => {
   it("renders a designed empty state (never blank) when there are no metrics", () => {
     render(<KpiCardBody metrics={{}} series={{}} />);
     expect(screen.getByTestId("kpi-empty-state")).toHaveTextContent(
-      "Aucune donnée disponible",
+      "No data is available",
     );
   });
 
@@ -114,7 +114,7 @@ describe("KPI card App — fallback path (no composition)", () => {
 describe("KPI card App — composition path (Story 9.2c)", () => {
   it("renders via CardComposition when data.composition is present", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
-    expect(screen.getByTestId("card-title")).toHaveTextContent("Synthèse KPI");
+    expect(screen.getByTestId("card-title")).toHaveTextContent("KPI Overview");
     // CardComposition renders kpi_row block with composition-kpi-tile testids
     expect(screen.getByTestId("card-composition")).toBeInTheDocument();
     expect(screen.getByTestId("composition-block-kpi_row")).toBeInTheDocument();
@@ -125,7 +125,7 @@ describe("KPI card App — composition path (Story 9.2c)", () => {
     const tiles = screen.getAllByTestId("composition-kpi-tile");
     expect(tiles.length).toBe(3);
     const sessionsTile = tiles.find((t) => t.getAttribute("data-metric") === "sessions")!;
-    expect(within(sessionsTile).getByTestId("composition-kpi-value").textContent).toMatch(/42\s?150/);
+    expect(within(sessionsTile).getByTestId("composition-kpi-value").textContent).toBe("42,150");
   });
 
   it("renders the comment block via CardComposition", () => {
@@ -139,7 +139,7 @@ describe("KPI card App — composition path (Story 9.2c)", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
     const deltas = screen.getAllByTestId("composition-kpi-delta");
     const texts = deltas.map((d) => d.textContent);
-    // Delta has + sign and percent sign (locale-agnostic: fr-FR uses comma, test env may differ)
+    // Delta carries its sign and its percent mark, on the pinned formatter.
     expect(texts.some((t) => t?.includes("+") && t?.includes("9") && t?.includes("%"))).toBe(true);
   });
 

@@ -4,14 +4,20 @@
  * Origin rules: ~52px rows, hairline dividers, right-aligned numeric columns
  * (tabular-nums), header from column defs, optional client-side sort, designed
  * empty state, aria role="table". Hand-rolled — no heavy table lib (AD-11).
- * Light + dark via MUI theme. French-first with accents.
+ * Light + dark via the shared theme. Column labels arrive from the server; the
+ * NUMBERS follow the Render's pinned formatter (story 76-8).
+ *
+ * COLUMNS DO NOT TOUCH. Measured on 2026-09-05 on `card-keywords`:
+ * « CLICSIMPRESSIONSPOSITION MOY. » — three numeric headers at `flex: 0 0 auto`
+ * with no gutter at all, welded into one word. The gutter is carried by BOTH
+ * rows (header and body) so the columns stay aligned.
  */
 
 import { useState } from "react";
-import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
-import { useTheme, alpha } from "@mui/material/styles";
+
 import type { DataTableColumn } from "./types";
+import { NO_VALUE, formatValue } from "./viz/theme/formatters";
+import { Box, Typography, alpha, useTheme } from "@toorow/shell";
 
 export interface DataTableProps {
   columns: DataTableColumn[];
@@ -29,12 +35,15 @@ const ROW_HEIGHT = 52; // px — Origin card spec (~52px rows)
 type SortDir = "asc" | "desc";
 
 function fmt(value: unknown, numeric: boolean): string {
-  if (value === null || value === undefined) return "—";
+  if (value === null || value === undefined) return NO_VALUE;
   if (numeric && typeof value === "number") {
-    return value.toLocaleString("fr-FR");
+    return formatValue(value);
   }
   return String(value);
 }
+
+/** The gutter between columns, in theme units (8 px). */
+const COLUMN_GAP = 2;
 
 export default function DataTable({
   columns,
@@ -61,10 +70,10 @@ export default function DataTable({
         aria-label={ariaLabel}
       >
         <Typography variant="body2" sx={{ mb: 0.5 }}>
-          Aucune donnée disponible.
+          No data available.
         </Typography>
         <Typography variant="caption" color="text.disabled">
-          Le tableau sera alimenté dès que les données seront disponibles.
+          The table is filled as soon as the data is available.
         </Typography>
       </Box>
     );
@@ -112,8 +121,9 @@ export default function DataTable({
           alignItems: "center",
           bgcolor: headerBg,
           borderBottom: `1px solid ${hairline}`,
-          height: 40,
+          minHeight: 40,
           px: 1.5,
+          columnGap: COLUMN_GAP,
         }}
       >
         {columns.map((col) => (
@@ -168,6 +178,7 @@ export default function DataTable({
             alignItems: "center",
             height: ROW_HEIGHT,
             px: 1.5,
+            columnGap: COLUMN_GAP,
             borderBottom:
               idx < displayRows.length - 1 ? `1px solid ${hairline}` : "none",
             "&:hover": {

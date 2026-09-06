@@ -41,7 +41,7 @@ stg_campaign AS (
         project_id,
         date,
         '{{ col }}'  AS metric,
-        SUM(CAST({{ col }} AS DOUBLE)) AS stg_total
+        SUM(CAST({{ col }} AS {{ toorow_float_type() }})) AS stg_total
     FROM {{ ref('stg_linkedin_ads_campaign_daily') }}
     WHERE campaign_id IS NOT NULL
     GROUP BY project_id, date
@@ -55,7 +55,7 @@ stg_group AS (
         project_id,
         date,
         '{{ col }}'  AS metric,
-        SUM(CAST({{ col }} AS DOUBLE)) AS stg_total
+        SUM(CAST({{ col }} AS {{ toorow_float_type() }})) AS stg_total
     FROM {{ ref('stg_linkedin_ads_campaign_group_daily') }}
     WHERE campaign_group_id IS NOT NULL
     GROUP BY project_id, date

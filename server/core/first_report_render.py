@@ -273,29 +273,81 @@ def _bounded_evidence(readiness: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _org_id(conn, *, datastream_id: str, project_id: str) -> str | None:
+    """The organization that owns this Datastream, or ``None``.
+
+    The console's address grammar begins at the organization
+    (`ui/admin/src/shell/router.tsx:130`), so an address cannot be composed
+    without it. Nothing is substituted when the read fails: a link that cannot
+    resolve is worse than no link, because the screen reports it as a way
+    forward -- the rule `data_surface.py:405` already states for the Data lenses.
+    """
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT org_id FROM app.datastreams WHERE id = %s AND project_id = %s",
+                (datastream_id, project_id),
+            )
+            row = cur.fetchone()
+    except Exception as exc:  # noqa: BLE001 -- no link is a valid answer here.
+        logger.debug("first_report_render: org lookup failed (%s)", exc)
+        return None
+    return str(row[0]) if row and row[0] else None
+
+
 def _report_deep_link(
-    *, project_id: str, datastream_id: str, readiness: dict[str, Any]
-) -> dict[str, Any]:
+    conn,
+    *,
+    project_id: str,
+    datastream_id: str,
+    readiness: dict[str, Any],
+) -> dict[str, Any] | None:
     """Build an OPTIONAL authenticated deep-link descriptor (never the dataset).
 
     A human follows this link (authenticated, project-scoped) to see the full
     report OUT of band. We return a descriptor -- path + the version handles that
     scope it -- NOT the dataset. The link is authenticated: it carries no bearer
     and the console re-authorizes on open (fail closed).
+
+    THE ADDRESS IS THE CONSOLE'S, NOT THIS MODULE'S (AI-218). It used to read
+    ``/projects/{project}/datastreams/{datastream}/first-report/rendered``: three
+    inventions in one string -- a `/projects/` root the router refuses on its
+    first segment, a `/datastreams/` collection under it, and a
+    `first-report/rendered` screen that has never existed. `parsePath` answers
+    "Expected an organization route" and the console shows the unknown-route
+    screen, so the one gesture this render offers a human opened nothing. Fourth
+    address of this class, after the five Data lenses (`data_surface.py`,
+    2026-08-03) and the wizard's two (stories 57.4 and 57.5).
+
+    What it names now is the Datastream Workbench's **Outputs** tab, which is
+    where the publication this render CITES actually lives: the same
+    ``execution_id`` carried below is one of the three pointers that tab owns.
+    The Data tab was the other candidate and is the wrong one -- it shows a
+    bounded masked sample, which is precisely not "the full report".
+
+    Returns ``None`` when the organization cannot be read, so the payload carries
+    no link at all rather than one that cannot open.
     """
+    org_id = _org_id(conn, datastream_id=datastream_id, project_id=project_id)
+    if not org_id:
+        return None
     publication = readiness.get("current_publication") or {}
     return {
         "kind": "authenticated_report",
+        # `/org/{org}/project/{project}/{workspace}/{section}/object/{type}/{id}
+        #  /tab/{tab}` -- the grammar `parsePath` reads, `object` and `tab`
+        # literals included. Both were missing from the addresses this repository
+        # composed by hand before 2026-08-03.
         "path": (
-            f"/projects/{project_id}/datastreams/{datastream_id}"
-            "/first-report/rendered"
+            f"/org/{org_id}/project/{project_id}"
+            f"/data/datastreams/object/datastream/{datastream_id}/tab/outputs"
         ),
         "requires_authentication": True,
         "publication_execution_id": publication.get("execution_id"),
         "readiness_version": readiness.get("readiness_version"),
         "note": (
             "Lien authentifie : ouvre le rapport complet dans la console "
-            "(re-autorisation cote serveur ; aucun jeton dans le lien)."
+            "(server-side re-authorization; no token in the link)."
         ),
     }
 
@@ -324,7 +376,7 @@ def _validation_checklist(readiness: dict[str, Any]) -> dict[str, Any]:
         "state_token": overall,  # ready | degraded
         "is_degraded": overall == "degraded",
         "degraded_note": (
-            "Rapport degrade mais utilisable : le resultat recent est publie ; "
+            "Report degraded but usable: the recent result is published; "
             "l'historique ou la qualite des donnees reste partiel."
         )
         if overall == "degraded"
@@ -339,7 +391,7 @@ def _headline(readiness: dict[str, Any]) -> str:
         return "Premier rapport rendu : periode recente publiee et controles au vert."
     # degraded (the only other renderable disposition).
     return (
-        "Premier rapport rendu (degrade mais utilisable) : le resultat recent est "
+        "First report rendered (degraded but usable): the recent result is "
         "publie ; l'historique ou la qualite des donnees reste partiel."
     )
 
@@ -393,7 +445,7 @@ def render_first_report(
     # fallback it is the human's out-of-band path to the full dataset -- but the
     # fallback still carries mandatory bounded evidence (never deep-link-only).
     deep_link = _report_deep_link(
-        project_id=project_id, datastream_id=datastream_id, readiness=readiness
+        conn, project_id=project_id, datastream_id=datastream_id, readiness=readiness
     )
     validation = _validation_checklist(readiness)
 

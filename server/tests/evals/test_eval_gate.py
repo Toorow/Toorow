@@ -48,12 +48,14 @@ import run_evals as R  # noqa: E402  # type: ignore[import]
 # Synthetic artifact / baseline factories.
 # ---------------------------------------------------------------------------
 
+
 def _make_record(
     q_id: str,
     accuracy: str = R.PASS,
     citations: str = R.NA,
     ground_truth: str = R.PASS,
     tool_replay: str = "done",
+    adherence: str = R.UNAVAILABLE,
     trace_id: str | None = None,
 ) -> dict:
     """Build a minimal per-question record matching run_evals.score_question's output."""
@@ -63,7 +65,7 @@ def _make_record(
         "ground_truth": ground_truth,
         "accuracy": accuracy,
         "citations": citations,
-        "adherence": R.UNAVAILABLE,
+        "adherence": adherence,
         "tool_replay": tool_replay,
         "skip_reason": None,
         "notes": [],
@@ -104,6 +106,7 @@ def _make_baseline_from_records(records: list[dict]) -> dict:
 # ---------------------------------------------------------------------------
 # Test: REGRESSION DETECTION -- PASS -> FAIL causes verdict=FAIL.
 # ---------------------------------------------------------------------------
+
 
 class TestRegressionDetected:
     """A question that was PASS in the baseline and is now FAIL is a regression."""
@@ -179,6 +182,7 @@ class TestRegressionDetected:
 # Test: PROGRESSION -- FAIL -> PASS is non-blocking.
 # ---------------------------------------------------------------------------
 
+
 class TestProgressionNonBlocking:
     """A question that improves (FAIL -> PASS) is reported but does NOT fail the gate."""
 
@@ -229,6 +233,7 @@ class TestProgressionNonBlocking:
 # ---------------------------------------------------------------------------
 # Test: SKIP IS NOT A HARD REGRESSION (story contract; non-blocking warning).
 # ---------------------------------------------------------------------------
+
 
 class TestSkipNotRegression:
     """A skipped question (seam offline) that was PASS in baseline must NOT be a
@@ -293,8 +298,46 @@ class TestSkipNotRegression:
 
 
 # ---------------------------------------------------------------------------
+# Test: unavailable required evidence is distinct from a green or a regression.
+# ---------------------------------------------------------------------------
+
+
+class TestUnavailableEvidence:
+    def test_baseline_pass_to_unavailable_is_unverifiable(self):
+        baseline = _make_baseline_from_records([_make_record("u1", adherence=R.PASS)])
+        artifact = _make_artifact([_make_record("u1", adherence=R.UNAVAILABLE)])
+
+        result = G.compare_to_baseline(artifact, baseline)
+
+        assert result["verdict"] == G.UNVERIFIABLE
+        assert result["score_regression"] is False
+        assert "GATE: UNVERIFIABLE" in G.render_gate_report(artifact, result)
+
+    def test_unavailable_does_not_create_a_reduced_denominator_score_drop(self):
+        baseline = _make_baseline_from_records(
+            [
+                _make_record("u1", adherence=R.PASS),
+                _make_record("u2", adherence=R.FAIL),
+            ]
+        )
+        artifact = _make_artifact(
+            [
+                _make_record("u1", adherence=R.UNAVAILABLE),
+                _make_record("u2", adherence=R.FAIL),
+            ]
+        )
+
+        result = G.compare_to_baseline(artifact, baseline)
+
+        assert result["verdict"] == G.UNVERIFIABLE
+        assert result["score_regression"] is False
+        assert not any(warning["kind"] == "score_drop" for warning in result["warnings"])
+
+
+# ---------------------------------------------------------------------------
 # Test: BASELINE NEVER AUTO-WRITTEN (gate without --update-baseline is read-only).
 # ---------------------------------------------------------------------------
+
 
 class TestBaselineNeverAutoWritten:
     """compare_to_baseline is a pure function that never writes the baseline file.
@@ -323,9 +366,7 @@ class TestBaselineNeverAutoWritten:
         mtime_after = baseline_file.stat().st_mtime
         content_after = baseline_file.read_text(encoding="utf-8")
 
-        assert content_after == content_before, (
-            "compare_to_baseline must NOT rewrite baseline.json"
-        )
+        assert content_after == content_before, "compare_to_baseline must NOT rewrite baseline.json"
         assert mtime_after == mtime_before, (
             "baseline.json modification time changed -- auto-write detected"
         )
@@ -353,6 +394,7 @@ class TestBaselineNeverAutoWritten:
 # ---------------------------------------------------------------------------
 # Test: DETERMINISM -- two comparisons on the same inputs yield the same verdict.
 # ---------------------------------------------------------------------------
+
 
 class TestDeterminism:
     def test_same_artifact_twice_same_verdict(self):
@@ -406,6 +448,7 @@ class TestDeterminism:
 # Test: ASCII-ONLY REPORT (AI-03).
 # ---------------------------------------------------------------------------
 
+
 class TestAsciiOnlyReport:
     def test_render_regression_report_is_ascii(self):
         """render_gate_report output must be strictly ASCII (AI-03 compliance)."""
@@ -431,6 +474,7 @@ class TestAsciiOnlyReport:
 # ---------------------------------------------------------------------------
 # Test: LANGFUSE TRACE LINK (AI-34 -- static format only; live call gated).
 # ---------------------------------------------------------------------------
+
 
 class TestLangfuseTraceLink:
     """When a record carries a trace_id, the regression report includes the link.
@@ -468,6 +512,7 @@ class TestLangfuseTraceLink:
 # ---------------------------------------------------------------------------
 # Test: MISSING / NEW QUESTIONS handling.
 # ---------------------------------------------------------------------------
+
 
 class TestMissingAndNewQuestions:
     def test_missing_from_run_is_warning_not_fail(self):
@@ -508,6 +553,7 @@ class TestMissingAndNewQuestions:
 # Test: load_baseline / build_baseline round-trip.
 # ---------------------------------------------------------------------------
 
+
 class TestBaselineRoundTrip:
     def test_load_raises_on_missing_file(self, tmp_path):
         with pytest.raises(FileNotFoundError):
@@ -518,6 +564,21 @@ class TestBaselineRoundTrip:
         bad.write_text('{"schema_version": 1}', encoding="utf-8")
         with pytest.raises(ValueError, match="malformed"):
             G.load_baseline(bad)
+
+    def test_legacy_v1_without_adherence_is_rejected(self, tmp_path):
+        legacy = {
+            "schema_version": 1,
+            "summary": {
+                "accuracy_score": 1.0,
+                "citation_score": 1.0,
+            },
+            "per_question": {"q1": {"accuracy": R.PASS, "citations": R.PASS}},
+        }
+        path = tmp_path / "legacy.json"
+        path.write_text(json.dumps(legacy), encoding="utf-8")
+
+        with pytest.raises(ValueError, match="schema_version"):
+            G.load_baseline(path)
 
     def test_write_then_load_round_trip(self, tmp_path):
         records = [
@@ -533,7 +594,7 @@ class TestBaselineRoundTrip:
         assert loaded["per_question"]["rt1"]["accuracy"] == R.PASS
         assert loaded["per_question"]["rt1"]["citations"] == R.PASS
         assert loaded["per_question"]["rt2"]["accuracy"] == R.FAIL
-        assert loaded["schema_version"] == 1
+        assert loaded["schema_version"] == G.BASELINE_SCHEMA_VERSION
 
     def test_build_baseline_captures_summary_scores(self):
         records = [
@@ -559,6 +620,7 @@ class TestBaselineRoundTrip:
 # ---------------------------------------------------------------------------
 # Test: SCORE REGRESSION (summary scores).
 # ---------------------------------------------------------------------------
+
 
 class TestScoreRegression:
     def test_score_drop_causes_fail_verdict(self):
@@ -651,6 +713,11 @@ class TestGateMainExitCode:
         bl = self._write_baseline(tmp_path, [_make_record("q1", accuracy=R.PASS, citations=R.PASS)])
         self._patch_run(monkeypatch, [_make_record("q1", accuracy=R.PASS, citations=R.PASS)])
         assert G.main(["--baseline", str(bl)]) == 0
+
+    def test_unverifiable_returns_two(self, monkeypatch, tmp_path):
+        bl = self._write_baseline(tmp_path, [_make_record("q1", adherence=R.PASS)])
+        self._patch_run(monkeypatch, [_make_record("q1", adherence=R.UNAVAILABLE)])
+        assert G.main(["--baseline", str(bl)]) == 2
 
     def test_missing_baseline_returns_two(self, monkeypatch, tmp_path):
         self._patch_run(monkeypatch, [_make_record("q1", accuracy=R.PASS, citations=R.PASS)])

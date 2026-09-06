@@ -123,7 +123,6 @@ _FIRST_USER_RESPONSE = {
 @respx.mock
 def test_pull_acquisition_session_lands_multi_date_rows(connector, tmp_path, monkeypatch):
     """Last-click pull: dims lead with date, top-N orderBys, multi-date rows, mapping."""
-    monkeypatch.setenv("GA4_PROPERTY_ID", "TEST123")
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     db_path = str(tmp_path / "acq_session.duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", db_path)
@@ -139,6 +138,7 @@ def test_pull_acquisition_session_lands_multi_date_rows(connector, tmp_path, mon
             date_to="2026-07-03",
             project_id="jean-ga4",
             pull_id="pull_acq_sess",
+            property_id="TEST123",
         )
 
     assert route.called
@@ -182,7 +182,6 @@ def test_pull_acquisition_session_lands_multi_date_rows(connector, tmp_path, mon
 @respx.mock
 def test_pull_acquisition_first_user_lands_multi_date_rows(connector, tmp_path, monkeypatch):
     """First-click pull: dims lead with date, top-N orderBys, multi-date rows, mapping."""
-    monkeypatch.setenv("GA4_PROPERTY_ID", "TEST123")
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     db_path = str(tmp_path / "acq_fu.duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", db_path)
@@ -198,6 +197,7 @@ def test_pull_acquisition_first_user_lands_multi_date_rows(connector, tmp_path, 
             date_to="2026-07-03",
             project_id="jean-ga4",
             pull_id="pull_acq_fu",
+            property_id="TEST123",
         )
 
     assert route.called
@@ -235,7 +235,7 @@ def test_pull_acquisition_first_user_lands_multi_date_rows(connector, tmp_path, 
 def test_pull_acquisition_session_requires_property_id(connector, monkeypatch):
     """Shim raises a clear ValueError when neither arg nor GA4_PROPERTY_ID is set."""
     monkeypatch.delenv("GA4_PROPERTY_ID", raising=False)
-    with pytest.raises(ValueError, match="GA4_PROPERTY_ID"):
+    with pytest.raises(ValueError, match="selected account"):
         connector.pull_acquisition_daily_session(
             connection_id="conn_test",
             date_from="2026-07-01",
@@ -247,7 +247,7 @@ def test_pull_acquisition_session_requires_property_id(connector, monkeypatch):
 
 def test_pull_acquisition_first_user_requires_property_id(connector, monkeypatch):
     monkeypatch.delenv("GA4_PROPERTY_ID", raising=False)
-    with pytest.raises(ValueError, match="GA4_PROPERTY_ID"):
+    with pytest.raises(ValueError, match="selected account"):
         connector.pull_acquisition_daily_first_user(
             connection_id="conn_test",
             date_from="2026-07-01",

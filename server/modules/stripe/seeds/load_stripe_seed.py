@@ -7,11 +7,12 @@ rows appear in ``fact_daily_kpi`` with ``connector = 'stripe'`` after ``dbt run`
 Mirrors the shopify / tiktok seed loader shape. Append-only (AD-7): each invocation mints
 a fresh pull_id and never overwrites existing rows. ASCII-only stdout (AI-03).
 
-WINDOW ALIGNMENT: generate_rows() defaults to end_date=date.today(). This loader calls
-generate_rows() without an explicit end_date so both Shopify and Stripe seeds share the
-same today()-anchored window. At runtime the Stripe charges land on the same date range
-as the Shopify orders already in raw_shopify_orders -> the dedup overlap check (Guard A)
-remains valid indefinitely, and client_reference_id joins are REAL (not tautological).
+WINDOW ALIGNMENT (AI-213): generate_rows() defaults to the shared corpus anchor
+(DEFAULT_SEED_END_DATE / TOOROW_SEED_END_DATE), never date.today(). Both Shopify and
+Stripe generators default to the SAME anchor, so the Stripe charges land on the same
+date range as the Shopify orders already in raw_shopify_orders -> the dedup overlap
+check (Guard A) stays valid on any machine, any day, and client_reference_id joins are
+REAL (not tautological).
 
 Usage:
     uv run python server/modules/stripe/seeds/load_stripe_seed.py \
@@ -25,7 +26,7 @@ import os
 
 # Reuse the generator so the seed rows are the canonical parse-shape (AI-54).
 import sys as _sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from ulid import ULID
@@ -114,11 +115,22 @@ def load_duckdb(
     return len(values)
 
 
-def run(duckdb_path: str, days: int = 90, project_id: str = "default") -> tuple[str, int]:
-    """Generate + load Stripe seed rows. Returns (pull_id, row_count)."""
+def run(
+    duckdb_path: str,
+    days: int = 90,
+    project_id: str = "default",
+    end_date: date | None = None,
+) -> tuple[str, int]:
+    """Generate + load Stripe seed rows. Returns (pull_id, row_count).
+
+    ``end_date`` is the corpus-anchor seam the seed_all_connectors driver fills
+    (AI-213); None falls back to DEFAULT_SEED_END_DATE, never date.today() --
+    the Shopify correlation inside generate_rows() uses the SAME end_date, so
+    the two windows stay aligned on the anchor.
+    """
     pull_id = _mint_pull_id()
     loaded_at = datetime.now(tz=timezone.utc).isoformat().replace("+00:00", "Z")
-    rows = generate_rows(days=days)
+    rows = generate_rows(days=days, end_date=end_date)
     count = load_duckdb(rows, pull_id, loaded_at, duckdb_path, project_id=project_id)
     return pull_id, count
 

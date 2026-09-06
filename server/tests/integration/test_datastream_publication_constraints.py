@@ -8,6 +8,24 @@ leaving the prior pointer intact, and the concurrent-execution structural guard.
 They SKIP when TEST_POSTGRES_DSN is unset. The migration itself is applied to
 Supabase only under Jean's authorization; these tests apply it to the disposable
 test database referenced by TEST_POSTGRES_DSN.
+
+AND THE FOUR LIVE ONES DECLARE `pg_owner` BY HAND (2026-08-31). `_apply_migrations`
+replays 030/032/042, whose bodies re-shape `app.datastreams`: as the deployed
+application role all four died on "must be owner of table datastreams", having
+asserted nothing. `conftest._module_needs_owner` could not derive the marker here
+because it reads THIS file's source, and the ownership-demanding statements live
+in the migration files this file merely names -- a signal that conftest weighed
+and deliberately refused (see the note above `_OWNER_DDL`). So the declaration is
+written out, per test, and `conftest._owner_dsn_for` connects them as
+``TEST_POSTGRES_OWNER_DSN`` when the harness exports one and skips with its reason
+when it does not.
+
+The marker is per TEST and not per file on purpose: the migration-text assertion
+above needs no database at all, and a file-wide declaration would skip it for a
+wall that is not its own. This docstring also stays clear of the DDL keywords
+`_OWNER_DDL` scans for: it reads the whole file, prose included, so a sentence
+NAMING the statement would mark every test here, including the one that touches
+no database. An instrument must not be steered by the prose describing it.
 """
 
 from __future__ import annotations
@@ -19,6 +37,8 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
+from tests.migration_ledger import apply_migrations_absent_from_the_ledger  # noqa: E402
+
 MIGRATIONS = ROOT / "infra" / "nango" / "migrations"
 INTENT_MIGRATION = MIGRATIONS / "030_versioned_datastream_intents.sql"
 MAPPING_MIGRATION = MIGRATIONS / "032_datastream_field_mappings.sql"
@@ -29,9 +49,21 @@ requires_postgres = pytest.mark.skipif(
     reason="TEST_POSTGRES_DSN not set -- live Postgres constraint test skipped",
 )
 
-# A fixed valid ULID body (Crockford base32) reused where the exact value is
-# irrelevant; uniqueness comes from swapping the trailing char.
-_ULID_SAMPLE = "01J8ZC4Q0N7R2K3W5X6Y7Z8A9B"
+_CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+
+def _ulid_body() -> str:
+    """26 fresh Crockford base32 characters -- the shape the id CHECKs demand.
+
+    Constant bodies used to live here, and every id built from one committed on
+    the first run and collided on the second. Freshness is the property; the
+    exact characters never were.
+    """
+    body, chars = uuid.uuid4().int, []
+    for _ in range(26):
+        body, position = divmod(body, len(_CROCKFORD))
+        chars.append(_CROCKFORD[position])
+    return "".join(chars)
 
 
 def _id(prefix: str) -> str:
@@ -39,15 +71,28 @@ def _id(prefix: str) -> str:
 
 
 def _dse(index: int) -> str:
-    alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-    return "dse_" + _ULID_SAMPLE[:-1] + alphabet[index % len(alphabet)]
+    """A fresh execution id of the house shape -- `ck_datastream_executions_id`.
+
+    IT USED TO BE A CONSTANT (repaired 2026-08-31). The body was a fixed sample
+    with its last character swapped for `index`, so the id a given test inserted
+    was the same on every run -- and these tests `conn.commit()`. The first run
+    against a database passed and every run after it died on
+    `pk_datastream_executions` duplicate key, which reads as a product defect and
+    is the fixture repeating itself. A test that can only pass on a virgin
+    database measures the database's age.
+    """
+    return "dse_" + _CROCKFORD[index % len(_CROCKFORD)] + _ulid_body()[1:]
 
 
 def _apply_migrations(conn) -> None:
-    with conn.cursor() as cur:
-        for path in (INTENT_MIGRATION, MAPPING_MIGRATION, REGISTRY_MIGRATION):
-            cur.execute(path.read_text(encoding="utf-8"))
-    conn.commit()
+    """Ne rejouer que ce que le ledger ne porte pas -- voir `tests.migration_ledger`.
+
+    `030`, `032` et `042` sont ANTERIEURES a la `099` : les rejouer contre une
+    base migree recree leurs trois gardes DELETE SANS la clause `rgpd_erasure`.
+    """
+    apply_migrations_absent_from_the_ledger(
+        conn, (INTENT_MIGRATION, MAPPING_MIGRATION, REGISTRY_MIGRATION)
+    )
 
 
 def _seed(conn, project_id: str, ds_id: str, plan_id: str, mapping_id: str) -> None:
@@ -137,6 +182,7 @@ def test_migration_042_declares_registry_and_append_only_trigger() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.pg_owner
 @requires_postgres
 def test_publication_log_is_append_only(live_postgres) -> None:
     import psycopg
@@ -151,7 +197,7 @@ def test_publication_log_is_append_only(live_postgres) -> None:
         conn, exec_id, ds_id, project_id, plan_id, mapping_id,
         state="published", content_hash="a" * 64, row_count=100,
     )
-    log_id = "dplog_" + _ULID_SAMPLE
+    log_id = "dplog_" + _ulid_body()
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -166,7 +212,12 @@ def test_publication_log_is_append_only(live_postgres) -> None:
 
     with conn.cursor() as cur:
         cur.execute("SAVEPOINT sp")
-    with pytest.raises(psycopg.errors.RaiseException):
+    # THE CLASS THE TRIGGER REALLY RAISES (re-measured 2026-08-31). Migration 042
+    # raises `USING ERRCODE = '23000'`, which psycopg maps to
+    # `IntegrityConstraintViolation`; `RaiseException` is SQLSTATE `P0001`, the
+    # class of a RAISE that declares no errcode. Both walks below named the wrong
+    # refusal, so the trigger firing exactly as designed read as a red.
+    with pytest.raises(psycopg.errors.IntegrityConstraintViolation, match="append-only"):
         with conn.cursor() as cur:
             cur.execute(
                 "UPDATE app.datastream_publication_log SET row_count = 999 WHERE id = %s",
@@ -175,13 +226,14 @@ def test_publication_log_is_append_only(live_postgres) -> None:
     with conn.cursor() as cur:
         cur.execute("ROLLBACK TO SAVEPOINT sp")
         cur.execute("SAVEPOINT sp2")
-    with pytest.raises(psycopg.errors.RaiseException):
+    with pytest.raises(psycopg.errors.IntegrityConstraintViolation, match="append-only"):
         with conn.cursor() as cur:
             cur.execute("DELETE FROM app.datastream_publication_log WHERE id = %s", (log_id,))
     with conn.cursor() as cur:
         cur.execute("ROLLBACK TO SAVEPOINT sp2")
 
 
+@pytest.mark.pg_owner
 @requires_postgres
 def test_commit_publication_atomic_pointer_swap(live_postgres) -> None:
     from core.datastream_publication import commit_publication
@@ -228,6 +280,7 @@ def test_commit_publication_atomic_pointer_swap(live_postgres) -> None:
     conn.rollback()  # leave the shared test DB clean
 
 
+@pytest.mark.pg_owner
 @requires_postgres
 def test_commit_publication_rollback_between_log_and_pointer_leaves_state_intact(
     live_postgres,
@@ -346,6 +399,7 @@ def test_commit_publication_rollback_between_log_and_pointer_leaves_state_intact
     conn.rollback()
 
 
+@pytest.mark.pg_owner
 @requires_postgres
 def test_concurrent_active_execution_blocked_by_partial_unique(live_postgres) -> None:
     import psycopg

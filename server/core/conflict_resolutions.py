@@ -8,12 +8,35 @@ Provides:
                        resolved_source_currency, decided_by, note, conn) -> dict
   delete_fx_resolution(project_id, target_field, source_module, conn) -> None
 
+WHERE A RESOLUTION LIVES NOW (2026-08-17).
+
+Every function above used to read and write `app.fx_conflict_resolutions`. That
+table was dethroned by migration 145 -- it is one of the seven stores listed under
+"They stop being AUTHORITIES" -- and migration 282 sealed it against writes. The
+five functions kept their names and their signatures, because the REST routes and
+the console dialog that call them are correct; only the store underneath moved, to
+the one 144 built and 145 adopted:
+
+    app.governance_rule_sets / app.governance_rule_set_versions,
+    family `source_currency`, via core.source_currency_bindings.
+
+What that buys, concretely: the old `ON CONFLICT DO UPDATE` overwrote `decided_by`
+and `decided_at` in place, so re-declaring a currency erased who had decided the
+previous one. Each write now publishes an immutable version, the previous one is
+superseded rather than edited, and every declaration carries its own attribution,
+carried forward untouched when a neighbouring one changes.
+
+`delete_fx_resolution` is now a WITHDRAWAL: it publishes the set without that
+declaration. The withdrawn one stays readable in the superseded version, so a
+figure published while it was in force can still be explained.
+
 Design decisions:
-  - AD-6: AUCUNE conversion FX dans ce fichier Python.
-    La table app.fx_conflict_resolutions DONNE une donnée à dbt.
-    C'est dbt staging (stg_*_daily.sql) qui fait le JOIN FX en utilisant
-    COALESCE(res.resolved_source_currency, raw.cost_source_currency).
-  - AD-5: endpoints REST dénégation cross-projet (identity_has_project_access).
+  - AD-6: AUCUNE conversion FX dans ce fichier Python. The governed declaration
+    GIVES a datum to dbt; dbt staging (stg_*_daily.sql) does the FX JOIN with
+    COALESCE(res.resolved_source_currency, raw.cost_source_currency). dbt now
+    reads `mirror.fx_source_currency_bindings`, projected from the published
+    version by `app.fx_source_currency_bindings_v` (migration 282).
+  - AD-5: endpoints REST dénégation cross-projet (identity_can_read_project).
   - Résolution NON rétroactive: elle s'applique à la prochaine publication/reprocess.
   - Réutilise _detect_conflicts de datamodel.py (AI-53 -- PAS de seconde détection).
   - MEASURE_NULL resolution = PATCH sur app.target_fields.measure via update_target_field
@@ -29,26 +52,32 @@ import logging
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Valid ISO 4217 currency codes (subset, extended on demand)
+# The currency vocabulary — the governed one, not a second list
 # ---------------------------------------------------------------------------
-
-_VALID_CURRENCIES: frozenset[str] = frozenset(
-    [
-        "EUR", "USD", "GBP", "CHF", "SEK", "NOK", "DKK", "JPY", "CAD", "AUD",
-        "NZD", "SGD", "HKD", "CNY", "BRL", "MXN", "PLN", "CZK", "HUF", "RON",
-        "TRY", "ZAR", "INR", "KRW", "IDR", "THB", "MYR", "PHP", "AED", "SAR",
-    ]
-)
+#
+# This module used to carry a hand-written frozenset of 30 codes, "subset,
+# extended on demand". Story 48.3 gave the product ONE governed ISO 4217
+# vocabulary (`core.currency_vocabulary`, an immutable content-hashed version
+# with a rendered dbt projection), and `/api/reference/currencies` serves its
+# 156 selectable tender currencies to every picker in the console.
+#
+# Two lists meant a person could choose a currency the selector offered and be
+# refused by this door with a message naming neither the gesture nor the reason.
+# Measured before removing it: the 30 are a STRICT SUBSET of the 156, so nothing
+# this function accepted yesterday is refused today.
 
 
 def _validate_currency(currency: str, field_label: str) -> None:
-    """Raise ValueError if currency is not in the known subset."""
+    """Raise ValueError unless the code is a selectable reporting currency."""
+    from core.currency_vocabulary import resolve_currency  # noqa: PLC0415
+
     if not currency or not currency.strip():
-        raise ValueError(f"{field_label} est requis")
-    if currency.upper() not in _VALID_CURRENCIES:
+        raise ValueError(f"{field_label} is required")
+    resolved = resolve_currency(currency)
+    if resolved is None or not resolved.is_tender:
         raise ValueError(
-            f"{field_label} invalide : {currency!r}. "
-            f"Codes ISO 4217 acceptes : {sorted(_VALID_CURRENCIES)}"
+            f"{field_label} is not a valid currency: {currency!r}. "
+            f"Pick an ISO 4217 code offered by /api/reference/currencies."
         )
 
 
@@ -82,7 +111,7 @@ def list_conflicts(project_id: str | None, conn) -> list[dict]:
     for field_summary in all_fields:
         name = field_summary["name"]
         # get_target_field returns full detail incl. used_by and conflicts
-        detail = get_target_field(name, conn)
+        detail = get_target_field(name, conn, project_id=project_id)
         if detail is None:
             continue
         conflicts = detail.get("conflicts") or []
@@ -161,10 +190,48 @@ def list_conflicts(project_id: str | None, conn) -> list[dict]:
     return result
 
 
+#: The columns of the governed projection, in the order the old table returned
+#: them. `app.fx_source_currency_bindings_v` (migration 282) exposes exactly the
+#: shape `app.fx_conflict_resolutions` did, plus the version that carries the
+#: declaration -- so a caller can now answer "under which version was this read?",
+#: which the flat table could never answer.
+_BINDING_COLUMNS = (
+    "project_id",
+    "target_field",
+    "source_module",
+    "resolved_source_currency",
+    "decided_by",
+    "decided_at",
+    "note",
+    "rule_set_id",
+    "rule_set_version_id",
+)
+
+_BINDING_VIEW = "app.fx_source_currency_bindings_v"
+
+
+def _rows(cur) -> list[dict]:
+    cols = [d[0] for d in cur.description]
+    rows = []
+    for row in cur.fetchall():
+        rec: dict = {}
+        for col, val in zip(cols, row):
+            if col == "decided_at" and val is not None and hasattr(val, "isoformat"):
+                rec[col] = val.isoformat()
+            else:
+                rec[col] = val
+        rows.append(rec)
+    return rows
+
+
 def _fetch_resolutions_for_field(
     project_id: str | None, target_field: str, conn
 ) -> list[dict]:
-    """Fetch existing fx_conflict_resolutions for a given field, optionally project-scoped."""
+    """Fetch the governed source-currency declarations for one field.
+
+    Reads the projection of the PUBLISHED version, not the dethroned table.
+    Optionally project-scoped: `list_conflicts` may be called without a Project.
+    """
     params: list = [target_field]
     where_extra = ""
     if project_id:
@@ -174,25 +241,14 @@ def _fetch_resolutions_for_field(
     with conn.cursor() as cur:
         cur.execute(
             f"""
-            SELECT id, project_id, target_field, source_module,
-                   resolved_source_currency, decided_by, decided_at, note
-            FROM app.fx_conflict_resolutions
+            SELECT {', '.join(_BINDING_COLUMNS)}
+            FROM {_BINDING_VIEW}
             WHERE target_field = %s{where_extra}
             ORDER BY source_module ASC
             """,  # noqa: S608
             params,
         )
-        cols = [d[0] for d in cur.description]
-        rows = []
-        for row in cur.fetchall():
-            rec: dict = {}
-            for col, val in zip(cols, row):
-                if col == "decided_at" and val is not None:
-                    rec[col] = val.isoformat()
-                else:
-                    rec[col] = val
-            rows.append(rec)
-    return rows
+        return _rows(cur)
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +257,7 @@ def _fetch_resolutions_for_field(
 
 
 def list_fx_resolutions(project_id: str | None, conn) -> list[dict]:
-    """Return all fx_conflict_resolutions, optionally scoped to a project."""
+    """Return the governed source-currency declarations, optionally project-scoped."""
     params: list = []
     where = ""
     if project_id:
@@ -211,25 +267,14 @@ def list_fx_resolutions(project_id: str | None, conn) -> list[dict]:
     with conn.cursor() as cur:
         cur.execute(
             f"""
-            SELECT id, project_id, target_field, source_module,
-                   resolved_source_currency, decided_by, decided_at, note
-            FROM app.fx_conflict_resolutions
+            SELECT {', '.join(_BINDING_COLUMNS)}
+            FROM {_BINDING_VIEW}
             {where}
             ORDER BY project_id ASC, target_field ASC, source_module ASC
             """,  # noqa: S608
             params,
         )
-        cols = [d[0] for d in cur.description]
-        rows = []
-        for row in cur.fetchall():
-            rec: dict = {}
-            for col, val in zip(cols, row):
-                if col == "decided_at" and val is not None:
-                    rec[col] = val.isoformat()
-                else:
-                    rec[col] = val
-            rows.append(rec)
-    return rows
+        return _rows(cur)
 
 
 # ---------------------------------------------------------------------------
@@ -240,28 +285,18 @@ def list_fx_resolutions(project_id: str | None, conn) -> list[dict]:
 def get_fx_resolution(
     project_id: str, target_field: str, source_module: str, conn
 ) -> dict | None:
-    """Return a single fx_conflict_resolution row or None if not found."""
+    """Return a single governed source-currency declaration, or None."""
     with conn.cursor() as cur:
         cur.execute(
-            """
-            SELECT id, project_id, target_field, source_module,
-                   resolved_source_currency, decided_by, decided_at, note
-            FROM app.fx_conflict_resolutions
+            f"""
+            SELECT {', '.join(_BINDING_COLUMNS)}
+            FROM {_BINDING_VIEW}
             WHERE project_id = %s AND target_field = %s AND source_module = %s
-            """,
+            """,  # noqa: S608
             (project_id, target_field, source_module),
         )
-        row = cur.fetchone()
-        if row is None:
-            return None
-        cols = [d[0] for d in cur.description]
-        rec: dict = {}
-        for col, val in zip(cols, row):
-            if col == "decided_at" and val is not None:
-                rec[col] = val.isoformat()
-            else:
-                rec[col] = val
-        return rec
+        rows = _rows(cur)
+    return rows[0] if rows else None
 
 
 # ---------------------------------------------------------------------------
@@ -301,53 +336,40 @@ def upsert_fx_resolution(
     Raises:
         ValueError on validation failure.
     """
+    from core.source_currency_bindings import declare_binding  # noqa: PLC0415
+
     if not project_id:
-        raise ValueError("project_id est requis")
+        raise ValueError("project_id is required")
     if not target_field:
-        raise ValueError("target_field est requis")
+        raise ValueError("target_field is required")
     if not source_module:
-        raise ValueError("source_module est requis")
+        raise ValueError("source_module is required")
     if not decided_by:
         decided_by = "anonymous"
 
     resolved_source_currency = (resolved_source_currency or "").strip().upper()
     _validate_currency(resolved_source_currency, "resolved_source_currency")
 
-    note_val = (note or "").strip() or None
-
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO app.fx_conflict_resolutions
-                (project_id, target_field, source_module, resolved_source_currency,
-                 decided_by, note)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT (project_id, target_field, source_module) DO UPDATE SET
-                resolved_source_currency = EXCLUDED.resolved_source_currency,
-                decided_by               = EXCLUDED.decided_by,
-                decided_at               = NOW(),
-                note                     = EXCLUDED.note
-            RETURNING id, project_id, target_field, source_module,
-                      resolved_source_currency, decided_by, decided_at, note
-            """,
-            (project_id, target_field, source_module,
-             resolved_source_currency, decided_by, note_val),
-        )
-        row = cur.fetchone()
-        cols = [d[0] for d in cur.description]
-        rec: dict = {}
-        for col, val in zip(cols, row):
-            if col == "decided_at" and val is not None:
-                rec[col] = val.isoformat()
-            else:
-                rec[col] = val
+    # One governed act: the whole declaration set is republished as a new
+    # immutable version. `RuleSetError` subclasses `ValueError`, so the route's
+    # existing 422 mapping keeps working with no change at the seam.
+    rec = declare_binding(
+        conn,
+        project_id=project_id,
+        target_field=target_field,
+        source_module=source_module,
+        source_currency=resolved_source_currency,
+        actor=decided_by,
+        note=note,
+    )
 
     conn.commit()
 
     logger.info(
-        "conflict_resolutions: fx_resolution_upserted project=%s field=%s module=%s "
-        "resolved_currency=%s by=%s",
-        project_id, target_field, source_module, resolved_source_currency, decided_by,
+        "conflict_resolutions: fx_resolution_declared project=%s field=%s module=%s "
+        "resolved_currency=%s version=%s by=%s",
+        project_id, target_field, source_module, resolved_source_currency,
+        rec.get("rule_set_version_id"), decided_by,
     )
     return rec
 
@@ -360,28 +382,28 @@ def upsert_fx_resolution(
 def delete_fx_resolution(
     project_id: str, target_field: str, source_module: str, conn
 ) -> None:
-    """Delete a fx_conflict_resolution row.
+    """Withdraw a source-currency declaration.
 
-    Raises ValueError if the resolution does not exist (-> HTTP 404).
+    Not a DELETE any more, and the name is kept only because the route and the
+    dialog that call it are unchanged. Withdrawing publishes the declaration set
+    WITHOUT this entry; the withdrawn one stays readable in the superseded
+    version, so a figure published while it was in force can still be explained.
+
+    Raises ValueError when nothing is declared for that pair (-> HTTP 404).
     """
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            DELETE FROM app.fx_conflict_resolutions
-            WHERE project_id = %s AND target_field = %s AND source_module = %s
-            """,
-            (project_id, target_field, source_module),
-        )
-        deleted = cur.rowcount
+    from core.source_currency_bindings import withdraw_binding  # noqa: PLC0415
 
-    if deleted == 0:
-        raise ValueError(
-            f"Resolution introuvable pour projet='{project_id}', "
-            f"champ='{target_field}', module='{source_module}'"
-        )
+    result = withdraw_binding(
+        conn,
+        project_id=project_id,
+        target_field=target_field,
+        source_module=source_module,
+        actor="anonymous",
+    )
 
     conn.commit()
     logger.info(
-        "conflict_resolutions: fx_resolution_deleted project=%s field=%s module=%s",
-        project_id, target_field, source_module,
+        "conflict_resolutions: fx_resolution_withdrawn project=%s field=%s module=%s "
+        "version=%s",
+        project_id, target_field, source_module, result.get("rule_set_version_id"),
     )

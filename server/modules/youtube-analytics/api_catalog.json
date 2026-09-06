@@ -124,6 +124,16 @@
       "tier": "core"
     },
     {
+      "description": "Public channel title from channels.list(snippet). Tracked-entity LABEL field for the Competitors outbound reports; names the observed channel, never a governed KPI dimension.",
+      "exposure": "exposed",
+      "field_id": "channel_title",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "DATA_API",
+      "source_field": "snippet.title",
+      "tier": "core"
+    },
+    {
       "description": "Estimated city (<=250 rows). Planned.",
       "exposure": "planned",
       "field_id": "city",
@@ -144,7 +154,7 @@
       "tier": "core"
     },
     {
-      "description": "Viewer country, ISO-3166-1 alpha-2 (e.g. US, FR). NOTE: alpha-2, distinct from GA4/GSC governed 'country' vocabulary -- kept as its own field, not mapped onto the governed dimension. Planned.",
+      "description": "Viewer country, ISO 3166-1 alpha-2 (e.g. 'US', 'FR'). Measured 2026-08-17: this field IS mapped onto the governed 'country' dimension (canonical_dimension_mapping) and its staging routes through normalize_dimension(..., dim_country, ...), so the previous NOTE -- \"kept as its own field, not mapped onto the governed dimension. Planned.\" -- described the opposite of the shipped contract. The exemplars are QUOTED because the conformance reader counts only quoted tokens inside an (e.g. ...) parenthetical: unquoted, they were invisible and the seed confrontation SKIPPED for this connector alone. alpha-2 is the same encoding Taboola declares; GA4 and GSC declare names and alpha-3 respectively, and all three families are now proven over the whole seed.",
       "exposure": "planned",
       "field_id": "country",
       "kind": "dimension",
@@ -262,6 +272,26 @@
       "section": "ADS",
       "source_field": "grossRevenue",
       "tier": "advanced"
+    },
+    {
+      "description": "True when the channel id was supplied through own_channel_ids (or is the selected account) -- the binding's own-marker, stamped at pull time. Role stays a Governance fact.",
+      "exposure": "exposed",
+      "field_id": "is_own_channel",
+      "kind": "dimension",
+      "physical_type": "boolean",
+      "section": "DATA_API",
+      "source_field": "derived",
+      "tier": "core"
+    },
+    {
+      "field_id": "lifetime_view_count",
+      "kind": "metric",
+      "source_field": "statistics.viewCount",
+      "physical_type": "integer",
+      "section": "AUDIENCE SNAPSHOT",
+      "tier": "standard",
+      "exposure": "exposed",
+      "description": "Channel views since inception, at the moment of the reading. A stock: summing it with `views` would count the same audience twice."
     },
     {
       "description": "Positive ratings (likes). Additive.",
@@ -424,6 +454,16 @@
       "tier": "standard"
     },
     {
+      "field_id": "subscriber_count",
+      "kind": "metric",
+      "source_field": "statistics.subscriberCount",
+      "physical_type": "integer",
+      "section": "AUDIENCE SNAPSHOT",
+      "tier": "core",
+      "exposure": "exposed",
+      "description": "Channel subscribers at the moment of the reading. A STOCK, not a flow: take the latest value, never sum two days. Served by channels.list(part=statistics), not reports.query."
+    },
+    {
       "description": "Times users subscribed. Additive.",
       "exposure": "exposed",
       "field_id": "subscribers_gained",
@@ -474,6 +514,36 @@
       "tier": "core"
     },
     {
+      "field_id": "video_count",
+      "kind": "metric",
+      "source_field": "statistics.videoCount",
+      "physical_type": "integer",
+      "section": "AUDIENCE SNAPSHOT",
+      "tier": "standard",
+      "exposure": "exposed",
+      "description": "Public video count on the channel at the moment of the reading. A stock."
+    },
+    {
+      "description": "Thumbnail impressions (Reporting API bulk reach reports, 2026-01-15). Additive. Not served by reports.query -- needs the bulk-report transport. Planned.",
+      "exposure": "planned",
+      "field_id": "video_thumbnail_impressions",
+      "kind": "metric",
+      "physical_type": "integer",
+      "section": "REACH",
+      "source_field": "video_thumbnail_impressions",
+      "tier": "core"
+    },
+    {
+      "description": "Thumbnail impressions click-through rate (same reach reports). Ratio, non-additive; numerator derivable per day (impressions x ctr) -- impression_weighted at the semantic layer, never stored summed (AD-4). Planned.",
+      "exposure": "planned",
+      "field_id": "video_thumbnail_impressions_ctr",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "REACH",
+      "source_field": "video_thumbnail_impressions_ctr",
+      "tier": "core"
+    },
+    {
       "description": "Date a video was published on the channel (snippet.publishedAt from the Data API v3 uploads playlist). Maps to canonical event_type video_upload. label = snippet.title.",
       "exposure": "exposed",
       "field_id": "video_upload",
@@ -504,7 +574,17 @@
       "tier": "advanced"
     },
     {
-      "description": "Number of times a video was viewed. Additive.",
+      "field_id": "viewer_percentage",
+      "kind": "metric",
+      "source_field": "viewerPercentage",
+      "physical_type": "decimal",
+      "section": "DEMOGRAPHICS",
+      "exposure": "exposed",
+      "description": "Part des vues, en pourcentage, pour une tranche d'age et un genre. NON ADDITIVE : c'est une repartition, elle se lit, elle ne se somme pas. C'est la seule metrique que le rapport demographique accepte.",
+      "tier": "core"
+    },
+    {
+      "description": "Number of times a video was viewed. Additive. ERA BREAK 2026-08-24: public views count from the first frame since that date; engaged_views carries the former meaning.",
       "exposure": "exposed",
       "field_id": "views",
       "kind": "metric",

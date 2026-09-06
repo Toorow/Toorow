@@ -1,0 +1,55 @@
+{
+  "schema_version": "observed-ai-path-parity.v1",
+  "result_id": "qr_FIXTURE",
+  "mcp": {
+    "lifecycle": "finalized",
+    "outcome": "unavailable",
+    "path_id": "aip_FIXTURE",
+    "schema_version": "observed-ai-path.v1",
+    "state": "failed",
+    "steps": [
+      {
+        "missing_context": [],
+        "observed_at": "2026-01-01T00:00:00Z",
+        "ordinal": 0,
+        "outcome": "unavailable",
+        "step_kind": "tool_call",
+        "tool_name": "execute_analyze_query_spec"
+      }
+    ]
+  },
+  "workbench": {
+    "lifecycle": "finalized",
+    "outcome": "unavailable",
+    "path_id": "aip_FIXTURE",
+    "schema_version": "observed-ai-path.v1",
+    "state": "failed",
+    "steps": [
+      {
+        "missing_context": [],
+        "observed_at": "2026-01-01T00:00:00Z",
+        "ordinal": 0,
+        "outcome": "unavailable",
+        "step_kind": "tool_call",
+        "tool_name": "execute_analyze_query_spec"
+      }
+    ]
+  },
+  "share": {
+    "lifecycle": "finalized",
+    "outcome": "unavailable",
+    "path_id": "aip_FIXTURE",
+    "schema_version": "observed-ai-path.v1",
+    "state": "failed",
+    "steps": [
+      {
+        "missing_context": [],
+        "observed_at": "2026-01-01T00:00:00Z",
+        "ordinal": 0,
+        "outcome": "unavailable",
+        "step_kind": "tool_call",
+        "tool_name": "execute_analyze_query_spec"
+      }
+    ]
+  }
+}

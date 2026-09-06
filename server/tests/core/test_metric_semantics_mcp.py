@@ -8,8 +8,13 @@ directly. The MCP identity is simulated by patching get_access_token.
 Coverage: registration/shape, guards (org read/manage, IDOR F-1, project leak F-3, PLATFORM
 forbidden, anonymous), reference contract + synonyms/ai_context, route serialisation for the
 6 statuses + F-4 empty-series filtering + determinism, curation delegation + created_by
-propagation, and verified queries (canonical_correct only, filters, limit, fail-soft,
-read-only).
+propagation, and verified queries.
+
+The verified-query tests changed shape on 2026-07-31. They used to pin a behaviour that
+should never have shipped: the tool read `server/tests/evals/corpus.yaml` and served its
+50 question<->SQL pairs to the model. They now pin the opposite -- that the eval corpus is
+never read, that the Golden Question is not used as grounding either, and that the tool
+STATES its absence with a reason code and an owner instead of returning a bare empty list.
 """
 
 from __future__ import annotations
@@ -31,19 +36,37 @@ from fastmcp.exceptions import ToolError  # noqa: E402
 
 
 class FakeMCP:
-    """Capture mcp.tool(fn) registrations so register(mcp) exposes its handlers."""
+    """Capture mcp.tool(fn) registrations so register(mcp) exposes its handlers.
+
+    `**_declaration` because AD-43 made every registration carry its capability
+    profile: `register_profiled` forwards `name`/`tags`/`meta` to `mcp.tool`. A
+    one-argument recorder raises a TypeError inside the registrar instead of
+    telling this file anything about metric semantics.
+    """
 
     def __init__(self):
         self.tools = {}
 
-    def tool(self, fn):
+    def tool(self, fn, **_declaration):
         self.tools[fn.__name__] = fn
         return fn
 
 
 def _register():
+    """Register into a throwaway app WITHOUT leaving declarations behind.
+
+    The profiled registry is process-global, and every call here would otherwise
+    add seven declarations to the catalog every other suite in this session reads.
+    """
+    from core import mcp_profiles
+
     mcp = FakeMCP()
-    msm.register(mcp)
+    before = dict(mcp_profiles._REGISTRY.declarations)
+    try:
+        msm.register(mcp)
+    finally:
+        mcp_profiles._REGISTRY.declarations.clear()
+        mcp_profiles._REGISTRY.declarations.update(before)
     return mcp.tools
 
 
@@ -119,9 +142,58 @@ def test_register_exposes_all_tools():
         "metric_mapping_confirm",
         "metric_mapping_rename",
         "metric_mapping_reject",
-        "metric_definition_upsert",
     ):
         assert name in tools
+
+
+def test_the_definition_writer_is_not_offered_any_more():
+    """Story 49.3 AC1, cutover of 2026-08-25 -- and this is the whole test of it.
+
+    `metric_definition_upsert` was the MCP door onto `app.metric_definitions`, the
+    second store that declares how a metric aggregates. `governance.md` settled the
+    precedence (the Semantic Model wins) and left two ways to finish it: "either a
+    projection or the retirement of the lower layer". This is the retirement, and
+    the REST doors went in the same commit.
+
+    IT IS REMOVED, NOT REFUSING, and the asymmetry with REST is deliberate. A REST
+    caller holds a URL, so those doors answer 409 `legacy_store_is_read_only` with
+    a sentence naming the Semantic Model -- unmounting them would answer 404 and
+    send the caller looking for its object. An MCP catalogue is DISCOVERED: a tool
+    that is not offered misleads nobody. And a tool kept alive only to refuse would
+    still declare `org_id` / `project_id` while resolving no access, which
+    `tests/conformance/test_mcp_tools_resolve_project_scope.py` reads -- correctly
+    -- as an unguarded scoped tool.
+    """
+    tools = _register()
+
+    assert "metric_definition_upsert" not in tools
+    # Not vacuous: the three curation writes that STAYED are still offered, so an
+    # empty registration would not pass this test by accident.
+    for still_there in (
+        "metric_mapping_confirm",
+        "metric_mapping_rename",
+        "metric_mapping_reject",
+    ):
+        assert still_there in tools
+
+
+def test_the_module_no_longer_reaches_the_definition_store():
+    """The permanent attack: bringing the tool back needs the import, and goes red here."""
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(msm))
+    imported = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module == "core.metric_semantics"
+        for alias in node.names
+    }
+
+    # Not vacuous: the mapping curation path still imports from the same module.
+    assert imported, "no core.metric_semantics import found -- the guard reads nothing"
+    assert "upsert_metric_definition" not in imported, sorted(imported)
+    assert "delete_metric_definition" not in imported, sorted(imported)
 
 
 def test_envelope_shape():
@@ -239,19 +311,6 @@ def test_project_leak_foreign_project_not_found():
     builder.assert_not_called()
 
 
-def test_definition_upsert_platform_forbidden():
-    tools = _register()
-    with _patch_identity():
-        with pytest.raises(ToolError) as ei:
-            tools["metric_definition_upsert"](
-                org_id="orgA",
-                scope_level="PLATFORM",
-                canonical_name="revenue",
-                aggregation_type="SUM",
-            )
-    assert _err_code(ei) == "forbidden"
-
-
 def test_anonymous_identity_rejected_by_guard():
     """No token -> identity 'anonymous' -> guard denies (non-member) -> not_found."""
     tools = _register()
@@ -305,11 +364,11 @@ def test_reference_contract_keys_and_synonyms():
             "core.metric_semantics.reduce_definitions_by_specificity",
             return_value={"revenue": _def_row()},
         ),
-        patch("core.metric_semantics._load_reconciliation_rows", return_value=[]),
-        patch(
-            "core.metric_semantics.reduce_reconciliation_by_specificity",
-            return_value=None,
-        ),
+        # AI-295 : les deux patchs du cascade retire sont partis avec lui. La
+        # fonction `_load_reconciliation_rows` a ete SUPPRIMEE, donc la patcher
+        # levait AttributeError -- ce test etait rouge pour la meilleure raison
+        # qui soit, ce qu il stubbait n existe plus. Le contrat teste ici est
+        # celui des CLES du reference, pas la reconciliation : rien a remplacer.
     ):
         res = tools["metric_reference"](org_id="orgA")
     metric = res.structured_content["data"]["metrics"][0]
@@ -343,12 +402,15 @@ async def test_reference_contract_locked_across_rest_and_mcp():
 
     # One shared def row + one shared reconciliation rule + one shared source mapping.
     def_row = _def_row()
+    # AI-295: a GOVERNED reference entry -- `resolved_scope` is always PROJECT,
+    # because a published Rule Set belongs to the Project that published it.
     rec_rule = {
         "method": "PRIORITY",
         "priority_order": ["src-a", "src-b"],
         "join_key": None,
         "truth_connector": None,
-        "scope_level": "PLATFORM",
+        "resolved_scope": "PROJECT",
+        "rule_set_version_id": "grsv_EXAMPLE",
     }
     # Positional source-mapping row: (metric_definition_id, connector, source_field_path, status)
     mapping_rows = [("metdef_rev", "src-a", "revenue", "proposed")]
@@ -377,11 +439,7 @@ async def test_reference_contract_locked_across_rest_and_mcp():
                 return_value={"revenue": def_row},
             ),
             patch(
-                "core.metric_semantics._load_reconciliation_rows", return_value=[rec_rule]
-            ),
-            patch(
-                "core.metric_semantics.reduce_reconciliation_by_specificity",
-                return_value=rec_rule,
+                "core.metric_semantics.reference_reconciliation", return_value=rec_rule
             ),
             patch("core.db.get_connection", return_value=fake_conn),
         )
@@ -458,7 +516,7 @@ def test_route_keep_separate_lists_series_no_total():
     assert [s["connector"] for s in out["series_declared"]] == ["a", "b"]
     summary = msm._route_summary(out).lower()
     # Honest: enumerates per-source series "not to be added", never a combined total.
-    assert "ne pas additionner" in summary
+    assert "must not be added up" in summary
 
 
 def test_route_unruled_overlap_invitation_no_total():
@@ -473,7 +531,7 @@ def test_route_unruled_overlap_invitation_no_total():
     summary = msm._route_summary(out).lower()
     assert "configure" in summary
     # The summary explicitly disclaims any combined total (honest, AD-9).
-    assert "jamais de total combine" in summary
+    assert "never a combined total" in summary
 
 
 def test_route_override_not_materialized():
@@ -701,125 +759,268 @@ def test_reject_status_rejected():
     assert upsert.call_args.kwargs["status"] == "rejected"
 
 
-def test_definition_upsert_passes_synonyms_ai_context_and_identity():
-    tools = _register()
-    up = MagicMock(return_value={"id": "metdef_x", "canonical_name": "revenue"})
-    with (
-        _patch_identity(sub="owner@toorow.io"),
-        patch("core.metric_semantics_api._require_org_manage", return_value=True),
-        patch("core.db.get_connection", return_value=_ctx()),
-        patch("core.metric_semantics.upsert_metric_definition", up),
-    ):
-        tools["metric_definition_upsert"](
-            org_id="orgA",
-            scope_level="ORG",
-            canonical_name="revenue",
-            aggregation_type="SUM",
-            synonyms=[{"lang": "fr", "terms": ["CA"]}],
-            ai_context="Chiffre d'affaires",
-        )
-    kwargs = up.call_args.kwargs
-    assert kwargs["synonyms"] == [{"lang": "fr", "terms": ["CA"]}]
-    assert kwargs["ai_context"] == "Chiffre d'affaires"
-    assert kwargs["created_by"] == "owner@toorow.io"
-    assert kwargs["scope_level"] == "ORG"
-
-
-def test_definition_upsert_invalid_scope_does_not_leak_internal_message():
-    """S-1: an InvalidScope from the store surfaces as a CONSTANT FR message; the internal
-    exception text is NOT propagated to the caller (only logged)."""
-    from core.metric_semantics import InvalidScope
-
-    secret = "org_id 'orgA' inconsistent with project_id 'proj-SECRET-INTERNAL'"
-
-    def _raise(**_kw):
-        raise InvalidScope(secret)
-
-    tools = _register()
-    with (
-        _patch_identity(sub="owner@toorow.io"),
-        patch("core.metric_semantics_api._require_org_manage", return_value=True),
-        patch("core.db.get_connection", return_value=_ctx()),
-        patch("core.metric_semantics.upsert_metric_definition", _raise),
-    ):
-        with pytest.raises(ToolError) as ei:
-            tools["metric_definition_upsert"](
-                org_id="orgA",
-                scope_level="ORG",
-                canonical_name="revenue",
-                aggregation_type="SUM",
-            )
-    assert _err_code(ei) == "invalid_scope"
-    payload = ei.value.args[0]
-    assert "Scope invalide." in payload
-    assert secret not in payload
-    assert "proj-SECRET-INTERNAL" not in payload
-
-
 # ---------------------------------------------------------------------------
 # 29-34: verified queries
 # ---------------------------------------------------------------------------
 
-_CORPUS_FIXTURE = """
-schema_version: '1'
-questions:
-- id: q1
-  question: How many sessions?
-  surface: daily_report
-  difficulty: easy
-  tags: [ga4, sessions]
-  reference_queries:
-  - reference_sql: SELECT 1
-    role: canonical_correct
-    note: ok
-  tool_invocation:
-    tool: get_daily_report
-    args: {project_id: default}
-- id: q2
-  question: A wrong-only entry
-  surface: expert_report
-  difficulty: medium
-  tags: [meta-ads]
-  reference_queries:
-  - reference_sql: SELECT 999
-    role: incorrect
-    note: wrong
-"""
+def _executable_code(module) -> str:
+    """The module's EXECUTABLE code: no comments, no docstrings.
+
+    The two guards below search for forbidden reads, and searching the raw file is the
+    wrong instrument twice over: it matches the header comment that EXPLAINS why the read
+    is forbidden, and it matches the docstrings that repeat the explanation. Documenting
+    the rule would then break the test that enforces it -- which is exactly what happened
+    here, twice, before this helper existed.
+
+    Round-tripping through the AST drops comments; stripping the leading string Expr of
+    every module, class and function drops docstrings. What is left is what actually runs.
+    """
+    import ast
+    import pathlib
+
+    tree = ast.parse(pathlib.Path(module.__file__).read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        body = getattr(node, "body", [])
+        if (
+            body
+            and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)
+        ):
+            node.body = body[1:] or [ast.Pass()]
+    return ast.unparse(tree)
 
 
-def _write_corpus(tmp_path, text=_CORPUS_FIXTURE):
-    p = tmp_path / "corpus.yaml"
-    p.write_text(text, encoding="utf-8")
-    return p
+def test_the_module_no_longer_reads_the_eval_corpus():
+    """The regression guard. Two independent reasons make this permanent.
+
+    `server/tests/evals/corpus.yaml` declares itself TEST CODE on its first line
+    (AD-17), and it is the answer key `server/tests/evals/test_eval_gate.py` grades
+    the system against. Serving it to the model at runtime -- which Story 27.6 did
+    from 2026-07-21 -- meant the adherence gate reported how well the model read what
+    it had just been handed.
+    """
+
+    body = _executable_code(msm)
+    for banned in ("corpus.yaml", "CORPUS_PATH", "evals"):
+        assert banned not in body, (
+            f"the eval corpus is being read again through `{banned}`: it is test code, "
+            "and it is the answer key the adherence gate grades against"
+        )
 
 
-def test_load_verified_queries_canonical_correct_only(tmp_path):
-    p = _write_corpus(tmp_path)
-    pairs = msm._load_verified_queries(corpus_path=p)
-    by_id = {x["id"]: x for x in pairs}
-    assert by_id["q1"]["reference_sql"] == "SELECT 1"
-    # q2 has only an 'incorrect' role -> no reference_sql (never few-shot a wrong query).
-    assert by_id["q2"]["reference_sql"] is None
+def test_the_store_exists_now_and_the_three_outcomes_stay_apart():
+    """Story 52.2 delivered the store, so the absence this tool used to state is gone.
 
+    What replaces it is NOT one empty list. Three facts used to hide behind that
+    list, and a reader that cannot tell them apart cannot act on any of them:
 
-def test_load_verified_queries_missing_corpus_returns_empty(tmp_path):
-    assert msm._load_verified_queries(corpus_path=tmp_path / "nope.yaml") == []
+      * pairs exist                    -> no reason code at all
+      * the project bound none         -> a fact about the PROJECT
+      * the store could not be read    -> a fact about the RUN
 
+    The third is the one that must never be reported as the second: "there are
+    none" is a claim about the project, and a failed read is not entitled to it.
+    """
+    from core import answerable_topics as topics
 
-def test_verified_queries_tool_corpus_absent_note(tmp_path):
-    tools = _register()
-    with patch(
-        "core.metric_semantics_mcp._load_verified_queries", return_value=[]
+    # The project bound nothing: an empty list WITH its reason.
+    empty = ([], topics.NO_BINDING_REASON)
+    with patch.object(topics, "verified_query_pairs", return_value=empty), patch(
+        "core.db.get_connection", lambda *a, **k: _ctx()
     ):
-        res = tools["metric_verified_queries"]()
+        pairs, reason = msm._governed_verified_queries("proj_EXAMPLE", "owner@example.com")
+    assert pairs == []
+    assert reason == topics.NO_BINDING_REASON
+
+    # The store is unreadable: a DIFFERENT reason, never the one above.
+    with patch("core.db.get_connection", side_effect=RuntimeError("db down")):
+        pairs, reason = msm._governed_verified_queries("proj_EXAMPLE", "owner@example.com")
+    assert pairs == []
+    assert reason == topics.UNAVAILABLE_REASON
+
+    # Bindings exist: pairs, and no reason code to explain an emptiness there is not.
+    bound = [{"id": "atq_1", "question": "How is spend pacing?", "surface": "pacing",
+              "tags": ["headline"]}]
+    with patch.object(topics, "verified_query_pairs", return_value=(bound, None)), patch(
+        "core.db.get_connection", lambda *a, **k: _ctx()
+    ):
+        pairs, reason = msm._governed_verified_queries("proj_EXAMPLE", "owner@example.com")
+    assert [p["id"] for p in pairs] == ["atq_1"]
+    assert reason is None
+
+
+def test_the_tool_carries_the_reason_and_refuses_an_unguarded_read():
+    """The emptiness is never bare, and the guard runs BEFORE the read."""
+    from core import answerable_topics as topics
+
+    tools = _register()
+
+    empty = ([], topics.NO_BINDING_REASON)
+    with patch("core.project_access.identity_can_read_project", return_value=True), patch(
+        "core.db.get_connection", lambda *a, **k: _ctx()
+    ), patch.object(topics, "verified_query_pairs", return_value=empty):
+        res = tools["metric_verified_queries"]("proj_EXAMPLE")
     data = res.structured_content["data"]
     assert data["verified_queries"] == []
-    assert "note" in data
+    assert data["reason_code"] == topics.NO_BINDING_REASON
+    assert "answer key" in data["note"], (
+        "the note must say WHY the corpus is not used, not merely that nothing is there"
+    )
+
+    # Denied identity -> not_found, and the store is never read.
+    with patch("core.project_access.identity_can_read_project", return_value=False), patch(
+        "core.db.get_connection", lambda *a, **k: _ctx()
+    ), patch.object(topics, "verified_query_pairs") as never:
+        with pytest.raises(Exception):
+            tools["metric_verified_queries"]("proj_SOMEONE_ELSE")
+    never.assert_not_called()
 
 
-def test_verified_queries_filter_surface_and_tag(tmp_path):
-    p = _write_corpus(tmp_path)
-    pairs = msm._load_verified_queries(corpus_path=p)
+def test_the_views_a_topic_declares_reach_the_model_and_only_then():
+    """Story 75-5: `views` is ONE sibling key, and only for a topic that has some.
+
+    THE HALF THAT MATTERS IS THE SECOND ONE. Adding a key is easy to prove; not
+    adding it is the acceptance criterion, because every consumer of this tool
+    that predates story 75-5 reads a payload it never asked to change. So the
+    unbound pair below is asserted key by key, not merely for the absence of
+    `views`.
+    """
+    from core import answerable_topics as topics
+
+    tools = _register()
+
+    unbound = [{"id": "atq_1", "question": "How is spend pacing?", "surface": "pacing",
+                "tags": ["headline"], "topic_key": "pacing", "role": "headline"}]
+    with patch("core.project_access.identity_can_read_project", return_value=True), patch(
+        "core.db.get_connection", lambda *a, **k: _ctx()
+    ), patch.object(topics, "verified_query_pairs", return_value=(unbound, None)):
+        res = tools["metric_verified_queries"]("proj_EXAMPLE")
+    served = res.structured_content["data"]["verified_queries"][0]
+    assert set(served) == {"id", "question", "surface", "tags", "topic_key", "role"}, (
+        "a topic that declares no Semantic View must reach the model with the exact "
+        "payload it had before story 75-5 -- not `views: []`"
+    )
+
+    bound = [dict(unbound[0], views=[{
+        "view_id": "sv_EXAMPLE",
+        "view_version_id": "svv_EXAMPLE",
+        "view_version_number": 3,
+        "view_name": "spend",
+        "status": "published",
+        "stale": False,
+        "paths": [{"relation_ids": ["campaign_to_account"], "from": "campaigns",
+                   "to": "accounts", "cardinality": "many_to_one",
+                   "fan_out_policy": "forbid", "resolved": True,
+                   "relations": []}],
+    }])]
+    with patch("core.project_access.identity_can_read_project", return_value=True), patch(
+        "core.db.get_connection", lambda *a, **k: _ctx()
+    ), patch.object(topics, "verified_query_pairs", return_value=(bound, None)):
+        res = tools["metric_verified_queries"]("proj_EXAMPLE")
+    served = res.structured_content["data"]["verified_queries"][0]
+    assert served["views"][0]["view_version_id"] == "svv_EXAMPLE", (
+        "the pin the model is told must be the EXACT version, never the head"
+    )
+    assert served["views"][0]["paths"][0]["fan_out_policy"] == "forbid", (
+        "a path reaches the model WITH its fan-out policy: a join whose policy the "
+        "model cannot see is a join it will assume is safe"
+    )
+
+
+def test_the_golden_question_is_not_used_as_grounding_either():
+    """Epic 51's Golden Question is the EVALUATION specification.
+
+    Grounding the runtime with it would reintroduce the same contamination one layer
+    up: a system cannot be measured against the examples it was handed.
+    """
+    body = _executable_code(msm)
+    for banned in ("golden_question", "eval_benchmark_questions"):
+        assert banned not in body
+
+
+# ---------------------------------------------------------------------------
+# The same guard, on the modules the anchoring MOVED to (Epic 52).
+#
+# The two guards above sweep `metric_semantics_mcp` and nothing else, because
+# when they were written that module WAS the grounding path. Epic 52 moved it:
+# a topic now resolves its catalog, its verified-query bindings and its
+# knowledge pins in `core.answerable_topics`, serves them over
+# `core.answerable_topics_api`, and projects the result through
+# `core.answer_contract`. A `from tests.evals import corpus` in any of those
+# three would reintroduce exactly the contamination the guards above forbid,
+# and neither of them would see it. The module's own local guard
+# (`test_answerable_topics.py:650`) bans function names and imported module
+# names containing `evaluation` or `golden_question` -- not `corpus`, not
+# `evals`.
+#
+# Same instrument, same banned words, wider sweep. The two guards above are
+# untouched: this is an addition, never a replacement.
+# ---------------------------------------------------------------------------
+
+#: Where an answer is anchored TODAY. A module that leaves this tuple leaves the
+#: guard, so the tuple is asserted non-empty and every name must import.
+_ANCHORING_MODULES = (
+    "core.answerable_topics",
+    "core.answerable_topics_api",
+    "core.answer_contract",
+)
+
+#: The union of the two banned lists above. One list, so a word added for one
+#: module is added for all of them.
+_BANNED_IN_ANCHORING_CODE = (
+    "corpus.yaml",
+    "CORPUS_PATH",
+    "evals",
+    "golden_question",
+    "eval_benchmark_questions",
+)
+
+
+@pytest.mark.parametrize("module_name", _ANCHORING_MODULES)
+def test_the_anchoring_path_does_not_read_the_corpus_either(module_name):
+    """The answer path of Epic 52 is held to the guard written for Story 27.6.
+
+    `server/tests/evals/corpus.yaml` is test code (AD-17) and the answer key
+    `server/tests/evals/test_eval_gate.py` grades against; Epic 51's Golden
+    Question is the evaluation specification. Neither may ground a runtime
+    answer, and it does not matter which module does the grounding.
+    """
+    import importlib
+
+    module = importlib.import_module(module_name)
+    body = _executable_code(module)
+    for banned in _BANNED_IN_ANCHORING_CODE:
+        assert banned not in body, (
+            f"{module_name} reads the evaluation material through `{banned}`. "
+            "It is test code and the answer key the adherence gate grades against: "
+            "a system cannot be measured against the examples it was handed."
+        )
+
+
+def test_the_anchoring_guard_covers_every_module_of_the_answer_path():
+    """The guard narrows silently if a module is renamed out of the tuple.
+
+    A sweep is only worth its coverage. This asserts the three names still
+    resolve -- a rename that leaves one behind fails here rather than passing
+    quietly with two thirds of the path unswept.
+    """
+    import importlib
+
+    assert len(_ANCHORING_MODULES) >= 3
+    for name in _ANCHORING_MODULES:
+        assert importlib.import_module(name) is not None
+
+
+def test_verified_queries_filter_surface_and_tag():
+    """The filter survives the source change: it is pure, and the governed store will
+    hand it the same shape."""
+    pairs = [
+        {"id": "q1", "surface": "daily_report", "tags": ["ga4", "sessions"]},
+        {"id": "q2", "surface": "report", "tags": ["meta-ads"]},
+    ]
     daily = msm._filter_verified_queries(pairs, surface="daily_report", tag=None, limit=20)
     assert [x["id"] for x in daily] == ["q1"]
     tagged = msm._filter_verified_queries(pairs, surface=None, tag="meta-ads", limit=20)
@@ -845,7 +1046,16 @@ def test_verified_queries_read_only_no_write_open():
 
 
 def _ctx(fetchone=None, fetchall=None):
-    """A get_connection()-compatible context manager with a fake cursor."""
+    """A connection double the ACQUISITION SEAM can arm, not just read from.
+
+    The surfaces of this module acquire through `core.db.request_connection`
+    since 2026-08-21, and that seam installs the access context on the
+    connection it hands back: `SET ROLE`, two `set_config` calls, then a
+    `commit()`. A double with a cursor but no `commit` made every tool here
+    raise `AttributeError` inside `core/db.py` -- the double was shaped for an
+    acquisition that no longer exists. `commit`/`rollback` are answered here so
+    the double keeps standing for a real connection.
+    """
 
     class _Cur:
         def __enter__(self):
@@ -876,5 +1086,11 @@ def _ctx(fetchone=None, fetchall=None):
 
         def cursor(self):
             return _Cur()
+
+        def commit(self):
+            return None
+
+        def rollback(self):
+            return None
 
     return _Conn()

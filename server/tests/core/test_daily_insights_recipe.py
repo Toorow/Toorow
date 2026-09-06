@@ -110,3 +110,50 @@ def test_journal_no_insight_distinct_from_blocked():
     j = run_journal({"status": "no_insight", "insights": [], "coverage": {}})
     assert j["state"] == "no_insight"
     assert j["rejection"] is None  # nothing worth saying != data not ready
+
+
+# ---------------------------------------------------------------------------
+# The journal counts what the day carried, including what was withdrawn
+#
+# `list_runs` deliberately carries no items -- fourteen days of frozen cards is
+# not a journal -- and `run_journal` derived `itemCount` from that absent list, so
+# every row of the history reported 0 and the console's own condition
+# (`itemCount > 0`) never opened a day. Migration 321 adds the second count: a day
+# whose only claim was retracted must not read like a day whose claim stands.
+# ---------------------------------------------------------------------------
+
+
+def test_the_journal_prefers_the_counts_the_list_query_measured():
+    from core.daily_insights_recipe import run_journal
+
+    journal = run_journal(
+        {
+            "status": "published",
+            "insight_date": "2026-07-21",
+            "item_count": 3,
+            "retracted_count": 1,
+            "insights": [],
+        }
+    )
+
+    assert journal["itemCount"] == 3
+    assert journal["retractedCount"] == 1
+
+
+def test_a_run_read_with_its_items_still_counts_them_itself():
+    from core.daily_insights_recipe import run_journal
+
+    journal = run_journal(
+        {
+            "status": "published",
+            "insight_date": "2026-07-21",
+            "insights": [
+                {"slot": 0, "retracted_at": None},
+                {"slot": 1, "retracted_at": "2026-07-23T11:00:00+00:00"},
+            ],
+        }
+    )
+
+    assert journal["itemCount"] == 2
+    assert journal["retractedCount"] == 1
+    assert journal["slots"] == [0, 1]

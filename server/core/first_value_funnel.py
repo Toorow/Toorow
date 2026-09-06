@@ -151,7 +151,7 @@ def _pepper() -> str:
     value = os.environ.get("TOOROW_FUNNEL_PEPPER", "")
     if len(value) < 32:
         raise FunnelValidationError(
-            "TOOROW_FUNNEL_PEPPER doit contenir au moins 32 caracteres"
+            "TOOROW_FUNNEL_PEPPER must contain at least 32 characters"
         )
     return value
 
@@ -170,14 +170,14 @@ def journey_reference(*, org_id: str, project_id: str, subject: str) -> str:
     """
     for name, value in (("org_id", org_id), ("project_id", project_id), ("subject", subject)):
         if not isinstance(value, str) or not value.strip():
-            raise FunnelValidationError(f"{name} est requis pour la reference de parcours")
+            raise FunnelValidationError(f"{name} is required for the journey reference")
     return _keyed_hash("journey", org_id.strip(), project_id.strip(), subject.strip())
 
 
 def cohort_reference(*, org_id: str) -> str:
     """Coarse cohort discriminator hash (per-org) used ONLY for suppression bucketing."""
     if not isinstance(org_id, str) or not org_id.strip():
-        raise FunnelValidationError("org_id est requis pour la reference de cohorte")
+        raise FunnelValidationError("org_id is required for the cohort reference")
     return _keyed_hash("cohort", org_id.strip())
 
 
@@ -195,9 +195,9 @@ def bucket_duration(seconds: float | int | None) -> str | None:
     if seconds is None:
         return None
     if not isinstance(seconds, (int, float)) or isinstance(seconds, bool):
-        raise FunnelValidationError("la duree doit etre un nombre de secondes")
+        raise FunnelValidationError("the duration must be a number of seconds")
     if seconds < 0:
-        raise FunnelValidationError("la duree ne peut pas etre negative")
+        raise FunnelValidationError("the duration cannot be negative")
     for upper, label in _BUCKET_EDGES:
         if seconds < upper:
             return label
@@ -233,7 +233,7 @@ def _validate_hash(value: str, *, name: str) -> str:
     if not isinstance(value, str) or len(value) != 64 or any(
         c not in "0123456789abcdef" for c in value
     ):
-        raise FunnelValidationError(f"{name} doit etre un hash keye")
+        raise FunnelValidationError(f"{name} must be a keyed hash")
     return value
 
 
@@ -285,12 +285,12 @@ def record_funnel_stage(
 
     # Keep the DB-level CHECK semantics honest at the domain layer too.
     if recovery_v is not None and stage_v != "recovery_action":
-        raise FunnelValidationError("recovery_kind n'est valide que pour l'etape recovery_action")
+        raise FunnelValidationError("recovery_kind is only valid for the recovery_action step")
     if reason_v is not None and outcome_v != "abandoned":
-        raise FunnelValidationError("abandon_reason n'est valide qu'avec l'issue abandoned")
+        raise FunnelValidationError("abandon_reason is only valid with the abandoned outcome")
 
     if not isinstance(retention_days, int) or retention_days <= 0 or retention_days > 3650:
-        raise FunnelValidationError("retention_days doit etre compris entre 1 et 3650")
+        raise FunnelValidationError("retention_days must be between 1 and 3650")
 
     moment = _aware(now or datetime.now(timezone.utc))
     expires = moment + timedelta(days=retention_days)
@@ -468,7 +468,7 @@ class CohortResult:
 def _validate_filters(filters: Mapping[str, Any]) -> dict[str, str]:
     """Accept ONLY allowlisted enum filters (stage/outcome). No raw identifiers."""
     if not isinstance(filters, Mapping):
-        raise FunnelValidationError("filters doit etre un objet")
+        raise FunnelValidationError("filters must be an object")
     allowed_keys = {"stage", "outcome", "policy_version"}
     if not set(filters).issubset(allowed_keys):
         raise FunnelValidationError("filters contient une cle non autorisee")
@@ -517,7 +517,7 @@ def cross_tenant_cohort(
     minimum -- so a query that narrows to one tenant returns nothing rather than a count.
     """
     if not isinstance(min_cohort_version, int) or min_cohort_version < 1:
-        raise FunnelValidationError("min_cohort_version doit etre un entier positif")
+        raise FunnelValidationError("min_cohort_version must be a positive integer")
     min_cohort = max(min_cohort_version, _MIN_COHORT_FLOOR)
     safe = _validate_filters(filters)
     marker = _query_budget_marker(safe, min_cohort)
@@ -592,7 +592,7 @@ def purge_expired_funnel_events(
     confirm none of the purged rows remain).
     """
     if not isinstance(policy_version, str) or not policy_version.strip():
-        raise FunnelValidationError("policy_version est requis pour la purge")
+        raise FunnelValidationError("policy_version is required for the purge")
     moment = _aware(now or datetime.now(timezone.utc))
     with conn.cursor() as cur:
         cur.execute("SET LOCAL app.funnel_purge = 'on'")
@@ -650,7 +650,7 @@ def record_support_access(
     expiry = _aware(expires_at)
     moment = _aware(now or datetime.now(timezone.utc))
     if expiry <= moment:
-        raise FunnelValidationError("expires_at doit etre dans le futur")
+        raise FunnelValidationError("expires_at must be in the future")
 
     actor_hash = _keyed_hash("support_actor", actor.strip())
     scope_hash = _keyed_hash("support_scope", scope_subject.strip())

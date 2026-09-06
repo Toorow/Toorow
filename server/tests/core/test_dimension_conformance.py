@@ -19,11 +19,15 @@ from pathlib import Path
 
 import pytest
 
+from tests.conftest import purge_fixture_org
+
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
 
 from core import dimension_conformance as dc  # noqa: E402
+
+from tests.support.updated_at_trigger import ensure_set_updated_at
 
 # ---------------------------------------------------------------------------
 # Postgres availability check (calque sur test_metric_semantics.py)
@@ -978,16 +982,8 @@ def _apply_migration(conn, path) -> None:
 
 
 def _ensure_set_updated_at(conn) -> None:
-    with conn.cursor() as cur:
-        cur.execute("CREATE SCHEMA IF NOT EXISTS app")
-        cur.execute(
-            """
-            CREATE OR REPLACE FUNCTION app.set_updated_at() RETURNS trigger AS $$
-            BEGIN NEW.updated_at = now(); RETURN NEW; END;
-            $$ LANGUAGE plpgsql
-            """
-        )
-    conn.commit()
+    """See `tests.support.updated_at_trigger`: ask before replacing."""
+    ensure_set_updated_at(conn)
 
 
 def _prepare(conn) -> None:
@@ -998,6 +994,7 @@ def _prepare(conn) -> None:
 
 
 @pg_available
+@pytest.mark.pg_owner
 def test_ddl_creates_table_replayable():
     """§31: app.dimension_value_mappings + indexes exist after 052; replay is a no-op."""
     from core.db import get_connection
@@ -1021,6 +1018,7 @@ def test_ddl_creates_table_replayable():
 
 
 @pg_available
+@pytest.mark.pg_owner
 def test_scope_check_enforced():
     """§32: Postgres rejects inconsistent scope triplets."""
     import psycopg
@@ -1045,6 +1043,7 @@ def test_scope_check_enforced():
 
 
 @pg_available
+@pytest.mark.pg_owner
 def test_score_and_status_and_method_checks():
     """§33/§34: score out of [0,1], bad status, bad method all rejected; valid accepted."""
     import psycopg
@@ -1094,6 +1093,7 @@ def test_score_and_status_and_method_checks():
 
 
 @pg_available
+@pytest.mark.pg_owner
 def test_coalesce_unicity_org():
     """§35: a second (ORG, org, NULL, dim, conn, val) is rejected (COALESCE unicity)."""
     import psycopg
@@ -1135,12 +1135,15 @@ def test_coalesce_unicity_org():
                     conn.rollback()
         finally:
             with get_connection() as clean:
-                with clean.cursor() as cur:
-                    cur.execute("DELETE FROM app.organizations WHERE id = %s", (org_id,))
+                # Through the graph the production purge walks: `mdm_business_domains`
+                # holds an org by ON DELETE RESTRICT, and the next governed table
+                # will hold it too. A hand-written DELETE loses that race.
+                purge_fixture_org(clean, org_id)
                 clean.commit()
 
 
 @pg_available
+@pytest.mark.pg_owner
 def test_live_crud_confirm_conform_and_audit():
     """§36/§37: persist -> confirm -> conform_value returns the canonical; audit written."""
     from core.db import get_connection
@@ -1186,12 +1189,13 @@ def test_live_crud_confirm_conform_and_audit():
                 assert cur.fetchone()[0] >= 1
     finally:
         with get_connection() as clean:
-            with clean.cursor() as cur:
-                cur.execute("DELETE FROM app.organizations WHERE id = %s", (org_id,))
+            # Same graph as above (AI-291).
+            purge_fixture_org(clean, org_id)
             clean.commit()
 
 
 @pg_available
+@pytest.mark.pg_owner
 def test_fk_cascade_org_delete_drops_org_mappings():
     """§38: deleting an org drops its ORG mappings; PLATFORM ones survive."""
     from core.db import get_connection
@@ -1221,8 +1225,8 @@ def test_fk_cascade_org_delete_drops_org_mappings():
     )
     try:
         with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM app.organizations WHERE id = %s", (org_id,))
+            # Same graph as above (AI-291).
+            purge_fixture_org(conn, org_id)
             conn.commit()
         org_rows = dc.list_mappings_by_scope(
             canonical_dimension=dim, scope_level=dc.SCOPE_ORG, org_id=org_id

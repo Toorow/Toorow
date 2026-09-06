@@ -1,0 +1,245 @@
+{
+  "schema_version": "1.2",
+  "name": "bigquery",
+  "display_name": "Google BigQuery",
+  "business_domain": "engineering",
+  "auth_type": "google_direct",
+  "auth": {
+    "type": "google_direct",
+    "auth_path": "google_direct",
+    "scopes": [
+      "https://www.googleapis.com/auth/bigquery.readonly"
+    ]
+  },
+  "module_kind": "kpi",
+  "report_profiles": [
+    {
+      "id": "table_daily",
+      "raw_relation": null,
+      "staging_relation": null,
+      "display_name": "Daily table replication",
+      "metrics": [
+        "value"
+      ],
+      "dimensions": [
+        "date",
+        "metric",
+        "breakdown_value"
+      ],
+      "extraction_capabilities": {
+        "row_limit": 100000,
+        "filters_supported": false,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull"
+    }
+  ],
+  "canonical_metric_mapping": {
+    "value": "value"
+  },
+  "canonical_dimension_mapping": {},
+  "error_map": {
+    "401:authError": "auth_expired",
+    "403:accessDenied": "permission_denied",
+    "403:blocked": "permission_denied",
+    "403:billingNotEnabled": "invalid_request",
+    "403:responseTooLarge": "invalid_request",
+    "403:quotaExceeded": "provider_transient",
+    "403:rateLimitExceeded": "provider_transient",
+    "400:invalid": "invalid_request",
+    "400:invalidQuery": "invalid_request",
+    "400:invalidUser": "invalid_request",
+    "400:resourcesExceeded": "invalid_request",
+    "400:tableUnavailable": "invalid_request",
+    "400:timeout": "provider_transient",
+    "404:notFound": "invalid_request",
+    "500:internalError": "provider_transient",
+    "500:jobInternalError": "provider_transient",
+    "500:backendError": "provider_transient",
+    "501:notImplemented": "invalid_request",
+    "503:backendError": "provider_transient"
+  },
+  "_error_map_note": "Codes are the `reason` strings BigQuery publishes in its error table (https://cloud.google.com/bigquery/docs/error-messages), each with the HTTP status that table pairs it with. SHAPE THE KEYS MATCH: the REST body { error: { code: <numeric http>, message, errors: [{ reason: '<reason>', location, message }], status } }; core.pull_errors._extract_provider_codes yields errors[].reason before error.status and error.code, so every key here is written on errors[].reason -- and ONLY on errors[].reason, because that is the one token the rebuilt payload below can carry (a key on the error.status enum would be unreachable here, which is the kind of dead entry this repair exists to remove). error.code is never keyed on either: it repeats the HTTP status, which is exactly why this map stood empty until 2026-08-17. The single 401 key is the shared Google auth layer's reason (authError), not a BigQuery job reason -- a 401 never comes from the query engine. HOW THE PAYLOAD REACHES THE CLASSIFIER: the google-cloud-bigquery client raises typed exceptions rather than returning a response, so `_classify_bigquery_error` rebuilds that envelope from the exception's `errors` attribute (google.api_core.exceptions.GoogleAPICallError.errors carries the same reason dicts) before calling classify_http_error; when an exception carries no `errors`, the message string is passed through as before and no key can match. WHAT THE MAP CHANGES vs the pure-HTTP classification: 403 quotaExceeded / rateLimitExceeded become provider_transient instead of permission_denied -- BigQuery returns concurrency and rate limits on a 403 and documents them as retryable, while permission_denied is retryable=False and told the operator to reconnect; 403 billingNotEnabled and responseTooLarge become invalid_request -- neither is a credential problem and neither is fixed by reconnecting; 404 notFound becomes invalid_request instead of unclassified, so a table reference that no longer resolves stops being replayed; 501 notImplemented becomes invalid_request instead of provider_transient, because retrying an unimplemented operation can only fail again. No 429 key: HTTP 429 stays on the core.quota.RateLimitError breaker path and classify_http_error raises ValueError if a 429 reaches it. No auth_revoked entry: BigQuery answers a revoked credential with the same 401 as an expired one, with no reason string to separate them.",
+  "account_topology": {
+    "levels": [
+      {
+        "id": "project",
+        "label": "Project"
+      },
+      {
+        "id": "dataset",
+        "label": "Dataset"
+      },
+      {
+        "id": "table",
+        "label": "Table"
+      }
+    ],
+    "selection_level": "table",
+    "discovery": {
+      "callable": "discover_accounts"
+    },
+    "_note": "One credential can see several GCP projects, each with several datasets and tables. The Datastream binds to exactly ONE fully-qualified table, selected from what discovery actually returns -- never from an environment variable, and never composed from a string the operator typed blind.",
+    "pull_parameter": "table_ref",
+    "verification": {
+      "callable": "verify_account",
+      "_note": "UN CLIENT PARTAGE UNE TABLE, PAS UN PATRIMOINE. `projects.list` exige une permission au niveau PROJET qu'un droit sur un seul dataset ne porte pas, donc la table exacte qu'on vous a donnee n'apparait dans aucune enumeration -- le docstring de discover_accounts le dit deja : \u00ab a project the principal cannot list simply does not appear \u00bb. `get_table` y repond. La reference passe par `assert_safe_table_reference`, le meme garde que le pull."
+    }
+  },
+  "history_deduplication": {
+    "pull_parameter": "history_dedup",
+    "declaration": {
+      "entity_key": "entity_key_columns",
+      "version": "version_column",
+      "labels": "label_columns"
+    },
+    "_note": "A VERSIONED HISTORY TABLE IS A PROPERTY OF THE TABLE THE OPERATOR CHOSE, NOT OF THIS CONNECTOR -- which is why nothing about it is in source_capabilities.fields: that catalogue is static and BigQuery has no static field list at all (FIELD DISCOVERY IS DYNAMIC). A Fivetran-style landing writes one row per entity PER SYNC BATCH; a flat table writes one row per entity. Only the operator can say which of the two they picked, so the declaration travels with the external object plan next to date_column, and this block declares the NAME pull() receives it under -- exactly as account_topology.pull_parameter declares the name the selected table arrives under. `declaration` names the keys the declaration itself carries, in the vocabulary of the selector roles describe_table offers: entity_key and version are roles a column's type must be able to fill, labels are the columns a batch may have blanked. Absent, nothing changes: the statement is the flat one, character for character."
+  },
+  "raw_landing": {
+    "method": "storage_write",
+    "rationale": "Replication is the point of this connector, so the rows it lands are the ones someone chose to bring in and expects to see -- a batch load job's minutes of latency reads as the product being stale on the very data they just connected. Between the two streaming transports, the Storage Write API is chosen over tabledata.insertAll on the two axes that separate them: it commits exactly-once rather than at-least-once, and it bills roughly half the rate per GB. Duplicates would in fact be tolerable here -- the staging model supersedes by pull_id with a QUALIFY, so a retried row is collapsed before anything reads it -- but that is a downstream property compensating for a transport weakness, and the transport that does not have the weakness costs less. A replicated table is also the one source whose volume is set by the customer rather than by an API's page size, which is exactly where the per-GB difference stops being theoretical. These two are not a fallback pair: selecting storage_write where google-cloud-bigquery-storage is absent fails at landing rather than downgrading to stream, since a silent swap would change both the bill and the delivery guarantee with nothing saying so."
+  },
+  "quota": {
+    "window_seconds": 86400,
+    "budget_points": 1000,
+    "read_cost": 1,
+    "write_cost": 1,
+    "_note": "BigQuery bills bytes scanned, not calls, so the meaningful budget is scan volume. `budget_points` here is the per-day query allowance the queue enforces; the bytes-scanned estimate travels with every preview so the cost is visible BEFORE a pull is scheduled."
+  },
+  "widget_ref": "ui://core/daily-report",
+  "source_capabilities": {
+    "contract_version": "1",
+    "field_discovery": {
+      "mode": "runtime",
+      "allowed_targets": [
+        "date",
+        "cost",
+        "revenue",
+        "conversions",
+        "clicks",
+        "impressions",
+        "sessions",
+        "quantity",
+        "value"
+      ]
+    },
+    "fields": [
+      {
+        "field_id": "date",
+        "source_field": "date",
+        "kind": "dimension",
+        "physical_type": "date",
+        "description": "The day the replicated row belongs to, taken from the operator-chosen date column.",
+        "semantic_hints": [
+          "time"
+        ],
+        "canonical_target": "date",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "metric",
+        "source_field": "metric",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "The source column this value came from, kept as a dimension because a replicated table has as many metrics as it has numeric columns.",
+        "semantic_hints": [
+          "identifier"
+        ],
+        "canonical_target": null,
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "value",
+        "source_field": "value",
+        "kind": "metric",
+        "physical_type": "decimal",
+        "description": "The numeric value replicated from the source column, stored raw (AD-4).",
+        "semantic_hints": [
+          "measure"
+        ],
+        "canonical_target": "value",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "breakdown_value",
+        "source_field": "breakdown_value",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "The value of the operator-chosen breakdown column, empty when no breakdown was selected.",
+        "semantic_hints": [
+          "identifier"
+        ],
+        "canonical_target": null,
+        "aggregation": "none",
+        "non_additive": false
+      }
+    ],
+    "reports": [
+      {
+        "id": "table_daily",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "dispatch": {
+          "callable": "pull"
+        },
+        "metrics": [
+          "value"
+        ],
+        "dimensions": [
+          "date",
+          "metric",
+          "breakdown_value"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "metric",
+            "breakdown_value"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [],
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "query"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "pagination": {
+          "mode": "cursor",
+          "completeness": "complete",
+          "max_pages": 1,
+          "row_limit": 100000,
+          "truncation_signal": "none"
+        }
+      }
+    ]
+  },
+  "public_catalog": {
+    "visibility": "public",
+    "category": "files_warehouses",
+    "onboarding_modes": [
+      "connector_pull"
+    ],
+    "verification": {
+      "status": "blocked",
+      "reason_code": "live_evidence_not_ratified",
+      "follow_up": "Ratify with a live read of a real dataset the deployment principal has been granted."
+    }
+  },
+  "_max_provider_backfill_days_note": "No max_provider_backfill_days is declared: this provider's published reporting window has not been established as of 2026-08-17. The key is left absent rather than filled with an estimate -- an invented re-collection bound promises the operator a history the provider never committed to. Establishing it means reading the provider's own documentation and recording the URL here, as the modules that do declare one have done."
+}

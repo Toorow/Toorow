@@ -1,0 +1,25 @@
+# The walk `scripts/working_context_corpus.py` carried until 2026-08-21, kept
+# verbatim as DATA so the detector in `test_criteria_parser.py` can be shown to
+# find it. It is not a `.py` file, so it is not itself scanned -- and it holds
+# the marker inside a regex, which is exactly what the detector looks for.
+#
+# What it answered, measured against the canonical parser over the 29 ratified
+# pages: 359 criteria against 546, 22 pages in disagreement, ZERO for
+# `page-structure`, `user-bridge` and `visualization-and-rendering`.
+
+import re
+
+
+def _incomplete_if(path):
+    """Les criteres d'acceptation d'une surface, VERBATIM."""
+    text = _read(path)
+    match = re.search(r"^##+\s*Incomplete if\s*$(.+?)(?=^##\s|\Z)", text, re.M | re.S)
+    if not match:
+        return []
+    criteria = []
+    for raw in re.split(r"\n(?=\s*(?:-\s|\d+\.\s))", match.group(1)):
+        item = " ".join(raw.replace("\n", " ").split())
+        item = re.sub(r"^(?:-\s*|\d+\.\s*)", "", item).strip(" ;.")
+        if item:
+            criteria.append(item)
+    return criteria

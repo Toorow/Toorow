@@ -1,1 +1,40 @@
-{"connector":"adobe-analytics","api_version":"analytics-2.0","generated_at":"2026-07-22T00:00:00Z","sources":[{"kind":"official","file":"official_fields.json","parser":"official_fields_json","url":"https://developer.adobe.com/analytics-apis/docs/2.0/apis/","fetched_at":"2026-07-22"}],"section_tier_map":{"DIMENSION":"core","METRIC":"core"},"default_tier":"standard","exposure_policy":"catalog_driven","excluded_sections":{},"field_discovery":{"mode":"runtime","cache_key":["global_company_id","rsid"],"sources":["dimensions","metrics","calculated_metrics","segments"],"planned_allowed_at_delivery":false}}
+{
+  "connector": "adobe-analytics",
+  "api_version": "analytics-2.0",
+  "generated_at": "2026-07-22T00:00:00Z",
+  "sources": [
+    {
+      "kind": "official",
+      "file": "official_fields.json",
+      "parser": "official_fields_json",
+      "url": "https://developer.adobe.com/analytics-apis/docs/2.0/apis/",
+      "fetched_at": "2026-07-22"
+    }
+  ],
+  "section_tier_map": {
+    "DIMENSION": "core",
+    "METRIC": "core"
+  },
+  "default_tier": "standard",
+  "exposure_policy": "catalog_driven",
+  "excluded_sections": {},
+  "field_discovery": {
+    "mode": "runtime",
+    "cache_key": [
+      "global_company_id",
+      "rsid"
+    ],
+    "sources": [
+      "dimensions",
+      "metrics",
+      "calculated_metrics",
+      "segments"
+    ],
+    "planned_allowed_at_delivery": false
+  },
+  "probe": {
+    "request_style": "metrics_dimensions",
+    "batch_size": 20,
+    "structural_note": "Adobe Analytics 2.0 POST /api/{globalCompanyId}/reports takes rsid, metrics, dimension, and date filters over a 1-day window. 206 column errors or 400 invalid requests are bisected to capture rejected fields."
+  }
+}

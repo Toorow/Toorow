@@ -1,7 +1,8 @@
 """GA4 connector — Story 1.4.
 
-Exposes a ``mcp_app: FastMCP`` instance that the core loader mounts under
-the ``google-analytics`` namespace (AD-2).
+Exposes a ``mcp_app: FastMCP`` instance as the conformance surface (AD-1
+envelope); since AD-42 the core no longer mounts it — execution uses the
+Datastream-parameterized core tools.
 
 # P0: reads fact_daily_kpi mart — local DuckDB or BigQuery per env config
 # AD-12: MCP server reads marts only — no raw_* tables, no CSV
@@ -23,12 +24,16 @@ from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-# Module-level FastMCP instance — this is the public surface the loader uses.
-# The core does: mcp.mount(loaded.connector_module.mcp_app, namespace=loaded.name)
+# Module-level FastMCP instance, kept as the conformance surface (AD-1 envelope,
+# validated by server/tests/conformance/test_envelope.py). Since AD-42 the core
+# no longer mounts it: execution uses the Datastream-parameterized core tools.
 mcp_app = FastMCP("google-analytics")
 
 # AD-4: canonical dimension vocabulary enforced at Story 4.1.
-# country is passed through as-is (GA4 full name, e.g. "France") at P0.
+# country is normalized in transform() from the GA4 full name ("France") to the
+# canonical ISO alpha-2 code ("FR") through core.country_vocabulary — the single
+# reader of dbt/seeds/dim_country.csv (see _normalize_country below). The old
+# "passed through as-is at P0" note was stale from Story 4.1 onwards.
 
 # ---------------------------------------------------------------------------
 # Database connection helpers — env-var driven (no hardcoded paths)
@@ -43,12 +48,56 @@ _DEFAULT_DUCKDB_PATH = os.path.join(
 )
 
 
+
+def _observed_report_timezone() -> str | None:
+    """The zone a pull OBSERVED for this source, for the worker to record (AI-161).
+
+    ONE helper for the nine pull entry points: repairing the two that were visible would
+    have left seven returning nothing, and the capability unavailable for whoever used
+    them. Resolved through the GENERIC contract (core owns validate/fallback/gap), never
+    hardcoded -- the live property-zone read is the AI-13-blocked follow-up, so today this
+    is None. None is a RESULT, recorded as "published without a resolvable reporting
+    timezone", which is a different and truer screen than "no run ever recorded a
+    boundary". When the live read lands, every pull picks it up here.
+    """
+    from core import report_timezone as _rtz  # noqa: PLC0415
+
+    return _rtz.resolve_capture(_TIME_CONTEXT, None)["report_timezone"]
+
+
+#: This connector's declared time context -- mirrors manifest.json source_capabilities.
+_TIME_CONTEXT = {"locus": "property", "fallback": "gap"}
+
 def _get_db_mode() -> str:
     return os.environ.get("TOOROW_DB_MODE", "duckdb")
 
 
 def _get_duckdb_path() -> str:
     return os.environ.get("TOOROW_DUCKDB_PATH", _DEFAULT_DUCKDB_PATH)
+
+
+# ---------------------------------------------------------------------------
+# Provider error refinements -- declared in manifest.json, never in core (AD-2).
+# ---------------------------------------------------------------------------
+
+_ERROR_MAP: dict[str, str] | None = None
+
+
+def _load_error_map() -> dict[str, str]:
+    """Return the manifest's ``error_map`` (status:code -> canonical class), cached.
+
+    Keys are ``"<http_status>:<provider_code>"``. For a Google body the code is
+    ``error.errors[].reason`` when the API publishes one and the ``error.status``
+    enum otherwise -- core.pull_errors._extract_provider_codes offers both, most
+    specific first. See manifest ``_error_map_note`` for the reference the codes
+    come from and for the entries that actually change a verdict.
+    """
+    global _ERROR_MAP
+    if _ERROR_MAP is None:
+        manifest_path = Path(__file__).parent / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        _ERROR_MAP = manifest.get("error_map") or {}
+    return _ERROR_MAP
 
 
 def _query_duckdb(sql: str, params: list, duckdb_path: str) -> list[dict]:
@@ -81,7 +130,7 @@ def _query_bigquery(sql: str, params: dict) -> list[dict]:
     return [dict(zip(cols, row)) for row in result]
 
 
-def _get_mart_table(db_mode: str) -> str:
+def _get_mart_table(db_mode: str, project_id: str | None) -> str:
     """Fully-qualified mart table reference per engine.
 
     DuckDB: dbt materialises marts into the main_marts schema.
@@ -91,7 +140,7 @@ def _get_mart_table(db_mode: str) -> str:
     if db_mode == "duckdb":
         from core import warehouse_tenancy  # noqa: PLC0415
 
-        return f"{warehouse_tenancy.mart_prefix(None)}fact_daily_kpi"
+        return f"{warehouse_tenancy.mart_prefix(project_id)}fact_daily_kpi"
     dataset = os.environ.get("BQ_MARTS_DATASET", "marts")
     gcp_project = os.environ.get("GCP_PROJECT", "")
     prefix = f"{gcp_project}.{dataset}" if gcp_project else dataset
@@ -123,7 +172,7 @@ def _query_mart(date_from: str, date_to: str, project_id: str = "default") -> li
     # AD-12: MCP server reads marts only — never raw_* tables or CSV
     """
     db_mode = _get_db_mode()
-    table = _get_mart_table(db_mode)
+    table = _get_mart_table(db_mode, project_id)
 
     if db_mode == "duckdb":
         sql = _MART_QUERY.format(table=table, p_project="?", p_from="?", p_to="?")
@@ -306,7 +355,7 @@ def _insert_raw_rows(
 
     Supports duckdb mode only at P2; bigquery extension follows Epic 3.
     """
-    if db_mode == "duckdb":
+    if db_mode in ("duckdb", "bigquery"):
         from core import warehouse_write  # noqa: PLC0415
 
         con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
@@ -348,7 +397,14 @@ def _insert_raw_rows(
             )
             for r in rows
         ]
-        con.executemany(_RAW_INSERT_SQL, values)
+        # Une fenetre sans donnee est un RESULTAT, pas une panne : nouvelle
+        # propriete, week-end, campagne en pause. `executemany` sur une liste vide
+        # leve `InvalidInputException` en DuckDB, donc le pull mourait la ou il
+        # aurait du rendre row_count=0. Mesure du 2026-08-01 : premier pull GA4
+        # reel contre l'API, fenetre de cinq jours, zero ligne -> plantage.
+        # gsc portait deja cette garde ; ces deux-la ne l'avaient pas.
+        if values:
+            con.executemany(_RAW_INSERT_SQL, values)
         con.close()
         return len(values)
     else:
@@ -402,10 +458,10 @@ def _insert_raw_rows_user_type(
 
     Mirrors _insert_raw_rows() but targets the user_type profile table. Each row
     dict carries the canonical keys: date, user_type, sessions, active_users,
-    conversions. Append-only (AD-7). DuckDB only at P2 (BigQuery path follows the
-    same extension as the standard profile).
+    conversions. Append-only (AD-7). DuckDB and BigQuery, same writer path as
+    the standard profile.
     """
-    if db_mode == "duckdb":
+    if db_mode in ("duckdb", "bigquery"):
         from core import warehouse_write  # noqa: PLC0415
 
         con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
@@ -526,9 +582,9 @@ def _insert_raw_rows_landing(
     """Insert canonical entry-page rows into raw_ga4_landing_daily (Story 10.3).
 
     Each row dict carries: date, landing_page, sessions. Append-only (AD-7).
-    DuckDB only at P2 (mirrors the standard/user_type profiles).
+    DuckDB and BigQuery (mirrors the standard/user_type profiles).
     """
-    if db_mode == "duckdb":
+    if db_mode in ("duckdb", "bigquery"):
         from core import warehouse_write  # noqa: PLC0415
 
         con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
@@ -569,9 +625,9 @@ def _insert_raw_rows_paths(
     """Insert canonical top-page rows into raw_ga4_paths_daily (Story 10.3).
 
     Each row dict carries: date, page, screen_page_views. Append-only (AD-7).
-    DuckDB only at P2.
+    DuckDB and BigQuery per TOOROW_DB_MODE.
     """
-    if db_mode == "duckdb":
+    if db_mode in ("duckdb", "bigquery"):
         from core import warehouse_write  # noqa: PLC0415
 
         con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
@@ -646,7 +702,7 @@ def _ga4_runreport(
             _body = resp.json()
         except Exception:
             _body = resp.text
-        raise classify_http_error(resp.status_code, _body)
+        raise classify_http_error(resp.status_code, _body, _load_error_map())
     return resp.json()
 
 
@@ -679,12 +735,14 @@ def pull_pages_daily_landing(
     """
     from core import nango_client  # noqa: PLC0415 -- AD-2: import at call time
 
-    if property_id is None:
-        property_id = os.environ.get("GA4_PROPERTY_ID")
     if not property_id:
         raise ValueError(
-            "GA4_PROPERTY_ID env var required for pull_pages_daily_landing "
-            "(set it to your GA4 property numeric ID)"
+            "pull_pages_daily_landing  requires a selected account: the operator picks "
+            "one in the Datastream wizard (discover_accounts lists what the "
+            "token can reach) and the worker passes it under the name the "
+            "manifest declares in account_topology.pull_parameter. There is "
+            "no deployment-wide default: one would pull the same account for "
+            "every project."
         )
 
     db_mode = _get_db_mode()
@@ -740,12 +798,14 @@ def pull_pages_daily_landing(
         page_top_n,
     )
 
+
     return {
         "pull_id": pull_id,
         "row_count": row_count,
         "date_from": date_from,
         "date_to": date_to,
         "page_top_n": page_top_n,
+        "report_timezone": _observed_report_timezone(),
     }
 
 
@@ -781,12 +841,14 @@ def pull_pages_daily_paths(
     """
     from core import nango_client  # noqa: PLC0415 -- AD-2: import at call time
 
-    if property_id is None:
-        property_id = os.environ.get("GA4_PROPERTY_ID")
     if not property_id:
         raise ValueError(
-            "GA4_PROPERTY_ID env var required for pull_pages_daily_paths "
-            "(set it to your GA4 property numeric ID)"
+            "pull_pages_daily_paths  requires a selected account: the operator picks "
+            "one in the Datastream wizard (discover_accounts lists what the "
+            "token can reach) and the worker passes it under the name the "
+            "manifest declares in account_topology.pull_parameter. There is "
+            "no deployment-wide default: one would pull the same account for "
+            "every project."
         )
 
     db_mode = _get_db_mode()
@@ -839,12 +901,14 @@ def pull_pages_daily_paths(
         page_top_n,
     )
 
+
     return {
         "pull_id": pull_id,
         "row_count": row_count,
         "date_from": date_from,
         "date_to": date_to,
         "page_top_n": page_top_n,
+        "report_timezone": _observed_report_timezone(),
     }
 
 
@@ -947,9 +1011,9 @@ def _insert_raw_rows_acq_session(
     """Insert canonical last-click rows into raw_ga4_acquisition_session (Story 16.1).
 
     Each row dict carries: date, session_source_medium, session_campaign,
-    conversions, sessions. Append-only (AD-7). DuckDB only at P2.
+    conversions, sessions. Append-only (AD-7). DuckDB and BigQuery.
     """
-    if db_mode == "duckdb":
+    if db_mode in ("duckdb", "bigquery"):
         from core import warehouse_write  # noqa: PLC0415
 
         con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
@@ -992,9 +1056,9 @@ def _insert_raw_rows_acq_first_user(
     """Insert canonical first-click rows into raw_ga4_acquisition_first_user (Story 16.1).
 
     Each row dict carries: date, first_user_source_medium, conversions.
-    Append-only (AD-7). DuckDB only at P2.
+    Append-only (AD-7). DuckDB and BigQuery.
     """
-    if db_mode == "duckdb":
+    if db_mode in ("duckdb", "bigquery"):
         from core import warehouse_write  # noqa: PLC0415
 
         con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
@@ -1063,12 +1127,14 @@ def pull_acquisition_daily_session(
     """
     from core import nango_client  # noqa: PLC0415 -- AD-2: import at call time
 
-    if property_id is None:
-        property_id = os.environ.get("GA4_PROPERTY_ID")
     if not property_id:
         raise ValueError(
-            "GA4_PROPERTY_ID env var required for pull_acquisition_daily_session "
-            "(set it to your GA4 property numeric ID)"
+            "pull_acquisition_daily_session  requires a selected account: the operator picks "
+            "one in the Datastream wizard (discover_accounts lists what the "
+            "token can reach) and the worker passes it under the name the "
+            "manifest declares in account_topology.pull_parameter. There is "
+            "no deployment-wide default: one would pull the same account for "
+            "every project."
         )
 
     db_mode = _get_db_mode()
@@ -1148,6 +1214,7 @@ def pull_acquisition_daily_session(
         "date_from": date_from,
         "date_to": date_to,
         "page_top_n": top_n,
+        "report_timezone": _observed_report_timezone(),
     }
 
 
@@ -1182,12 +1249,14 @@ def pull_acquisition_daily_first_user(
     """
     from core import nango_client  # noqa: PLC0415 -- AD-2: import at call time
 
-    if property_id is None:
-        property_id = os.environ.get("GA4_PROPERTY_ID")
     if not property_id:
         raise ValueError(
-            "GA4_PROPERTY_ID env var required for pull_acquisition_daily_first_user "
-            "(set it to your GA4 property numeric ID)"
+            "pull_acquisition_daily_first_user  requires a selected account: the operator picks "
+            "one in the Datastream wizard (discover_accounts lists what the "
+            "token can reach) and the worker passes it under the name the "
+            "manifest declares in account_topology.pull_parameter. There is "
+            "no deployment-wide default: one would pull the same account for "
+            "every project."
         )
 
     db_mode = _get_db_mode()
@@ -1247,6 +1316,7 @@ def pull_acquisition_daily_first_user(
         "date_from": date_from,
         "date_to": date_to,
         "page_top_n": top_n,
+        "report_timezone": _observed_report_timezone(),
     }
 
 
@@ -1336,9 +1406,9 @@ def _insert_raw_rows_transactions(
     """Insert canonical transaction rows into raw_ga4_transactions_daily (Story 17.4).
 
     Each row dict carries: date, transaction_id, conversions, purchase_revenue.
-    Append-only (AD-7). DuckDB only at P2 (BigQuery path via load_seed for BQ).
+    Append-only (AD-7). DuckDB and BigQuery per TOOROW_DB_MODE.
     """
-    if db_mode == "duckdb":
+    if db_mode in ("duckdb", "bigquery"):
         from core import warehouse_write  # noqa: PLC0415
 
         con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
@@ -1420,12 +1490,14 @@ def pull_transactions_daily(
     """
     from core import nango_client  # noqa: PLC0415 -- AD-2: import at call time
 
-    if property_id is None:
-        property_id = os.environ.get("GA4_PROPERTY_ID")
     if not property_id:
         raise ValueError(
-            "GA4_PROPERTY_ID env var required for pull_transactions_daily "
-            "(set it to your GA4 property numeric ID)"
+            "pull_transactions_daily  requires a selected account: the operator picks "
+            "one in the Datastream wizard (discover_accounts lists what the "
+            "token can reach) and the worker passes it under the name the "
+            "manifest declares in account_topology.pull_parameter. There is "
+            "no deployment-wide default: one would pull the same account for "
+            "every project."
         )
 
     db_mode = _get_db_mode()
@@ -1512,6 +1584,7 @@ def pull_transactions_daily(
         "txn_limit": txn_limit,
         "pages": pages,
         "truncated": truncated,
+        "report_timezone": _observed_report_timezone(),
     }
 
 
@@ -1543,12 +1616,14 @@ def pull_user_type_daily(
     """
     from core import nango_client  # noqa: PLC0415 -- AD-2: import at call time
 
-    if property_id is None:
-        property_id = os.environ.get("GA4_PROPERTY_ID")
     if not property_id:
         raise ValueError(
-            "GA4_PROPERTY_ID env var required for pull_user_type_daily "
-            "(set it to your GA4 property numeric ID)"
+            "pull_user_type_daily  requires a selected account: the operator picks "
+            "one in the Datastream wizard (discover_accounts lists what the "
+            "token can reach) and the worker passes it under the name the "
+            "manifest declares in account_topology.pull_parameter. There is "
+            "no deployment-wide default: one would pull the same account for "
+            "every project."
         )
 
     db_mode = _get_db_mode()
@@ -1596,7 +1671,7 @@ def pull_user_type_daily(
             _body = resp.json()
         except Exception:
             _body = resp.text
-        raise classify_http_error(resp.status_code, _body)
+        raise classify_http_error(resp.status_code, _body, _load_error_map())
 
     payload = resp.json()
     raw_rows = payload.get("rows") or []
@@ -1639,6 +1714,7 @@ def pull_user_type_daily(
         "row_count": row_count,
         "date_from": date_from,
         "date_to": date_to,
+        "report_timezone": _observed_report_timezone(),
     }
 
 
@@ -1649,8 +1725,16 @@ def pull(
     project_id: str,
     pull_id: str,
     property_id: str | None = None,
+    dry_run: bool = False,
 ) -> dict:
     """Fetch the standard_daily report and land rows in the raw table.
+
+    ``dry_run=True`` fetches and transforms exactly as a real pull does, then
+    RETURNS the canonical rows instead of landing them: `_insert_raw_rows` is not
+    called, so nothing reaches raw, staging or the marts. This is what a setup
+    preview needs, and it is why a preview does not require the execution-isolation
+    work a CANDIDATE does -- a candidate must land, isolated by execution; a preview
+    must only show. Landing stays the default.
 
     # AD-12 NOTE: synchronous API call from HTTP endpoint is allowed at P2
     # (queue not deployed). Story 3.2 moves this behind Cloud Tasks.
@@ -1689,11 +1773,9 @@ def pull(
     """
     from core import nango_client  # noqa: PLC0415 -- AD-2: import at call time
 
-    if property_id is None:
-        property_id = os.environ.get("GA4_PROPERTY_ID")
     if not property_id:
         raise ValueError(
-            "GA4_PROPERTY_ID env var required for pull (set it to your GA4 property numeric ID)"
+            "a selected account is required for pull (set it to your GA4 property numeric ID)"
         )
 
     db_mode = _get_db_mode()
@@ -1747,7 +1829,7 @@ def pull(
             _body = resp.json()
         except Exception:
             _body = resp.text
-        raise classify_http_error(resp.status_code, _body)
+        raise classify_http_error(resp.status_code, _body, _load_error_map())
 
     payload = resp.json()
     raw_rows = payload.get("rows") or []
@@ -1777,6 +1859,22 @@ def pull(
         canonical_rows.extend(transformed)
 
     loaded_at = datetime.now(tz=timezone.utc).isoformat().replace("+00:00", "Z")
+
+    if dry_run:
+        logger.info(
+            "ga4_pull_dry_run: rows=%d (nothing landed)", len(canonical_rows)
+        )
+        return {
+            "pull_id": None,
+            "dry_run": True,
+            "row_count": len(canonical_rows),
+            "rows": canonical_rows,
+            "schema": sorted({key for row in canonical_rows for key in row}),
+            "date_from": date_from,
+            "date_to": date_to,
+            "report_timezone": _observed_report_timezone(),
+        }
+
     row_count = _insert_raw_rows(
         canonical_rows, pull_id, loaded_at, project_id, db_mode, duckdb_path
     )
@@ -1784,7 +1882,13 @@ def pull(
     # AD-3: no token in log — only pull_id and row_count (safe metadata)
     logger.info("ga4_pull_started: pull_id=%s row_count=%d", pull_id, row_count)
 
-    return {"pull_id": pull_id, "row_count": row_count, "date_from": date_from, "date_to": date_to}
+    return {
+        "pull_id": pull_id,
+        "row_count": row_count,
+        "date_from": date_from,
+        "date_to": date_to,
+        "report_timezone": _observed_report_timezone(),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1979,13 +2083,13 @@ def _insert_raw_rows_catalog(
     db_mode: str,
     duckdb_path: str,
 ) -> int:
-    """Land LONG catalog rows into raw_ga4_catalog_daily (Story 25.9, DuckDB only).
+    """Land LONG catalog rows into raw_ga4_catalog_daily (Story 25.9, DuckDB and BigQuery).
 
     Each row dict carries: date, metric_name, metric_value, breakdown_dimension,
     breakdown_value. Append-only (AD-7). Dedicated raw table so the catalog_driven
     path never perturbs raw_ga4_standard_daily (AD-22).
     """
-    if db_mode == "duckdb":
+    if db_mode in ("duckdb", "bigquery"):
         from core import warehouse_write  # noqa: PLC0415
 
         con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
@@ -2047,12 +2151,14 @@ def pull_catalog_daily(
     """
     from core import nango_client  # noqa: PLC0415 -- AD-2: import at call time
 
-    if property_id is None:
-        property_id = os.environ.get("GA4_PROPERTY_ID")
     if not property_id:
         raise ValueError(
-            "GA4_PROPERTY_ID env var required for pull_catalog_daily "
-            "(set it to your GA4 property numeric ID)"
+            "pull_catalog_daily  requires a selected account: the operator picks "
+            "one in the Datastream wizard (discover_accounts lists what the "
+            "token can reach) and the worker passes it under the name the "
+            "manifest declares in account_topology.pull_parameter. There is "
+            "no deployment-wide default: one would pull the same account for "
+            "every project."
         )
 
     # Default selection resolved FROM the catalog (tier-core, minute dims pruned)
@@ -2145,6 +2251,7 @@ def pull_catalog_daily(
         "row_count": row_count,
         "date_from": date_from,
         "date_to": date_to,
+        "report_timezone": _observed_report_timezone(),
     }
 
 
@@ -2246,7 +2353,7 @@ def discover_accounts(connection_id: str) -> list[dict]:
                 _body = resp.json()
             except Exception:
                 _body = resp.text
-            raise classify_http_error(resp.status_code, _body)
+            raise classify_http_error(resp.status_code, _body, _load_error_map())
 
         payload = resp.json()
         for summary in payload.get("accountSummaries", []) or []:
@@ -2293,35 +2400,46 @@ def discover_accounts(connection_id: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def _load_country_alias_map() -> dict[str, str]:
-    """Load alias -> iso_code mapping from dbt/seeds/dim_country.csv.
+def _adapt_languages(raw_row: dict, canonical_row: dict, manifest: dict) -> None:
+    """Resolve this row's language dimensions through the SHARED adapter.
 
-    Story 4.1 (AC4): country normalization uses the same vocabulary seed as dbt staging,
-    ensuring Python transform() and dbt staging produce identical canonical values.
-    Returns an empty dict if the seed file is not found (graceful degradation).
+    Story 27.8: `language`/`languageCode`-style pairs are two ENCODINGS of one
+    dimension. The generic rename map above is a dict, so without this call the
+    last field of manifest.json silently won and a display name such as 'English'
+    could be published as a canonical value. core.language_dimensions owns the
+    rule (governance.md, "an encoding is not a dimension"); core -> module is the
+    direction AD-2 allows.
     """
-    import csv  # noqa: PLC0415
+    from core.language_dimensions import adapt_manifest_row_languages  # noqa: PLC0415
 
-    # Resolve path: connector.py is in server/modules/google-analytics/
-    # dim_country.csv is in dbt/seeds/ (four levels up from connector.py)
-    _seed_path = Path(__file__).parents[3] / "dbt" / "seeds" / "dim_country.csv"
-    alias_map: dict[str, str] = {}
-    if not _seed_path.exists():
-        return alias_map
-    with _seed_path.open(newline="", encoding="utf-8") as fh:
-        reader = csv.DictReader(fh)
-        for row in reader:
-            iso_code = (row.get("iso_code") or "").strip()
-            aliases_raw = (row.get("aliases") or "").strip()
-            for alias in aliases_raw.split("|"):
-                alias = alias.strip()
-                if alias:
-                    alias_map[alias] = iso_code
-    return alias_map
+    adapt_manifest_row_languages(raw_row, canonical_row, manifest)
 
 
-# Eagerly build the alias map at import time (it's a small CSV; no I/O at call time).
-_COUNTRY_ALIAS_MAP: dict[str, str] = _load_country_alias_map()
+def _normalize_country(raw_value: str) -> str:
+    """Resolve a GA4 country spelling through the SHARED canonical vocabulary.
+
+    Story 4.1 (AC4): country normalization uses the same vocabulary seed as dbt
+    staging, so Python transform() and dbt staging produce identical values.
+
+    Story 37.7 repair — this used to be a SECOND reader of dim_country.csv, local
+    to this module, and the two readers disagreed on three points: it matched
+    aliases case-SENSITIVELY (so 'fr' or 'france' did not resolve while
+    core.country_vocabulary resolved them), it returned an empty map instead of
+    raising when the seed was missing (turning a vocabulary outage into a silent
+    pass-through of every country), and it ignored TOOROW_DBT_SEEDS_DIR (so a
+    deployment relocating its seeds normalized in dbt but not here). Two readers of
+    one file with two behaviours IS the defect; there is now one reader.
+
+    core.country_vocabulary is core -> module direction, which AD-2 allows (only
+    core importing a module is forbidden), and this file already imports
+    core.verification.
+
+    Unknown values are returned unchanged: the vocabulary refuses to guess, and the
+    dbt not_null test on the staging model stays the hard enforcement gate.
+    """
+    from core.country_vocabulary import normalize_country_value  # noqa: PLC0415
+
+    return normalize_country_value(raw_value) or raw_value
 
 
 def transform(raw_rows: list[dict]) -> list[dict]:
@@ -2356,8 +2474,9 @@ def transform(raw_rows: list[dict]) -> list[dict]:
         # Story 4.1 (AC4): normalize country to ISO-3166 alpha-2 using dim_country aliases.
         # Pass through unchanged if not found (graceful degradation; dbt enforces vocabulary).
         if "country" in canonical_row and isinstance(canonical_row["country"], str):
-            raw_country = canonical_row["country"]
-            canonical_row["country"] = _COUNTRY_ALIAS_MAP.get(raw_country, raw_country)
+            canonical_row["country"] = _normalize_country(canonical_row["country"])
+
+        _adapt_languages(row, canonical_row, _manifest)
 
         result.append(canonical_row)
     return result

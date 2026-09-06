@@ -1,0 +1,78 @@
+{
+  "health_metrics": {
+    "attachments_by_state": {
+      "FAILED": "number",
+      "LANDED": "number"
+    },
+    "attachments_total": "number",
+    "deliveries_by_state": {
+      "LANDED": "number"
+    },
+    "deliveries_total": "number",
+    "denied_deliveries": {
+      "available": "boolean",
+      "detail": "string",
+      "reason": "string"
+    },
+    "duplicate_attachments": "number",
+    "duplicate_rate": "number",
+    "last_receipt_at": "string",
+    "last_successful_publication": {
+      "import_ledger_id": "string",
+      "published_at": "string"
+    },
+    "oldest_in_flight_at": "string",
+    "parser_failures": "number",
+    "processing_latency_max_seconds": "number",
+    "processing_latency_median_seconds": "number",
+    "repeated_content_hashes": "number",
+    "settled_receipts": "number",
+    "window_days": "number"
+  },
+  "mapping_repair_context": {
+    "available": "boolean",
+    "datastream_id": "string",
+    "governed_path": {
+      "confirm": "string",
+      "engine": "string",
+      "kind": "string",
+      "notes": "string",
+      "prepare": "string",
+      "publish": "string",
+      "publish_engine": "string"
+    },
+    "pinned_versions": {
+      "mapping_version_id": "string",
+      "plan_version_id": "string"
+    },
+    "preview": {
+      "available": "boolean",
+      "reason": "string"
+    },
+    "project_id": "string",
+    "raw_import": {
+      "content_hash": "string",
+      "error_code": "string",
+      "filename": "string",
+      "media_type_detected": "string",
+      "scan_verdict": {
+        "accepted": "boolean"
+      },
+      "state": "string"
+    },
+    "raw_import_id": "string",
+    "reason": "null",
+    "source_columns": {
+      "__item__": {
+        "detected_type": "string",
+        "index": "number",
+        "masked_samples": {
+          "__item__": "string"
+        },
+        "name": "string",
+        "null_count": "number",
+        "source_label": "null"
+      }
+    }
+  }
+}

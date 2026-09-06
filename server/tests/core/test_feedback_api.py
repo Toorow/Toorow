@@ -57,7 +57,7 @@ def _make_mock_conn(rows: list[tuple], col_names: list[str]):
 @pytest.mark.anyio
 async def test_list_feedback_project_scoped():
     """Two projects — GET /api/feedback?project_id=A returns only A's rows."""
-    from core.admin_api import _list_feedback
+    from core.legacy_evidence_api import _list_legacy_feedback_rows
 
     col_names = ["id", "rating", "comment", "module", "report_ref", "trace_id", "created_at"]
     import datetime
@@ -74,9 +74,10 @@ async def test_list_feedback_project_scoped():
 
     with (
         patch("core.admin_api._check_auth", return_value=(True, "user@example.com")),
+        patch("core.admin_api._strict_project_capability_allowed", return_value=True),
         patch("core.db.get_connection", return_value=conn_mock),
     ):
-        response = await _list_feedback(request)
+        response = await _list_legacy_feedback_rows(request)
 
     assert response.status_code == 200
     import json
@@ -98,7 +99,7 @@ async def test_list_feedback_project_scoped():
 @pytest.mark.anyio
 async def test_list_feedback_module_filter():
     """Filter by module returns only matching rows."""
-    from core.admin_api import _list_feedback
+    from core.legacy_evidence_api import _list_legacy_feedback_rows
 
     col_names = ["id", "rating", "comment", "module", "report_ref", "trace_id", "created_at"]
     import datetime
@@ -112,9 +113,10 @@ async def test_list_feedback_module_filter():
 
     with (
         patch("core.admin_api._check_auth", return_value=(True, "user@example.com")),
+        patch("core.admin_api._strict_project_capability_allowed", return_value=True),
         patch("core.db.get_connection", return_value=conn_mock),
     ):
-        response = await _list_feedback(request)
+        response = await _list_legacy_feedback_rows(request)
 
     assert response.status_code == 200
     import json
@@ -132,12 +134,12 @@ async def test_list_feedback_module_filter():
 @pytest.mark.anyio
 async def test_list_feedback_unauthorized():
     """Missing auth token returns 401."""
-    from core.admin_api import _list_feedback
+    from core.legacy_evidence_api import _list_legacy_feedback_rows
 
     request = _make_request({"project_id": "proj_test"})
 
     with patch("core.admin_api._check_auth", return_value=(False, "")):
-        response = await _list_feedback(request)
+        response = await _list_legacy_feedback_rows(request)
 
     assert response.status_code == 401
 
@@ -150,12 +152,12 @@ async def test_list_feedback_unauthorized():
 @pytest.mark.anyio
 async def test_list_feedback_missing_project_id():
     """Missing project_id query param returns 400."""
-    from core.admin_api import _list_feedback
+    from core.legacy_evidence_api import _list_legacy_feedback_rows
 
     request = _make_request({})  # no project_id
 
     with patch("core.admin_api._check_auth", return_value=(True, "user@example.com")):
-        response = await _list_feedback(request)
+        response = await _list_legacy_feedback_rows(request)
 
     assert response.status_code == 400
     import json

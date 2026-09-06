@@ -24,11 +24,11 @@ def _seed_fixture(conn: psycopg.Connection) -> tuple[str, ...]:
         "org_upgrade_fixture",
         "omem_upgrade_fixture",
         "proj_upgrade_fixture",
-        "pmem_upgrade_fixture",
+        "rgrant_upgrade_fixture",
         "op_upgrade_fixture",
         "inv_upgrade_fixture",
     )
-    org_id, org_member_id, project_id, project_member_id, operation_id, invitation_id = fixture
+    org_id, org_member_id, project_id, resource_grant_id, operation_id, invitation_id = fixture
     with conn.transaction():
         with conn.cursor() as cursor:
             cursor.execute(
@@ -48,9 +48,16 @@ def _seed_fixture(conn: psycopg.Connection) -> tuple[str, ...]:
                 (project_id, org_id, "Upgrade Project", "upgrade-project", "fixture-subject"),
             )
             cursor.execute(
-                "INSERT INTO app.project_members (id, project_id, identity, role) "
-                "VALUES (%s, %s, %s, 'owner')",
-                (project_member_id, project_id, "fixture-subject"),
+                "INSERT INTO app.resource_grants "
+                "(id, org_id, identity, scope_type, scope_id, capability, granted_by) "
+                "VALUES (%s, %s, %s, 'project', %s, 'manage', %s)",
+                (
+                    resource_grant_id,
+                    org_id,
+                    "fixture-subject",
+                    project_id,
+                    "fixture-subject",
+                ),
             )
             cursor.execute(
                 """
@@ -77,12 +84,12 @@ def _seed_fixture(conn: psycopg.Connection) -> tuple[str, ...]:
 
 
 def _assert_fixture(conn: psycopg.Connection, fixture: tuple[str, ...]) -> None:
-    org_id, org_member_id, project_id, project_member_id, operation_id, invitation_id = fixture
+    org_id, org_member_id, project_id, resource_grant_id, operation_id, invitation_id = fixture
     checks = (
         ("organizations", org_id),
         ("org_members", org_member_id),
         ("projects", project_id),
-        ("project_members", project_member_id),
+        ("resource_grants", resource_grant_id),
         ("operations", operation_id),
         ("invitations", invitation_id),
     )
@@ -123,11 +130,14 @@ def main() -> int:
                     raise RuntimeError("upgrade fixture did not apply exactly migrations 001..106")
                 fixture = _seed_fixture(conn)
                 applied, skipped = apply_migrations(conn, migrations)
-                if applied != [107, 108, 109, 110, 111, 112, 113, 114, 115] or len(skipped) != 106:
-                    raise RuntimeError("upgrade fixture did not apply exactly migrations 107..115")
+                highest = migrations[-1].identifier
+                if applied != list(range(107, highest + 1)) or len(skipped) != 106:
+                    raise RuntimeError(
+                        f"upgrade fixture did not apply exactly migrations 107..{highest}"
+                    )
                 _assert_fixture(conn, fixture)
                 applied, skipped = apply_migrations(conn, migrations)
-                if applied or len(skipped) != 115:
+                if applied or len(skipped) != highest:
                     raise RuntimeError("second migration run was not a complete no-op")
         finally:
             with admin.cursor() as cursor:
@@ -136,7 +146,10 @@ def main() -> int:
                         sql.Identifier(database)
                     )
                 )
-    print("migration upgrade fixture OK: 106 -> 115, tenant rows preserved, rerun no-op")
+    print(
+        f"migration upgrade fixture OK: 106 -> {migrations[-1].identifier}, "
+        "tenant rows preserved, rerun no-op"
+    )
     return 0
 
 

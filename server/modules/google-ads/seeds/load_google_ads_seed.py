@@ -35,12 +35,23 @@ CREATE TABLE IF NOT EXISTS raw_google_ads_daily (
     keyword_text          VARCHAR,
     search_term           VARCHAR,
     segments_json         VARCHAR,
+    -- Story 26.6 Part A added this column to the connector's landing DDL
+    -- (connector.py:_RAW_CREATE_DDL) and to stg_google_ads_daily; the seed DDL
+    -- was not updated with it, so every `dbt build` over a seeded DuckDB failed
+    -- with `Binder Error: Referenced column "attributes_json" not found`.
+    -- The seed table must mirror the landing table column for column.
+    attributes_json       VARCHAR,
     metric                VARCHAR,
     value_num             DOUBLE,
     cost_source_currency  VARCHAR,
     pull_id               VARCHAR,
     loaded_at             VARCHAR,
-    project_id            VARCHAR
+    project_id            VARCHAR,
+    -- Story 39.7: the seed table mirrors the landing table column for column
+    -- (same lesson as attributes_json above). report_timezone is the per-row
+    -- report-timezone provenance; the seed INSERT below leaves it NULL, which
+    -- is the honest value for fixture rows (fail-closed, never a fake zone).
+    report_timezone       VARCHAR
 )
 """
 
@@ -48,9 +59,9 @@ _INSERT_SQL = """
 INSERT INTO raw_google_ads_daily
     (date, data_level, customer_id, campaign_id, campaign_name, ad_group_id,
      ad_group_name, ad_id, criterion_id, keyword_text, search_term,
-     segments_json, metric, value_num, cost_source_currency, pull_id,
-     loaded_at, project_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     segments_json, attributes_json, metric, value_num, cost_source_currency,
+     pull_id, loaded_at, project_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 # Deterministic campaign-grain seed: 2 campaigns x 3 days x 4 metrics.
@@ -60,6 +71,9 @@ _CAMPAIGNS = (
     ("22334466", "Generic - PMax - FR"),
 )
 _DAYS = ("2026-07-01", "2026-07-02", "2026-07-03")
+# Story 26.6 Part A: descriptive-mutable attributes, canonical sorted-key JSON.
+# NEVER part of the supersede grain -- latest pull wins (see stg_google_ads_daily).
+_ATTRIBUTES_JSON = '{"campaign_advertising_channel_type":"SEARCH","campaign_status":"ENABLED"}'
 _METRICS = {
     "cost": (118.40, 20.13),
     "impressions": (12040, 5310),
@@ -80,7 +94,8 @@ def load_seed(duckdb_path: str, project_id: str = "default") -> int:
                 rows.append(
                     (
                         day, "CAMPAIGN", "9861234567", campaign_id, campaign_name,
-                        "", "", "", "", "", "", None, metric, round(value, 2),
+                        "", "", "", "", "", "", None, _ATTRIBUTES_JSON,
+                        metric, round(value, 2),
                         "EUR", pull_id, loaded_at, project_id,
                     )
                 )

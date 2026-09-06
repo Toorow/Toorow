@@ -13,6 +13,11 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+
+# Import au niveau module (et non paresseux comme les appels a `core` dans les
+# fonctions) : les classes d'exception ci-dessous en HERITENT, donc il doit etre
+# resolu au moment ou le fichier est lu.
+from core import pull_errors
 from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
@@ -38,12 +43,47 @@ _quota_lock = threading.Lock()
 _quota_state: dict[tuple[str, str], dict[str, int]] = {}
 
 
-class BrevoOnboardingError(RuntimeError):
-    """The OAuth account/scopes are insufficient for the enabled profiles."""
+class BrevoOnboardingError(pull_errors.PermissionDeniedError):
+    """The OAuth account/scopes are insufficient for the enabled profiles.
+
+    `permission_denied` : le credential est authentifie et n'atteint rien. L'action
+    juste est de se reconnecter avec les bons droits, et c'est `permission_denied`
+    qui la fait remonter a l'ecran (`user_action="reconnect"`).
+
+    Avant le 2026-08-01 cette classe heritait d'un `RuntimeError` nu : le worker la
+    voyait `unclassified`, la rejouait jusqu'au `dead_letter` contre un credential
+    qui ne marchera jamais, et n'affichait aucune action.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message)
 
 
-class BrevoScopeError(PermissionError):
-    """A required least-privilege read scope is absent."""
+class BrevoNotConfiguredError(BrevoOnboardingError):
+    """Le credential va bien -- c'est la requete qui ne peut pas etre formee.
+
+    Derive de l'erreur d'onboarding pour qu'un `except BrevoOnboardingError` existant continue de
+    l'attraper, mais porte `invalid_request` : dire << reconnecte-toi >> enverrait
+    l'operateur au mauvais ecran, puisque le compte se choisit dans l'assistant
+    Datastream et pas sur la connexion.
+    """
+
+    error_class = pull_errors.INVALID_REQUEST
+    user_action = pull_errors.SELECT_SOURCE_ACCOUNT
+
+
+class BrevoScopeError(pull_errors.PermissionDeniedError, PermissionError):
+    """A required least-privilege read scope is absent.
+
+    `permission_denied` : un scope de lecture absent se repare en se
+    reconnectant avec le bon consentement. `PermissionError` reste dans les
+    bases, des appelants l'attrapent sous ce nom. NB : le site
+    << profil inconnu >> de `required_scopes` est une garde interne (un nom
+    de profil que NOUS passons), pas un echec que l'operateur repare.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message)
 
 
 def _manifest() -> dict:
@@ -141,7 +181,11 @@ def discover_accounts(connection_id: str, *, _client=None, _token_value: str | N
         )
     return [
         {
-            "id": "brevo_account_selection_1",
+            # L'`id` est la SEULE chose que le coeur persiste
+            # (`app.connection_account_scope.account_id`) et la seule qu'il rende
+            # au pull. Un `id` synthetique laissait le vrai identifiant dans une
+            # cle voisine que rien ne transporte.
+            "id": account_id,
             "account_id": account_id,
             "display_name": account.get("companyName") or "Brevo account",
             "plan": account.get("plan") or [],
@@ -241,6 +285,13 @@ CREATE TABLE IF NOT EXISTS raw_brevo_daily (
 )
 """
 
+_RAW_INSERT_SQL = """
+INSERT INTO raw_brevo_daily
+    (profile, account_id, source_id, date, channel, event_type, protected_identifier, metric,
+    value, non_additive, payload_json, pull_id, loaded_at, project_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+
 # Catalog-declared metric field_ids (api_catalog.json exposure=exposed, kind=metric).
 # Only these are landed in raw_brevo_daily; API-returned rate fields (openRate,
 # clickRate, unsubscriptionRate, etc.) are intentionally excluded (H-2: AD-4).
@@ -259,9 +310,9 @@ _CATALOG_METRIC_IDS: frozenset[str] = frozenset(
 
 
 def _land(rows: list[dict], context: dict) -> int:
-    if os.environ.get("TOOROW_DB_MODE", "duckdb") != "duckdb":
-        raise ValueError("brevo local landing currently requires duckdb")
-    import duckdb  # noqa: PLC0415
+    if os.environ.get("TOOROW_DB_MODE", "duckdb") not in ("duckdb", "bigquery"):
+        raise ValueError("brevo landing supports duckdb and bigquery")
+    from core import warehouse_write  # noqa: PLC0415
 
     path = os.environ.get("TOOROW_DUCKDB_PATH", str(Path(__file__).parent / "local.duckdb"))
     loaded_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
@@ -311,23 +362,54 @@ def _land(rows: list[dict], context: dict) -> int:
                     context["project_id"],
                 )
             )
-    connection = duckdb.connect(path)
+    connection = warehouse_write.open_raw_writer(path, project_id=context["project_id"])
     connection.execute(_RAW_DDL)
     if values:
-        connection.executemany(
-            "INSERT INTO raw_brevo_daily VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", values
-        )
+        connection.executemany(_RAW_INSERT_SQL, values)
     connection.close()
     return len(values)
 
 
-def _pull_profile(connection_id, date_from, date_to, project_id, pull_id, profile, selection):
-    if not selection or not selection.get("account_id"):
-        raise BrevoOnboardingError("A Brevo OAuth account selection is required")
-    validate_scopes([profile], selection.get("granted_scopes") or [])
+def _pull_profile(
+    connection_id,
+    date_from,
+    date_to,
+    project_id,
+    pull_id,
+    profile,
+    selection,
+    account_id,
+    granted_scopes=None,
+):
+    # Le COMPTE vient du parametre declare ; `selection` ne porte que la forme du
+    # RAPPORT. Celui que le plan fournit est ferme sur selection_mode / metrics /
+    # dimensions / grain / filters (datastream-intent.schema.json,
+    # additionalProperties: false) : il ne pouvait pas porter un compte OAuth.
+    if not account_id:
+        raise BrevoNotConfiguredError(
+            "Brevo requires a selected OAuth account: the operator picks one in the "
+            "Datastream wizard (discover_accounts reads GET /account) and the worker "
+            "passes it as `account_id` (manifest account_topology.pull_parameter). No "
+            "account was selected for this connection, and there is no deployment-wide "
+            "default -- one would stamp every project's rows with the same account."
+        )
+    # L'ensemble des scopes ACCORDES n'a aujourd'hui aucun canal vers le pull : il
+    # vivait dans `selection["granted_scopes"]`, que le plan ne produit pas. Le
+    # lire comme une liste vide revenait a affirmer << aucun scope accorde >> a
+    # partir de << je ne sais pas >>, et a refuser 100 % des pulls. Quand
+    # l'information est absente, l'arbitre reste le 403 du provider, deja typé
+    # par `error_map`. Quand elle est fournie, elle est appliquee telle quelle.
+    if granted_scopes is None:
+        logger.warning(
+            "brevo: granted scopes unknown for profile=%s -- least-privilege "
+            "pre-check skipped; the provider response remains the arbiter",
+            profile,
+        )
+    else:
+        validate_scopes([profile], list(granted_scopes))
+    selection = selection or {}
     token = _token(connection_id)
     client = httpx.Client()
-    account_id = selection["account_id"]
     if profile == "email_campaign_daily":
         rows = paginate_offset(
             client,
@@ -451,44 +533,131 @@ def _pull_transactional_events_to_context(
     return {
         "pull_id": pull_id,
         "event_count": event_count,
+        "row_count": event_count,
         "date_from": date_from,
         "date_to": date_to,
     }
 
 
-def pull(connection_id, date_from, date_to, project_id, pull_id, selection=None):
+def pull(
+    connection_id,
+    date_from,
+    date_to,
+    project_id,
+    pull_id,
+    selection=None,
+    # OPTIONNEL, jamais requis : le worker ne passe le compte que si une selection
+    # existe (core/queue.py). Requis, il leverait un `TypeError` nu -- hors de
+    # toute taxonomie -- pour un Datastream sans selection.
+    account_id=None,
+    # Aucun appelant ne remplit ce parametre aujourd'hui : voir la note de
+    # `_pull_profile`. Il est declare pour que la verification least-privilege
+    # reste atteignable le jour ou les scopes accordes auront un canal.
+    granted_scopes=None,
+):
+    """Pull par defaut -- profil `email_campaign_daily`."""
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "email_campaign_daily", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "email_campaign_daily",
+        selection,
+        account_id,
+        granted_scopes,
     )
 
 
 def pull_email_campaign_daily(
-    connection_id, date_from, date_to, project_id, pull_id, selection=None
+    connection_id,
+    date_from,
+    date_to,
+    project_id,
+    pull_id,
+    selection=None,
+    account_id=None,
+    granted_scopes=None,
 ):
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "email_campaign_daily", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "email_campaign_daily",
+        selection,
+        account_id,
+        granted_scopes,
     )
 
 
-def pull_sms_campaign_daily(connection_id, date_from, date_to, project_id, pull_id, selection=None):
+def pull_sms_campaign_daily(
+    connection_id,
+    date_from,
+    date_to,
+    project_id,
+    pull_id,
+    selection=None,
+    account_id=None,
+    granted_scopes=None,
+):
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "sms_campaign_daily", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "sms_campaign_daily",
+        selection,
+        account_id,
+        granted_scopes,
     )
 
 
 def pull_transactional_events(
-    connection_id, date_from, date_to, project_id, pull_id, selection=None
+    connection_id,
+    date_from,
+    date_to,
+    project_id,
+    pull_id,
+    selection=None,
+    account_id=None,
+    granted_scopes=None,
 ):
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "transactional_events", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "transactional_events",
+        selection,
+        account_id,
+        granted_scopes,
     )
 
 
 def pull_contact_list_growth(
-    connection_id, date_from, date_to, project_id, pull_id, selection=None
+    connection_id,
+    date_from,
+    date_to,
+    project_id,
+    pull_id,
+    selection=None,
+    account_id=None,
+    granted_scopes=None,
 ):
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "contact_list_growth", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "contact_list_growth",
+        selection,
+        account_id,
+        granted_scopes,
     )
 
 

@@ -86,7 +86,7 @@ async def _list_flows(request: Request) -> Response:
         )
     if kind is not None and kind not in ("datastream", "report"):
         return JSONResponse(
-            {"code": "invalid_param", "message": "kind doit etre 'datastream' ou 'report'"},
+            {"code": "invalid_param", "message": "kind must be 'datastream' or 'report'"},
             status_code=422,
         )
 
@@ -98,7 +98,7 @@ async def _list_flows(request: Request) -> Response:
         with get_connection() as conn:
             flows = list_flows(project_id, identity or "anonymous", conn, kind=kind)
     except FlowScopeError:
-        return JSONResponse({"code": "not_found", "message": "Projet introuvable"}, status_code=404)
+        return JSONResponse({"code": "not_found", "message": "Project not found"}, status_code=404)
     except Exception as exc:
         logger.error("flows_api: list_flows_error: %s", exc)
         return JSONResponse(
@@ -129,7 +129,7 @@ async def _get_flow(request: Request) -> Response:
 
     if kind not in ("datastream", "report"):
         return JSONResponse(
-            {"code": "invalid_param", "message": "kind doit etre 'datastream' ou 'report'"},
+            {"code": "invalid_param", "message": "kind must be 'datastream' or 'report'"},
             status_code=422,
         )
     if not project_id:

@@ -1,6 +1,45 @@
 [
   {
+    "connector": "adjust"
+  },
+  {
+    "connector": "adobe-analytics"
+  },
+  {
+    "connector": "amazon-ads"
+  },
+  {
+    "connector": "amazon-dsp"
+  },
+  {
+    "connector": "bigquery"
+  },
+  {
+    "connector": "brevo"
+  },
+  {
+    "connector": "cm360"
+  },
+  {
+    "connector": "doubleverify"
+  },
+  {
+    "connector": "dv360"
+  },
+  {
+    "connector": "generic"
+  },
+  {
+    "connector": "google-ad-manager"
+  },
+  {
+    "connector": "google-ads"
+  },
+  {
     "connector": "google-analytics"
+  },
+  {
+    "connector": "google-business-profile"
   },
   {
     "connector": "google-sheets"
@@ -12,21 +51,57 @@
     "connector": "hubspot"
   },
   {
+    "connector": "ias"
+  },
+  {
     "connector": "klaviyo"
   },
   {
     "connector": "linkedin-ads"
   },
   {
+    "connector": "linkedin-company-pages"
+  },
+  {
     "connector": "meta-ads"
+  },
+  {
+    "connector": "microsoft-ads"
+  },
+  {
+    "connector": "piano"
+  },
+  {
+    "connector": "pinterest-ads"
+  },
+  {
+    "connector": "sa360"
   },
   {
     "connector": "shopify"
   },
   {
+    "connector": "square"
+  },
+  {
     "connector": "stripe"
   },
   {
+    "connector": "taboola"
+  },
+  {
+    "connector": "thetradedesk"
+  },
+  {
     "connector": "tiktok-ads"
+  },
+  {
+    "connector": "woocommerce"
+  },
+  {
+    "connector": "x-ads"
+  },
+  {
+    "connector": "youtube-analytics"
   }
 ]

@@ -1,0 +1,44 @@
+{
+  "reviews": [
+    {
+      "reviewId": "rev_aaa111",
+      "reviewer": {
+        "displayName": "Camille D.",
+        "profilePhotoUrl": "https://lh3.googleusercontent.test/photo-aaa",
+        "isAnonymous": false
+      },
+      "starRating": "FIVE",
+      "comment": "Excellent welcome, the shop was easy to find.",
+      "createTime": "2026-07-02T09:14:00Z",
+      "updateTime": "2026-07-02T09:14:00Z",
+      "reviewReply": {
+        "comment": "Thank you for the kind words.",
+        "updateTime": "2026-07-03T08:00:00Z"
+      }
+    },
+    {
+      "reviewId": "rev_bbb222",
+      "reviewer": {
+        "displayName": "A Google user",
+        "profilePhotoUrl": "https://lh3.googleusercontent.test/photo-bbb",
+        "isAnonymous": true
+      },
+      "starRating": "THREE",
+      "comment": "Fine, but the queue was long.",
+      "createTime": "2026-07-02T18:40:00Z",
+      "updateTime": "2026-07-05T11:02:00Z"
+    },
+    {
+      "reviewId": "rev_ccc333",
+      "reviewer": {
+        "displayName": "Sam L.",
+        "isAnonymous": false
+      },
+      "starRating": "STAR_RATING_UNSPECIFIED",
+      "createTime": "2026-07-04T07:25:00Z",
+      "updateTime": "2026-07-04T07:25:00Z"
+    }
+  ],
+  "averageRating": 4.2,
+  "totalReviewCount": 137
+}

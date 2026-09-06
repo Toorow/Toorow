@@ -107,6 +107,18 @@ from typing import Any
 
 from ulid import ULID
 
+from core.audit import declare_action
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12). Celles-ci n'etaient declarees NULLE PART : la valeur
+# etait retapee en dur ici, parce que la liste centrale de `core/audit.py`
+# etait trop loin pour valoir le detour. Mesure ce jour-la sur le journal
+# vivant : 29 des 64 actions reellement ecrites -- 45 % -- etaient dans ce
+# cas, et rien ne pouvait distinguer une action d'une faute de frappe.
+ACTION_DATASTREAM_ROLLED_BACK = declare_action("datastream.rolled_back")
+
+
 logger = logging.getLogger(__name__)
 
 # The documented default rollback window when the project sets no preference.
@@ -126,7 +138,7 @@ ACTION_ROLLBACK = "dataset.rollback"
 # a forward publish (app.audit_log.action is free-text -- no CHECK constraint -- so a
 # new verb is cheap and safe). The forward publish uses core.audit's
 # ACTION_DATASTREAM_PUBLISHED ("datastream.published"); a rollback is a different event.
-AUDIT_ACTION_DATASET_ROLLED_BACK = "datastream.rolled_back"
+AUDIT_ACTION_DATASET_ROLLED_BACK = ACTION_DATASTREAM_ROLLED_BACK
 
 # Destination-policy operations that require the Owner floor (AC: Owners ALONE
 # change ownership / access / retention / irreversible deletion policy). Recoverable
@@ -363,53 +375,27 @@ def enforce_owner_floor(
     ``OWNER_FLOOR_OPERATIONS`` (recoverable data actions use the Member floor at the
     API seam and do NOT call this).
 
-    It reuses BOTH access layers so it holds in legacy single-tenant AND strict AD-5
-    production deployments:
-      * the legacy per-project role floor (``identity_has_project_role(... 'owner')``)
-        -- keeps single-tenant / disabled-auth green (anonymous => owner), and
-      * the strict AD-5 seam (``resolve_strict_resource_access(...,
-        minimum_capability='manage')``) when Epic-36 production access is enabled --
-        so a non-owner grant cannot reach a destination-policy op in production.
+    There is ONE access layer. This used to consult a legacy per-project role floor
+    as well, so a single-tenant / disabled-auth deployment resolved anonymous to
+    owner; Story 46.4 retired that path. The strict AD-5 seam
+    (``resolve_strict_resource_access(..., minimum_capability='manage')``) is the
+    only gate, and it grants manage to an Organization owner (owner_floor) or to an
+    admin holding a manage grant -- a member or viewer is refused.
     """
-    from core.project_access import (  # noqa: PLC0415
-        ProjectAccessUnavailable,
-        epic36_production_access_enabled,
-        identity_has_project_role,
-        resolve_strict_resource_access,
-    )
+    from core.project_access import resolve_strict_resource_access  # noqa: PLC0415
 
     if operation not in OWNER_FLOOR_OPERATIONS:  # pragma: no cover - guarded by caller
         return
 
-    subject = identity or "anonymous"
-
-    # Strict AD-5 production floor (only when production access is enabled). A
-    # destination-policy op demands the 'manage' capability, which
-    # resolve_strict_resource_access grants only to owner (owner_floor) or an admin
-    # manage grant -- a member/viewer is refused.
-    if epic36_production_access_enabled(auth_mode=auth_mode):
-        decision = resolve_strict_resource_access(
-            subject,
-            conn,
-            project_id=project_id if datastream_id is None else None,
-            datastream_id=datastream_id,
-            minimum_capability="manage",
-            auth_mode=auth_mode,
-        )
-        if not decision.allowed:
-            raise OwnerFloorRequired(operation)
-        return
-
-    # Legacy per-project floor (single-tenant / disabled-auth compatible).
-    try:
-        is_owner = identity_has_project_role(
-            project_id, subject, "owner", conn, auth_mode=auth_mode
-        )
-    except ProjectAccessUnavailable as exc:
-        raise DatasetRecoveryError(
-            "access_unavailable", "destination role could not be verified"
-        ) from exc
-    if not is_owner:
+    decision = resolve_strict_resource_access(
+        identity or "anonymous",
+        conn,
+        project_id=project_id if datastream_id is None else None,
+        datastream_id=datastream_id,
+        minimum_capability="manage",
+        auth_mode=auth_mode,
+    )
+    if not decision.allowed:
         raise OwnerFloorRequired(operation)
 
 
@@ -632,7 +618,11 @@ def _latest_retained_prior(
             FROM app.datastream_publication_log
             WHERE datastream_id = %s AND project_id = %s
               AND retained
-              AND (%s IS NULL OR execution_id <> %s)
+              -- Cast pour la meme raison que la ligne suivante l'a deja :
+              -- sans exécution publiee le parametre est NULL et Postgres ne
+              -- peut pas en deduire le type. L'apercu de rollback repondait
+              -- 503 pour tout flux jamais publie.
+              AND (%s::text IS NULL OR execution_id <> %s::text)
               AND (%s::timestamptz IS NULL OR published_at < %s::timestamptz)
             ORDER BY published_at DESC
             LIMIT 1
@@ -776,6 +766,7 @@ def rollback_dataset(
     actor: str,
     target_execution_id: str | None = None,
     connection_factory=None,
+    manage_transaction: bool = True,
 ) -> dict[str, Any]:
     """Roll the DATASET pointer back to a RETAINED healthy prior published execution.
 
@@ -791,7 +782,11 @@ def rollback_dataset(
          governed). An expired deadline DISABLES the action (``rollback_window_expired``).
       4. Re-run the SAME semantic + DQ gates on the target's stored row_count /
          content_hash (empty / hash / schema / drift). Fail closed on any breach.
-      5. Swap ``current_published_execution_id`` BACK to the target and INSERT a NEW
+      5. Refuse, with the org's own numbers, when restoring would put a trial org
+         over its Datastream allowance -- and ONLY when the Datastream is stopped,
+         because rolling a running one back changes no count.
+      6. Restore the compatible execution, plan, mapping, lifecycle and schedule
+         pointers and INSERT a NEW
          append-only ``datastream_publication_log`` row (a rollback is a NEW row --
          never a mutation of history), all in the SAME transaction, then COMMIT.
 
@@ -822,7 +817,7 @@ def rollback_dataset(
             # 1) Lock the pointer row FIRST (serialize concurrent mutations).
             cur.execute(
                 """
-                SELECT current_published_execution_id
+                SELECT current_published_execution_id, enabled, org_id
                 FROM app.datastreams
                 WHERE id = %s AND project_id = %s
                 FOR UPDATE
@@ -833,6 +828,12 @@ def rollback_dataset(
             if ds_row is None:
                 raise RollbackTargetInvalid("datastream not found in project scope")
             current_execution_id = ds_row[0]
+            # `enabled` and `org_id` are read HERE, under the same lock, because
+            # the swap-back below writes `enabled = TRUE` and the trial allowance
+            # counts exactly that column. Reading them in a second statement
+            # would read them outside the lock this act serialises on.
+            already_enabled = bool(ds_row[1])
+            owner_org_id = ds_row[2]
 
             # 2) Reject if a mutation (replace/append) is already active. This is the
             #    serialize-or-reject-with-lock-reason contract (reuses ACTIVE_STATES).
@@ -875,10 +876,9 @@ def rollback_dataset(
             if not resolved_target_id:
                 if explicit_target:
                     raise RollbackTargetNotFound()
-                conn.commit()
-                return _already_at_target_result(
-                    datastream_id, project_id, current_execution_id
-                )
+                if manage_transaction:
+                    conn.commit()
+                return _already_at_target_result(datastream_id, project_id, current_execution_id)
 
             # H1 IDEMPOTENCY: if the (explicit or resolved) target ALREADY equals the
             # current pointer, this is a stable no-op -- NO pointer swap, NO new log
@@ -886,10 +886,9 @@ def rollback_dataset(
             # no-op is always safe). This is what makes a RETRY that passes the same
             # resolved target idempotent.
             if resolved_target_id == current_execution_id:
-                conn.commit()
-                return _already_at_target_result(
-                    datastream_id, project_id, current_execution_id
-                )
+                if manage_transaction:
+                    conn.commit()
+                return _already_at_target_result(datastream_id, project_id, current_execution_id)
 
             target = _load_rollback_target(
                 conn, datastream_id, project_id, resolved_target_id, window_hours
@@ -1003,13 +1002,68 @@ def rollback_dataset(
                     f"target execution is not in a published state (state={target_state})"
                 )
 
+            # THE TRIAL GUARD BELONGS TO THE ACT, NOT TO ONE OF ITS DOORS.
+            #
+            # The UPDATE below writes `enabled = TRUE`, and `enabled = TRUE AND
+            # archived_at IS NULL` is EXACTLY what the org's trial allowance
+            # counts (`trial_enforcement._count_active_datastreams`). Pausing a
+            # Datastream writes `enabled = FALSE` and leaves `lifecycle_state`
+            # at 'active' (`schedule_mcp.set_schedule`), so a paused Datastream
+            # is NOT counted -- which makes this the statement that walked
+            # around the cap: three running, pause one, activate a fourth, then
+            # roll the paused one back and the org runs four on a plan of three.
+            #
+            # Guarded HERE and not in `confirm_rollback` / the workbench route,
+            # because a fourth door opened tomorrow would arrive at this same
+            # statement and pass underneath a caller-side check.
+            #
+            # Only when the row is NOT already enabled. Rolling a RUNNING
+            # Datastream back to a healthy prior version changes no count;
+            # refusing it at exactly `current == limit` would freeze the last
+            # Datastream of every trial org on the version it happens to carry,
+            # and recovery is the one act a saturated org needs most. Same
+            # reading, and the same `already_enabled` skip, as
+            # `datastream_activation.publish_activate_mutation`.
+            #
+            # BEFORE any write of this act: the gates above are all reads, so a
+            # refusal here leaves the pointer, the publication log and the
+            # paused flag exactly as they were, with nothing to unwind.
+            if not already_enabled:
+                from core.trial_enforcement import check_datastream_limit  # noqa: PLC0415
+
+                check_datastream_limit(
+                    project_id, conn, identity=actor or "anonymous", org_id=owner_org_id
+                )
+
             cur.execute(
                 """
                 UPDATE app.datastreams
-                SET current_published_execution_id = %s
+                SET current_published_execution_id = %s,
+                    current_plan_version_id = %s,
+                    current_mapping_version_id = %s,
+                    lifecycle_state = 'active',
+                    enabled = TRUE,
+                    schedule_mode = COALESCE(
+                        (SELECT CASE p.normalized_payload->'schedule'->>'mode'
+                            WHEN 'daily' THEN 'nightly'
+                            WHEN 'nightly' THEN 'nightly'
+                            WHEN 'hourly' THEN 'hourly'
+                            ELSE 'manual' END
+                           FROM app.datastream_plan_versions p
+                          WHERE p.id = %s AND p.datastream_id = app.datastreams.id
+                            AND p.project_id = app.datastreams.project_id),
+                        'manual'
+                    )
                 WHERE id = %s AND project_id = %s
                 """,
-                (resolved_target_id, datastream_id, project_id),
+                (
+                    resolved_target_id,
+                    plan_version_id,
+                    mapping_version_id,
+                    plan_version_id,
+                    datastream_id,
+                    project_id,
+                ),
             )
             if cur.rowcount != 1:  # pragma: no cover - defensive within one txn.
                 raise RollbackTargetInvalid("pointer swap-back affected no row")
@@ -1086,12 +1140,14 @@ def rollback_dataset(
                 },
             )
 
-        conn.commit()
+        if manage_transaction:
+            conn.commit()
     except Exception:
-        try:
-            conn.rollback()
-        except Exception:  # pragma: no cover - rollback of an already-dead txn.
-            pass
+        if manage_transaction:
+            try:
+                conn.rollback()
+            except Exception:  # pragma: no cover - rollback of an already-dead txn.
+                pass
         raise
 
     return {

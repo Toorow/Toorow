@@ -14,6 +14,15 @@
 -- A dbt singular test FAILS when it returns rows (zero rows = pass). NULL-safe: a
 -- fully-plan-only channel has actual_to_date NULL on BOTH sides (COALESCE to 0 for
 -- the comparison). Float tolerance 1e-6.
+--
+-- AMENDED story 61.4. `SUM(actual_to_date)` on the LINE side skips a line that
+-- withheld its actual, so this test used to require the channel to publish that
+-- partial sum -- i.e. to publish the spend of the OTHER lines under the whole
+-- channel's name. That is the false under-delivery, written as an assertion. A
+-- channel one of whose paceable lines withheld now states no actual at all, and
+-- the equality is asserted only where every member could be stated. What the
+-- withheld channel must do instead is asserted in full by
+-- test_plan_pacing_currency_is_declared.sql.
 
 WITH line_rollup AS (
     SELECT
@@ -38,6 +47,7 @@ JOIN line_rollup lr
     AND lr.plan_id         = c.plan_id
     AND lr.plan_version_id = c.plan_version_id
     AND lr.channel         = c.channel
-WHERE ABS(COALESCE(c.actual_to_date, 0) - COALESCE(lr.actual_to_date, 0)) > 1e-6
-   OR ABS(COALESCE(c.budget, 0)         - COALESCE(lr.budget, 0))         > 1e-6
-   OR ABS(COALESCE(c.allocated_to_date, 0) - COALESCE(lr.allocated_to_date, 0)) > 1e-6
+WHERE NOT c.actual_withheld
+  AND (ABS(COALESCE(c.actual_to_date, 0) - COALESCE(lr.actual_to_date, 0)) > 1e-6
+    OR ABS(COALESCE(c.budget, 0)         - COALESCE(lr.budget, 0))         > 1e-6
+    OR ABS(COALESCE(c.allocated_to_date, 0) - COALESCE(lr.allocated_to_date, 0)) > 1e-6)

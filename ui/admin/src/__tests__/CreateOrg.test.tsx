@@ -238,3 +238,64 @@ describe("CreateOrg — Create is gated on both names", () => {
     await waitFor(() => expect(create).toBeEnabled());
   });
 });
+
+// ---------------------------------------------------------------------------
+// The status is READ, never invented — caveats-register.md, "Incomplete if":
+// *an unknown, unavailable or unverifiable input is presented as a healthy or
+// maximal value*.
+// ---------------------------------------------------------------------------
+
+describe("CreateOrg — the status shown is the one the server answered", () => {
+  async function createAndWait(created: unknown) {
+    stubFetch((url) => {
+      if (isProfile(url)) return resp(200, { display_name: "Jean Albany" });
+      if (isConfirmation(url)) {
+        return resp(201, {
+          confirmation_id: "econf_entry",
+          confirmation_secret: "ecfs_server_secret",
+        });
+      }
+      return resp(201, created);
+    });
+    render(<CreateOrg />);
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText("Organization name"), "Acme Media");
+    await user.click(screen.getByRole("button", { name: "Create organization" }));
+    await screen.findByText("Organization created");
+  }
+
+  it("shows the server's word, in the console's spelling and its colour", async () => {
+    await createAndWait(CREATED_ORG);
+    const chip = screen.getByTestId("createorg-status");
+    expect(chip.textContent).toBe("Active");
+    // `active` EARNS success in `stateVocabulary`; it is no longer assumed here.
+    expect(chip.className).toMatch(/text-success/);
+  });
+
+  it("says the status is unknown rather than claiming 'active' when the body carries none", async () => {
+    // The defect: `org.status ?? "active"` invented a healthy status for a
+    // server answer that stated none, and drew it in a hardcoded green.
+    //
+    // IT READS `Unknown` SINCE 76-2, AND NOT `Unavailable`. The two are not
+    // synonyms and `console-presentation.md` §3 separates them: `unavailable` is
+    // an absence the SERVER CHOSE to state, and stays neutral; a body that
+    // carries no status at all is a question nobody answered, which README
+    // invariant 8 refuses to draw as healthy or as "nothing to see". So the word
+    // is `Unknown` and the mark is the warning diamond.
+    await createAndWait({ id: "org_acme", name: "Acme Media", slug: "acme-media" });
+    const chip = screen.getByTestId("createorg-status");
+    expect(chip.textContent).toBe("Unknown");
+    expect(chip.className).not.toMatch(/text-success/);
+    expect(chip.className).toMatch(/text-warning/);
+  });
+
+  it("does not colour an unhealthy status as a success", async () => {
+    // `archived` is an error in the console's one state vocabulary. The tone
+    // used to be hardcoded `success`, so any word the server sent was green.
+    await createAndWait({ ...CREATED_ORG, status: "archived" });
+    const chip = screen.getByTestId("createorg-status");
+    expect(chip.textContent).toBe("Archived");
+    expect(chip.className).toMatch(/text-error/);
+    expect(chip.className).not.toMatch(/text-success/);
+  });
+});

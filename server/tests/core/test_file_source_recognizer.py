@@ -25,8 +25,19 @@ def _template(**over):
 
 
 def test_normalize_folds_accents_case_and_separators():
-    assert normalize_name("Coût-Net  ") == "cout net"
+    # The accented inputs are written as \u escapes ON PURPOSE, and the file
+    # stays pure ASCII on disk. A repo-wide ASCII sweep had rewritten the input
+    # literal "Co<u-circumflex>t-Net" to "Cost-Net" and left the expected value
+    # untouched, so this test was RED at HEAD while the tracker line for Story
+    # 22.17 announced "160 passed".
+    #
+    # Note the repair that was NOT made: rewriting the EXPECTED value to
+    # "cost net" would have turned it green in one character. It would also
+    # have left a test called "folds accents" whose input carries no accent --
+    # green, and proving nothing. Escapes survive the next sweep.
+    assert normalize_name("Co\u00fbt-Net  ") == "cout net"
     assert normalize_name("BRUTTOKOSTEN_GESAMT") == "bruttokosten gesamt"
+    assert normalize_name("\u00d6ffentlich") == "offentlich"
 
 
 def test_recognizes_other_language_reordered_and_ignores_extras():
@@ -91,3 +102,56 @@ def test_unrelated_headers_all_unmatched():
     result = recognize_columns(_template(), ["Foo", "Bar", "Zzz"])
     assert result["mapping"] == {}
     assert all(f["status"] == "unmatched" for f in result["fields"])
+
+
+# ---------------------------------------------------------------------------
+# `duplicate_target` : signale ET exclut -- sinon il resout en silence
+# ---------------------------------------------------------------------------
+#
+# Le test au-dessus prouvait que la collision est SIGNALEE. Il ne prouvait pas ce
+# qu'elle fait au mapping, et la reponse etait : rien. Les deux colonnes y
+# restaient, `seen` rapportait la PREMIERE, et le remap aval laissait gagner la
+# DERNIERE -- le rapport et le comportement se contredisaient.
+#
+# C'est exactement ce que le critere `[4]` de file-source-ingestion interdit :
+# << an ambiguous mapping is resolved silently in favour of one candidate >>. Le
+# chemin frere (`ambiguous_column_match`) exclut deja du mapping ; celui-ci doit
+# faire pareil, et laisser le champ requis manquer pour que la porte s'ouvre sur
+# un humain plutot que sur une valeur choisie par un ordre d'iteration.
+
+
+def test_a_duplicate_target_leaves_NEITHER_column_in_the_mapping():
+    result = recognize_columns(_template(), ["Bruttokosten Gesamt", "net cost"])
+    assert "mdm_net_cost" not in result["mapping"].values(), (
+        "une collision resolue en silence : le canonique est alimente par une "
+        "colonne choisie par l'ordre d'iteration"
+    )
+    assert "Bruttokosten Gesamt" not in result["mapping"]
+    assert "net cost" not in result["mapping"]
+
+
+def test_both_colliding_columns_are_reported_as_ambiguous_not_matched():
+    """Le rapport doit dire la meme chose que le mapping.
+
+    Laisser `status='matched'` sur deux colonnes dont aucune n'a ete retenue,
+    c'est afficher a l'ecran une reconnaissance qui n'a pas eu lieu.
+    """
+    result = recognize_columns(_template(), ["Bruttokosten Gesamt", "net cost"])
+    statuses = {
+        f["source_column"]: f["status"]
+        for f in result["fields"]
+        if f["source_column"] in {"Bruttokosten Gesamt", "net cost"}
+    }
+    assert statuses == {"Bruttokosten Gesamt": "ambiguous", "net cost": "ambiguous"}
+
+
+def test_a_column_that_does_NOT_collide_is_untouched_by_the_exclusion():
+    """La reparation ne doit pas devenir un refus general.
+
+    Une collision sur un canonique ne dit rien des autres colonnes : si elle les
+    emportait, tout fichier portant une seule ambiguite deviendrait inimportable.
+    """
+    result = recognize_columns(
+        _template(), ["Bruttokosten Gesamt", "net cost", "media date"]
+    )
+    assert result["mapping"].get("media date") == "mdm_media_date"

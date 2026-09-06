@@ -12,6 +12,9 @@
 -- connector='google-analytics' anywhere in the dataset (the injected day).
 
 SELECT 'no_anomaly_found' AS failure_reason
+-- BigQuery refuses a WHERE with no FROM; DuckDB allows it. One constant row,
+-- accepted by both, keeps this guard a guard on either engine.
+FROM (SELECT 1) AS one_row
 WHERE NOT EXISTS (
     SELECT 1
     FROM {{ ref('anomalies_daily') }}

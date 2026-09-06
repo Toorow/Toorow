@@ -1,0 +1,42 @@
+version: 2
+
+# Story 64.11 (AI-232) -- own schema file, not dbt/seeds/schema.yml, which is
+# frozen by tests/conformance/test_epic41_verification_overlay_additive.py.
+
+seeds:
+  - name: governed_attribute_fixture
+    description: >
+      Story 64.11 age fixture. Carries the column list of
+      `mirror.master_data_node_attributes_dim` (migration 239) so
+      test_governed_node_age.sql can replay the age macros over versioned rows
+      instead of depending on a mirror somebody remembered to sync. Every row is
+      one refusal the age must keep making: a readable birth date, a birth ON the
+      as-of date (an age of zero is a value, not an absence), a birth AFTER it
+      (`unborn` -- an age of -1 sums and buckets like any other number), a birth
+      written in the wrong type, an attribute the contract never declared, and a
+      node carrying no birth attribute at all. The namespaced keys keep it out of
+      every production relation.
+    columns:
+      - name: node_id
+        tests: [not_null]
+      - name: attribute
+        tests: [not_null]
+      - name: scenario
+        tests: [not_null]
+    config:
+      column_types:
+        org_id: STRING
+        project_id: STRING
+        registry_id: STRING
+        node_id: STRING
+        version_id: STRING
+        attribute: STRING
+        value_type: STRING
+        unit: STRING
+        value_text: STRING
+        value_number: "{{ 'NUMERIC' if target.type == 'bigquery' else 'DECIMAL(18,6)' }}"
+        value_date: DATE
+        value_bool: BOOLEAN
+        undeclared: BOOLEAN
+        type_mismatch: BOOLEAN
+        scenario: STRING

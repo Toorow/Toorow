@@ -1,0 +1,49 @@
+version: 2
+
+sources:
+  - name: raw_instagram_insights
+    description: "Append-only Instagram professional-account insight rows."
+    schema: "{{ var('raw_schema', 'main') }}"  # 24.4 AC2: org_<wslug>_raw injected by orchestrator, 'main' without var (bit-identique)
+    tables:
+      - name: raw_instagram_insights_daily
+
+models:
+  - name: stg_instagram_insights_daily
+    description: "Latest Instagram account-day or media snapshot at the complete metric grain."
+    columns:
+      - name: report_profile
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: account_id
+        tests: [not_null]
+      - name: metric
+        tests: [not_null]
+      - name: value
+        tests: [not_null]
+      - name: pull_id
+        tests: [not_null]
+      - name: project_id
+        tests: [not_null]
+    tests:
+      - unique:
+          name: stg_instagram_insights_full_grain_unique
+          arguments:
+            column_name: "project_id || '|' || report_profile || '|' || date || '|' || account_id || '|' || COALESCE(media_id, '') || '|' || metric"
+
+  - name: fact_instagram_insights_snapshot
+    description: "Non-additive Instagram reach and lifetime media engagement snapshots."
+    columns:
+      - name: date
+        tests: [not_null]
+      - name: account_id
+        tests: [not_null]
+      - name: metric
+        tests: [not_null]
+      - name: value
+        tests: [not_null]
+    tests:
+      - unique:
+          name: fact_instagram_insights_snapshot_grain_unique
+          arguments:
+            column_name: "project_id || '|' || report_profile || '|' || date || '|' || account_id || '|' || COALESCE(media_id, '') || '|' || metric"

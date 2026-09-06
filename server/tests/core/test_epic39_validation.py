@@ -45,6 +45,7 @@ from core.fx_helper import (  # noqa: E402
     RateQuote,
     SeedAsOfRateProvider,
     convert,
+    parse_fx_seed,
 )
 
 # --- Fixture path (the 39.9 matrix seed) -----------------------------------------------------
@@ -92,12 +93,23 @@ def _contrib(row: dict, *, on_date: date | None = None) -> dict:
 _AS_OF_ROWS = [
     ("USD", "EUR", 0.90, "2024-01-02"),
     ("USD", "EUR", 0.93, "2025-06-16"),
-    ("USD", "EUR", 0.92, "2026-07-01"),
+    ("USD", "EUR", 0.85, "2026-07-01"),
 ]
 
 
 def _as_of_provider() -> SeedAsOfRateProvider:
     return SeedAsOfRateProvider(_AS_OF_ROWS)
+
+
+def _fixed_usd_eur_rate() -> float:
+    """Read the governed fixed rate once; this suite tests use, not seed policy."""
+    return next(
+        row.rate
+        for row in parse_fx_seed()
+        if row.from_currency == "USD"
+        and row.to_currency == "EUR"
+        and row.valid_from <= _D_CURRENT <= row.valid_to
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -226,21 +238,27 @@ def test_fixed_fx_from_seed_with_provenance():
         float(usd["value_decimal"]), "USD", reporting_currency="EUR",
         tier="fixed", on_date=_D_CURRENT,
     )
-    assert result.amount == pytest.approx(100.0 * 0.92)
+    assert result.amount == pytest.approx(85.0)
+    assert result.fx["rate"] == 0.85
     assert set(result.fx.keys()) == {"rate", "as_of_date", "source", "tier"}
     assert result.fx["tier"] == "fixed"
     assert result.fx["source"] == "seed"
 
 
+def test_governed_fixed_usd_eur_rate_is_exactly_the_current_contract():
+    """Independent policy oracle: computations above do not derive their expected value."""
+    assert _fixed_usd_eur_rate() == 0.85
+
+
 def test_as_of_fx_uses_past_rate_not_today():
     """39.4/39.5: a PAST figure converts at the PAST as-of rate (2024-01-02 => 0.90), not
-    today's 0.92 -- run-day independent."""
+    today's 0.85 -- run-day independent."""
     past = next(r for r in _rows("as_of_fx"))
     result = convert(
         float(past["value_decimal"]), "USD", reporting_currency="EUR",
         tier="historical", on_date=_D_PAST, provider=_as_of_provider(),
     )
-    assert result.amount == pytest.approx(90.0)      # 100 * 0.90 (past), not 100 * 0.92
+    assert result.amount == pytest.approx(90.0)      # 100 * 0.90 (past), not 100 * 0.85
     assert result.fx["tier"] == "historical"
     assert result.fx["as_of_date"] == "2024-01-02"
 
@@ -260,7 +278,7 @@ def test_as_ad9_provenance_nests_fx_under_the_triple():
                      tier="fixed", on_date=_D_CURRENT)
     prov = result.as_ad9_provenance(base)
     assert prov["source_system"] == "__epic39_src_b__"
-    assert prov["fx"]["rate"] == pytest.approx(0.92)
+    assert prov["fx"]["rate"] == pytest.approx(0.85)
     assert "fx" not in base  # base not mutated
 
 
@@ -324,8 +342,9 @@ def test_reconciliation_converts_first_then_sums():
         is_monetary=True, route_resolver=_fake_route_sum,
     )
     assert result.status == _recon.RECONCILED
-    # convert-first: 100 EUR (identity) + 100 USD * 0.92 = 192.0 ; naive mixed sum would be 200.0.
-    assert result.amount == pytest.approx(192.0)
+    # Independent oracle: a drift in the seed must fail instead of moving the
+    # expected result in lockstep with the producer under test.
+    assert result.amount == pytest.approx(185.0)
     assert result.amount != pytest.approx(200.0)
     prov = result.as_ad9_provenance()
     assert prov["method"] == "SUM"                       # definition cited
@@ -394,14 +413,18 @@ def test_shared_timezone_raises_no_false_positive():
     ) is None
 
 
-def test_undetermined_timezone_is_excluded_never_coerced_to_utc():
-    """39.7/39.8: a blank/undetermined report timezone is EXCLUDED from the comparison (never
-    coerced to UTC to force or suppress a signal). With only one other known tz present, the
-    signal does NOT fire on the undetermined row."""
+def test_undetermined_timezone_is_reported_never_coerced_to_utc():
+    """39.7/39.8, corrected by Story 48.3: a blank/undetermined report timezone is never
+    coerced to UTC -- and it is no longer EXCLUDED either. Excluding it meant one placed
+    stream and one unplaceable rendered as "no offset", which is an incomplete comparison
+    shown as a healthy one. It is now reported in `unplaced_streams`."""
     streams = _tz_streams("honesty_undetermined_tz")  # single row, blank tz
-    # pair the blank-tz row with ONE known-tz stream: only 1 distinct KNOWN tz -> no signal.
     streams += [{"datastream": "__epic39_src_a__", "report_timezone": "Europe/Paris"}]
-    assert _tz_signal.check_cross_source_day_offset(metric="revenue", streams=streams) is None
+    signal = _tz_signal.check_cross_source_day_offset(metric="revenue", streams=streams)
+    assert signal is not None
+    assert signal["unplaced_streams"], "the undetermined stream must be named"
+    # Fail-closed half unchanged: no UTC was invented for it.
+    assert signal["distinct_timezones"] == ["Europe/Paris"]
 
 
 def test_undetermined_timezone_capture_is_a_typed_gap():

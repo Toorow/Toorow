@@ -23,11 +23,12 @@ Coverage:
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 from core import first_value_funnel as fvf
+
+from tests.conftest import REPO_ROOT
 
 PEPPER = "z" * 40
 
@@ -416,13 +417,13 @@ def test_missing_pepper_fails_closed(monkeypatch):
 
 # ---------------------------------------------------------------------------
 # Migration enforces the SAME enums at the DB level (second gate).
-# Path is repo-root-relative (matches the neighboring migration tests); run pytest
-# from the repository root.
+# Le chemin passe par `REPO_ROOT` (`tests/conftest.py`), donc le verdict ne depend
+# plus du repertoire de lancement -- il en dependait, et c'etait AI-106.
 # ---------------------------------------------------------------------------
 
 
 def test_migration_074_enforces_enums_and_separate_ledger():
-    sql = Path("infra/nango/migrations/074_first_value_funnel.sql").read_text()
+    sql = (REPO_ROOT / "infra/nango/migrations/074_first_value_funnel.sql").read_text()
     assert "app.first_value_events" in sql
     assert "app.support_access_ledger" in sql
     assert "app.first_value_project_journeys" in sql

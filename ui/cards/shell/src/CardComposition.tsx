@@ -18,12 +18,9 @@
  * Empty-safe: missing or empty block.data falls through to the primitive's own designed
  * empty state (empty arrays / null value). The outer try/catch catches any runtime error.
  *
- * Design rules: never throws, French-first, light+dark via MUI theme.
+ * Design rules: never throws, French-first, light+dark via the shared theme.
  */
 
-import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
-import { alpha, useTheme } from "@mui/material/styles";
 import type {
   CompositionBlock,
   CardData,
@@ -47,8 +44,13 @@ import Funnel from "./Funnel";
 
 // KpiRow is re-implemented inline here to avoid circular dependency on ui/cards/kpi.
 // It mirrors the essential shape of KpiMetricTile from KpiCardBody.tsx.
-import { Sparkline, metricLabel } from "./index";
+import Sparkline from "./Sparkline";
+import { metricLabel, metricUnitSuffix } from "./types";
+import { verdictColor, verdictTone } from "./verdictTone";
+import type { VerdictDirection } from "./verdictTone";
+import { NO_VALUE, formatPercent, formatValue } from "./viz/theme/formatters";
 import type { MetricRollup, SeriesPoint } from "./types";
+import { Box, Typography, alpha, useTheme } from "@toorow/shell";
 
 export interface CardCompositionProps {
   /** Ordered composition blocks from data.composition (server-resolved). */
@@ -92,14 +94,18 @@ function KpiRowFromBlockData({
         const def = metricDefinitions?.[m.metric];
         const dir = m.direction ?? def?.direction ?? "up_good";
         const deltaPct = m.delta_pct ?? null;
-        let color = theme.palette.text.secondary;
-        if (deltaPct !== null && dir !== "neutral") {
-          const isPositive = deltaPct >= 0;
-          const isGood = dir === "up_good" ? isPositive : !isPositive;
-          color = isGood ? theme.palette.success.main : theme.palette.error.main;
-        }
-        const deltaText =
-          deltaPct === null ? "—" : `${deltaPct >= 0 ? "+" : ""}${deltaPct.toFixed(1)} %`;
+        // ONE function decides every verdict colour on a card (story 76-8,
+        // review round 2): a tile that resolved its own would drift from the
+        // legend the footer prints, which is exactly what the bars did.
+        const color = verdictColor(
+          theme,
+          verdictTone(deltaPct, dir as VerdictDirection),
+          theme.palette.text.secondary,
+        );
+        // `toFixed` is locale-blind by specification: it printed « +8.8 % » with a
+        // decimal POINT beside a grouped value that used a decimal COMMA — two
+        // conventions in one card (measured on `card-keywords`, story 76-8).
+        const deltaText = deltaPct === null ? NO_VALUE : formatPercent(deltaPct, { signed: true });
         const value = m.value ?? 0;
 
         return (
@@ -111,7 +117,7 @@ function KpiRowFromBlockData({
           >
             <Typography variant="overline" color="text.secondary" sx={{ lineHeight: 1.2 }}>
               {metricLabel(m.metric)}
-              {def?.unit ? ` (${def.unit})` : ""}
+              {metricUnitSuffix(def?.unit)}
             </Typography>
             <Typography
               variant="h3"
@@ -119,7 +125,7 @@ function KpiRowFromBlockData({
               sx={{ fontWeight: 700, fontVariantNumeric: "lining-nums tabular-nums", lineHeight: 1.1 }}
               data-testid="composition-kpi-value"
             >
-              {value.toLocaleString("fr-FR")}
+              {formatValue(value)}
             </Typography>
             <Typography
               variant="caption"
@@ -169,14 +175,12 @@ function KpiRow({
         const def = metricDefinitions?.[metric];
         const deltaPct = rollup.delta_pct ?? null;
         const dir = def?.direction ?? "up_good";
-        let color = theme.palette.text.secondary;
-        if (deltaPct !== null && dir !== "neutral") {
-          const isPositive = deltaPct >= 0;
-          const isGood = dir === "up_good" ? isPositive : !isPositive;
-          color = isGood ? theme.palette.success.main : theme.palette.error.main;
-        }
-        const deltaText =
-          deltaPct === null ? "—" : `${deltaPct >= 0 ? "+" : ""}${deltaPct.toFixed(1)} %`;
+        const color = verdictColor(
+          theme,
+          verdictTone(deltaPct, dir as VerdictDirection),
+          theme.palette.text.secondary,
+        );
+        const deltaText = deltaPct === null ? NO_VALUE : formatPercent(deltaPct, { signed: true });
 
         return (
           <Box
@@ -187,7 +191,7 @@ function KpiRow({
           >
             <Typography variant="overline" color="text.secondary" sx={{ lineHeight: 1.2 }}>
               {metricLabel(metric)}
-              {def?.unit ? ` (${def.unit})` : ""}
+              {metricUnitSuffix(def?.unit)}
             </Typography>
             <Typography
               variant="h3"
@@ -195,7 +199,7 @@ function KpiRow({
               sx={{ fontWeight: 700, fontVariantNumeric: "lining-nums tabular-nums", lineHeight: 1.1 }}
               data-testid="composition-kpi-value"
             >
-              {rollup.value.toLocaleString("fr-FR")}
+              {formatValue(rollup.value)}
             </Typography>
             <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1 }}>
               <Typography
@@ -303,6 +307,13 @@ function TableBlock({
 // ---------------------------------------------------------------------------
 
 export default function CardComposition({ blocks, data }: CardCompositionProps) {
+  // THE COMMENT IS SINGULAR (arbitrage 76-8). The shell owns the comment block:
+  // it drops its own the moment the composition carries one (`hasCommentBlock`
+  // in every App), and here the composition renders exactly ONE even when the
+  // server sends two — the duplicated « COMMENTAIRE » measured on
+  // `card-keywords` and `card-usertypes`.
+  const firstCommentIndex = (blocks ?? []).findIndex((b) => b.type === "comment");
+
   if (!blocks || blocks.length === 0) {
     return (
       <Box
@@ -321,6 +332,7 @@ export default function CardComposition({ blocks, data }: CardCompositionProps) 
     >
       {blocks.map((block, idx) => {
         const key = `${block.type}-${idx}`;
+        if (block.type === "comment" && idx !== firstCommentIndex) return null;
         try {
           switch (block.type) {
             case "kpi_row": {
@@ -400,8 +412,17 @@ export default function CardComposition({ blocks, data }: CardCompositionProps) 
                   )}
                   <LineChart
                     series={chartSeries}
+                    markers={ld?.markers}
                     ariaLabel={block.title ?? "Courbe"}
                   />
+                  {/* L'ABSENCE SE DIT. Une courbe sans repère et une courbe dont
+                      les repères n'ont pas pu être lus se ressemblent à l'oeil ;
+                      seule la seconde a une raison à donner. */}
+                  {!ld?.markers?.length && ld?.markers_reason && (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                      {ld.markers_reason.message}
+                    </Typography>
+                  )}
                 </Box>
               );
             }
@@ -415,6 +436,10 @@ export default function CardComposition({ blocks, data }: CardCompositionProps) 
                 label: b.label,
                 // Pass |value| as value and keep direction for width scaling by |value| (F-1).
                 value: Math.abs(b.value),
+                // …and the SIGNED value for the label: without it, `-3.8`
+                // printed as « +3,8 » in red beside « +3,2 » in green
+                // (measured on `card-keywords`, story 76-8).
+                signedValue: b.value,
                 direction: b.direction,
               }));
               const variant = bd?.orientation === "vertical" ? "vertical" : "horizontal";
@@ -442,11 +467,23 @@ export default function CardComposition({ blocks, data }: CardCompositionProps) 
             }
 
             case "gauge": {
-              // block.data = GaugeBlockData {value, target, direction, unit, label}
+              // block.data = GaugeBlockData {value, target, target_source, direction, unit, label}
               // value may be null (zero-division -> Gauge empty state)
               const gd = block.data as GaugeBlockData | undefined;
+              // The block title is a template constant ("CPA vs target") and announces a
+              // comparison unconditionally. When no objective is defined the comparison does
+              // not happen, so the block declares that here and Gauge prints the absence --
+              // the announcement never travels alone (CAV-08).
+              const targetState = gd?.target === null || gd?.target === undefined ? "unset" : "set";
+              // WHAT IS ASKED ONCE IS NOT ASKED TWICE (story 76-8). The server
+              // often sends `label` EQUAL to the block title — measured on
+              // `card-conversions`, where « CPA vs objectif » was written as the
+              // overline above and again as the caption under the arc, across
+              // it. The caption survives only when it says something else.
+              const gaugeCaption =
+                gd?.label && gd.label !== block.title ? gd.label : undefined;
               return (
-                <Box key={key} data-testid="composition-block-gauge">
+                <Box key={key} data-testid="composition-block-gauge" data-target-state={targetState}>
                   {block.title && (
                     <Typography variant="overline" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
                       {block.title}
@@ -457,7 +494,7 @@ export default function CardComposition({ blocks, data }: CardCompositionProps) 
                     target={gd?.target ?? undefined}
                     direction={gd?.direction ?? "neutral"}
                     unit={gd?.unit ?? ""}
-                    label={gd?.label ?? block.title}
+                    label={gaugeCaption}
                     ariaLabel={block.title ?? "Jauge"}
                   />
                 </Box>
@@ -465,7 +502,7 @@ export default function CardComposition({ blocks, data }: CardCompositionProps) 
             }
 
             case "donut": {
-              // block.data = DonutBlockData {total, dimension, slices:[{label, value, pct}]}
+              // block.data = DonutBlockData {total, dimension, dimension_label, slices:[...]}
               const dd = block.data as DonutBlockData | undefined;
               const slices = (dd?.slices ?? []).map((s) => ({ label: s.label, value: s.value }));
               return (
@@ -477,7 +514,11 @@ export default function CardComposition({ blocks, data }: CardCompositionProps) 
                   )}
                   <Donut
                     slices={slices}
-                    unit={dd?.dimension ?? undefined}
+                    // THE WORD, never the join key. `dimension` is the stable
+                    // identifier and printing it here spoke the database at a
+                    // reader; an envelope that carries no word says nothing
+                    // rather than falling back to the identifier.
+                    unit={dd?.dimension_label ?? undefined}
                     ariaLabel={block.title ?? "Répartition"}
                   />
                 </Box>
@@ -506,7 +547,7 @@ export default function CardComposition({ blocks, data }: CardCompositionProps) 
                         sx={{ fontWeight: 700, fontVariantNumeric: "lining-nums tabular-nums", lineHeight: 1.1 }}
                         data-testid="funnel-overall-rate-value"
                       >
-                        {(overallRate * 100).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} %
+                        {formatPercent(overallRate * 100)}
                       </Typography>
                       <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25 }}>
                         Taux de conversion global

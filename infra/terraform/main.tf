@@ -146,6 +146,8 @@ resource "google_project_service" "dev_additional_services" {
     "secretmanager.googleapis.com",
     "storage.googleapis.com",
     "pubsub.googleapis.com",
+    "cloudtasks.googleapis.com",
+    "cloudscheduler.googleapis.com",
   ])
   project                    = google_project.dev.project_id
   service                    = each.key

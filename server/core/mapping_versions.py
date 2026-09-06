@@ -51,6 +51,18 @@ from typing import Any
 
 from ulid import ULID
 
+from core.audit import declare_action
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12). Celles-ci n'etaient declarees NULLE PART : la valeur
+# etait retapee en dur ici, parce que la liste centrale de `core/audit.py`
+# etait trop loin pour valoir le detour. Mesure ce jour-la sur le journal
+# vivant : 29 des 64 actions reellement ecrites -- 45 % -- etaient dans ce
+# cas, et rien ne pouvait distinguer une action d'une faute de frappe.
+ACTION_DATASTREAM_MAPPING_PROPOSE = declare_action("datastream.mapping.propose")
+
+
 logger = logging.getLogger(__name__)
 
 # The three agentic modes (E36-FR07). Advisory may only explain; Delegated may
@@ -69,7 +81,7 @@ STATE_REJECTED = "rejected"
 
 # The durable command routed through execute_operation for a proposal save. It is a
 # WRITE effect but NON-LIVE: it never advances the live pointer.
-COMMAND_MAPPING_PROPOSE = "datastream.mapping.propose"
+COMMAND_MAPPING_PROPOSE = ACTION_DATASTREAM_MAPPING_PROPOSE
 
 # The ordered gate checks (E36-FR07 AC4). Each has a stable code and an origin the
 # docstring/return payload names so a reviewer can audit where the evidence came

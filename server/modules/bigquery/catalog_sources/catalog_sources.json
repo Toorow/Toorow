@@ -1,0 +1,31 @@
+{
+  "connector": "bigquery",
+  "api_version": "v2 (jobs.query, tables.get, datasets.list)",
+  "generated_at": "2026-07-30T00:00:00Z",
+  "_derivation": {
+    "note": "BigQuery is not an API with a field list. Its 'fields' are the COLUMNS of whichever table the operator selects, which is why this catalog enumerates the platform contract fields the connector itself guarantees (the long-format landing shape) rather than a provider field list that does not exist. The per-table schema is discovered live by `describe_table` (tables.get) and travels in the setup preview; `field_discovery.mode` is `runtime` in the manifest for exactly this reason, bounded by `allowed_targets`. Declaring a static provider field list here would be inventing one, which is the failure mode the catalogue gate exists to prevent.",
+    "official_field_count": 5,
+    "official_metrics": 1,
+    "official_dimensions": 4
+  },
+  "sources": [
+    {
+      "kind": "official",
+      "url": "https://cloud.google.com/bigquery/docs/reference/rest/v2/jobs/query",
+      "fetched_at": "2026-07-30"
+    },
+    {
+      "kind": "official",
+      "url": "https://cloud.google.com/bigquery/docs/reference/rest/v2/tables/get",
+      "fetched_at": "2026-07-30"
+    }
+  ],
+  "section_tier_map": {
+    "LANDING": "core"
+  },
+  "probe": {
+    "request_style": "none",
+    "batch_size": 0,
+    "structural_note": "BigQuery catalog is structural: the connector guarantees the landing table shape and discovers user table schemas live at runtime via tables.get."
+  }
+}

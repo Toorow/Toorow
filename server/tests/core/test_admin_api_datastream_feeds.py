@@ -62,12 +62,24 @@ def _auth_fail():
     )
 
 
+@contextmanager
 def _role(allowed: bool):
-    """Patch the strict project-role check used by _require_datastream_role."""
-    return patch(
-        "core.project_access.identity_has_project_role",
-        return_value=allowed,
-    )
+    """The WHOLE Datastream access decision, as one switch.
+
+    AI-219 gave `_require_datastream_role` a second question -- does this stream
+    belong to the project the caller named -- and it is answered by a real
+    statement. Left to the fake cursor, that statement eats the row the handler
+    under test had scripted, and thirty tests here start measuring the fixture
+    instead of the handler. Both halves of the decision therefore move together:
+    a test that wants "denied" must not accidentally get it from the half it
+    was not thinking about.
+    """
+    with patch(
+        "core.project_access.identity_has_project_role", return_value=allowed
+    ), patch(
+        "core.admin_api.require_datastream_in_project", return_value=allowed
+    ):
+        yield
 
 
 def _fake_conn(*, plan_payload: dict | None = None):

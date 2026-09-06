@@ -18,6 +18,7 @@ model-paths:
   - "models"
   - "../server/modules/google-analytics/dbt"
   - "../server/modules/meta-ads/dbt"
+  - "../server/modules/instagram-insights/dbt"
   - "../server/modules/gsc/dbt"
   - "../server/modules/shopify/dbt"
   - "../server/modules/tiktok-ads/dbt"
@@ -47,6 +48,21 @@ model-paths:
   - "../server/modules/ias/dbt"
   - "../server/modules/monday/dbt"
   - "../server/modules/google-business-profile/dbt"
+  # Story 53.10: these two module dbt paths were missing, so `dbt run` never
+  # parsed stg_strava_club_daily / stg_youtube_daily (nor the two marts above
+  # them) -- "does not match any enabled nodes". The models existed and no
+  # build could ever touch them; seeding them alone would have proven nothing.
+  - "../server/modules/strava/dbt"
+  - "../server/modules/youtube-analytics/dbt"
+  # Same defect, four more: found by comparing every connector that declares a
+  # staging model against this list, rather than by noticing a build failure --
+  # an unlisted model produces no failure at all. `dbt run --select` on a name
+  # it cannot resolve warns and moves on, so these models were invisible to
+  # every build AND to every selection that named them.
+  - "../server/modules/bigquery/dbt"
+  - "../server/modules/doubleverify/dbt"
+  - "../server/modules/generic/dbt"
+  - "../server/modules/google-ad-manager/dbt"
 analysis-paths: ["analyses"]
 test-paths: ["tests"]
 seed-paths: ["seeds"]

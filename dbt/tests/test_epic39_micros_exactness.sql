@@ -23,7 +23,7 @@
 -- (c) is the anti-vacuity guard: the fixture MUST contain at least one day where the naive path drifts.
 
 WITH micros_rows AS (
-    SELECT project_id, date, CAST(value_micros AS DOUBLE) AS value_micros
+    SELECT project_id, date, CAST(value_micros AS {{ toorow_float_type() }}) AS value_micros
     FROM {{ ref('epic39_validation_fixture') }}
     WHERE native_unit = 'micros'
       AND value_micros IS NOT NULL
@@ -43,24 +43,30 @@ per_day AS (
 -- (seed not run / fixture emptied) -- otherwise every check below is vacuously 0-rows-pass.
 cardinality_guard AS (
     SELECT
-        CAST(NULL AS VARCHAR) AS project_id,
+        CAST(NULL AS {{ toorow_string_type() }}) AS project_id,
         CAST(NULL AS DATE) AS date,
-        CAST(NULL AS DOUBLE) AS sum_then_divide,
-        CAST(NULL AS DOUBLE) AS divide_then_sum,
+        CAST(NULL AS {{ toorow_float_type() }}) AS sum_then_divide,
+        CAST(NULL AS {{ toorow_float_type() }}) AS divide_then_sum,
         'CARDINALITY_FAIL: no micros rows in epic39_validation_fixture -- seed not run or fixture emptied'
             AS failure_reason
+    -- BigQuery refuses a WHERE with no FROM; DuckDB allows it. One constant row,
+    -- accepted by both, keeps this guard a guard on either engine.
+    FROM (SELECT 1) AS one_row
     WHERE (SELECT COUNT(*) FROM micros_rows) = 0
 ),
 -- ANTI-VACUITY: at least one multi-row day must actually DRIFT under divide-then-sum,
 -- else the fixture no longer exercises non-exactness and this test proves nothing.
 drift_present AS (
     SELECT
-        CAST(NULL AS VARCHAR) AS project_id,
+        CAST(NULL AS {{ toorow_string_type() }}) AS project_id,
         CAST(NULL AS DATE) AS date,
-        CAST(NULL AS DOUBLE) AS sum_then_divide,
-        CAST(NULL AS DOUBLE) AS divide_then_sum,
+        CAST(NULL AS {{ toorow_float_type() }}) AS sum_then_divide,
+        CAST(NULL AS {{ toorow_float_type() }}) AS divide_then_sum,
         'ANTI_VACUITY_FAIL: no day drifts under divide-then-sum -- fixture no longer exercises micros non-exactness'
             AS failure_reason
+    -- BigQuery refuses a WHERE with no FROM; DuckDB allows it. One constant row,
+    -- accepted by both, keeps this guard a guard on either engine.
+    FROM (SELECT 1) AS one_row
     WHERE (SELECT COUNT(*) FROM per_day WHERE ABS(divide_then_sum - sum_then_divide) > 0) = 0
       AND (SELECT COUNT(*) FROM micros_rows) > 0
 ),

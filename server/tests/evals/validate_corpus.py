@@ -33,8 +33,16 @@ VALID_ROLES = {"canonical_correct", "naive_wrong", "supplementary"}
 SHA256_REGEX = re.compile(r"^[0-9a-f]{64}$")
 
 # Story 14.2: tool_invocation addendum validation.
-VALID_TOOL_NAMES = {"get_daily_report"}
+#
+# `get_report` joined the set on 2026-08-24 (AI-305): it is the ONLY tool whose
+# envelope carries `meta.business_context_paths`, so it is the only surface on
+# which an `expected_business_routes` declaration can be evaluated at all. Its
+# arguments are a different shape from `get_daily_report`'s -- one report id and
+# two dates, no connector list, no as_of -- and they are validated as such below,
+# because a shared shape check would have accepted an argument the tool refuses.
+VALID_TOOL_NAMES = {"get_daily_report", "get_report"}
 VALID_SELECTOR_KINDS = {"fact_sum", "fact_sum_by_date"}
+_ISO_DATE_REGEX = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def _validate_tool_invocation(ti: object, prefix: str) -> list[str]:
@@ -55,14 +63,30 @@ def _validate_tool_invocation(ti: object, prefix: str) -> list[str]:
     else:
         if args.get("project_id") != "default":
             errs.append(f"{prefix}: tool_invocation.args.project_id must be 'default'.")
-        connectors = args.get("connectors")
-        if not isinstance(connectors, list) or not connectors:
-            errs.append(f"{prefix}: tool_invocation.args.connectors must be a non-empty list.")
-        dr = args.get("date_range")
-        if not isinstance(dr, dict) or "start" not in dr or "end" not in dr:
-            errs.append(
-                f"{prefix}: tool_invocation.args.date_range must have 'start' and 'end'."
-            )
+        if tool == "get_report":
+            report_id = args.get("report_id")
+            if not isinstance(report_id, str) or report_id.count("/") != 1:
+                errs.append(
+                    f"{prefix}: tool_invocation.args.report_id must be '<module>/<report_id>'."
+                )
+            for key in ("date_from", "date_to"):
+                value = args.get(key)
+                if not isinstance(value, str) or not _ISO_DATE_REGEX.match(value):
+                    errs.append(f"{prefix}: tool_invocation.args.{key} must be an ISO date.")
+            for key in ("connectors", "date_range", "as_of"):
+                if key in args:
+                    errs.append(
+                        f"{prefix}: tool_invocation.args.{key} is not an argument of get_report."
+                    )
+        else:
+            connectors = args.get("connectors")
+            if not isinstance(connectors, list) or not connectors:
+                errs.append(f"{prefix}: tool_invocation.args.connectors must be a non-empty list.")
+            dr = args.get("date_range")
+            if not isinstance(dr, dict) or "start" not in dr or "end" not in dr:
+                errs.append(
+                    f"{prefix}: tool_invocation.args.date_range must have 'start' and 'end'."
+                )
 
     selector = ti.get("result_selector")
     if not isinstance(selector, dict):
@@ -83,6 +107,24 @@ def _validate_tool_invocation(ti: object, prefix: str) -> list[str]:
     return errs
 
 
+
+def _validate_expected_business_routes(routes: object, prefix: str) -> list[str]:
+    if not isinstance(routes, list):
+        return [f"{prefix}: expected_business_routes must be a list."]
+    errors: list[str] = []
+    for index, route in enumerate(routes):
+        route_prefix = f"{prefix} expected_business_routes[{index}]"
+        if not isinstance(route, dict):
+            errors.append(f"{route_prefix}: route must be a mapping.")
+            continue
+        for field in ("domain_id", "target_type", "target_id"):
+            if not isinstance(route.get(field), str) or not route[field].strip():
+                errors.append(f"{route_prefix}: {field} must be a non-empty string.")
+        for field in ("classification_id", "baseline_path_key"):
+            value = route.get(field)
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                errors.append(f"{route_prefix}: {field} must be a non-empty string when set.")
+    return errors
 def validate_corpus(corpus_path: str | Path) -> list[str]:
     """Validate corpus file at given path and return list of error strings."""
     path = Path(corpus_path)
@@ -244,6 +286,10 @@ def validate_corpus(corpus_path: str | Path) -> list[str]:
         # Story 14.2: validate the optional tool_invocation addendum when present.
         if "tool_invocation" in q and q.get("tool_invocation") is not None:
             errors.extend(_validate_tool_invocation(q["tool_invocation"], prefix))
+        if "expected_business_routes" in q:
+            errors.extend(
+                _validate_expected_business_routes(q["expected_business_routes"], prefix)
+            )
 
     # Check minimum surface distribution requirements (AC G1)
     # FIX 2026-07-20: card min raised 8->10 (actual corpus has 12); card_catalog min 2 added.

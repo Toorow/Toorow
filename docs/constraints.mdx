@@ -6,7 +6,7 @@ description: Security rules, privacy guarantees, pre-live checklists, and non-ne
 This document defines the security rules, privacy policies, operational constraints, and architectural invariants that govern **toorow**.
 
 <Warning>
-Compliance with these constraints is mandatory for all deployments and connector modules. Any public exposure of an instance running in `disabled` or `static` auth mode is strictly prohibited.
+Compliance with these constraints is mandatory for all deployments and connectors. Any public exposure of an instance running in `disabled` or `static` auth mode is strictly prohibited.
 </Warning>
 
 ## 1. Privacy & Zero-Telemetry Policy
@@ -31,14 +31,14 @@ Before exposing a toorow deployment to any network or production environment, ve
 
 ---
 
-## 3. Core Architectural Invariants (AD-1 to AD-32)
+## 3. Core Architectural Invariants
 
 toorow enforces strict architectural boundaries to guarantee data integrity, multi-tenant isolation, and predictable agent interaction:
 
 1. **FastMCP Dual-Channel Model**: MCP data tools return a short, human-readable text summary for the LLM context, accompanied by a full canonical `structuredContent` payload for MCP App widgets.
 2. **Microkernel Architecture**: Source-specific logic lives entirely inside auto-discovered module directories (`server/modules/<source>/`). The core kernel (`server/core/`) remains 100% source-agnostic.
 3. **Canonical Daily Fact Surface (`fact_daily_kpi`)**: Additive daily metrics (impressions, clicks, spend, conversions, revenue) are harmonized into `fact_daily_kpi`. Non-additive metrics (CTR, CPA, ROAS) are calculated on-the-fly via dbt semantic views.
-4. **AD-5 Multi-Tenant Isolation**: Every resource request resolves through an organization-rooted access graph. Tenant isolation is enforced at the database and warehouse queries level and validated by CI isolation test suites.
+4. **Multi-Tenant Isolation**: Every resource request resolves through an organization-rooted access graph. Tenant isolation is enforced at the database and warehouse queries level and validated by CI isolation test suites.
 5. **Split Persistence Responsibilities**: PostgreSQL owns transactional state, project governance, and audit logs. BigQuery / DuckDB owns analytical facts and marts. No entity has dual writers.
 6. **Desktop Admin Viewport**: The Admin Console targets desktop viewports (1280px minimum layout, 1440x900 canonical). No mobile administration view is supported.
 

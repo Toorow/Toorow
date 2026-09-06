@@ -23,6 +23,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from tests.conftest import REPO_ROOT
+
 # ---------------------------------------------------------------------------
 # Shared mock helpers (mirrors test_epic38_connector_installation.py style).
 # ---------------------------------------------------------------------------
@@ -109,7 +111,7 @@ def test_activate_proceeds_when_ready(monkeypatch):
     ts = datetime.datetime(2026, 7, 23, 12, 0, 0)
     # Cursors in mutation order: INSERT (rowcount=1), then SELECT activated_at.
     insert_cur = _cur(None, rowcount=1)
-    select_cur = _cur(("ACTIVE", ts, None))
+    select_cur = _cur(("cac_EXISTING01ABCDEFGHIJKLMNO", "ACTIVE", ts, None))
     capture: dict = {}
     _stub_operation(monkeypatch, ca, capture=capture)
 
@@ -163,7 +165,7 @@ def test_activate_payload_is_deterministic(monkeypatch):
         capture: dict = {}
         _stub_operation(monkeypatch, ca, capture=capture)
         insert_cur = _cur(None, rowcount=1)
-        select_cur = _cur(("ACTIVE", ts, None))
+        select_cur = _cur(("cac_EXISTING01ABCDEFGHIJKLMNO", "ACTIVE", ts, None))
         conn = _conn_with(insert_cur, select_cur)
         ca.activate(
             conn,
@@ -191,9 +193,9 @@ def test_activate_payload_is_deterministic(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_activate_concurrent_race_reconciles_to_persisted_row(monkeypatch):
-    """review H2: when INSERT ON CONFLICT DO NOTHING fires (rowcount=0), the
-    mutation reconciles to the persisted row instead of fabricating a result."""
+def test_activate_reactivates_deactivated_row(monkeypatch):
+    """A DEACTIVATED row is updated back to ACTIVE without a duplicate row."""
+
     import datetime
 
     from core import connector_activation as ca
@@ -202,28 +204,27 @@ def test_activate_concurrent_race_reconciles_to_persisted_row(monkeypatch):
         "core.connector_installation_api.refuse_activation_unless_ready",
         lambda *a, **kw: None,
     )
-
     ts = datetime.datetime(2026, 7, 23, 10, 0, 0)
-    # One cursor: INSERT ON CONFLICT (rowcount=0 -> race) then the reconcile SELECT
-    # run on the SAME cursor, so it must return the persisted row via fetchone.
-    race_cur = _cur(("cac_EXISTING01ABCDEFGHIJKLMNO", "ACTIVE", ts, None), rowcount=0)
+    write_cur = _cur(None, rowcount=1)
+    read_cur = _cur(("cac_EXISTING01ABCDEFGHIJKLMNO", "ACTIVE", ts, None))
     _stub_operation(monkeypatch, ca)
-    conn = _conn_with(race_cur)
 
     result = ca.activate(
-        conn,
+        _conn_with(write_cur, read_cur),
         org_id="org-alpha",
         connector_name="test-connector",
         environment="production",
-        activated_by="user@example.com",
-        actor="user@example.com",
-        idempotency_key="ik-race",
+        activated_by="forged@example.com",
+        actor="owner@example.com",
+        idempotency_key="ik-reactivate",
         host_context={},
         trace_id=None,
     )
 
     assert result["state"] == "ACTIVE"
-    assert result["org_id"] == "org-alpha"
+    sql = write_cur.execute.call_args.args[0]
+    assert "DO UPDATE" in sql
+    assert "deactivated_at = NULL" in sql
 
 
 # ---------------------------------------------------------------------------
@@ -232,24 +233,24 @@ def test_activate_concurrent_race_reconciles_to_persisted_row(monkeypatch):
 
 
 def test_deactivate_issues_update_not_delete(monkeypatch):
-    """AC3: deactivate issues an UPDATE; asserts no DELETE SQL is issued."""
+    """Deactivation locks then updates the row and preserves its first timestamp."""
+
     import datetime
 
     from core import connector_activation as ca
 
     ts_activated = datetime.datetime(2026, 7, 23, 9, 0, 0)
     ts_deactivated = datetime.datetime(2026, 7, 23, 11, 0, 0)
-
-    # First cursor: SELECT row to load activation record.
-    select_cur = _cur(("cac_DEACT01ABCDEFGHIJKLMNOPQR", "ACTIVE", ts_activated))
-    # Second cursor (UPDATE + re-SELECT in mutation): rowcount=1, then ts row.
-    update_cur = _cur(("DEACTIVATED", ts_activated, ts_deactivated), rowcount=1)
-    capture: dict = {}
+    locked_cur = _cur(
+        ("cac_DEACT01ABCDEFGHIJKLMNOPQR", "ACTIVE", ts_activated, None)
+    )
+    update_cur = _cur(None, rowcount=1)
+    final_cur = _cur(("DEACTIVATED", ts_activated, ts_deactivated))
+    capture = {}
     _stub_operation(monkeypatch, ca, capture=capture)
-    conn = _conn_with(select_cur, update_cur)
 
     result = ca.deactivate(
-        conn,
+        _conn_with(locked_cur, update_cur, final_cur),
         org_id="org-alpha",
         connector_name="test-connector",
         environment="production",
@@ -260,30 +261,84 @@ def test_deactivate_issues_update_not_delete(monkeypatch):
     )
 
     assert result["state"] == "DEACTIVATED"
-    assert result["deactivated_at"] is not None
-    assert result["org_id"] == "org-alpha"
-
-    # Verify no DELETE was issued in any cursor call.
-    for c in (select_cur, update_cur):
-        for call in c.execute.call_args_list:
-            sql = (call.args[0] if call.args else "").upper()
-            assert "DELETE" not in sql, (
-                f"deactivate must not issue DELETE; found: {sql!r}"
-            )
-
-    # execute_operation called once.
-    assert len(capture["specs"]) == 1
+    assert result["deactivated_at"] == ts_deactivated.isoformat()
+    assert "FOR UPDATE" in locked_cur.execute.call_args.args[0]
+    for cursor in (locked_cur, update_cur, final_cur):
+        for call in cursor.execute.call_args_list:
+            assert "DELETE" not in call.args[0].upper()
     spec = capture["specs"][0]
-    assert spec.command_type == "connector.activation.deactivated"
+    assert spec.request_payload == {
+        "org_id": "org-alpha",
+        "connector_name": "test-connector",
+        "environment": "production",
+        "target_state": "DEACTIVATED",
+    }
+
+
+def test_repeated_deactivation_preserves_original_timestamp(monkeypatch):
+    import datetime
+
+    from core import connector_activation as ca
+
+    activated_at = datetime.datetime(2026, 7, 23, 9, 0, 0)
+    first_deactivated_at = datetime.datetime(2026, 7, 23, 11, 0, 0)
+    locked_cur = _cur(
+        (
+            "cac_DEACT01ABCDEFGHIJKLMNOPQR",
+            "DEACTIVATED",
+            activated_at,
+            first_deactivated_at,
+        )
+    )
+    final_cur = _cur(("DEACTIVATED", activated_at, first_deactivated_at))
+    _stub_operation(monkeypatch, ca)
+    result = ca.deactivate(
+        _conn_with(locked_cur, final_cur),
+        org_id="org-alpha",
+        connector_name="test-connector",
+        environment="production",
+        actor="user@example.com",
+        idempotency_key="ik-deactivate-again",
+        host_context={},
+        trace_id=None,
+    )
+    assert result["deactivated_at"] == first_deactivated_at.isoformat()
+    all_sql = [
+        call.args[0].upper()
+        for cursor in (locked_cur, final_cur)
+        for call in cursor.execute.call_args_list
+    ]
+    assert not any(sql.startswith("UPDATE") for sql in all_sql)
+
+
+def test_activation_rejects_impossible_rowcount(monkeypatch):
+    from core import connector_activation as ca
+
+    monkeypatch.setattr(
+        "core.connector_installation_api.refuse_activation_unless_ready",
+        lambda *a, **kw: None,
+    )
+    _stub_operation(monkeypatch, ca)
+    with pytest.raises(ca.ConnectorActivationConflict, match="exactly one row"):
+        ca.activate(
+            _conn_with(_cur(None, rowcount=0)),
+            org_id="org-alpha",
+            connector_name="test-connector",
+            environment="production",
+            activated_by="owner@example.com",
+            actor="owner@example.com",
+            idempotency_key="ik-zero-row",
+            host_context={},
+            trace_id=None,
+        )
 
 
 def test_deactivate_not_found_raises(monkeypatch):
     """deactivate raises ConnectorActivationUnavailable when no row exists."""
     from core import connector_activation as ca
 
-    # SELECT returns no row.
-    select_cur = _cur(None)
-    conn = _conn_with(select_cur)
+    _stub_operation(monkeypatch, ca)
+    conn = _conn_with(_cur(None))
 
     with pytest.raises(ca.ConnectorActivationUnavailable):
         ca.deactivate(
@@ -296,6 +351,112 @@ def test_deactivate_not_found_raises(monkeypatch):
             host_context={},
             trace_id=None,
         )
+
+
+def test_activation_replay_skips_later_ready_gate(monkeypatch):
+    from core import connector_activation as ca
+    from core import operations
+
+    ready_calls = []
+    monkeypatch.setattr(
+        "core.connector_installation_api.refuse_activation_unless_ready",
+        lambda *a, **kw: ready_calls.append(True),
+    )
+    monkeypatch.setattr(
+        ca,
+        "execute_operation",
+        lambda conn, spec, *, mutation: operations.OperationResult(
+            "op-replay",
+            "succeeded",
+            {
+                "state": "ACTIVE",
+                "activated_at": "2026-07-23T12:00:00",
+                "deactivated_at": None,
+            },
+            "audit",
+            "outbox",
+            True,
+        ),
+    )
+    result = ca.activate(
+        MagicMock(),
+        org_id="org-alpha",
+        connector_name="test-connector",
+        environment="production",
+        activated_by="forged@example.com",
+        actor="owner@example.com",
+        idempotency_key="ik-replay",
+        host_context={},
+        trace_id=None,
+    )
+    assert result["state"] == "ACTIVE"
+    assert ready_calls == []
+
+
+def test_activation_provenance_uses_actor_and_keys_are_bounded(monkeypatch):
+    import datetime
+
+    from core import connector_activation as ca
+
+    monkeypatch.setattr(
+        "core.connector_installation_api.refuse_activation_unless_ready",
+        lambda *a, **kw: None,
+    )
+    ts = datetime.datetime(2026, 7, 23, 12, 0, 0)
+    write_cur = _cur(None, rowcount=1)
+    read_cur = _cur(("cac_EXISTING01ABCDEFGHIJKLMNO", "ACTIVE", ts, None))
+    capture = {}
+    _stub_operation(monkeypatch, ca, capture=capture)
+    ca.activate(
+        _conn_with(write_cur, read_cur),
+        org_id="org-alpha",
+        connector_name="test-connector",
+        environment="production",
+        activated_by="forged@example.com",
+        actor="owner@example.com",
+        idempotency_key="  ik-trimmed  ",
+        host_context={},
+        trace_id=None,
+    )
+    assert write_cur.execute.call_args.args[1][4] == "owner@example.com"
+    assert capture["specs"][0].idempotency_key == "ik-trimmed"
+    assert "activated_by" not in capture["specs"][0].request_payload
+
+    with pytest.raises(ca.ConnectorActivationValidationError, match="too long"):
+        ca.deactivate(
+            MagicMock(),
+            org_id="org-alpha",
+            connector_name="test-connector",
+            environment="production",
+            actor="owner@example.com",
+            idempotency_key="x" * 256,
+            host_context={},
+            trace_id=None,
+        )
+
+
+def test_corrective_activation_migration_and_health_layers_are_explicit():
+    from pathlib import Path
+
+    migration = Path(
+        REPO_ROOT / "infra/nango/migrations/181_connector_activation_guard.sql"
+    ).read_text(encoding="utf-8")
+    for fragment in (
+        "fk_connector_activations_org",
+        "connector.activation.activated",
+        "connector.activation.deactivated",
+        "operation_org IS DISTINCT FROM NEW.org_id",
+        "NEW.activated_by IS DISTINCT FROM operation_actor",
+        "NEW.deactivated_at IS NULL",
+        "BEFORE INSERT OR UPDATE OR DELETE",
+    ):
+        assert fragment in migration
+
+    surface = Path(REPO_ROOT / "server/core/data_surface.py").read_text(encoding="utf-8")
+    assert "i.state AS installation_state" in surface
+    assert "a.state AS activation_state" in surface
+    assert '"installation": row.get("installation_state")' in surface
+    assert '"activation": row.get("activation_state")' in surface
 
 
 # ---------------------------------------------------------------------------
@@ -398,7 +559,7 @@ def test_activate_routes_through_execute_operation(monkeypatch):
 
     ts = datetime.datetime(2026, 7, 23, 12, 0, 0)
     insert_cur = _cur(None, rowcount=1)
-    select_cur = _cur(("ACTIVE", ts, None))
+    select_cur = _cur(("cac_EXISTING01ABCDEFGHIJKLMNO", "ACTIVE", ts, None))
     capture: dict = {}
     _stub_operation(monkeypatch, ca, capture=capture)
     conn = _conn_with(insert_cur, select_cur)
@@ -517,6 +678,7 @@ def test_post_activation_not_ready_returns_422(monkeypatch):
 
     monkeypatch.setattr(pa_mod, "identity_can_manage_org", lambda oid, identity, conn: True)
     monkeypatch.setattr(db_mod, "get_connection", _fake_conn_ctx(MagicMock()))
+    monkeypatch.setattr("core.audit.write_audit_row", lambda **kw: None)
 
     def _raise_not_ready(*a, **kw):
         raise ConnectorNotReady("not ready")
@@ -570,37 +732,60 @@ def test_post_activation_conflict_409(monkeypatch):
 
 
 def test_post_activation_success(monkeypatch):
-    """POST /activation: org-owner + READY -> 200 with state=ACTIVE."""
-    _patch_check_auth(monkeypatch)
+    """The authenticated owner, not body input, owns activation provenance."""
 
+    _patch_check_auth(monkeypatch, identity="owner@example.com")
     import core.db as db_mod
     import core.project_access as pa_mod
 
     monkeypatch.setattr(pa_mod, "identity_can_manage_org", lambda oid, identity, conn: True)
     monkeypatch.setattr(db_mod, "get_connection", _fake_conn_ctx(MagicMock()))
-    monkeypatch.setattr(
-        "core.connector_activation.activate",
-        lambda *a, **kw: {
+    captured = {}
+
+    def fake_activate(*args, **kwargs):
+        captured.update(kwargs)
+        return {
             "org_id": "org-alpha",
             "connector_name": "test-connector",
             "environment": "production",
             "state": "ACTIVE",
             "activated_at": "2026-07-23T12:00:00",
             "deactivated_at": None,
-        },
-    )
+        }
 
+    monkeypatch.setattr("core.connector_activation.activate", fake_activate)
     client = _build_client()
     resp = client.post(
         "/api/connectors/test-connector/activation",
-        json={"org_id": "org-alpha"},
-        headers={"Idempotency-Key": "ik-success"},
+        json={
+            "org_id": "org-alpha",
+            "activated_by": "attacker-controlled@example.com",
+        },
+        headers={"Idempotency-Key": "  ik-success  "},
     )
     assert resp.status_code == 200
-    body = resp.json()
-    assert body["state"] == "ACTIVE"
-    assert body["org_id"] == "org-alpha"
-    assert body["deactivated_at"] is None
+    assert resp.json()["state"] == "ACTIVE"
+    assert captured["actor"] == "owner@example.com"
+    assert captured["activated_by"] == "owner@example.com"
+    assert captured["idempotency_key"] == "ik-success"
+
+
+def test_activation_rejects_non_object_json(monkeypatch):
+    _patch_check_auth(monkeypatch)
+    client = _build_client()
+    response = client.post(
+        "/api/connectors/test-connector/activation",
+        content='["org-alpha"]',
+        headers={
+            "Content-Type": "application/json",
+            "Idempotency-Key": "ik-list-body",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json() == {
+        "code": "invalid_body",
+        "message": "Request body must be a JSON object",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -961,137 +1146,135 @@ def test_mcp_tool_returns_active_when_row_exists(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Live-PG-gated tests (skipped when PLATFORM_DB_URL not set).
+# Live-PG-gated corrective guard probe. Never uses a deployment DSN and the
+# deliberate final exception rolls every fixture back.
 # ---------------------------------------------------------------------------
 
 _LIVE_MARK = pytest.mark.skipif(
-    not __import__("os").environ.get("PLATFORM_DB_URL"),
-    reason="PLATFORM_DB_URL not set -- live-PG probe skipped",
+    not __import__("os").environ.get("TEST_POSTGRES_DSN"),
+    reason="TEST_POSTGRES_DSN not set -- live-PG probe skipped",
 )
 
 
 @_LIVE_MARK
-def test_live_unique_constraint_enforced():
-    """Live-PG: UNIQUE(org_id, connector_name, environment) fires on duplicate INSERT."""
+def test_live_activation_constraints_and_lifecycle_guard():
     import os
 
     import psycopg
-    from ulid import ULID
 
-    db_url = os.environ["PLATFORM_DB_URL"]
-    unique_org = f"live-test-org-{ULID()}"
-    row_id_a = f"cac_{ULID()}"
-    row_id_b = f"cac_{ULID()}"
+    probe = """
+    DO $$
+    DECLARE
+        org_id TEXT := 'org_live_activation_guard';
+        row_id TEXT := 'cac_01JZAAABBBCCCDDDEEEFFF0010';
+        duplicate_id TEXT := 'cac_01JZAAABBBCCCDDDEEEFFF0011';
+        op_activate TEXT := 'op_01JZAAABBBCCCDDDEEEFFF0012';
+        op_reactivate TEXT := 'op_01JZAAABBBCCCDDDEEEFFF0013';
+        op_deactivate TEXT := 'op_01JZAAABBBCCCDDDEEEFFF0014';
+    BEGIN
+        INSERT INTO app.organizations (id, name, slug, status, created_by)
+        VALUES (
+            org_id, 'Activation guard probe', 'activation-guard-probe',
+            'active', 'test'
+        );
 
-    with psycopg.connect(db_url) as conn:
+        INSERT INTO app.operations
+            (id, effective_org_id, command_type, actor, resource_path,
+             host_context, versions, request_hash, provider_references,
+             confirmation_mode, idempotency_key_hash, state)
+        VALUES
+            (op_activate, org_id, 'connector.activation.activated', 'owner@test',
+             '["activation"]'::jsonb, '{}'::jsonb, '{}'::jsonb,
+             repeat('a', 64), '{}'::jsonb, 'server', repeat('1', 64), 'pending'),
+            (op_reactivate, org_id, 'connector.activation.activated', 'owner@test',
+             '["reactivation"]'::jsonb, '{}'::jsonb, '{}'::jsonb,
+             repeat('b', 64), '{}'::jsonb, 'server', repeat('2', 64), 'pending'),
+            (op_deactivate, org_id, 'connector.activation.deactivated', 'owner@test',
+             '["deactivation"]'::jsonb, '{}'::jsonb, '{}'::jsonb,
+             repeat('c', 64), '{}'::jsonb, 'server', repeat('3', 64), 'pending');
+
+        INSERT INTO app.connector_activations
+            (id, org_id, connector_name, environment, state, activated_by,
+             operation_id)
+        VALUES
+            (row_id, org_id, 'test-connector', 'test', 'ACTIVE', 'owner@test',
+             op_activate);
+
+        BEGIN
+            INSERT INTO app.connector_activations
+                (id, org_id, connector_name, environment, state, activated_by,
+                 operation_id)
+            VALUES
+                (duplicate_id, org_id, 'test-connector', 'test', 'ACTIVE',
+                 'owner@test', op_reactivate);
+            RAISE EXCEPTION 'unique guard did not fire';
+        EXCEPTION
+            WHEN unique_violation THEN NULL;
+        END;
+
+        BEGIN
+            UPDATE app.connector_activations
+               SET org_id = 'org_other'
+             WHERE id = row_id;
+            RAISE EXCEPTION 'identity guard did not fire';
+        EXCEPTION
+            WHEN OTHERS THEN
+                IF SQLERRM = 'identity guard did not fire' THEN
+                    RAISE;
+                END IF;
+        END;
+
+        UPDATE app.connector_activations
+           SET state = 'DEACTIVATED', deactivated_at = NOW(),
+               operation_id = op_deactivate, updated_at = NOW()
+         WHERE id = row_id;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM app.connector_activations
+             WHERE id = row_id AND state = 'DEACTIVATED'
+               AND deactivated_at IS NOT NULL
+        ) THEN
+            RAISE EXCEPTION 'valid deactivation was not preserved';
+        END IF;
+
+        UPDATE app.connector_activations
+           SET state = 'ACTIVE', deactivated_at = NULL,
+               operation_id = op_reactivate, updated_at = NOW()
+         WHERE id = row_id;
+
+        BEGIN
+            DELETE FROM app.connector_activations WHERE id = row_id;
+            RAISE EXCEPTION 'delete guard did not fire';
+        EXCEPTION
+            WHEN OTHERS THEN
+                IF SQLERRM = 'delete guard did not fire' THEN
+                    RAISE;
+                END IF;
+        END;
+
+        BEGIN
+            INSERT INTO app.connector_activations
+                (id, org_id, connector_name, environment, state, activated_by)
+            VALUES
+                ('cac_01JZAAABBBCCCDDDEEEFFF0015', org_id, 'other-connector',
+                 'test', 'ACTIVE', 'owner@test');
+            RAISE EXCEPTION 'operation provenance guard did not fire';
+        EXCEPTION
+            WHEN OTHERS THEN
+                IF SQLERRM = 'operation provenance guard did not fire' THEN
+                    RAISE;
+                END IF;
+        END;
+
+        RAISE EXCEPTION 'rollback_test_data';
+    END;
+    $$ LANGUAGE plpgsql;
+    """
+    with psycopg.connect(os.environ["TEST_POSTGRES_DSN"]) as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO app.connector_activations "
-                "(id, org_id, connector_name, environment, state, activated_by) "
-                "VALUES (%s, %s, 'test-connector', 'test', 'ACTIVE', 'tester')",
-                (row_id_a, unique_org),
-            )
-        conn.commit()
-        # Second INSERT on same (org, connector, env) must raise.
-        with pytest.raises(
-            Exception,
-            match="uq_connector_activations_org_connector_env|unique",
-        ):
-            with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO app.connector_activations "
-                    "(id, org_id, connector_name, environment, state, activated_by) "
-                    "VALUES (%s, %s, 'test-connector', 'test', 'ACTIVE', 'tester')",
-                    (row_id_b, unique_org),
-                )
-            conn.commit()
+            with pytest.raises(
+                psycopg.errors.RaiseException,
+                match="rollback_test_data",
+            ):
+                cur.execute(probe)
         conn.rollback()
-
-
-@_LIVE_MARK
-def test_live_immutability_trigger_blocks_identity_mutation():
-    """Live-PG: immutability trigger forbids mutating org_id after insert (DO block)."""
-    import os
-
-    import psycopg
-    from ulid import ULID
-
-    db_url = os.environ["PLATFORM_DB_URL"]
-    unique_org = f"live-imm-org-{ULID()}"
-    row_id = f"cac_{ULID()}"
-
-    with psycopg.connect(db_url) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO app.connector_activations "
-                "(id, org_id, connector_name, environment, state, activated_by) "
-                "VALUES (%s, %s, 'test-connector', 'test', 'ACTIVE', 'tester')",
-                (row_id, unique_org),
-            )
-        conn.commit()
-        # Attempt to mutate org_id (identity column) -> trigger must raise.
-        with pytest.raises(Exception, match="immutable|23000"):
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE app.connector_activations "
-                    "SET org_id = 'different-org' WHERE id = %s",
-                    (row_id,),
-                )
-            conn.commit()
-        conn.rollback()
-        # Allowed mutation: state + deactivated_at.
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE app.connector_activations "
-                "SET state = 'DEACTIVATED', deactivated_at = NOW() WHERE id = %s",
-                (row_id,),
-            )
-        conn.commit()
-        # Verify row exists and is now DEACTIVATED (row preserved, not deleted).
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT state FROM app.connector_activations WHERE id = %s",
-                (row_id,),
-            )
-            final_row = cur.fetchone()
-        assert final_row is not None
-        assert final_row[0] == "DEACTIVATED"
-
-
-@_LIVE_MARK
-def test_live_immutability_trigger_blocks_delete():
-    """Live-PG: immutability trigger forbids DELETE on activation rows."""
-    import os
-
-    import psycopg
-    from ulid import ULID
-
-    db_url = os.environ["PLATFORM_DB_URL"]
-    unique_org = f"live-del-org-{ULID()}"
-    row_id = f"cac_{ULID()}"
-
-    with psycopg.connect(db_url) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO app.connector_activations "
-                "(id, org_id, connector_name, environment, state, activated_by) "
-                "VALUES (%s, %s, 'test-connector', 'test', 'ACTIVE', 'tester')",
-                (row_id, unique_org),
-            )
-        conn.commit()
-        # DELETE must be blocked by the trigger.
-        with pytest.raises(Exception, match="may not be deleted|23000"):
-            with conn.cursor() as cur:
-                cur.execute(
-                    "DELETE FROM app.connector_activations WHERE id = %s",
-                    (row_id,),
-                )
-            conn.commit()
-        conn.rollback()
-        # Row must still exist.
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT id FROM app.connector_activations WHERE id = %s",
-                (row_id,),
-            )
-            assert cur.fetchone() is not None

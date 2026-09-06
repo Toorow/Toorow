@@ -17,7 +17,35 @@
 --
 -- A dbt singular test FAILS when it returns rows (zero rows = pass). Float tolerance
 -- 1e-6 (ventilation is exact arithmetic; the tolerance only guards float rounding).
+--
+-- AMENDED story 61.4 -- THIS TEST CARRIED THE DEFECT IT WAS WATCHING FOR. `origin`
+-- sums `f.value` with SUM(), which SKIPS a NULL, so a campaign-day that could not
+-- be converted counted as ZERO on the EXPECTED side. The invariant then read "no
+-- cent created, no cent lost, and a cent nobody could convert is zero cents" --
+-- which is the very substitution (a gap read as a zero) that made a missing
+-- exchange rate fire an under-delivery alert. Now that the mart WITHHOLDS such a
+-- day instead of understating it, the two sides disagreed and this test was the
+-- first to say so.
+-- The repair is not a tolerance: the (plan, day) pairs the mart withheld are
+-- EXCLUDED from both sides, and what happens on them is asserted in full by
+-- test_plan_pacing_currency_is_declared.sql (a withheld line states no actual, no
+-- pace, no consumed share, and its channel and plan rollups state none either).
 
+{#- UNE PREMISSE ABSENTE N EST PAS UN DEFAUT (AI-314, 2026-08-24).
+    Ce test epingle un exemple SEME : il mesure ce que la fixture locale porte, et
+    la fixture vit dans le MIROIR. `mirror_sync` differe ses ecritures BigQuery
+    (Phase B), donc dans un entrepot ou le miroir n a pas ete ecrit -- toute la
+    production aujourd hui -- ce test ne trouve rien a mesurer et rend son
+    CARDINALITY_FAIL : un rouge qui accuse le calcul d un defaut dont la cause est
+    qu il n y a rien a calculer. Un test rouge est un code de sortie, et un code
+    de sortie est un projet sans marts.
+    Il DECLINE donc de juger, EN LE DISANT : `TOOROW_SOURCE_ABSENT` remonte au
+    nocturne, qui refuse alors le mot << ok >> pour ce projet. La ou le miroir EST
+    -- la boucle locale, la CI -- rien ne bouge et l assertion reste entiere. -#}
+{%- set mirror_missing = toorow_absent_sources('mirror', ['media_plans', 'plan_line_mappings']) -%}
+{%- if mirror_missing | length > 0 %}
+{{ toorow_absent_source_stub('mirror', mirror_missing, [['declined', 'string']]) }}
+{%- else %}
 WITH origin AS (
     -- Original per-campaign daily spend from fact_daily_kpi (the source of truth,
     -- untouched). campaign_ref = breakdown_value @ breakdown_dimension='campaign_id'.
@@ -26,7 +54,7 @@ WITH origin AS (
         f.connector,
         f.breakdown_value AS campaign_ref,
         CAST(f.date AS DATE) AS day,
-        SUM(CAST(f.value AS DOUBLE)) AS origin_spend
+        SUM(CAST(f.value AS {{ toorow_float_type() }})) AS origin_spend
     FROM {{ ref('fact_daily_kpi') }} f
     WHERE f.metric = 'cost'
       AND f.breakdown_dimension = 'campaign_id'
@@ -62,22 +90,39 @@ mapped_campaign_days AS (
        AND o.day >= CAST(l.start_date AS DATE) AND o.day <= CAST(l.end_date AS DATE)
 ),
 
+-- The (plan, project, day) triples on which the mart stated no actual BECAUSE it
+-- could not -- not because there was no spend. Story 61.4: `actual_withheld` is the
+-- mart's own word for it, so this test reads the decision rather than re-deriving it.
+withheld AS (
+    SELECT DISTINCT plan_id, project_id, day
+    FROM {{ ref('plan_vs_actual_daily') }}
+    WHERE actual_withheld
+),
+
 expected AS (
-    SELECT plan_id, project_id, day, SUM(origin_spend) AS expected_spend
-    FROM mapped_campaign_days
-    GROUP BY plan_id, project_id, day
+    SELECT m.plan_id, m.project_id, m.day, SUM(m.origin_spend) AS expected_spend
+    FROM mapped_campaign_days m
+    WHERE NOT EXISTS (
+        SELECT 1 FROM withheld w
+        WHERE w.plan_id = m.plan_id AND w.project_id = m.project_id AND w.day = m.day
+    )
+    GROUP BY m.plan_id, m.project_id, m.day
 ),
 
 -- The mart's OWN ventilated total per (plan, day) -- summing every line's actual.
 actual AS (
     SELECT
-        plan_id,
-        project_id,
-        day,
-        SUM(actual_amount) AS mart_spend
-    FROM {{ ref('plan_vs_actual_daily') }}
-    WHERE actual_amount IS NOT NULL
-    GROUP BY plan_id, project_id, day
+        p.plan_id,
+        p.project_id,
+        p.day,
+        SUM(p.actual_amount) AS mart_spend
+    FROM {{ ref('plan_vs_actual_daily') }} p
+    WHERE p.actual_amount IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM withheld w
+          WHERE w.plan_id = p.plan_id AND w.project_id = p.project_id AND w.day = p.day
+      )
+    GROUP BY p.plan_id, p.project_id, p.day
 )
 
 SELECT
@@ -90,3 +135,4 @@ FROM expected e
 FULL OUTER JOIN actual a
     ON a.plan_id = e.plan_id AND a.project_id = e.project_id AND a.day = e.day
 WHERE ABS(COALESCE(a.mart_spend, 0) - COALESCE(e.expected_spend, 0)) > 1e-6
+{%- endif -%}

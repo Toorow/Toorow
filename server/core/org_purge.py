@@ -24,8 +24,13 @@ Only BLOCKING edges are traversed (``RESTRICT`` and ``NO ACTION``): children on
 
 Cycles are real in this schema (``datastreams`` <-> ``datastream_executions``
 via ``current_published_execution_id``, ``invitations.superseded_by``, ...).
-They are broken by NULLing the back-reference before the deletes; every such
-column is nullable, and a non-nullable cycle raises rather than half-deleting.
+They are broken before the deletes, two ways depending on the columns: a
+nullable back-reference is NULLed, and one whose columns are ALL ``NOT NULL`` is
+DELETED -- such a child cannot exist without its parent, and its parent is
+already queued for deletion on the same path. That second case used to raise,
+and the refusal made the endpoint unreachable: `fk_master_data_nodes_registry_
+any_scope` is `NOT NULL ... RESTRICT`, so every organization hit it (measured
+2026-08-03, including on an org with no rows and on an id that does not exist).
 
 ``app.audit_log`` is NEVER deleted -- it is the durable RGPD trace of the
 erasure itself. Its ``connection_ref`` back-reference is NULLed instead.
@@ -55,7 +60,34 @@ ROOT_PREDICATE = "id = %s"
 #: Safety bounds -- the traversal is data-independent (it walks the schema, not
 #: rows), but a pathological future schema must fail loudly, never hang.
 MAX_DEPTH = 16
-MAX_OPERATIONS = 800
+
+#: Edges the traversal may visit before it declares a runaway.
+#:
+#: Raised from 800 to 6000 on 2026-08-03, and the reason matters: 800 had NEVER
+#: been reached. `plan_purge` raised on the `master_data_nodes` cycle first, on
+#: every organization, so the ceiling was dead code guarding a function that
+#: could not run. The moment the cycle was handled, the real traversal appeared:
+#:
+#:   MAX_OPERATIONS = 200000 (probe) -> 2188 statements after dedup,
+#:   175 distinct tables, 1882 deletes and 306 detachments.
+#:
+#: That is wide, not runaway: the count is finite, deterministic, and set by the
+#: schema rather than by the data. A table reachable from four parents yields
+#: four statements by design (the `host_preflights` note below). The ceiling is
+#: there for what this guard is actually about -- a cycle that escapes the `path`
+#: check, which would consume any ceiling immediately.
+#:
+#: TODAY'S PLAN SIZE IS DELIBERATELY NOT WRITTEN HERE. It is a property of the
+#: schema, so it moves with every migration that adds an org-scoped table -- the
+#: probe above read 2188 on 2026-08-03, a later re-measure wrote 3082 into this
+#: comment, and that copy was stale within weeks (chantier 67-12). A derivable
+#: value is not stored: the margin between the plan and this ceiling is measured
+#: on the live catalog by `test_the_ceiling_still_has_headroom`, in
+#: `tests/integration/test_org_purge_end_to_end_pg.py`. It reports the current
+#: number in its own failure message, and it fails while there is still room to
+#: raise this ceiling deliberately -- not after a purge has been refused on the
+#: RGPD path.
+MAX_OPERATIONS = 6000
 
 _FK_GRAPH_SQL = """
 SELECT
@@ -154,13 +186,29 @@ def _break_sql(edge: FKEdge, columns: list[str], predicate: str) -> str:
     return f"UPDATE {edge.child_table} SET {assignments} WHERE {predicate}"
 
 
-def plan_purge(conn, org_id: str) -> list[PurgeOp]:
+def plan_purge(
+    conn,
+    org_id: str,
+    *,
+    root_table: str = ROOT_TABLE,
+    root_predicate: str = ROOT_PREDICATE,
+) -> list[PurgeOp]:
     """Build the ordered statement plan erasing the tenant tree of *org_id*.
 
     Pure planning: reads only the catalog, touches no tenant row. Returned order
     is directly executable -- every cycle-breaking UPDATE precedes the DELETEs,
     and DELETEs are emitted deepest-first (post-order DFS over the acyclic
     remainder), so no statement can trip a blocking FK.
+
+    THE ROOT IS A PARAMETER, and it defaults to the org (AI-291). Nothing about
+    this traversal is org-specific: the hard parts -- the FK graph, the
+    cycle-breaking rules, the preserved-ledger refusal, the depth and statement
+    budgets -- are properties of the SCHEMA. What differs between erasing an
+    organization and erasing a project is one row to start from.
+
+    It is parameterised because the alternative was a second traversal in the
+    test harness, and two traversals of one graph disagree eventually. The
+    production caller passes nothing and behaves exactly as before.
     """
     edges, nullable = _load_graph(conn)
     breaks: list[PurgeOp] = []
@@ -208,11 +256,40 @@ def plan_purge(conn, org_id: str) -> list[PurgeOp]:
                     if nullable.get((edge.child_table, col), False)
                 ]
                 if not clearable:
-                    raise RuntimeError(
-                        f"org_purge: cannot break the cycle at {edge.conname} on"
-                        f" {edge.child_table}: every FK column is NOT NULL"
-                        f" ({', '.join(edge.child_cols)})"
+                    # Nothing to detach: every column of this back-reference is
+                    # NOT NULL, so the child cannot exist without its parent.
+                    # DELETE it instead of refusing.
+                    #
+                    # This branch used to raise, and the refusal made the whole
+                    # feature unreachable: `fk_master_data_nodes_registry_any_scope`
+                    # is `registry_id NOT NULL ... ON DELETE RESTRICT`
+                    # (migration 140:194), so `plan_purge` threw on EVERY
+                    # organization -- measured 2026-08-03 on an org with zero
+                    # `master_data_nodes` rows and on an org_id that does not
+                    # exist. No organization could be erased, which is the RGPD
+                    # path.
+                    #
+                    # Deleting is the only coherent action here, and it is not a
+                    # widening: a NOT NULL FK says the row is meaningless without
+                    # its parent, and the parent is already queued for deletion
+                    # higher up this path. `predicate_child` keeps it scoped to
+                    # this tenant, exactly like every other statement in the plan.
+                    #
+                    # It joins `breaks`, not `deletes`: breaks are emitted FIRST
+                    # (see the return), so the cycle is cut before the ancestors'
+                    # DELETEs run -- which is the whole reason this branch exists.
+                    # `kind="delete"` makes it count as erased rows rather than as
+                    # a detached reference, because that is what it is.
+                    breaks.append(
+                        PurgeOp(
+                            kind="delete",
+                            table=edge.child_table,
+                            sql=f"DELETE FROM {edge.child_table} WHERE {predicate_child}",
+                            conname=edge.conname,
+                            depth=depth,
+                        )
                     )
+                    continue
                 breaks.append(
                     PurgeOp(
                         kind="null",
@@ -235,7 +312,7 @@ def plan_purge(conn, org_id: str) -> list[PurgeOp]:
                 )
             )
 
-    visit(ROOT_TABLE, ROOT_PREDICATE, (ROOT_TABLE,), 0)
+    visit(root_table, root_predicate, (root_table,), 0)
     # A table reachable by several paths (host_preflights hangs off org,
     # project, operation and setup_task) yields the same statement once per
     # path. Dropping exact duplicates keeps the plan readable and the audit

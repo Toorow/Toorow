@@ -34,8 +34,8 @@ export const FIXTURE_ENVELOPE: CardEnvelope = {
     provenance: {
       source_system: "google-analytics",
       source_field: "fact_daily_kpi",
-      pull_id: "pull_01KXSAX55XMYAG20K5F0K92XFN",
-      pull_ids: ["pull_01KXSAWDF50RBD1H3JX1YD1A7T", "pull_01KXSAWSX2P2RQGPPR366WT03E", "pull_01KXSAX55XMYAG20K5F0K92XFN"],
+      pull_id: "pull_JR_FIXTURE0000000000000",
+      pull_ids: ["pull_JR_FIXTURE0000000000001", "pull_JR_FIXTURE0000000000002", "pull_JR_FIXTURE0000000000000"],
     },
     alerts: [],
     as_of: null,
@@ -51,15 +51,15 @@ export const FIXTURE_ENVELOPE: CardEnvelope = {
   data: {
     card_id: "journey",
     card_type: "journey",
-    title: "Parcours utilisateur",
-    answers_question: "Où les utilisateurs décrochent-ils (étapes du parcours, taux de passage) ?",
+    title: "User Journey",
+    answers_question: "Where do users drop off (funnel steps, completion rates)?",
     date_range: { start: "2026-06-17", end: "2026-07-16" },
     connectors: ["google-analytics"],
     metrics: {},
     series: {},
     rendered_comment:
-      "Décroché principal : étape « conversions » (taux de passage 3.3 %) (connector:fact_daily_kpi, pull_01KXSAX55XMYAG20K5F0K92XFN)\n" +
-      "Première page d'entrée : « / » (35 364 sessions) (connector:fact_daily_kpi, pull_01KXSAX55XMYAG20K5F0K92XFN)\n" +
+      "Décroché principal : étape « conversions » (taux de passage 3.3 %) (connector:fact_daily_kpi, pull_JR_FIXTURE0000000000000)\n" +
+      "Première page d'entrée : « / » (35 364 sessions) (connector:fact_daily_kpi, pull_JR_FIXTURE0000000000000)\n" +
       "Contexte manquant pour cette période.",
     metric_definitions: {
       sessions: { definition: "Sessions initiées.", unit: "sessions", direction: "up_good" },
@@ -149,8 +149,8 @@ export const FIXTURE_ENVELOPE: CardEnvelope = {
         binding: { metrics: "*" },
         data: {
           text:
-            "Décroché principal : étape « conversions » (taux de passage 3.3 %) (connector:fact_daily_kpi, pull_01KXSAX55XMYAG20K5F0K92XFN)\n" +
-            "Première page d'entrée : « / » (35 364 sessions) (connector:fact_daily_kpi, pull_01KXSAX55XMYAG20K5F0K92XFN)\n" +
+            "Décroché principal : étape « conversions » (taux de passage 3.3 %) (connector:fact_daily_kpi, pull_JR_FIXTURE0000000000000)\n" +
+            "Première page d'entrée : « / » (35 364 sessions) (connector:fact_daily_kpi, pull_JR_FIXTURE0000000000000)\n" +
             "Contexte manquant pour cette période.",
         },
       },

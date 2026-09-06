@@ -2,7 +2,16 @@
   "schema_version": "1.2",
   "name": "google-ad-manager",
   "display_name": "Google Ad Manager",
+  "business_domain": "marketing",
   "auth_type": "google_direct",
+  "auth": {
+    "type": "google_direct",
+    "auth_path": "google_direct",
+    "scopes": [
+      "https://www.googleapis.com/auth/dfp"
+    ],
+    "_note": "AD-21 : la porte d'entree de ce connecteur EST ce scope. Un module auth_type='google_direct' que le consentement ne demande pas est installe et inatteignable -- c'est AI-94, mesure le 2026-07-31 sur l'artefact de production. La declaration ci-dessous est confrontee a GOOGLE_STACK_SCOPES par tests/conformance/test_google_consent.py. Ad Manager API (ex-DFP) : le scope porte encore le nom historique 'dfp'."
+  },
   "module_kind": "kpi",
   "public_catalog": {
     "visibility": "public",
@@ -20,8 +29,10 @@
   "report_profiles": [
     {
       "id": "historical_daily",
+      "raw_relation": "raw_google_ad_manager_daily",
+      "staging_relation": "stg_google_ad_manager_daily",
       "display_name": "Historical Daily Report",
-      "_comment": "Pivot profile under GAM report type HISTORICAL. Metrics/dimensions reference catalogue field_ids (= snake_case of the GAM enum, e.g. ad_server_revenue); canonical names (ad_revenue) come from canonical_metric_mapping. MONEY metrics stay in MICROS; ÷1e6 once at read.",
+      "_comment": "Pivot profile under GAM report type HISTORICAL. Metrics/dimensions reference catalogue field_ids (= snake_case of the GAM enum, e.g. ad_server_revenue); canonical names (ad_revenue) come from canonical_metric_mapping. MONEY metrics stay in MICROS; \u00f71e6 once at read.",
       "metrics": [
         "ad_server_impressions",
         "ad_server_clicks",
@@ -63,7 +74,8 @@
     "selection_level": "network",
     "discovery": {
       "callable": "discover_accounts"
-    }
+    },
+    "pull_parameter": "network_code"
   },
   "quota": {
     "_comment": "TODO: confirm GAM REST quota. Placeholder conservative values; the report job is async so the cost is per submitted job + polls. See https://developers.google.com/ad-manager/api/rate_limits",
@@ -72,10 +84,28 @@
     "read_cost": 1,
     "write_cost": 1
   },
-  "_error_map_note": "TODO(catalogue port): GAM REST 400s embed a (type.googleapis.com/google.ads.admanager.v1.X) detail and, like all Google APIs, set error.code to the numeric HTTP status. Decide during port whether a provider code map refines anything beyond pure-HTTP classification (401->auth_expired, 403->permission_denied, 400->invalid_request, 5xx->provider_transient, 429->RateLimitError); the gam-native _summarize_gam_error / _raise_report_status logic is the reference.",
+  "error_map": {
+    "401:UNAUTHENTICATED": "auth_expired",
+    "403:PERMISSION_DENIED": "permission_denied",
+    "403:accessNotConfigured": "permission_denied",
+    "403:forbidden": "permission_denied",
+    "403:quotaExceeded": "provider_transient",
+    "403:rateLimitExceeded": "provider_transient",
+    "400:INVALID_ARGUMENT": "invalid_request",
+    "400:FAILED_PRECONDITION": "invalid_request",
+    "404:NOT_FOUND": "invalid_request",
+    "409:ABORTED": "provider_transient",
+    "500:INTERNAL": "provider_transient",
+    "503:UNAVAILABLE": "provider_transient",
+    "504:DEADLINE_EXCEEDED": "provider_transient"
+  },
+  "_error_map_note": "This module is REST-only -- it speaks the Ad Manager API v1 (https://developers.google.com/ad-manager/api/beta/reference/rest), not the legacy SOAP services, so the SOAP ApiException reason enums (AuthenticationError.*, ReportError.*) are NOT what arrives here and are not keyed on. Codes come from the Google API error model the REST surface returns (https://cloud.google.com/apis/design/errors, canonical google.rpc.Code -> HTTP mapping) plus the classic reason strings of the Google API Console envelope. SHAPE THE KEYS MATCH: { error: { code: <numeric http>, message, status: '<ENUM>', errors: [{ reason }], details: [{ '@type': 'type.googleapis.com/google.ads.admanager.v1.*' }] } }. core.pull_errors._extract_provider_codes yields errors[].reason, then error.status, then error.code; error.details[] is NOT read by the generic extractor, so the actionable validation text a GAM 400 carries stays evidence on the typed error (provider_payload) rather than a key. error.code is never keyed on -- it repeats the HTTP status. WHAT THE MAP CHANGES vs the pure-HTTP classification: 403 quotaExceeded / rateLimitExceeded become provider_transient instead of permission_denied (retryable, as Google publishes them); 404 NOT_FOUND becomes invalid_request instead of unclassified (a network code or report id that does not resolve is not worth replaying); 409 ABORTED becomes provider_transient instead of unclassified. No 429 key: HTTP 429 raises core.quota.RateLimitError in _gam_request before classify_http_error is reached. No auth_revoked entry: the REST surface reports a revoked grant as the same 401 UNAUTHENTICATED as an expired token.",
   "source_capabilities": {
     "contract_version": "1",
-    "time_context": {"locus": "network", "fallback": "gap"},
+    "time_context": {
+      "locus": "network",
+      "fallback": "gap"
+    },
     "field_discovery": {
       "mode": "static",
       "allowed_targets": []
@@ -87,7 +117,10 @@
         "kind": "metric",
         "physical_type": "integer",
         "description": "Ad server impressions exposed by Google Ad Manager.",
-        "semantic_hints": ["delivery", "count"],
+        "semantic_hints": [
+          "delivery",
+          "count"
+        ],
         "canonical_target": "impressions",
         "aggregation": "sum",
         "non_additive": false
@@ -98,7 +131,10 @@
         "kind": "metric",
         "physical_type": "integer",
         "description": "Ad server clicks exposed by Google Ad Manager.",
-        "semantic_hints": ["engagement", "count"],
+        "semantic_hints": [
+          "engagement",
+          "count"
+        ],
         "canonical_target": "clicks",
         "aggregation": "sum",
         "non_additive": false
@@ -108,12 +144,18 @@
         "source_field": "AD_SERVER_REVENUE",
         "kind": "metric",
         "physical_type": "decimal",
-        "description": "Ad server total revenue (MONEY, returned in micros, ÷1e6 once at read). Data format: `MONEY`",
-        "semantic_hints": ["revenue", "currency"],
+        "description": "Ad server total revenue (MONEY, returned in micros, \u00f71e6 once at read). Data format: `MONEY`",
+        "semantic_hints": [
+          "revenue",
+          "currency"
+        ],
         "canonical_target": "ad_revenue",
         "aggregation": "sum",
         "non_additive": false,
-        "money": {"native_unit": "micros", "currency_source": "network"}
+        "money": {
+          "native_unit": "micros",
+          "currency_source": "network"
+        }
       },
       {
         "field_id": "date",
@@ -121,7 +163,9 @@
         "kind": "dimension",
         "physical_type": "date",
         "description": "Report date exposed by Google Ad Manager.",
-        "semantic_hints": ["date"],
+        "semantic_hints": [
+          "date"
+        ],
         "canonical_target": "date",
         "aggregation": "none",
         "non_additive": false
@@ -132,7 +176,9 @@
         "kind": "dimension",
         "physical_type": "string",
         "description": "Ad unit name exposed by Google Ad Manager.",
-        "semantic_hints": ["inventory"],
+        "semantic_hints": [
+          "inventory"
+        ],
         "canonical_target": "ad_unit_name",
         "aggregation": "none",
         "non_additive": false
@@ -143,7 +189,9 @@
         "kind": "dimension",
         "physical_type": "string",
         "description": "Line item name exposed by Google Ad Manager.",
-        "semantic_hints": ["delivery"],
+        "semantic_hints": [
+          "delivery"
+        ],
         "canonical_target": "line_item_name",
         "aggregation": "none",
         "non_additive": false
@@ -156,16 +204,31 @@
         "availability": {
           "status": "selectable"
         },
-        "metrics": ["ad_server_impressions", "ad_server_clicks", "ad_server_revenue"],
-        "dimensions": ["date", "ad_unit_name", "line_item_name"],
+        "metrics": [
+          "ad_server_impressions",
+          "ad_server_clicks",
+          "ad_server_revenue"
+        ],
+        "dimensions": [
+          "date",
+          "ad_unit_name",
+          "line_item_name"
+        ],
         "supported_grains": [
-          ["date", "ad_unit_name", "line_item_name"]
+          [
+            "date",
+            "ad_unit_name",
+            "line_item_name"
+          ]
         ],
         "compatibility": [],
         "filters": [
           {
             "field_id": "date",
-            "operators": ["gte", "lte"]
+            "operators": [
+              "gte",
+              "lte"
+            ]
           }
         ],
         "pagination": {
@@ -185,12 +248,16 @@
         },
         "cadence": {
           "minimum_interval_minutes": 60,
-          "supported_modes": ["manual", "daily"]
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
         },
         "dispatch": {
           "callable": "pull"
         }
       }
     ]
-  }
+  },
+  "_max_provider_backfill_days_note": "No max_provider_backfill_days is declared because The Ad Manager ReportService reference and reporting guides bound the report RANGE ('scheduled reports must end within 1 year of the start date') but never how far back data reaches (https://developers.google.com/ad-manager/api/reporting, checked 2026-08-17). Declaring a guessed window would promise a history the provider never committed to, so this module answers 'unknown' rather than a number (test_backfill_bound_is_declared_or_its_absence_is)."
 }

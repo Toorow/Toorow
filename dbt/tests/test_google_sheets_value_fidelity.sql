@@ -81,19 +81,19 @@ violations AS (
         -- NULL == NULL est considere comme egal (pas de divergence).
         CASE
             WHEN r.budget_declared IS DISTINCT FROM m.budget_declared_mart
-            THEN 'budget_declared raw=' || COALESCE(CAST(r.budget_declared AS VARCHAR), 'NULL')
-              || ' mart=' || COALESCE(CAST(m.budget_declared_mart AS VARCHAR), 'NULL')
+            THEN 'budget_declared raw=' || COALESCE(CAST(r.budget_declared AS {{ toorow_string_type() }}), 'NULL')
+              || ' mart=' || COALESCE(CAST(m.budget_declared_mart AS {{ toorow_string_type() }}), 'NULL')
         END AS budget_violation,
         CASE
             WHEN r.target_revenue IS DISTINCT FROM m.target_revenue_mart
-            THEN 'target_revenue raw=' || COALESCE(CAST(r.target_revenue AS VARCHAR), 'NULL')
-              || ' mart=' || COALESCE(CAST(m.target_revenue_mart AS VARCHAR), 'NULL')
+            THEN 'target_revenue raw=' || COALESCE(CAST(r.target_revenue AS {{ toorow_string_type() }}), 'NULL')
+              || ' mart=' || COALESCE(CAST(m.target_revenue_mart AS {{ toorow_string_type() }}), 'NULL')
         END AS revenue_violation,
         CASE
             WHEN r.target_conversions IS DISTINCT FROM m.target_conversions_mart
             THEN 'target_conversions raw='
-              || COALESCE(CAST(r.target_conversions AS VARCHAR), 'NULL')
-              || ' mart=' || COALESCE(CAST(m.target_conversions_mart AS VARCHAR), 'NULL')
+              || COALESCE(CAST(r.target_conversions AS {{ toorow_string_type() }}), 'NULL')
+              || ' mart=' || COALESCE(CAST(m.target_conversions_mart AS {{ toorow_string_type() }}), 'NULL')
         END AS conversions_violation
     FROM raw_deduped r
     LEFT JOIN mart_pivoted m

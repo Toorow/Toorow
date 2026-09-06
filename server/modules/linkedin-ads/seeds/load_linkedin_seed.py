@@ -17,7 +17,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys as _sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from ulid import ULID
@@ -102,18 +102,21 @@ def run(
     days: int = 40,
     project_id: str = "default",
     grains: str = "campaign",
+    end_date: date | None = None,
 ) -> tuple[str, int]:
     """Genere + charge les lignes LinkedIn. Retourne (pull_id, row_count).
 
     grains='campaign' atterrit le grain campaign seul ;
     grains='multi' atterrit les deux grains coexistant (F-1 anti-grain-bleed).
+    ``end_date`` est la couture d'ancre du corpus que le driver seed_all_connectors
+    remplit (AI-213) ; None retombe sur DEFAULT_SEED_END_DATE, jamais date.today().
     """
     pull_id = _mint_pull_id()
     loaded_at = datetime.now(tz=timezone.utc).isoformat().replace("+00:00", "Z")
     if grains == "multi":
-        rows = generate_multigrain_rows(days=days)
+        rows = generate_multigrain_rows(days=days, end_date=end_date)
     else:
-        rows = generate_rows(days=days)
+        rows = generate_rows(days=days, end_date=end_date)
     count = load_duckdb(rows, pull_id, loaded_at, duckdb_path, project_id=project_id)
     return pull_id, count
 

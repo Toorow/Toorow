@@ -104,12 +104,12 @@ def test_operations_tools_register_and_validate_catalog_accepts_them():
     assert all(d.profile == "operations" for d in decls.values())
     # The consequential recovery dispatch is a human-confirmed write.
     confirm = decls["confirm_datastream_recovery"]
-    assert confirm.effect == "write"
+    assert confirm.effect == "confirmed_write"
     assert confirm.confirmation_mode == "human"
-    # prepare persists an immutable proposal row -> it is a preparation WRITE (review
-    # H2), but needs no confirmation itself (the consequential confirm is separate).
+    # prepare persists an immutable proposal row but authorizes nothing, which the
+    # taxonomy now says outright instead of overloading a generic write (Story 48.1).
     prepare = decls["prepare_datastream_recovery"]
-    assert prepare.effect == "write"
+    assert prepare.effect == "prepare"
     assert prepare.confirmation_mode == "none"
     # Pure reads are effect=read + confirmation none (no contradiction).
     for name in ("list_datastream_runs", "get_datastream_readiness",
@@ -129,8 +129,8 @@ def test_no_operations_tool_is_an_insights_write_or_read_confirmation_contradict
     recorder = _Recorder()
     _register_all(recorder)
     for d in mcp_profiles.registered_declarations():
-        # No insights/write contradiction (none is insights here anyway).
-        assert not (d.profile == "insights" and d.effect == "write")
+        # No insights/mutation contradiction (none is insights here anyway).
+        assert not (d.profile == "insights" and d.effect != "read")
         # No read tool demands confirmation.
         assert not (d.effect == "read" and d.confirmation_mode != "none")
 
@@ -189,6 +189,8 @@ def test_operations_tools_visible_with_evidence_backed_opt_in(monkeypatch):
         "enabled_profiles": ["insights", "operations"],
         "endpoint_binding": "admin-endpoint",
         "workspace_evidence_hash": "a" * 64,
+        # 67-16: the grants are attested against the live capability-context row.
+        "attested_context_id": "mcpctx_TESTATTESTED",
     }
     monkeypatch.setattr(
         mcp_profiles, "_capability_context", lambda: ("user-1", {"host": "opaque"}, grants)
@@ -216,7 +218,7 @@ def test_direct_call_to_confirm_denied_without_opt_in(monkeypatch):
     context = SimpleNamespace(message=SimpleNamespace(name="confirm_datastream_recovery"))
     with pytest.raises(Exception) as exc:
         asyncio.run(mw.on_call_tool(context, call_next))
-    assert "introuvable" in str(exc.value)
+    assert "Tool not found." in str(exc.value)
     call_next.assert_not_called()
 
 
@@ -536,44 +538,172 @@ def test_stale_or_consumed_preparation_refuses_dispatch(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_dispatch_never_calls_commit_publication_or_mutates_pointer(monkeypatch):
-    """The recovery mutation reuses create_execution/reconcile_execution only.
+def test_retry_refuses_and_mints_nothing(monkeypatch):
+    """Story 63.7 : le defaut de `bounded_recovery`, par l'autre porte.
 
-    It must NEVER touch commit_publication or write current_published_execution_id.
+    Ce verbe mintait UN candidat non-live contre les versions epinglees et
+    n'enfilait rien -- pas de pull job, pas de job d'activation, pas
+    d'`advance_state` ici ni chez aucun consommateur de `recovery_kind`.
+    L'execution restait en `created`, un etat ACTIF, donc
+    `uq_datastream_executions_active` repondait 409 a toute publication suivante
+    et `open_collection_run` rendait `None` chaque nuit d'apres : le flux perdait
+    sa collecte recurrente pour de bon, d'un seul appel d'outil, en silence.
+
+    ET LE REFUS TIENT A UN FAIT DU REGISTRE, PAS A UNE REGLE ECRITE ICI :
+    `retry` ne figure dans AUCUNE entree de `RUN_ORIGINS`, donc aucun moteur ne
+    lui est declare. `refetch`, lui, en declare un -- et depuis le 2026-08-22 il
+    l'appelle (test suivant). Ce test-ci epingle les deux moities, pour qu'un
+    elargissement du refus a `refetch` rougisse et qu'un elargissement du moteur
+    a `retry` rougisse aussi.
     """
     import core.datastream_publication as pub
-    from core import operations_mcp
+    from core import operations_mcp, run_origins
+
+    assert not any(o.key == "retry" for o in run_origins.RUN_ORIGINS), (
+        "`retry` a gagne une entree au registre : le refus ci-dessous n'a plus "
+        "sa raison, et c'est une decision, pas un ajustement de test"
+    )
+    assert any(o.key == "refetch" and o.has_engine for o in run_origins.RUN_ORIGINS)
 
     commit_spy = MagicMock(side_effect=AssertionError("commit_publication must not be called"))
     monkeypatch.setattr(pub, "commit_publication", commit_spy, raising=False)
-
-    created = {}
-    monkeypatch.setattr(
-        pub, "create_execution",
-        lambda **kw: created.update(kw) or {"id": "dse_new", "state": "created"},
-    )
+    minted = MagicMock(side_effect=AssertionError("nothing may be minted"))
+    monkeypatch.setattr(pub, "create_execution", minted)
 
     conn, cur = _fake_conn()
-    prep = _prep_row(kind="retry")
-    target = _live_target()
-    result = operations_mcp._dispatch_recovery(conn, "op-1", prep, target)
+    result = operations_mcp._dispatch_recovery(
+        conn, "op-1", _prep_row(kind="retry"), _live_target()
+    )
+
+    assert result.outcome == "failed"
+    assert result.result["reason"] == run_origins.NO_ENGINE
+    assert result.result["execution_id"] is None
+    assert "Nothing was created." in result.result["message"]
+    sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list if c.args)
+    assert "current_published_execution_id" not in sql
+
+    minted.assert_not_called()
+    commit_spy.assert_not_called()
+
+
+def test_refetch_calls_the_engine_of_the_other_door_rather_than_a_second_one(monkeypatch):
+    """Story 67.23 : la parite, rendue -- ET PAR APPEL, PAS PAR COPIE.
+
+    C'est la propriete qui compte, pas le succes. Un second moteur ecrit ici
+    serait la faute de 63.7 recommencee : deux chemins vers une execution, dont
+    un seul referme la sienne. Le test verifie donc que `run_refetch` -- LA
+    fonction que la route REST appelle -- est celle qui est appelee, avec les
+    memes jours, et que rien n'est minte a cote.
+    """
+    import core.datastream_collection_api as collection
+    import core.datastream_publication as pub
+    from core import operations_mcp
+
+    minted = MagicMock(side_effect=AssertionError("nothing may be minted beside the engine"))
+    monkeypatch.setattr(pub, "create_execution", minted)
+
+    seen = {}
+
+    def _engine(*, datastream_id, project_id, days, actor):
+        seen.update(
+            {"datastream_id": datastream_id, "project_id": project_id,
+             "days": days, "actor": actor}
+        )
+        return {
+            "jobs": [{"job_id": "job_1", "date_from": days[0], "date_to": days[-1]}],
+            "execution_id": "dse_NEW",
+        }
+
+    monkeypatch.setattr(collection, "run_refetch", _engine)
+
+    conn, _ = _fake_conn()
+    prep = _prep_row(kind="refetch", interval={"from": "2026-08-01", "to": "2026-08-03"})
+    result = operations_mcp._dispatch_recovery(conn, "op-1", prep, _live_target())
 
     assert result.outcome == "succeeded"
-    assert result.result["execution_id"] == "dse_new"
-    commit_spy.assert_not_called()
-    # A candidate execution was created against the pinned versions; the SQL issued
-    # via `conn` never updated the published pointer column.
-    sql = " ".join(
-        str(c.args[0]) for c in cur.execute.call_args_list if c.args
+    assert result.result["execution_id"] == "dse_NEW"
+    assert result.result["windows"] == 1
+    # L'INTERVALLE EST DEPLIE PAR LA MEME FONCTION QUE LA PORTE REST : trois
+    # jours inclusifs, pas deux bornes.
+    assert seen["days"] == ["2026-08-01", "2026-08-02", "2026-08-03"]
+    minted.assert_not_called()
+
+
+def test_a_refused_refetch_carries_the_words_the_rest_door_uses(monkeypatch):
+    """Deux portes, un refus : les memes mots, ou ce sont deux produits."""
+    import core.datastream_collection_api as collection
+    from core import operations_mcp
+
+    def _engine(**_kwargs):
+        raise collection.RefetchRefused(
+            "connection_missing", "This Datastream has no connection.", 422
+        )
+
+    monkeypatch.setattr(collection, "run_refetch", _engine)
+
+    conn, _ = _fake_conn()
+    prep = _prep_row(kind="refetch", interval={"from": "2026-08-01", "to": "2026-08-01"})
+    result = operations_mcp._dispatch_recovery(conn, "op-1", prep, _live_target())
+
+    assert result.outcome == "failed"
+    assert result.result["reason"] == "connection_missing"
+    assert result.result["message"] == "This Datastream has no connection."
+
+
+def test_a_refetch_that_broke_mid_flight_is_UNKNOWN_and_not_failed(monkeypatch):
+    """Des fenetres ont pu partir en file : annoncer `failed` inviterait un rejeu.
+
+    C'est la meme regle que `reconcile` applique deja quelques lignes plus haut,
+    et pour la meme raison -- un doublon de collecte coute de l'argent chez le
+    fournisseur, la ou une issue inconnue ne coute qu'une lecture.
+    """
+    import core.datastream_collection_api as collection
+    from core import operations_mcp
+
+    def _engine(**_kwargs):
+        raise RuntimeError("the worker went away")
+
+    monkeypatch.setattr(collection, "run_refetch", _engine)
+
+    conn, _ = _fake_conn()
+    prep = _prep_row(kind="refetch", interval={"from": "2026-08-01", "to": "2026-08-01"})
+    result = operations_mcp._dispatch_recovery(conn, "op-1", prep, _live_target())
+
+    assert result.outcome == "outcome_unknown"
+    assert result.result["reason"] == "refetch_uncertain"
+
+
+def test_reconcile_is_untouched_by_the_refusal(monkeypatch):
+    """`reconcile` resolves an execution that ALREADY exists and mints nothing.
+
+    It is the one recovery verb of this profile with an engine -- the engine is
+    `reconcile_execution` -- so story 63.7 leaves it exactly as it was.
+    """
+    from core import operations_mcp
+
+    resolved = {}
+    import core.datastream_publication as pub
+
+    monkeypatch.setattr(
+        pub, "reconcile_execution",
+        lambda execution_id, project_id, conn: resolved.update(
+            {"execution_id": execution_id}
+        ) or {"resolved": True, "final_state": "published", "action_taken": "advanced"},
     )
-    assert "current_published_execution_id" not in sql
+    conn, _ = _fake_conn()
+    prep = _prep_row(kind="reconcile", interval={"execution_id": "dse_STUCK"})
+    result = operations_mcp._dispatch_recovery(conn, "op-1", prep, _live_target())
+
+    assert result.outcome == "succeeded"
+    assert result.result["execution_id"] == "dse_STUCK"
+    assert resolved["execution_id"] == "dse_STUCK"
 
 
 def test_module_source_contains_no_commit_publication_reference():
     """Static guard: operations_mcp must not import/call commit_publication."""
-    from pathlib import Path
+    from tests.conftest import SERVER_ROOT
 
-    src = Path("server/core/operations_mcp.py").read_text(encoding="utf-8")
+    src = (SERVER_ROOT / "core/operations_mcp.py").read_text(encoding="utf-8")
     # It may mention the exclusion in a comment, but never call it.
     assert "commit_publication(" not in src
 
@@ -584,9 +714,11 @@ def test_module_source_contains_no_commit_publication_reference():
 
 
 def test_migration_070_contains_operation_preparation_contract():
-    from pathlib import Path
+    from tests.conftest import REPO_ROOT
 
-    sql = Path("infra/nango/migrations/070_operations_recovery.sql").read_text(encoding="utf-8")
+    sql = (REPO_ROOT / "infra/nango/migrations/070_operations_recovery.sql").read_text(
+        encoding="utf-8"
+    )
     assert "CREATE TABLE IF NOT EXISTS app.operation_preparations" in sql
     assert "kind" in sql and "CHECK (kind IN ('retry', 'refetch', 'reconcile'))" in sql
     assert "target_versions" in sql

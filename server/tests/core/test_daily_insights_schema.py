@@ -22,6 +22,7 @@ from core.daily_insights_schema import (
     MAX_TABLE_ROWS,
     SCHEMA_VERSION,
     canonical_payload_hash,
+    evidence_universe,
     validate_published_insight,
 )
 
@@ -33,31 +34,46 @@ def _load(name: str) -> dict:
         return json.load(fh)
 
 
+_AVAILABLE_METRICS = {
+    "clicks",
+    "impressions",
+    "cost",
+    "conversions",
+    "conversions_value",
+    "cpa",
+}
+_AVAILABLE_DIMENSIONS = {"campaign", "country", "device", "source", "user_type"}
+_AVAILABLE_TEMPLATES = {
+    "kpi",
+    "keywords",
+    "conversions",
+    "usertypes",
+    "journey",
+    "attribution",
+    "dedup",
+    "mediaplan_pacing",
+    "connectors",
+}
+
+
 def _base_kwargs() -> dict:
     """Server-resolved inputs under which the golden fixture is valid."""
 
     return {
-        "available_metrics": {
-            "clicks",
-            "impressions",
-            "cost",
-            "conversions",
-            "conversions_value",
-            "cpa",
-        },
-        "available_dimensions": {"campaign", "country", "device", "source", "user_type"},
-        "available_templates": {
-            "kpi",
-            "keywords",
-            "conversions",
-            "usertypes",
-            "journey",
-            "attribution",
-            "dedup",
-            "mediaplan_pacing",
-            "connectors",
-        },
-        "resolvable_evidence": {"ev_1", "ev_2"},
+        "available_metrics": _AVAILABLE_METRICS,
+        "available_dimensions": _AVAILABLE_DIMENSIONS,
+        "available_templates": _AVAILABLE_TEMPLATES,
+        # DERIVE par la fonction de production elle-meme -- jamais une liste a
+        # part. Un univers ecrit a la main ici pourrait diverger du namespace que
+        # le serveur produit sans qu'aucun test ne le voie, et la barriere
+        # passerait sur une forme que la production refuse (story 53.4). La
+        # derivation vivait ici en copie, et elle a survecu au retrait du genre
+        # `card:` en restant plus large que la production : appeler la fonction
+        # est la seule version qui ne peut pas deriver.
+        "resolvable_evidence": evidence_universe(
+            available_metrics=_AVAILABLE_METRICS,
+            available_dimensions=_AVAILABLE_DIMENSIONS,
+        ),
         "freshness_date": "2026-07-21",
         "has_project_access": True,
         "existing_slots": set(),
@@ -269,11 +285,37 @@ def _cases():
         )
     )
 
-    # Gate 5: evidence resolution
+    # Gate 5: evidence resolution -- TROIS refus distincts (story 53.4)
+    cases.append(
+        (
+            "evidence_missing",
+            _mutate(lambda p: p.update(evidenceRefs=[])),
+            {},
+            "evidence_missing",
+        )
+    )
+    cases.append(
+        (
+            "evidence_malformed",
+            _mutate(lambda p: p.update(evidenceRefs=["ev_missing"])),
+            {},
+            "evidence_malformed",
+        )
+    )
+    cases.append(
+        (
+            # Story 53.4, defaut 1 : le gabarit que la carte rend n'est pas une
+            # preuve. La gate 4 l'exige deja -- le citer ne prouve rien.
+            "evidence_names_the_card_template",
+            _mutate(lambda p: p.update(evidenceRefs=["card:conversions"])),
+            {},
+            "evidence_malformed",
+        )
+    )
     cases.append(
         (
             "evidence_unresolved",
-            _mutate(lambda p: p.update(evidenceRefs=["ev_missing"])),
+            _mutate(lambda p: p.update(evidenceRefs=["metric:not_measured_here"])),
             {},
             "evidence_unresolved",
         )
@@ -310,6 +352,18 @@ def _cases():
             ),
             {"allow_compose": True},
             "ratio_semantic",
+        )
+    )
+
+    # Gate 1a: the resolved envelope is the SERVER's to write. An agent that supplies
+    # the numbers its own prose cites has cited itself -- the same defect the evidence
+    # refs and `authorship` were closed against in 53.4.
+    cases.append(
+        (
+            "frozen_card_declared",
+            _mutate(lambda p: p.update({"frozenCard": {"data": {"rows": []}}})),
+            {},
+            "frozen_card_declared",
         )
     )
 
@@ -394,6 +448,7 @@ def test_all_gate_reason_codes_are_covered():
         "stale_data",
         "period_invalid",
         "ratio_semantic",
+        "frozen_card_declared",
     }
     missing = expected_min - covered
     assert not missing, f"uncovered reason codes: {sorted(missing)}"

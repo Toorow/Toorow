@@ -29,6 +29,14 @@ pytestmark = pytest.mark.skipif(
     reason="TEST_POSTGRES_DSN not set -- live Postgres test skipped",
 )
 
+_RETIRED_SNAPSHOT_SHARE_REASON = (
+    "Story 50.7 retired this path. Converted to strict-xfail rather than deleted: "
+    "deleted, the retirement leaves no trace and the next reader remounts the route. "
+    "Strict-xfail turns a remount into an UNEXPECTEDLY PASSING failure. The insert "
+    "trigger added by migration 162 is what these now hit. Replacement: "
+    "core.render_shares."
+)
+
 _MIGRATION_051 = (
     Path(__file__).parent.parent.parent.parent
     / "infra" / "nango" / "migrations" / "051_render_snapshots.sql"
@@ -89,6 +97,7 @@ def _seed_snapshot(conn, project_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_create_and_read_share():
     """Flux complet : create -> get (token valide, non revoque) -> snapshot fige."""
     from core.snapshot_shares import create_share, get_shared_snapshot
@@ -119,6 +128,7 @@ def test_create_and_read_share():
         conn.close()
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_revoke_then_read_is_none():
     """Apres revocation, get_shared_snapshot retourne None (lecture-apres-revocation = 404)."""
     from core.snapshot_shares import create_share, get_shared_snapshot, revoke_share
@@ -151,6 +161,7 @@ def test_revoke_then_read_is_none():
         conn.close()
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_create_share_ad5_cross_project():
     """AD-5 : create_share avec project_id different retourne None."""
     from core.snapshot_shares import create_share
@@ -172,6 +183,7 @@ def test_create_share_ad5_cross_project():
         conn.close()
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_revoke_share_ad5_cross_project():
     """AD-5 : revoke_share avec project_id different retourne False."""
     from core.snapshot_shares import create_share, revoke_share
@@ -203,6 +215,7 @@ def test_revoke_share_ad5_cross_project():
         conn.close()
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_two_shares_distinct_tokens():
     """Deux create_share sur le meme snapshot -> deux tokens distincts."""
     from core.snapshot_shares import create_share
@@ -228,6 +241,7 @@ def test_two_shares_distinct_tokens():
         conn.close()
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_list_shares_active_and_history():
     """list_shares retourne tous les partages, active_only filtre les revoques."""
     from core.snapshot_shares import create_share, list_shares, revoke_share

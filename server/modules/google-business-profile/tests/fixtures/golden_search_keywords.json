@@ -1,0 +1,22 @@
+{
+  "searchKeywordsCounts": [
+    {
+      "searchKeyword": "bakery near me",
+      "insightsValue": {
+        "value": "2410"
+      }
+    },
+    {
+      "searchKeyword": "sourdough saint-denis",
+      "insightsValue": {
+        "value": "318"
+      }
+    },
+    {
+      "searchKeyword": "gluten free croissant",
+      "insightsValue": {
+        "threshold": "15"
+      }
+    }
+  ]
+}

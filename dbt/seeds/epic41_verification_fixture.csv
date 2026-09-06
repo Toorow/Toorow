@@ -1,0 +1,9 @@
+scenario,measured_impressions,cpm_micros,expected_verification_cost_micros,rounding_note
+alloc_split_a,1234567,2500000,3086417500,exact - no rounding boundary
+alloc_split_b,765433,2500000,1913582500,exact - no rounding boundary
+alloc_split_total,2000000,2500000,5000000000,the two parts sum EXACTLY to the whole - zero allocation residue
+half_up_even,999997,2500500,2500492499,ROUND_HALF_UP - bankers rounding would give 2500492498
+zero_base,0,2500000,0,a real zero base is a real zero cost - the ONLY legitimate 0
+width_guard,1000000000,9999999999,9999999999000000,DECIMAL(28-0) x DECIMAL(10-3) stays exact at the 38 digit ceiling
+cpm_out_of_range,1000,10000000000,,at the DECIMAL(10-0) ceiling the macro returns NULL - never a cast error
+cpm_negative,1000,-1,,a negative CPM is not a price - NULL and VERIFICATION_CPM_OUT_OF_RANGE

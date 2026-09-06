@@ -44,16 +44,117 @@ Setting `--min-instances=0` introduces a minor cold-start latency penalty on ini
 
 ---
 
-## 3. Deployment Pipelines & GitHub Actions
+## 3. Scheduled and Queued Work — Cloud Tasks, Pub/Sub, Cloud Scheduler
 
-### Server Deployment (`.github/workflows/deploy.yml`)
-The backend FastMCP server deployment is governed by GitHub Actions using **Workload Identity Federation (WIF)** for keyless GCP authentication:
+Scale-to-zero has a consequence that is easy to miss and expensive to discover:
+**Cloud Run allocates CPU only while a request is in flight.** Between requests
+an instance is throttled, and at `--min-instances=0` there is no instance at all.
+A background thread inside the server therefore does not run — it simply does not
+get scheduled — and nothing records that it did not.
 
-1. **Build & Push**: Triggers on push to `main` (after CI workflow passes). Builds `infra/docker/mcp-server/Dockerfile` and pushes to GCP Artifact Registry (`europe-west1-docker.pkg.dev`).
-2. **Dev Deployment (`deploy-dev`)**: Automatically deploys the built image to the `dev` Cloud Run environment.
-3. **Production Deployment (`deploy-prod`)**: Gated by GitHub Environment `production`. Requires manual approval by an authorized maintainer (**Human Gate**) before executing production deployment.
+toorow's execution substrate is built around that fact.
+Three managed components, three distinct jobs:
+
+| Component | Carries | Unit |
+|---|---|---|
+| **Cloud Scheduler** | the clock | one invocation per scheduled moment |
+| **Cloud Tasks** | an *order* to one addressee: run this job, retry it, dead-letter it | one task = one job |
+| **Pub/Sub** | a *fact* to N subscribers: "a pull landed", "a datastream was published" | one message, many consumers |
+
+`QUEUE_BACKEND=cloud_tasks` selects this substrate; the in-process worker,
+scheduler and health-poller threads stand down when it is set. They remain the
+default (`local`) for development, where a machine that stays awake makes them
+the simplest thing that works.
+
+### Why this shape rather than an always-on instance
+
+- **Cost.** `--min-instances=0` is preserved: the CPU is allocated because the
+  push *is* a request. Keeping threads alive would require `--no-cpu-throttling`
+  with `--min-instances=1`, i.e. paying for a permanently running container.
+- **Observability.** A scheduled invocation leaves a status code, a log line and
+  an alertable failure — including on the runs that fail. A sleeping thread that
+  never fires leaves nothing.
+- **Retry that repairs.** The raw zone is append-only and staging models
+  supersede by `pull_id`, so re-running a window lands rows again and exactly one
+  row per business key survives. A retry is the repair mechanism, not an accident
+  to be tolerated.
+- **Extensibility.** A new consumer subscribes to a published fact without the
+  producer being modified.
+
+### Postgres remains the ledger
+
+A queue is transport, not a record: it has a retention policy and cannot be
+queried, joined or audited months later. Every unit of work is written to
+Postgres and **committed before** its task is created, so an operation exists
+because a row says so — never because a message is in flight.
+
+That ordering leaves one gap by construction: a row can commit while its task is
+never created. A reconciliation sweep re-dispatches anything left pending past a
+grace period. It re-dispatches only — it never executes the work itself, because
+an invocation carrying N jobs would give back exactly the unreadability this
+design removes.
+
+### Scheduled endpoints
+
+| Schedule | Endpoint | Purpose |
+|---|---|---|
+| `0 2 * * *` | `/internal/scheduler/dispatch-nightly` | nightly retrieval |
+| `0 * * * *` | `/internal/scheduler/dispatch-hourly` | hourly datastreams |
+| `*/10 * * * *` | `/internal/scheduler/reconcile-queues` | re-dispatch pending work |
+| `0 6 * * *` | `/internal/scheduler/poll-health` | connection health sweep |
+| `*/5 * * * *` | `/internal/scheduler/drain-outbox` | publish pending facts |
+
+Cloud Tasks pushes each job to `/internal/worker/execute-pull/{job_id}` or
+`/internal/worker/execute-activation/{job_id}`. The HTTP status is a contract
+rather than information: `200` terminal, `429` come back later (quota), `409` a
+live claim, `503` transient.
+
+These endpoints authenticate the **platform calling itself** through a single
+deployment-wide shared secret (`INTERNAL_ENDPOINTS_REQUIRE_HEADER`, stored in
+Secret Manager). It is not a per-user credential — user tokens live encrypted in
+`app.connection_ref` or at Nango — and an OIDC token minted for the service would
+replace it entirely.
+
+Provisioning is scripted and idempotent:
+
+```bash
+bash infra/gcp/provision_ad36_substrate.sh
+uv run python scripts/verify_push_substrate.py
+```
+
+The verifier reads the real configuration, the real route table and the real
+ledger. It does not report success from a count of passing checks: it reports
+whether `app.datastream_executions` has moved, because until it does, recurring
+retrieval is unverified.
+
+---
+
+## 4. Deployment
+
+Deployment is **manual and deliberate**. There is no automatic pipeline, and there
+is ONE environment: a single GCP project and a single Cloud Run service,
+`mcp-server`. No dev → prod promotion exists.
+
+### Server and console (`infra/scripts/deploy.sh`)
+
+```bash
+./infra/scripts/deploy.sh            # backend + console
+./infra/scripts/deploy.sh backend    # Cloud Run only
+./infra/scripts/deploy.sh front      # Firebase Hosting only
+```
+
+The script builds `infra/docker/mcp-server/Dockerfile` through Cloud Build, pushes
+to Artifact Registry (`europe-west1-docker.pkg.dev/<project>/connector`), deploys
+to Cloud Run, then builds and ships the console to Firebase Hosting.
+
+The human gate is a **local test run before deploying**, not a pipeline approval.
+A GitHub Actions deploy workflow existed until 2026-08-02 and was removed: it had
+never authenticated once (its Workload Identity secrets were never set) and it was
+gated on a CI that had been red since 2026-07-25, so every real deployment had
+always been manual. `.github/workflows/ci.yml` remains, and runs checks only.
 
 ### Vitrine Deployment (`web/deploy.sh`)
+
 The showcase marketing site uses a developer-driven deployment script to build the Astro static site into `web/dist` and deploy directly to Firebase Hosting:
 
 ```bash

@@ -430,6 +430,21 @@
 .kg-node.is-dim {
   opacity: 0.35;
 }
+/* An overlaid node keeps its type colour on the left edge -- the lens must not
+   overwrite what the node IS -- and takes a ring for what the path did with
+   it. `is-selected` and `is-match` win when they apply: they answer "where am
+   I", which a decoration must never take over. */
+.kg-node--path-used {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--info) 55%, transparent);
+}
+.kg-node--path-missing,
+.kg-node--path-forbidden,
+.kg-node--path-version_mismatch {
+  box-shadow: 0 0 0 2px var(--error);
+}
+.kg-node--path-unverifiable {
+  box-shadow: 0 0 0 2px var(--warning);
+}
 
 .kg-node-head {
   display: flex;
@@ -477,6 +492,38 @@
   border-color: color-mix(in srgb, var(--success) 32%, var(--surface));
   background: color-mix(in srgb, var(--success) 10%, var(--surface));
   color: var(--success);
+}
+/* Events an AI Path went through (Story 49.6 AC9). A list of REFERENCES beside
+   the canvas, never nodes on it — the graph vocabulary carries no Event. */
+.kg-event-refs {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* AI Path overlay (Story 49.6 AC7). The badge NAMES the state; these rules only
+   make it findable at a glance. Colour is never the carrier -- AC7 asks for
+   used / missing / version-mismatched to be distinguishable, and a reader who
+   cannot separate two hues would lose the distinction entirely. */
+.kg-tag--path-used {
+  border-color: color-mix(in srgb, var(--info) 32%, var(--surface));
+  background: color-mix(in srgb, var(--info) 10%, var(--surface));
+  color: var(--info);
+}
+.kg-tag--path-missing,
+.kg-tag--path-forbidden,
+.kg-tag--path-version_mismatch {
+  border-color: color-mix(in srgb, var(--error) 32%, var(--surface));
+  background: color-mix(in srgb, var(--error) 10%, var(--surface));
+  color: var(--error);
+}
+.kg-tag--path-unverifiable {
+  border-color: color-mix(in srgb, var(--warning) 30%, var(--surface));
+  background: color-mix(in srgb, var(--warning) 10%, var(--surface));
+  color: var(--warning);
 }
 
 /* ── "Fed by" panel (Story 44.10): read-only list of the datastream mappings

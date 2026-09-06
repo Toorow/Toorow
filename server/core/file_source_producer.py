@@ -44,12 +44,24 @@ from core.csv_excel_import import (
     ParseResult,
     RejectedRow,
 )
-from core.file_source_template import PLACEMENT_CLASSES
+from core.file_source_template import (
+    PLACEMENT_CLASSES,
+    FileSourceTemplateError,
+    compute_content_hash,
+    validate_template_contract,
+)
 from core.reshape import CENT, cell_resolved, compute_spread, resolve_column_index, resolve_merges
 
 # Reserved per-row key stamping the matrix class (planned/actual/extrapolated).
 # Underscore-prefixed so it never collides with a canonical mdm_ field id.
 PLACEMENT_CLASS_KEY = "_placement_class"
+
+# The two grains ONE engine emits. 'daily' spreads a line across its date range
+# (right for a KPI export); 'line' keeps the line and its span (right for a plan,
+# which the plan store spreads again at publish).
+GRAIN_DAILY = "daily"
+GRAIN_LINE = "line"
+GRAINS = frozenset({GRAIN_DAILY, GRAIN_LINE})
 
 # ---------------------------------------------------------------------------
 # DoS guards (bound the sheet BEFORE any per-cell loop; same spirit as the
@@ -71,6 +83,9 @@ RULE_GROUP_OR_NOISE = "group_or_noise"  # a group-label / blank row (no amount, 
 RULE_MISSING_DATES = "missing_dates"  # an amount is present but the date range is absent
 RULE_BAD_AMOUNT = "bad_amount"  # the amount cell is non-numeric where a line is expected
 RULE_INVERTED_DATES = "inverted_dates"  # start_date > end_date
+# A row covered by a merged AMOUNT range that is not its anchor: the money of that
+# range landed once, on the anchor row. Never a second time here.
+RULE_MERGED_AMOUNT_CARRIED = "merged_amount_carried"
 
 
 class ReshapeProducerError(CsvExcelImportError):
@@ -116,6 +131,26 @@ class ReshapeSpec:
     date_format: str | None = None  # e.g. "%d.%m.%Y" for German plans
     total_markers: tuple[str, ...] = ("total",)  # label substrings -> subtotal/total skip
 
+    # --- The plan-line grain capabilities (chantier 67-25b) -----------------
+    # Declared here so ONE spec describes both grains; executed by
+    # ``core.file_source_plan_lines``. Additive with defaults, so every daily
+    # template built before the convergence keeps its exact behaviour.
+    #
+    #: 'daily' -- spread each line across its [start, end] range (the default);
+    #: 'line'  -- emit one row per plan line (span + total), never spread. The
+    #: plan store spreads again at publish, so a daily output would duplicate
+    #: that work and lose the line's span.
+    grain: str = "daily"
+    #: 'auto' -> compose ``<sheet>/<label>``; else the source column carrying it.
+    line_key: str = "auto"
+    #: Several sheets of ONE workbook in ONE import, walked in declared order
+    #: with the row-identity registry SHARED across them. Empty -> ``sheet_name``.
+    sheets: tuple[str, ...] = ()
+    #: {<physical A1 range>: [weights]} -- the EXPLICIT split of a merged amount.
+    #: Keyed by the merge's physical coordinates so a shifted merge stops applying
+    #: rather than splitting on a stale key. Weights must sum EXACTLY (else 422).
+    merged_amount_explode: dict[str, list[Any]] | None = None
+
 
 # ---------------------------------------------------------------------------
 # Value coercion (dates / amounts).
@@ -156,7 +191,7 @@ def _parse_date(value: Any, *, date_format: str | None) -> date | None:
 def _parse_amount(value: Any) -> Decimal | None:
     """Coerce an amount cell to a cent-quantised Decimal, or None if empty.
 
-    Handles native numbers (incl. high-precision floats like the AXA plan's
+    Handles native numbers (incl. high-precision floats like a real agency plan's
     ``675622.4950015477``) and FR/EN-formatted strings ("1 234,56" / "1,234.56"
     with regular, NBSP, or thin-NBSP thousands separators). A non-empty but
     non-numeric cell returns None (the caller treats it as "no numeric amount").
@@ -292,6 +327,37 @@ def _extract_metadata(
 # ---------------------------------------------------------------------------
 
 
+def _source_amount_total(
+    ws: Any,
+    merges: dict,
+    *,
+    amount_col: int,
+    first_data_row: int,
+    last_row: int,
+) -> Decimal:
+    """Sum the amount column of the data zone by an INDEPENDENT pass.
+
+    Computed OUTSIDE the reshape walk so it can never tautologically equal the
+    landed total: that is the whole point of the invariant. Each distinct merged
+    range counts ONCE (its top-left value); each unmerged numeric cell counts
+    once. Rows the walk will later reject (subtotals, totals, dateless lines) ARE
+    counted -- honesty over the whole file -- and the invariant then reads
+    ``file == landed + rejected``.
+    """
+    total = Decimal("0.00")
+    seen: set[str] = set()
+    for row in range(first_data_row, last_row + 1):
+        raw, amount_range = cell_resolved(ws, merges, row, amount_col)
+        if amount_range is not None:
+            if amount_range in seen:
+                continue  # a merged amount counts ONCE, never per covered row
+            seen.add(amount_range)
+        amount = _parse_amount(raw)
+        if amount is not None:
+            total += amount
+    return total
+
+
 def reshape_workbook_to_daily(
     data: bytes,
     spec: ReshapeSpec,
@@ -370,6 +436,11 @@ def reshape_workbook_to_daily(
     rows_out: list[dict[str, Any]] = []
     rejected: list[RejectedRow] = []
     source_lines_seen = 0
+    # Money carried by rows the walk rejects, so the invariant can read
+    # ``file == landed + rejected`` instead of silently losing the difference.
+    rejected_amount = Decimal("0.00")
+    # Anchor row of every merged AMOUNT range already counted (range_id -> row).
+    amount_anchor: dict[str, int] = {}
 
     first_data_row = header_row + 1
     last_row = ws.max_row or header_row
@@ -383,8 +454,34 @@ def reshape_workbook_to_daily(
 
         label = _read_text(ws, merges, field_col, label_id, r) if label_id else ""
 
+        # A merged AMOUNT cell carries ONE amount for the whole range. Money is
+        # never forward-filled: the anchor row (the first row of the range we
+        # reach) carries it, every other covered row carries none. Forward-fill
+        # stays correct for DESCRIPTIVE cells and is a multiplication for money --
+        # the distinction is taken on the field, and the amount field is declared.
+        raw_amount, amount_range = cell_resolved(ws, merges, r, field_col[spec.amount_field])
+        if amount_range is not None:
+            anchor = amount_anchor.get(amount_range)
+            if anchor is not None:
+                rejected.append(
+                    RejectedRow(
+                        row_number=r, field_name=spec.amount_field,
+                        rule=RULE_MERGED_AMOUNT_CARRIED,
+                        reason=(
+                            f"row covered by merged amount range {amount_range}; its "
+                            f"amount landed once on anchor row {anchor}"
+                        ),
+                        rejected_value=_truncate(label),
+                    )
+                )
+                continue
+            amount_anchor[amount_range] = r
+
         # Subtotal / grand-total row -> skip (kept as evidence, may validate later).
         if label and any(m in label.casefold() for m in markers):
+            carried = _parse_amount(raw_amount)
+            if carried is not None:
+                rejected_amount += carried
             rejected.append(
                 RejectedRow(
                     row_number=r, field_name=label_id or "",
@@ -395,7 +492,6 @@ def reshape_workbook_to_daily(
             )
             continue
 
-        raw_amount, _ = cell_resolved(ws, merges, r, field_col[spec.amount_field])
         amount = _parse_amount(raw_amount)
         start = _parse_date(
             cell_resolved(ws, merges, r, field_col[spec.start_field])[0],
@@ -420,6 +516,19 @@ def reshape_workbook_to_daily(
 
         # An amount with no valid date range cannot be placed at the daily grain.
         if amount is not None and (start is None or end is None):
+            # A MERGED amount cannot simply be dropped: its range carries the money
+            # of several sub-rows, and rejecting it here would lose the difference
+            # silently. Refuse, naming the cell that has to be repaired.
+            if amount_range is not None:
+                raise ReshapeProducerError(
+                    "merged_amount_not_placeable",
+                    f"Merged amount range {amount_range} (anchor row {r}) carries "
+                    f"{format(amount, 'f')} but has no valid start/end date range, so "
+                    "it can be neither landed once nor spread; the import is refused "
+                    "rather than losing the amount.",
+                    repair={"merged_amount_range": amount_range, "anchor_row": r},
+                )
+            rejected_amount += amount
             rejected.append(
                 RejectedRow(
                     row_number=r, field_name=spec.start_field,
@@ -443,6 +552,16 @@ def reshape_workbook_to_daily(
             continue
 
         if start > end:  # type: ignore[operator]
+            if amount_range is not None:
+                raise ReshapeProducerError(
+                    "merged_amount_not_placeable",
+                    f"Merged amount range {amount_range} (anchor row {r}) carries "
+                    f"{format(amount, 'f')} but its date range {start}..{end} is "
+                    "inverted, so it can be neither landed once nor spread; the "
+                    "import is refused rather than losing the amount.",
+                    repair={"merged_amount_range": amount_range, "anchor_row": r},
+                )
+            rejected_amount += amount
             rejected.append(
                 RejectedRow(
                     row_number=r, field_name=spec.start_field,
@@ -479,6 +598,17 @@ def reshape_workbook_to_daily(
         )
 
     columns = _synthesise_columns(spec, carried_fields)
+    # The file-side total is measured only on a FULL pass: under ``sample_only`` the
+    # walk sees a bounded slice of the lines while an independent pass would read
+    # the whole column, and comparing the two would refuse every preview.
+    file_total: Decimal | None = None
+    if not sample_only:
+        file_total = _source_amount_total(
+            ws, merges,
+            amount_col=field_col[spec.amount_field],
+            first_data_row=first_data_row,
+            last_row=last_row,
+        )
     return ParseResult(
         rows=rows_out,
         rejected=rejected,
@@ -489,6 +619,8 @@ def reshape_workbook_to_daily(
         detected_row_count=source_lines_seen,
         content_hash=content_hash,
         metadata=metadata,
+        source_amount_total=None if file_total is None else format(file_total, "f"),
+        rejected_amount_total=None if file_total is None else format(rejected_amount, "f"),
     )
 
 
@@ -554,6 +686,12 @@ def _reshape_spec_from(reshape: dict[str, Any]) -> ReshapeSpec:
             ),
             date_format=reshape.get("date_format"),
             total_markers=tuple(reshape.get("total_markers", ("total",))),
+            grain=str(reshape.get("grain", GRAIN_DAILY)),
+            line_key=str(reshape.get("line_key", "auto")),
+            sheets=tuple(reshape.get("sheets") or ()),
+            merged_amount_explode=(
+                dict((reshape.get("merged_amount") or {}).get("explode") or {})
+            ),
         )
     except (KeyError, TypeError) as exc:
         raise ReshapeProducerError(
@@ -619,11 +757,21 @@ def produce(
     reshape = contract.get("reshape")
     if reshape:
         spec = _reshape_spec_from(reshape)
+        # ONE engine, two grains. The template DECLARES which one it needs; the
+        # walk, the coercions, the merged-cell resolution and the money invariant
+        # are the same code either way.
+        if spec.grain == GRAIN_LINE:
+            from core.file_source_plan_lines import (  # noqa: PLC0415
+                reshape_workbook_to_lines,
+            )
+
+            return reshape_workbook_to_lines(data, spec, sample_only=sample_only)
         return reshape_workbook_to_daily(data, spec, sample_only=sample_only)
 
     # Simple tabular path: reuse the 12.9 parsers, then remap to canonical ids.
     from core.csv_excel_import import (  # noqa: PLC0415
         FORMAT_CSV,
+        FORMAT_SAV,
         SUPPORTED_FORMATS,
         UnsupportedFileType,
         detect_format,
@@ -648,6 +796,9 @@ def produce(
             fmt = FORMAT_CSV
     if fmt == FORMAT_CSV:
         parsed = parse_csv(data, header_row=header_row, date_format=date_format)
+    elif fmt == FORMAT_SAV:
+        from core.inbound_sav import parse_sav
+        parsed = parse_sav(data)
     else:
         parsed = parse_excel(
             data, sheet_name=contract.get("sheet_name"), header_row=header_row,
@@ -740,6 +891,13 @@ def stamp_placement(
 
     Mutates and returns ``result`` (rows carry the placement so downstream can
     reconcile plan-vs-actual on the same coordinates).
+
+    The stamped keys are also DECLARED on ``result.columns``. Stamping the rows
+    alone was enough to reach the warehouse -- the landing composes its column
+    list from the row keys -- but not enough to be SEEN: the required-field gate
+    reads ``result.columns``, so a discriminator dimension the template declares
+    REQUIRED was stamped on every row and simultaneously reported missing, and
+    the import was refused for the absence of a field it had just landed.
     """
     contract = template.get("contract") if "contract" in template else template
     if not isinstance(contract, dict):
@@ -764,7 +922,41 @@ def stamp_placement(
         row[PLACEMENT_CLASS_KEY] = placement_class
         if disc_dim:
             row[disc_dim] = disc_val
+
+    declared = {spec.name for spec in result.columns}
+    for name in (PLACEMENT_CLASS_KEY, disc_dim):
+        if name and name not in declared:
+            result.columns.append(
+                ColumnSpec(name=name, index=len(result.columns), detected_type="text")
+            )
+            declared.add(name)
     return result
+
+
+def reconcile_amounts(result: ParseResult, amount_field: str) -> dict[str, Any] | None:
+    """Check ``file total == landed + rejected`` on a reshaped result.
+
+    Returns ``None`` when the producer measured no file-side total (a CSV/adaptation
+    result, or a bounded preview): an unmeasured invariant is skipped, never
+    guessed. Otherwise returns the three amounts and whether they reconcile.
+
+    This is what makes the amount invariant real. ``landed_total`` computed the
+    landed half and had no caller outside its tests, so a merged amount cell
+    forward-filled onto every covered row multiplied the money and no gate said a
+    word. The file-side half is measured by an INDEPENDENT pass, so a walk that
+    counts money twice cannot also move the number it is compared against.
+    """
+    if result.source_amount_total is None:
+        return None
+    file_amount = Decimal(result.source_amount_total)
+    rejected_amount = Decimal(result.rejected_amount_total or "0.00")
+    landed = landed_total(result, amount_field)
+    return {
+        "file": format(file_amount, "f"),
+        "landed": format(landed, "f"),
+        "rejected": format(rejected_amount, "f"),
+        "reconciled": file_amount == landed + rejected_amount,
+    }
 
 
 def landed_total(result: ParseResult, amount_field: str) -> Decimal:
@@ -792,12 +984,65 @@ DRIFT_NEEDS_REVALIDATION = "needs_revalidation"  # a required source disappeared
 
 
 class TemplateNotLocked(ReshapeProducerError):
-    """Replay was requested on a template that is not locked (no content_hash)."""
+    """Replay was requested on a template that is not a LOCKED, sealed artifact."""
 
-    def __init__(self) -> None:
+    def __init__(self, detail: str | None = None) -> None:
         super().__init__(
             "template_not_locked",
-            "replay requires a LOCKED, content-hashed template (Story 22.11).",
+            detail or "replay requires a LOCKED, content-hashed template (Story 22.11).",
+        )
+
+
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _assert_template_locked(template: dict[str, Any]) -> None:
+    """Refuse replay unless the template is a genuinely SEALED artifact (AD-8).
+
+    The naive guard was ``not template.get("content_hash")``. That can only fire on
+    a dict fabricated in a test: migration 097 declares ``content_hash`` NOT NULL
+    and ``file_source_template`` computes it unconditionally, so EVERY persisted
+    row has one. "Locked" was therefore not a state the schema could distinguish.
+
+    The lock evidence a persisted row does carry is the SEAL: ``content_hash`` is
+    the SHA-256 of the normalised contract stored beside it. So the check is that
+    the seal still holds --
+
+      * a hash that is not a SHA-256 digest seals nothing;
+      * a contract that no longer validates is not a locked contract;
+      * a hash that does not re-derive from the contract means the contract was
+        edited after the lock, or the row was assembled by hand.
+
+    NOT covered here, and it does not need a schema change any more: the AD-7
+    *human gate confirmation*. ``file_source_gate.confirm_mapping_version``
+    (renamed from ``record_gate_confirmation``, removed 2026-08-09) writes an
+    immutable row into ``app.file_source_template_confirmations`` carrying the
+    template id, its content hash, the minted mapping version and the sample hash.
+    So "a human confirmed THIS lock" IS provable -- by that table, not by a column
+    on the template row, and not by this function, which stays pure (no
+    connection). Re-measured 2026-08-17; this note previously said the proof did
+    not exist.
+    """
+    content_hash = template.get("content_hash")
+    if not content_hash:
+        raise TemplateNotLocked()
+    if not isinstance(content_hash, str) or not _SHA256_RE.match(content_hash):
+        raise TemplateNotLocked(
+            "the template's content_hash is not a SHA-256 digest; it seals nothing."
+        )
+
+    contract = _template_contract(template)
+    try:
+        sealed = compute_content_hash(validate_template_contract(contract))
+    except FileSourceTemplateError as exc:
+        raise TemplateNotLocked(
+            f"the template's contract is not a valid locked contract: {exc}"
+        ) from exc
+    if sealed != content_hash:
+        raise TemplateNotLocked(
+            "the template's content_hash does not seal its contract: the contract "
+            "changed after the lock, or the row was not produced by "
+            "create_file_source_template."
         )
 
 
@@ -842,6 +1087,7 @@ def read_source_columns(data: bytes, template: dict[str, Any]) -> list[str]:
 
     from core.csv_excel_import import (  # noqa: PLC0415
         FORMAT_CSV,
+        FORMAT_SAV,
         SUPPORTED_FORMATS,
         UnsupportedFileType,
         detect_format,
@@ -856,36 +1102,89 @@ def read_source_columns(data: bytes, template: dict[str, Any]) -> list[str]:
             fmt = detect_format(None, data)
         except UnsupportedFileType:
             fmt = FORMAT_CSV
-    parsed = (
-        parse_csv(data, header_row=header_row) if fmt == FORMAT_CSV
-        else parse_excel(data, sheet_name=contract.get("sheet_name"), header_row=header_row)
-    )
+    if fmt == FORMAT_CSV:
+        parsed = parse_csv(data, header_row=header_row)
+    elif fmt == FORMAT_SAV:
+        from core.inbound_sav import parse_sav
+        parsed = parse_sav(data)
+    else:
+        parsed = parse_excel(
+            data, sheet_name=contract.get("sheet_name"), header_row=header_row
+        )
     return [c.name for c in parsed.columns]
 
 
-def detect_source_drift(
-    template: dict[str, Any], mapping: dict[str, str], current_columns: list[str]
-) -> dict[str, Any]:
-    """Classify a file's source columns against the locked template + mapping (AD-8).
+def _fold_column(name: Any) -> str:
+    """Fold a column name the way ``reshape.resolve_column_index`` compares it."""
+    return str(name).strip().casefold()
 
-    Mapping is by column NAME, so an ADDED or REORDERED column is harmless -- the
-    required fields still resolve and land. A DISAPPEARED required source column
-    (a column feeding a required canonical field is gone) returns
-    ``needs_revalidation``: the file must re-enter the AD-7 gate for human
-    re-confirmation, never a silent re-map.
+
+def _reshape_declared_sources(reshape: dict[str, Any]) -> list[str]:
+    """The SOURCE column keys a reshape contract declares.
+
+    ``reshape["fields"]`` is {canonical id -> source column key} -- the INVERSE of
+    the tabular ``mapping``. On this path every declared column is structurally
+    required: ``reshape_workbook_to_daily`` raises ``column_not_found`` as soon as
+    one of them does not resolve on the header row. So the declared set IS the
+    required set; there is no "optional" declared column to soften.
+    """
+    spec = _reshape_spec_from(reshape)  # raises invalid_reshape_spec on a broken spec
+    return list(spec.fields.values())
+
+
+def detect_source_drift(
+    template: dict[str, Any],
+    mapping: dict[str, str] | None,
+    current_columns: list[str],
+) -> dict[str, Any]:
+    """Classify a file's source columns against the locked template (AD-8).
+
+    TWO paths, because the two producer paths bind their columns differently:
+
+      * **reshape / media-plan** -- the contract's ``reshape.fields`` declares
+        {canonical -> SOURCE column} and ``produce`` IGNORES ``mapping`` entirely.
+        Indexing drift on ``mapping`` made this function structurally blind on
+        exactly the file class Epic 22 Phase B is about: a locked reshape template
+        whose source columns had ALL disappeared reported ``ok``.
+      * **simple tabular** -- ``mapping`` is {SOURCE column -> canonical}, and only
+        the sources feeding a REQUIRED canonical field are blocking.
+
+    Binding is by column NAME (trimmed, case-insensitive, mirroring
+    ``reshape.resolve_column_index``), so an ADDED or REORDERED column is harmless.
+    A DISAPPEARED required source column returns ``needs_revalidation``: the file
+    re-enters the AD-7 gate for human re-confirmation, never a silent re-map.
+
+    Stated rather than hidden: ``resolve_column_index`` also accepts an Excel
+    column LETTER as a fallback key. Such a key binds POSITIONALLY and cannot be
+    judged by name, so a template declaring one is reported as drifted -- fail
+    closed, toward the gate, rather than silently passed.
 
     Returns {status, missing_required_sources, added_columns}.
     """
     contract = _template_contract(template)
-    required = set(contract.get("required_fields") or [])
-    current = set(current_columns)
+    reshape = contract.get("reshape")
 
+    if reshape:
+        declared_sources = _reshape_declared_sources(reshape)
+        required_sources = set(declared_sources)
+    else:
+        required = set(contract.get("required_fields") or [])
+        declared_sources = list(mapping or {})
+        required_sources = {
+            source_col
+            for source_col, canonical_id in (mapping or {}).items()
+            if canonical_id in required
+        }
+
+    present = {_fold_column(c) for c in current_columns}
     missing_required_sources = sorted(
-        source_col
-        for source_col, canonical_id in (mapping or {}).items()
-        if canonical_id in required and source_col not in current
+        source_col for source_col in required_sources
+        if _fold_column(source_col) not in present
     )
-    added_columns = sorted(current - set(mapping or {}))
+    declared = {_fold_column(s) for s in declared_sources}
+    added_columns = sorted(
+        c for c in current_columns if _fold_column(c) not in declared
+    )
     status = DRIFT_NEEDS_REVALIDATION if missing_required_sources else DRIFT_OK
     return {
         "status": status,
@@ -905,9 +1204,9 @@ def replay_locked_template(
 
     Ingress parity: upload and email are only transports of the same bytes, so the
     same (locked template + mapping + bytes) yields byte-identical canonical rows
-    (see ``canonical_rows_signature``). Requires the template to be locked
-    (content-hashed, Story 22.11) -- an unlocked template is refused.
+    (see ``canonical_rows_signature``). Requires the template to be locked -- i.e.
+    its content_hash must actually SEAL its contract, not merely be present
+    (``_assert_template_locked``).
     """
-    if not template.get("content_hash"):
-        raise TemplateNotLocked()
+    _assert_template_locked(template)
     return stamp_placement(produce(data, template, mapping), template, filename=filename)

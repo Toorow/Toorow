@@ -6,12 +6,24 @@
   "$defs": {
     "field_discovery": {
       "type": "object",
-      "required": ["mode", "allowed_targets"],
+      "required": [
+        "mode",
+        "allowed_targets"
+      ],
       "properties": {
-        "mode": {"type": "string", "enum": ["static", "runtime"]},
+        "mode": {
+          "type": "string",
+          "enum": [
+            "static",
+            "runtime"
+          ]
+        },
         "allowed_targets": {
           "type": "array",
-          "items": {"type": "string", "minLength": 1},
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "uniqueItems": true
         }
       },
@@ -31,52 +43,152 @@
         "non_additive"
       ],
       "properties": {
-        "field_id": {"type": "string", "minLength": 1},
-        "source_field": {"type": "string", "minLength": 1},
-        "kind": {"type": "string", "enum": ["metric", "dimension", "event"]},
+        "field_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_field": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "metric",
+            "dimension",
+            "event"
+          ]
+        },
         "physical_type": {
           "type": "string",
-          "enum": ["string", "integer", "decimal", "boolean", "date", "datetime", "json"]
+          "enum": [
+            "string",
+            "integer",
+            "decimal",
+            "boolean",
+            "date",
+            "datetime",
+            "json"
+          ]
         },
-        "description": {"type": "string", "minLength": 1},
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
         "semantic_hints": {
           "type": "array",
-          "items": {"type": "string", "minLength": 1},
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "minItems": 1,
           "uniqueItems": true
         },
-        "canonical_target": {"type": ["string", "null"]},
+        "canonical_target": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "aggregation": {
           "type": "string",
-          "enum": ["sum", "average", "impression_weighted", "max", "latest", "none"]
+          "enum": [
+            "sum",
+            "average",
+            "impression_weighted",
+            "max",
+            "latest",
+            "none"
+          ]
         },
-        "non_additive": {"type": "boolean"},
+        "non_additive": {
+          "type": "boolean"
+        },
         "label_source_field": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Epic 31: for kind='event' only -- the provider source field carrying the human LABEL of the event instance (level 3 of platform>type>label). Null/absent for metric/dimension fields. An event field sets aggregation='none', non_additive=false (both N/A for a temporal marker)."
         },
         "derivation": {
-          "type": ["object", "null"],
+          "type": [
+            "object",
+            "null"
+          ],
           "description": "CALCULATED/DERIVED metric (kind='metric' only). The metric EXISTS in the provider API (declared here for catalogue completeness) but its provider-computed value is NOT trusted as an additive fact -- it is RECONSTRUCTED downstream from additive components. Implies non_additive=true. 'imported' selects the flavour: false (default) = provider value DROPPED at import and recomputed from components; true = provider value ALSO landed raw as a non-additive column for parity/audit, never summed. Declaring the reconstruction here lets the semantic/mart layer generate it instead of hardcoding it per connector.",
           "additionalProperties": false,
-          "required": ["method"],
+          "required": [
+            "method"
+          ],
           "properties": {
-            "method": {"type": "string", "enum": ["ratio", "expression"]},
-            "numerator": {"type": ["string", "null"], "description": "canonical_target of the additive numerator (method='ratio')"},
-            "denominator": {"type": ["string", "null"], "description": "canonical_target of the additive denominator (method='ratio')"},
-            "scale": {"type": ["number", "null"], "description": "multiplier applied after division: 1000 for eCPM/CPM (per mille), 100 for a percentage, 1/absent otherwise"},
-            "expression": {"type": ["string", "null"], "description": "free-form recomputation over canonical fields (method='expression'), e.g. 'clicks / impressions'"},
-            "imported": {"type": "boolean", "description": "false (default) = provider value dropped at import and reconstructed downstream; true = also landed raw as a non-additive column for parity, never summed"}
+            "method": {
+              "type": "string",
+              "enum": [
+                "ratio",
+                "expression"
+              ]
+            },
+            "numerator": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "canonical_target of the additive numerator (method='ratio')"
+            },
+            "denominator": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "canonical_target of the additive denominator (method='ratio')"
+            },
+            "scale": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "description": "multiplier applied after division: 1000 for eCPM/CPM (per mille), 100 for a percentage, 1/absent otherwise"
+            },
+            "expression": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "free-form recomputation over canonical fields (method='expression'), e.g. 'clicks / impressions'"
+            },
+            "imported": {
+              "type": "boolean",
+              "description": "false (default) = provider value dropped at import and reconstructed downstream; true = also landed raw as a non-additive column for parity, never summed"
+            }
           }
         },
         "money": {
-          "type": ["object", "null"],
+          "type": [
+            "object",
+            "null"
+          ],
           "description": "Story 39.2: money adapter INPUT contract (kind='metric' monetary field). Declares the connector's NATIVE money encoding. The platform adapter (server/core/money.py) normalizes this to the ONE canonical internal unit = micros, currency attached (E39-AD1); the /1e6 division back to display units happens ONCE at read. Absent => not a monetary field (39.1's monetary classification is the governed set; this adds the orthogonal native-encoding axis). ADDITIVE / backward-compatible: absent = today's behaviour.",
           "additionalProperties": false,
-          "required": ["native_unit"],
+          "required": [
+            "native_unit"
+          ],
           "properties": {
-            "native_unit": {"type": "string", "enum": ["micros", "decimal", "cents"]},
-            "currency_source": {"type": ["string", "null"], "description": "Opaque locus of the source currency (e.g. a field id or 'network'); the ADAPTER reads it, core never names a provider (AD-2)."}
+            "native_unit": {
+              "type": "string",
+              "enum": [
+                "micros",
+                "decimal",
+                "cents"
+              ]
+            },
+            "currency_source": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Opaque locus of the source currency (e.g. a field id or 'network'); the ADAPTER reads it, core never names a provider (AD-2)."
+            }
           }
         }
       },
@@ -84,29 +196,66 @@
     },
     "availability": {
       "type": "object",
-      "required": ["status"],
+      "required": [
+        "status"
+      ],
       "properties": {
-        "status": {"type": "string", "enum": ["selectable", "unavailable"]},
-        "reason_code": {"type": ["string", "null"]},
-        "follow_up": {"type": ["string", "null"]}
+        "status": {
+          "type": "string",
+          "enum": [
+            "selectable",
+            "unavailable"
+          ]
+        },
+        "reason_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "follow_up": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       },
       "allOf": [
         {
           "if": {
-            "properties": {"status": {"const": "unavailable"}},
-            "required": ["status"]
+            "properties": {
+              "status": {
+                "const": "unavailable"
+              }
+            },
+            "required": [
+              "status"
+            ]
           },
           "then": {
-            "required": ["reason_code", "follow_up"],
+            "required": [
+              "reason_code",
+              "follow_up"
+            ],
             "properties": {
-              "reason_code": {"type": "string", "minLength": 1},
-              "follow_up": {"type": "string", "minLength": 1}
+              "reason_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "follow_up": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           },
           "else": {
             "properties": {
-              "reason_code": {"type": "null"},
-              "follow_up": {"type": "null"}
+              "reason_code": {
+                "type": "null"
+              },
+              "follow_up": {
+                "type": "null"
+              }
             }
           }
         }
@@ -115,32 +264,84 @@
     },
     "dispatch": {
       "type": "object",
-      "required": ["callable"],
+      "required": [
+        "callable"
+      ],
       "properties": {
-        "callable": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}
+        "callable": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        }
       },
       "additionalProperties": false
     },
     "alternative": {
       "type": "object",
-      "required": ["metrics", "dimensions"],
+      "required": [
+        "metrics",
+        "dimensions"
+      ],
       "properties": {
-        "metrics": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
-        "dimensions": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+        "metrics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "dimensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
       },
       "additionalProperties": false
     },
     "suggested_repair": {
       "type": "object",
-      "required": ["remove_fields", "add_fields", "split_into_reports"],
+      "required": [
+        "remove_fields",
+        "add_fields",
+        "split_into_reports"
+      ],
       "properties": {
-        "remove_fields": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
-        "add_fields": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
-        "split_into_reports": {"type": "array", "items": {"$ref": "#/$defs/alternative"}},
-        "minimum_interval_minutes": {"type": "integer", "minimum": 1},
+        "remove_fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "add_fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "split_into_reports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/alternative"
+          }
+        },
+        "minimum_interval_minutes": {
+          "type": "integer",
+          "minimum": 1
+        },
         "supported_modes": {
           "type": "array",
-          "items": {"type": "string", "enum": ["manual", "hourly", "daily", "weekly"]},
+          "items": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "hourly",
+              "daily",
+              "weekly"
+            ]
+          },
           "minItems": 1,
           "uniqueItems": true
         },
@@ -148,7 +349,10 @@
           "type": "array",
           "items": {
             "type": "array",
-            "items": {"type": "string", "minLength": 1},
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
             "minItems": 1,
             "uniqueItems": true
           },
@@ -158,20 +362,64 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["eq", "neq", "in", "not_in", "gt", "gte", "lt", "lte", "contains"]
+            "enum": [
+              "eq",
+              "neq",
+              "in",
+              "not_in",
+              "gt",
+              "gte",
+              "lt",
+              "lte",
+              "contains"
+            ]
           },
           "minItems": 1,
           "uniqueItems": true
         }
       },
       "anyOf": [
-        {"properties": {"remove_fields": {"minItems": 1}}},
-        {"properties": {"add_fields": {"minItems": 1}}},
-        {"properties": {"split_into_reports": {"minItems": 1}}},
-        {"required": ["minimum_interval_minutes"]},
-        {"required": ["supported_modes"]},
-        {"required": ["supported_grains"]},
-        {"required": ["supported_filter_operators"]}
+        {
+          "properties": {
+            "remove_fields": {
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "properties": {
+            "add_fields": {
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "properties": {
+            "split_into_reports": {
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "required": [
+            "minimum_interval_minutes"
+          ]
+        },
+        {
+          "required": [
+            "supported_modes"
+          ]
+        },
+        {
+          "required": [
+            "supported_grains"
+          ]
+        },
+        {
+          "required": [
+            "supported_filter_operators"
+          ]
+        }
       ],
       "additionalProperties": false
     },
@@ -196,35 +444,66 @@
             "unsupported_cadence"
           ]
         },
-        "description": {"type": "string", "minLength": 1},
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
         "constraint": {
           "type": "string",
-          "enum": ["requires_all", "incompatible_with", "allowed_grains", "limit"]
+          "enum": [
+            "requires_all",
+            "incompatible_with",
+            "allowed_grains",
+            "limit"
+          ]
         },
         "field_ids": {
           "type": "array",
-          "items": {"type": "string", "minLength": 1},
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "minItems": 1,
           "uniqueItems": true
         },
         "supported_alternatives": {
           "type": "array",
-          "items": {"$ref": "#/$defs/alternative"}
+          "items": {
+            "$ref": "#/$defs/alternative"
+          }
         },
-        "suggested_repair": {"$ref": "#/$defs/suggested_repair"}
+        "suggested_repair": {
+          "$ref": "#/$defs/suggested_repair"
+        }
       },
       "additionalProperties": false
     },
     "filter": {
       "type": "object",
-      "required": ["field_id", "operators"],
+      "required": [
+        "field_id",
+        "operators"
+      ],
       "properties": {
-        "field_id": {"type": "string", "minLength": 1},
+        "field_id": {
+          "type": "string",
+          "minLength": 1
+        },
         "operators": {
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["eq", "neq", "in", "not_in", "gt", "gte", "lt", "lte", "contains"]
+            "enum": [
+              "eq",
+              "neq",
+              "in",
+              "not_in",
+              "gt",
+              "gte",
+              "lt",
+              "lte",
+              "contains"
+            ]
           },
           "minItems": 1,
           "uniqueItems": true
@@ -234,42 +513,124 @@
     },
     "pagination": {
       "type": "object",
-      "required": ["mode", "completeness", "max_pages", "row_limit", "truncation_signal"],
+      "required": [
+        "mode",
+        "completeness",
+        "max_pages",
+        "row_limit",
+        "truncation_signal"
+      ],
       "properties": {
-        "mode": {"type": "string", "enum": ["none", "offset", "cursor", "page", "link"]},
-        "completeness": {"type": "string", "enum": ["complete", "bounded", "hard_limit", "top_n", "unknown"]},
-        "max_pages": {"type": ["integer", "null"], "minimum": 1},
-        "row_limit": {"type": ["integer", "null"], "minimum": 1},
-        "truncation_signal": {"type": "string", "enum": ["explicit", "logged", "none", "unknown"]}
+        "mode": {
+          "type": "string",
+          "enum": [
+            "none",
+            "offset",
+            "cursor",
+            "page",
+            "link"
+          ]
+        },
+        "completeness": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "bounded",
+            "hard_limit",
+            "top_n",
+            "unknown"
+          ]
+        },
+        "max_pages": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "row_limit": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "truncation_signal": {
+          "type": "string",
+          "enum": [
+            "explicit",
+            "logged",
+            "none",
+            "unknown"
+          ]
+        }
       },
       "additionalProperties": false
     },
     "quota_cost": {
       "type": "object",
-      "required": ["read_points", "unit"],
+      "required": [
+        "read_points",
+        "unit"
+      ],
       "properties": {
-        "read_points": {"type": "integer", "minimum": 0},
-        "unit": {"type": "string", "minLength": 1}
+        "read_points": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1
+        }
       },
       "additionalProperties": false
     },
     "incremental": {
       "type": "object",
-      "required": ["mode", "cursor_field"],
+      "required": [
+        "mode",
+        "cursor_field"
+      ],
       "properties": {
-        "mode": {"type": "string", "enum": ["full_refresh", "date_window", "cursor"]},
-        "cursor_field": {"type": ["string", "null"]}
+        "mode": {
+          "type": "string",
+          "enum": [
+            "full_refresh",
+            "date_window",
+            "cursor"
+          ]
+        },
+        "cursor_field": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       },
       "additionalProperties": false
     },
     "cadence": {
       "type": "object",
-      "required": ["minimum_interval_minutes", "supported_modes"],
+      "required": [
+        "minimum_interval_minutes",
+        "supported_modes"
+      ],
       "properties": {
-        "minimum_interval_minutes": {"type": "integer", "minimum": 1},
+        "minimum_interval_minutes": {
+          "type": "integer",
+          "minimum": 1
+        },
         "supported_modes": {
           "type": "array",
-          "items": {"type": "string", "enum": ["manual", "hourly", "daily", "weekly"]},
+          "items": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "hourly",
+              "daily",
+              "weekly"
+            ]
+          },
           "minItems": 1,
           "uniqueItems": true
         }
@@ -293,20 +654,93 @@
         "cadence"
       ],
       "properties": {
-        "id": {"type": "string", "minLength": 1},
-        "selection_mode": {"type": "string", "enum": ["exact_bundle", "subset", "catalog_driven"]},
-        "availability": {"$ref": "#/$defs/availability"},
-        "dispatch": {"$ref": "#/$defs/dispatch"},
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "display_name": {
+          "description": "The connector's own name for this report (report_profiles[].display_name). Null when the manifest does not name it; the console then falls back to the id.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "description": "What this report answers, in the connector's words. Null when unstated.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selection_mode": {
+          "type": "string",
+          "enum": [
+            "exact_bundle",
+            "subset",
+            "catalog_driven"
+          ]
+        },
+        "max_provider_backfill_days": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "How many days back THIS report may be re-collected from the provider, as the provider's own documentation states it -- a hard reporting window (e.g. Search Console's 16 months), never a customer-configurable retention setting and never an estimate. Read by core.datastream_source_catalogue._declared_backfill_bound (which looks it up HERE, in source_capabilities.reports -- `_connector_option_contract` drops it, so this is the only place it can live) and published to the Workbench through datastream_dimension_history as `earliest_recoverable`. Declared in this schema on 2026-08-17. Until then the key was not merely unused: `additionalProperties: false` on this object made it INVALID, so the measured '0 of 140 reports declare it' was a schema refusal, not an oversight -- every report published `None` and no manifest could have said otherwise. ABSENT REMAINS A VALID ANSWER: it means the provider publishes no hard bound, and the module then owes a manifest-level `_max_provider_backfill_days_note` saying so (test_backfill_bound_is_declared_or_its_absence_is). A bound is never guessed -- 0 and false are refused by the reader, and a wrong number promises a history the provider never committed to."
+        },
+        "availability": {
+          "$ref": "#/$defs/availability"
+        },
+        "dispatch": {
+          "$ref": "#/$defs/dispatch"
+        },
+        "date_axis": {
+          "type": "string",
+          "enum": [
+            "request_dimension",
+            "per_day_request"
+          ],
+          "description": "How this report carries the date. 'request_dimension': the source accepts the day beside the report's other dimensions, so one request covers the window and the day is read from the answer. 'per_day_request': the source refuses that combination, so the daily grain is obtained one request per day and the day is stamped from the window. Absent = 'request_dimension'. Which one applies is the SOURCE's answer, measured against it, never a rule applied to every report of a connector."
+        },
+        "_date_axis_note": {
+          "type": "string",
+          "description": "What the source answered, and when it was measured."
+        },
+        "entity_field": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The field_id of source_capabilities.fields[] that identifies WHAT each row of this bundle is about -- the entity identifier. Declared on an event bundle (landing 'context_events'), whose pull carries it to app.context_events.entity_key. `_normalize_report` then carries it among this report's `dimensions`, which is what makes it mappable, pinnable and a candidate component of an MDM common key (datastream-workbench-and-wizard.md, amendment 2026-09-06). Absent means the bundle's rows are about no particular entity -- a holiday, a price change -- and nothing is added."
+        },
+        "entity_kind": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What `entity_field` identifies, in the connector's own words ('video', 'product', 'campaign') -- the exact value the pull writes to app.context_events.entity_kind, so the declaration and the row agree. Meaningless without `entity_field`."
+        },
         "landing": {
           "type": "string",
-          "enum": ["fact_daily_kpi", "context_events"],
+          "enum": [
+            "fact_daily_kpi",
+            "context_events"
+          ],
           "description": "Epic 31: where this profile's pull lands. Absent = derived at load (module_kind=='context' -> context_events, else fact_daily_kpi). A connector may mix landings across profiles (e.g. YouTube kpi profiles + a video_upload event profile), so 'landing' -- not module_kind -- decides the write path and the conformance layer."
         },
-        "metrics": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
-        "dimensions": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "metrics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "dimensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
         "events": {
           "type": "array",
-          "items": {"type": "string", "minLength": 1},
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "uniqueItems": true,
           "description": "Epic 31: for a landing='context_events' profile -- the kind='event' field ids this profile emits (metrics/dimensions stay empty). A kpi profile leaves this empty/absent."
         },
@@ -314,94 +748,383 @@
           "type": "array",
           "items": {
             "type": "array",
-            "items": {"type": "string", "minLength": 1},
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
             "minItems": 1,
             "uniqueItems": true
           }
         },
-        "compatibility": {"type": "array", "items": {"$ref": "#/$defs/compatibility_constraint"}},
-        "filters": {"type": "array", "items": {"$ref": "#/$defs/filter"}},
-        "pagination": {"$ref": "#/$defs/pagination"},
-        "quota_cost": {"$ref": "#/$defs/quota_cost"},
-        "incremental": {"$ref": "#/$defs/incremental"},
-        "cadence": {"$ref": "#/$defs/cadence"}
+        "compatibility": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/compatibility_constraint"
+          }
+        },
+        "filters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/filter"
+          }
+        },
+        "pagination": {
+          "$ref": "#/$defs/pagination"
+        },
+        "quota_cost": {
+          "$ref": "#/$defs/quota_cost"
+        },
+        "incremental": {
+          "$ref": "#/$defs/incremental"
+        },
+        "cadence": {
+          "$ref": "#/$defs/cadence"
+        }
       },
       "allOf": [
         {
           "if": {
             "properties": {
               "availability": {
-                "properties": {"status": {"const": "selectable"}},
-                "required": ["status"]
+                "properties": {
+                  "status": {
+                    "const": "selectable"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
               }
             }
           },
-          "then": {"required": ["dispatch"]}
+          "then": {
+            "required": [
+              "dispatch"
+            ]
+          }
         }
       ],
       "additionalProperties": false
     },
     "time_context": {
-      "type": ["object", "null"],
+      "type": [
+        "object",
+        "null"
+      ],
       "description": "Story 39.7: report-timezone CAPTURE contract INPUT (DESCRIPTOR level -- one report timezone per datastream/network/property, contrast 39.2's per-field money). Declares WHERE this connector reads the exact report timezone the source used to draw its reporting-day boundaries, and its fallback posture when it cannot be determined. The platform (server/core/report_timezone.py) validates the captured IANA zone and, when absent, emits a typed TIMEZONE_GAP or records the declared assumption as TAGGED provenance -- NEVER a silent UTC/default (E39-NFR02). Source-agnostic: 'locus' names an ABSTRACT source of the zone, never a provider field (AD-2). Absent => connector captures no report timezone yet (treated as locus='none': a TIMEZONE_GAP for its date-grain figures). ADDITIVE / backward-compatible.",
       "additionalProperties": false,
-      "required": ["locus", "fallback"],
+      "required": [
+        "locus",
+        "fallback"
+      ],
       "properties": {
         "locus": {
           "type": "string",
-          "enum": ["network", "property", "account", "fixed", "none"],
+          "enum": [
+            "network",
+            "property",
+            "account",
+            "fixed",
+            "none"
+          ],
           "description": "Abstract source of the report timezone: 'network'/'property'/'account' = read from provider metadata at pull; 'fixed' = the provider always reports in one declared zone (see fixed_zone); 'none' = the provider exposes no report timezone (=> TIMEZONE_GAP)."
         },
         "fallback": {
           "type": "string",
-          "enum": ["gap", "assume"],
+          "enum": [
+            "gap",
+            "assume"
+          ],
           "description": "Posture when the zone cannot be determined at pull: 'gap' = refuse to assume, surface TIMEZONE_GAP (fail-closed, the default posture); 'assume' = record an explicitly-declared assumed_zone as a TAGGED assumption in provenance (never silent) -- requires assumed_zone."
         },
-        "fixed_zone": {"type": ["string", "null"], "description": "IANA zone when locus='fixed' (the one zone the provider always reports in). Null otherwise."},
-        "assumed_zone": {"type": ["string", "null"], "description": "IANA zone recorded as a TAGGED assumption when fallback='assume' and the live zone is undetermined. Null when fallback='gap'."}
+        "fixed_zone": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "IANA zone when locus='fixed' (the one zone the provider always reports in). Null otherwise."
+        },
+        "assumed_zone": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "IANA zone recorded as a TAGGED assumption when fallback='assume' and the live zone is undetermined. Null when fallback='gap'."
+        }
       },
       "allOf": [
         {
           "if": {
-            "properties": {"locus": {"const": "fixed"}},
-            "required": ["locus"]
+            "properties": {
+              "locus": {
+                "const": "fixed"
+              }
+            },
+            "required": [
+              "locus"
+            ]
           },
           "then": {
-            "required": ["fixed_zone"],
-            "properties": {"fixed_zone": {"type": "string", "minLength": 1}}
+            "required": [
+              "fixed_zone"
+            ],
+            "properties": {
+              "fixed_zone": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
           }
         },
         {
           "if": {
-            "properties": {"fallback": {"const": "assume"}},
-            "required": ["fallback"]
+            "properties": {
+              "fallback": {
+                "const": "assume"
+              }
+            },
+            "required": [
+              "fallback"
+            ]
           },
           "then": {
-            "required": ["assumed_zone"],
-            "properties": {"assumed_zone": {"type": "string", "minLength": 1}}
+            "required": [
+              "assumed_zone"
+            ],
+            "properties": {
+              "assumed_zone": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
           }
         }
       ]
     },
     "report_timezone_lever": {
-      "type": ["object", "null"],
+      "type": [
+        "object",
+        "null"
+      ],
       "description": "Story 39.8: declares whether THIS source exposes a report-timezone setting in its dimension filters (RARE). Present => the user can change the reporting timezone at the source, and the cross-source day-offset SIGNAL points them there; absent/null => the timezone is fixed on the detected value (no lever) and the datastream is reported as 'fixed on the detected timezone, no lever available'. This is the ADJUSTMENT-LEVER axis, orthogonal to time_context's CAPTURE axis (39.7). GAM has no lever (its timezone is a fixed NETWORK property, not a report filter) => it declares nothing here (has_lever:false). Core NEVER names a provider (AD-2): the connector declares the lever locus OPAQUELY, surfaced verbatim to the user as lever_hint, never interpreted by core. ADDITIVE / backward-compatible: absent = today's behaviour (no lever).",
       "additionalProperties": false,
-      "required": ["locus"],
+      "required": [
+        "locus"
+      ],
       "properties": {
-        "locus": {"type": "string", "minLength": 1, "description": "Opaque hint WHERE the report-timezone setting lives at the source (e.g. a filter id or 'report_settings'); surfaced verbatim to the user as lever_hint, never interpreted by core (AD-2)."}
+        "locus": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Opaque hint WHERE the report-timezone setting lives at the source (e.g. a filter id or 'report_settings'); surfaced verbatim to the user as lever_hint, never interpreted by core (AD-2)."
+        }
+      }
+    },
+    "tracked_entity_report": {
+      "type": "object",
+      "description": "Story 48.5: ONE report of this source that participates in tracked-entity work, and how. Every field id named here must exist in the descriptor's own `fields` AND be selected by the named report -- a declaration that points at a field the report cannot return is a contract error, not a runtime surprise.",
+      "additionalProperties": false,
+      "required": [
+        "report_id",
+        "direction",
+        "entity_kinds",
+        "candidate_field_ids",
+        "population"
+      ],
+      "properties": {
+        "report_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Id of a report declared in this same descriptor."
+        },
+        "direction": {
+          "type": "string",
+          "enum": [
+            "observe",
+            "collect"
+          ],
+          "description": "'observe' = the report RETURNS values that may denote a tracked entity, and nothing is requested by identity. 'collect' = the report is DRIVEN by governed source identities supplied as a request parameter; it requires identity_field_id and query_driver."
+        },
+        "entity_kinds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{1,39}$"
+          },
+          "description": "Which kinds of entity this report can denote. Opaque to core (AD-2): the vocabulary is open so a source entity kind nobody anticipated needs no core change."
+        },
+        "candidate_field_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Fields whose values are candidate denotations of an entity (a label, a domain, a query string). Observation evidence, never proof of a role."
+        },
+        "identity_field_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Field carrying the source's own STABLE identifier for the entity, when it has one. Required for direction='collect'."
+        },
+        "label_field_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Field carrying the human label to display beside an identifier. Presentation only."
+        },
+        "own_marker_field_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Field the source itself uses to mark a row as the connected account's own entity. Evidence for an `own` role proposal; never an automatic role."
+        },
+        "population": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "completeness"
+          ],
+          "description": "What the observed values are a population OF. A source that omits low-volume rows for privacy still reports their totals elsewhere, so an observed candidate set is never the complete universe of entities.",
+          "properties": {
+            "completeness": {
+              "type": "string",
+              "enum": [
+                "declared_scope",
+                "reportable_subset"
+              ],
+              "description": "'declared_scope' = the report returns exactly the entities that were requested. 'reportable_subset' = the provider may withhold rows (privacy thresholds, sampling, eligibility), so absence is not evidence of absence."
+            },
+            "note": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1,
+              "description": "Human sentence naming what is excluded, surfaced verbatim in coverage evidence."
+            }
+          }
+        },
+        "query_driver": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "parameter",
+            "value_source",
+            "cardinality"
+          ],
+          "description": "How governed source identities become a request. Required for direction='collect', forbidden for 'observe'. The core passes the resolved values through under the declared parameter name and interprets nothing about them (AD-2).",
+          "properties": {
+            "parameter": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{1,39}$",
+              "description": "Keyword argument name the dispatch callable accepts."
+            },
+            "value_source": {
+              "type": "string",
+              "enum": [
+                "source_identity"
+              ],
+              "description": "Which governed value fills the parameter. Only the confirmed external identity is available today; an enum keeps a second source from arriving untyped."
+            },
+            "cardinality": {
+              "type": "string",
+              "enum": [
+                "one_request_per_value",
+                "one_request_for_all_values"
+              ],
+              "description": "Drives the quota estimate: per-value multiplies the report's declared read cost by the number of bound identities."
+            },
+            "own_marker_parameter": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[a-z][a-z0-9_]{1,39}$",
+              "description": "Optional second keyword argument receiving the subset of values whose Project role is `own`."
+            },
+            "max_values_per_request": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1,
+              "description": "Provider bound on how many identities one request may carry. Null = no declared bound."
+            }
+          }
+        }
+      }
+    },
+    "tracked_entity": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Story 48.5: OPTIONAL, schema-versioned declaration that this source can observe or collect tracked entities (own brands, competitors, references). ABSENT means `not_applicable` with a reason -- never guessed support: core must not infer from a connector's name, nor from a field happening to be called `brand`, `advertiser`, `domain` or `keyword`. The report contracts stay the authority for grain, filters, completeness, quota, cadence, incremental behaviour and history.",
+      "additionalProperties": false,
+      "required": [
+        "declaration_version",
+        "reports"
+      ],
+      "properties": {
+        "declaration_version": {
+          "const": "1"
+        },
+        "reports": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/tracked_entity_report"
+          }
+        }
       }
     },
     "descriptor": {
       "type": "object",
-      "required": ["contract_version", "field_discovery", "fields", "reports"],
+      "required": [
+        "contract_version",
+        "field_discovery",
+        "fields",
+        "reports"
+      ],
       "properties": {
-        "contract_version": {"const": "1"},
-        "field_discovery": {"$ref": "#/$defs/field_discovery"},
-        "fields": {"type": "array", "items": {"$ref": "#/$defs/field"}},
-        "reports": {"type": "array", "items": {"$ref": "#/$defs/report"}, "minItems": 1},
-        "time_context": {"$ref": "#/$defs/time_context"},
-        "report_timezone_lever": {"$ref": "#/$defs/report_timezone_lever"}
+        "contract_version": {
+          "const": "1"
+        },
+        "field_discovery": {
+          "$ref": "#/$defs/field_discovery"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/field"
+          }
+        },
+        "reports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/report"
+          },
+          "minItems": 1
+        },
+        "time_context": {
+          "$ref": "#/$defs/time_context"
+        },
+        "report_timezone_lever": {
+          "$ref": "#/$defs/report_timezone_lever"
+        },
+        "tracked_entity": {
+          "$ref": "#/$defs/tracked_entity"
+        }
       },
       "additionalProperties": false
     },
@@ -417,26 +1140,156 @@
         "reports"
       ],
       "properties": {
-        "contract_version": {"const": "1"},
-        "project_id": {"type": "string", "minLength": 1},
-        "connection_ref_id": {"type": "string", "minLength": 1},
+        "contract_version": {
+          "const": "1"
+        },
+        "project_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "connection_ref_id": {
+          "type": "string",
+          "minLength": 1
+        },
         "module": {
           "type": "object",
-          "required": ["name", "display_name", "module_kind"],
+          "required": [
+            "name",
+            "display_name",
+            "module_kind"
+          ],
           "properties": {
-            "name": {"type": "string", "minLength": 1},
-            "display_name": {"type": "string", "minLength": 1},
-            "module_kind": {"type": "string", "enum": ["kpi", "context"]}
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "display_name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "module_kind": {
+              "type": "string",
+              "enum": [
+                "kpi",
+                "context"
+              ]
+            }
           },
           "additionalProperties": false
         },
-        "field_discovery": {"$ref": "#/$defs/field_discovery"},
-        "fields": {"type": "array", "items": {"$ref": "#/$defs/field"}},
-        "reports": {"type": "array", "items": {"$ref": "#/$defs/report"}, "minItems": 1},
-        "time_context": {"$ref": "#/$defs/time_context"},
-        "report_timezone_lever": {"$ref": "#/$defs/report_timezone_lever"}
+        "field_discovery": {
+          "$ref": "#/$defs/field_discovery"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/field"
+          }
+        },
+        "reports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/report"
+          },
+          "minItems": 1
+        },
+        "time_context": {
+          "$ref": "#/$defs/time_context"
+        },
+        "report_timezone_lever": {
+          "$ref": "#/$defs/report_timezone_lever"
+        },
+        "tracked_entity": {
+          "$ref": "#/$defs/tracked_entity_public"
+        },
+        "installation": {
+          "type": "object",
+          "required": [
+            "catalog_availability",
+            "catalog_status",
+            "safe_next_action"
+          ],
+          "properties": {
+            "catalog_availability": {
+              "type": "string",
+              "enum": [
+                "selectable",
+                "unavailable"
+              ]
+            },
+            "catalog_status": {
+              "type": "string",
+              "enum": [
+                "ready",
+                "setup_pending"
+              ]
+            },
+            "safe_next_action": {
+              "type": "string",
+              "enum": [
+                "no action required",
+                "contact platform support"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
+    },
+    "tracked_entity_public": {
+      "type": "object",
+      "description": "Story 48.5: the normalized tracked-entity answer for one project/connection. `support` is ALWAYS present, so a caller reads a reason rather than an absence: 'declared' when the connector declares one, 'not_applicable' when it declares none.",
+      "additionalProperties": false,
+      "required": [
+        "support",
+        "reason",
+        "reports"
+      ],
+      "properties": {
+        "support": {
+          "type": "string",
+          "enum": [
+            "declared",
+            "not_applicable"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "declaration_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "directions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "observe",
+              "collect"
+            ]
+          }
+        },
+        "entity_kinds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{1,39}$"
+          }
+        },
+        "reports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/tracked_entity_report"
+          }
+        }
+      }
     }
   }
 }

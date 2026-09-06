@@ -9,9 +9,10 @@
 
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { ThemeProvider, createTheme, decomposeColor } from "@mui/material/styles";
+
 import KpiDeltaFooter from "../KpiDeltaFooter";
 import type { KpiDeltaItem } from "../KpiDeltaFooter";
+import { ThemeProvider, createTheme, decomposeColor } from "@toorow/shell";
 
 const theme = createTheme();
 
@@ -132,7 +133,7 @@ describe("KpiDeltaFooter — semanticDirection up_good (défaut)", () => {
     );
     const delta = screen.getByTestId("kpi-delta-footer-delta") as HTMLElement;
     expect(delta.textContent).toContain("+");
-    // sx={{ color: success.main }} injecté en style inline par MUI/jsdom.
+    // sx={{ color: success.main }} injecté en style inline par resolveSx.
     // Un swap success/error dans resolveColor ferait échouer cette assertion.
     expect(inlineRgb(delta)).toEqual(rgbOf(theme.palette.success.main));
   });

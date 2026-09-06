@@ -1,6 +1,51 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import AuthGate from "../AuthGate";
 import { apiFetch } from "../../lib/apiFetch";
+import { Alert, Button, Input, Status } from "../../ui";
+import {
+  ReportingCurrencyField,
+  ReportingTimezoneField,
+  currencySummary,
+  reportingPayload,
+  timezoneSummary,
+  useReportingDefaults,
+} from "./reportingDefaults";
+import "../application.css";
+
+/* ---- The focused-dialog surface — CreateOrg's recipe, verbatim. ----------
+   Styling: migrated off `create-org.css` (waves 2-4 of `docs/ui-css-strategy.md`).
+   Ported 1:1 from the retired sheet; geometry (not prose) keeps its px values,
+   prose measures stay in `ch`. The scrim dims with the scheme-stable
+   `surface-dark` token so it reads as dimming on both light and dark. The two
+   sign-up doors must stay one family — change these with CreateOrg's. */
+const STAGE = "relative min-h-[828px]";
+const SCRIM =
+  "absolute inset-0 z-[var(--layer-modal)] grid items-start justify-items-center gap-4.5 bg-surface-dark/20 p-7";
+const DIALOG =
+  "w-[min(640px,calc(100%-56px))] overflow-hidden rounded-[18px] border border-divider-base bg-surface-light shadow-overlay max-[1180px]:w-[calc(100%-36px)]";
+const HEADER = "flex items-start justify-between gap-4.5 border-b border-divider-base px-7 pb-5 pt-6";
+const TITLE = "m-0 font-display text-[22px] font-semibold tracking-[-0.01em]";
+const SUBTITLE = "m-0 mt-2 max-w-[44ch] text-label leading-normal text-text-secondary";
+const BODY = "grid gap-5.5 px-7 py-6";
+const FOOTER =
+  "flex items-center justify-between gap-4.5 border-t border-divider-base px-7 py-4.5 max-[1180px]:flex-wrap";
+const FOOTER_NOTE = "text-caption leading-snug text-text-secondary";
+const ACTIONS = "flex flex-none items-center gap-2.5";
+
+/* Field group: label / control — same recipe as CreateOrg; change them together. */
+const FIELD = "grid gap-2";
+const FIELD_LABEL = "text-label font-semibold";
+
+/* ScopeSummary (DESIGN.md: page surface, read-only). The first row after the
+   title takes SCOPE_ROW; every following row takes SCOPE_ROW_RULED. */
+const SCOPE_SUMMARY = "rounded-lg border border-divider-base bg-background-light px-4.5 py-4";
+const SCOPE_TITLE = "mb-3 font-display text-label font-semibold";
+const SCOPE_ROW =
+  "grid grid-cols-[128px_minmax(0,1fr)] items-baseline gap-3.5 py-[7px] max-[1180px]:grid-cols-1 max-[1180px]:gap-[3px]";
+const SCOPE_ROW_RULED = `${SCOPE_ROW} border-t border-divider-base`;
+const SCOPE_KEY = "text-caption font-semibold text-text-secondary";
+const SCOPE_VAL = "text-label leading-normal [overflow-wrap:anywhere]";
+const SCOPE_VAL_MONO = `${SCOPE_VAL} font-mono`;
 
 type ExchangeState = "exchanging" | "ready" | "unavailable" | "error";
 
@@ -71,11 +116,11 @@ function SetupMessage({
 }: { state: Exclude<ExchangeState, "ready">; onRetry: () => void }) {
   const unavailable = state === "unavailable";
   return (
-    <section className="createorg-dialog" role={unavailable ? "alert" : "status"}>
-      <header className="createorg-header">
+    <section className={DIALOG} role={unavailable ? "alert" : "status"}>
+      <header className={HEADER}>
         <div>
-          <h1>{state === "exchanging" ? "Verifying this installation" : "Setup unavailable"}</h1>
-          <p className="createorg-subtitle">
+          <h1 className={TITLE}>{state === "exchanging" ? "Verifying this installation" : "Setup unavailable"}</h1>
+          <p className={SUBTITLE}>
             {state === "exchanging"
               ? "Checking the one-time installer capability."
               : "This setup link is missing, expired, already used, or not valid for this deployment."}
@@ -83,11 +128,13 @@ function SetupMessage({
         </div>
       </header>
       {state === "error" && (
-        <footer className="createorg-footer">
-          <span>The setup service could not be reached.</span>
-          <button className="primary-button" type="button" onClick={onRetry}>
-            Try again
-          </button>
+        <footer className={FOOTER}>
+          <span className={FOOTER_NOTE}>The setup service could not be reached.</span>
+          <div className={ACTIONS}>
+            <Button type="button" onClick={onRetry}>
+              Try again
+            </Button>
+          </div>
         </footer>
       )}
     </section>
@@ -103,6 +150,12 @@ function ClaimForm() {
   const [error, setError] = useState<string | null>(null);
   const [successUrl, setSuccessUrl] = useState<string | null>(null);
   const [idempotencyKey] = useState(() => operationKey("instance-claim"));
+  // Identical contract to CreateOrg, deliberately: the two sign-up paths post
+  // the same payload, so a field present on one and absent on the other means
+  // the same product answers a person differently depending on the door.
+  const [currency, setCurrency] = useState("");
+  const [timezone, setTimezone] = useState("");
+  const { currencyFallback, timezoneFallback, suggestedZone } = useReportingDefaults();
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -115,8 +168,10 @@ function ClaimForm() {
         organization_slug: organizationSlug,
         project_name: projectName.trim(),
         project_slug: projectSlug,
-        currency: "EUR",
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+        // Omit an unchosen currency, send the browser zone as the SUGGESTION it
+        // is — the rules live in `reportingDefaults`, shared with the other
+        // Project-creation doors so this one cannot drift from them.
+        ...reportingPayload(currency, timezone, suggestedZone),
       };
       const confirmationResponse = await apiFetch("/api/instance/claim/confirmation", {
         method: "POST",
@@ -160,47 +215,45 @@ function ClaimForm() {
 
   if (successUrl) {
     return (
-      <section className="createorg-dialog" role="status" aria-labelledby="claim-success-title">
-        <header className="createorg-header">
+      <section className={DIALOG} role="status" aria-labelledby="claim-success-title">
+        <header className={HEADER}>
           <div>
-            <h1 id="claim-success-title">Instance claimed</h1>
-            <p className="createorg-subtitle">
+            <h1 id="claim-success-title" className={TITLE}>Instance claimed</h1>
+            <p className={SUBTITLE}>
               The first organization and project are ready.
             </p>
           </div>
         </header>
-        <div className="createorg-body">
-          <span className="signal-label success">
-            <span className="signal-mark" />
-            Setup completed
-          </span>
+        <div className={BODY}>
+          <Status tone="success">Setup completed</Status>
         </div>
-        <footer className="createorg-footer">
-          <span>Continue when you are ready to open the new project.</span>
-          <button className="primary-button" type="button" onClick={() => window.location.assign(successUrl)}>
-            Continue to getting started
-          </button>
+        <footer className={FOOTER}>
+          <span className={FOOTER_NOTE}>Continue when you are ready to open the new project.</span>
+          <div className={ACTIONS}>
+            <Button type="button" onClick={() => window.location.assign(successUrl)}>
+              Continue to getting started
+            </Button>
+          </div>
         </footer>
       </section>
     );
   }
   return (
-    <section className="createorg-dialog" role="dialog" aria-labelledby="claim-instance-title">
-      <header className="createorg-header">
+    <section className={DIALOG} role="dialog" aria-labelledby="claim-instance-title">
+      <header className={HEADER}>
         <div>
-          <h1 id="claim-instance-title">Claim this toorow instance</h1>
-          <p className="createorg-subtitle">
+          <h1 id="claim-instance-title" className={TITLE}>Claim this toorow instance</h1>
+          <p className={SUBTITLE}>
             Create the first organization and project. Your signed-in identity becomes their owner.
           </p>
         </div>
       </header>
       <form onSubmit={submit}>
-        <div className="createorg-body">
-          <div className="field">
-            <label htmlFor="claim-org-name">Organization name</label>
-            <input
+        <div className={BODY}>
+          <div className={FIELD}>
+            <label htmlFor="claim-org-name" className={FIELD_LABEL}>Organization name</label>
+            <Input
               id="claim-org-name"
-              className="text-input"
               value={organizationName}
               maxLength={100}
               required
@@ -210,11 +263,10 @@ function ClaimForm() {
               }}
             />
           </div>
-          <div className="field">
-            <label htmlFor="claim-org-slug">Organization slug</label>
-            <input
+          <div className={FIELD}>
+            <label htmlFor="claim-org-slug" className={FIELD_LABEL}>Organization slug</label>
+            <Input
               id="claim-org-slug"
-              className="text-input"
               value={organizationSlug}
               pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
               maxLength={50}
@@ -222,11 +274,10 @@ function ClaimForm() {
               onChange={(event) => setOrganizationSlug(event.target.value.toLowerCase())}
             />
           </div>
-          <div className="field">
-            <label htmlFor="claim-project-name">First project</label>
-            <input
+          <div className={FIELD}>
+            <label htmlFor="claim-project-name" className={FIELD_LABEL}>First project</label>
+            <Input
               id="claim-project-name"
-              className="text-input"
               value={projectName}
               maxLength={100}
               required
@@ -236,11 +287,22 @@ function ClaimForm() {
               }}
             />
           </div>
-          <div className="field">
-            <label htmlFor="claim-project-slug">Project slug</label>
-            <input
+          <ReportingCurrencyField
+            idPrefix="claim"
+            value={currency}
+            fallback={currencyFallback}
+            onChange={setCurrency}
+          />
+          <ReportingTimezoneField
+            idPrefix="claim"
+            value={timezone}
+            suggestedZone={suggestedZone}
+            onChange={setTimezone}
+          />
+          <div className={FIELD}>
+            <label htmlFor="claim-project-slug" className={FIELD_LABEL}>Project slug</label>
+            <Input
               id="claim-project-slug"
-              className="text-input"
               value={projectSlug}
               pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
               maxLength={50}
@@ -248,13 +310,44 @@ function ClaimForm() {
               onChange={(event) => setProjectSlug(event.target.value.toLowerCase())}
             />
           </div>
-          {error && <div className="createorg-error" role="alert">{error}</div>}
+          {/* Same confirmation summary as the two sibling doors. This screen
+              asked for a currency and a timezone and read neither back, on the
+              one action that cannot be replayed — a claim happens once per
+              instance. */}
+          <div className={SCOPE_SUMMARY} aria-label="What will be created">
+            <div className={SCOPE_TITLE}>Before you claim</div>
+            <div className={SCOPE_ROW}>
+              <span className={SCOPE_KEY}>Organization</span>
+              <span className={SCOPE_VAL}>{organizationName.trim() || "—"}</span>
+            </div>
+            <div className={SCOPE_ROW_RULED}>
+              <span className={SCOPE_KEY}>Slug</span>
+              <span className={SCOPE_VAL_MONO}>{organizationSlug || "—"}</span>
+            </div>
+            <div className={SCOPE_ROW_RULED}>
+              <span className={SCOPE_KEY}>First project</span>
+              <span className={SCOPE_VAL}>{projectName.trim() || "—"}</span>
+            </div>
+            <div className={SCOPE_ROW_RULED}>
+              <span className={SCOPE_KEY}>Reporting currency</span>
+              <span className={SCOPE_VAL}>{currencySummary(currency, currencyFallback)}</span>
+            </div>
+            <div className={SCOPE_ROW_RULED}>
+              <span className={SCOPE_KEY}>Reporting timezone</span>
+              <span className={SCOPE_VAL}>
+                {timezoneSummary(timezone, suggestedZone, timezoneFallback)}
+              </span>
+            </div>
+          </div>
+          {error && <Alert tone="error">{error}</Alert>}
         </div>
-        <footer className="createorg-footer">
-          <span>This one-time action claims the whole instance.</span>
-          <button className="primary-button" type="submit" disabled={submitting}>
-            {submitting ? "Claiming…" : "Claim instance"}
-          </button>
+        <footer className={FOOTER}>
+          <span className={FOOTER_NOTE}>This one-time action claims the whole instance.</span>
+          <div className={ACTIONS}>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "Claiming…" : "Claim instance"}
+            </Button>
+          </div>
         </footer>
       </form>
     </section>
@@ -307,8 +400,8 @@ export default function ClaimInstance() {
   }
 
   return (
-    <div className="createorg-stage">
-      <div className="createorg-scrim">
+    <div className={STAGE}>
+      <div className={SCRIM}>
         {state === "ready" ? (
           <AuthGate>
             <ClaimForm />

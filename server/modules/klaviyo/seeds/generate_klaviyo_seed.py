@@ -103,6 +103,15 @@ def _maybe_null(value: float, rng: random.Random) -> float | None:
 FIXTURE_END_DATE = date(2026, 7, 10)
 FIXTURE_DAYS = 40
 
+# AI-213 (2026-08-17, AI-66 motif) : ancre du corpus de seed. Un defaut
+# date.today() rendait le corpus machine-jour-local, donc le mart et les
+# fixtures d'evals underivables. Meme seam env que google-analytics ;
+# la valeur par defaut est l'ancre partagee du corpus (2026-07-19), distincte
+# de FIXTURE_END_DATE qui reste l'ancre des fixtures de conformance du module.
+DEFAULT_SEED_END_DATE: date = date.fromisoformat(
+    os.environ.get("TOOROW_SEED_END_DATE", "2026-07-19")
+)
+
 
 def generate_rows(
     days: int = 40,
@@ -127,13 +136,14 @@ def generate_rows(
     days:
         Nombre de jours a generer (defaut 40).
     end_date:
-        Dernier jour de la fenetre (inclus). Defaut : date.today() pour le runtime.
+        Dernier jour de la fenetre (inclus). Defaut : DEFAULT_SEED_END_DATE
+        (AI-213 : ancre, jamais date.today()).
         Pour les fixtures/CI utiliser FIXTURE_END_DATE (2026-07-10).
     rng:
         Generateur aleatoire. Defaut : Random(15_8_2026) (graine fixe deterministe).
     """
     if end_date is None:
-        end_date = date.today()
+        end_date = DEFAULT_SEED_END_DATE
     if rng is None:
         # Graine fixe -> donnees deterministes (fixtures/tests reproductibles).
         rng = random.Random(15_8_2026)
@@ -231,8 +241,8 @@ def main() -> None:
         "--end-date",
         default=None,
         help=(
-            "Date de fin ISO-8601 (ex: 2026-07-10). Utiliser FIXTURE_END_DATE=2026-07-10 "
-            "pour regenerer les fixtures CI (deterministe). Defaut: date.today()."
+            "ISO-8601 end date (e.g. 2026-07-10). Use FIXTURE_END_DATE=2026-07-10 "
+            "to regenerate the CI fixtures (deterministic). Default: date.today()."
         ),
     )
     args = parser.parse_args()

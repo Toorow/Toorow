@@ -420,12 +420,19 @@ def test_13_no_combine_reasons_pass_through(route_status, expected):
 
 
 def test_14_no_provider_names_in_module_or_route():
-    """AD-2: the orchestrator module + the new route carry ZERO provider/connector names."""
+    """AD-2: the orchestrator module and the shared derivation service carry ZERO
+    provider/connector names.
+
+    Story 48.3 deleted ``money_api.py``, whose two public calculators accepted
+    caller-authored amounts. The AD-2 property this test guards did not go with
+    it: it now applies to ``money_derivation.py``, which is where the conversion,
+    refusal and aggregation those routes wrapped actually live.
+    """
     import pathlib
 
     core_dir = pathlib.Path(money_reconciliation.__file__).resolve().parent
     text = (core_dir / "money_reconciliation.py").read_text(encoding="utf-8").lower()
-    route_text = (core_dir / "money_api.py").read_text(encoding="utf-8").lower()
+    route_text = (core_dir / "money_derivation.py").read_text(encoding="utf-8").lower()
     forbidden = (
         "meta",
         "google",
@@ -443,9 +450,10 @@ def test_14_no_provider_names_in_module_or_route():
     )
     for name in forbidden:
         assert name not in text, f"provider name '{name}' leaked into money_reconciliation.py"
-    # money_api.py may legitimately mention none of these either (the appended route).
     for name in ("google", "tiktok", "linkedin", "shopify", "woocommerce"):
-        assert name not in route_text, f"provider name '{name}' leaked into money_api.py route"
+        assert name not in route_text, (
+            f"provider name '{name}' leaked into money_derivation.py"
+        )
 
 
 def test_15_reporting_currency_resolved_per_project():

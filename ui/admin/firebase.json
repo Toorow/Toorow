@@ -8,6 +8,18 @@
         "source": "/api/**",
         "run": { "serviceId": "mcp-server", "region": "europe-west1" }
       },
+      {
+        "source": "/share",
+        "run": { "serviceId": "mcp-server", "region": "europe-west1" }
+      },
+      {
+        "source": "/share/**",
+        "run": { "serviceId": "mcp-server", "region": "europe-west1" }
+      },
+      {
+        "source": "/handoff",
+        "run": { "serviceId": "mcp-server", "region": "europe-west1" }
+      },
       { "source": "**", "destination": "/index.html" }
     ],
     "headers": [

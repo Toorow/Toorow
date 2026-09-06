@@ -6,9 +6,8 @@
  * Renders nothing when there are < 2 points (a single point has no trend).
  */
 
-import Box from "@mui/material/Box";
-import { useTheme, alpha } from "@mui/material/styles";
 import type { SeriesPoint } from "./types";
+import { Box, alpha, useTheme } from "@toorow/shell";
 
 interface SparklineProps {
   points: SeriesPoint[];
@@ -22,7 +21,7 @@ export default function Sparkline({
   points,
   width = 120,
   height = 32,
-  ariaLabel = "Tendance sur la période",
+  ariaLabel = "Trend over the period",
 }: SparklineProps) {
   const theme = useTheme();
 

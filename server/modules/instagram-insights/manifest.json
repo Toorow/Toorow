@@ -1,0 +1,477 @@
+{
+  "schema_version": "1.2",
+  "name": "instagram-insights",
+  "display_name": "Instagram Insights",
+  "business_domain": "marketing",
+  "public_catalog": {
+    "visibility": "public",
+    "category": "analytics_product",
+    "onboarding_modes": [
+      "connector_pull"
+    ],
+    "verification": {
+      "status": "blocked",
+      "reason_code": "live_evidence_not_ratified",
+      "follow_up": "Ratify Instagram Login, professional-account discovery, the 90-day account window, media pagination, metric eligibility, privacy-threshold empty datasets and rate limits on a live Business or Creator account."
+    }
+  },
+  "auth_type": "oauth2",
+  "module_kind": "kpi",
+  "provider_api_version": "instagram-graph-v24.0",
+  "provider_api_base": "https://graph.instagram.com/v24.0",
+  "_provider_api_note": "Organic professional-account insights through Instagram Login. This is independent from meta-ads. API version can be overridden with INSTAGRAM_INSIGHTS_API_VERSION for controlled migrations.",
+  "auth": {
+    "type": "oauth2",
+    "auth_path": "nango",
+    "provider": "instagram-insights",
+    "login_type": "instagram_login",
+    "scopes": [
+      "instagram_business_basic",
+      "instagram_business_manage_insights"
+    ],
+    "access_level": "advanced_access_required_for_external_accounts"
+  },
+  "account_topology": {
+    "_comment": "An Instagram Login user token represents one professional account. Discovery reads /me and returns its opaque Instagram user id. The selected id is stored by core and passed back as instagram_account_id; the connector never falls back to a deployment-wide account id.",
+    "levels": [
+      {
+        "id": "instagram_login",
+        "label": "Instagram Login"
+      },
+      {
+        "id": "professional_account",
+        "label": "Professional account"
+      }
+    ],
+    "selection_level": "professional_account",
+    "discovery": {
+      "callable": "discover_accounts"
+    },
+    "pull_parameter": "instagram_account_id",
+    "selection": {
+      "required": true,
+      "opaque": true
+    }
+  },
+  "raw_landing": {
+    "method": "load",
+    "rationale": "Daily account series and per-media snapshots are low-volume batch data. Load jobs avoid streaming cost; append-only raw rows are superseded in staging by pull id."
+  },
+  "report_profiles": [
+    {
+      "id": "account_daily",
+      "raw_relation": "raw_instagram_insights_daily",
+      "staging_relation": "stg_instagram_insights_daily",
+      "display_name": "Account daily insights",
+      "metrics": [
+        "account_reach",
+        "account_profile_views"
+      ],
+      "dimensions": [
+        "date",
+        "account_id"
+      ],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull",
+      "landing": "fact_daily_kpi"
+    },
+    {
+      "id": "media_performance",
+      "raw_relation": "raw_instagram_insights_daily",
+      "staging_relation": "stg_instagram_insights_daily",
+      "display_name": "Post and Reel performance",
+      "metrics": [
+        "media_shares",
+        "media_comments"
+      ],
+      "dimensions": [
+        "date",
+        "account_id",
+        "media_id",
+        "media_type",
+        "media_product_type",
+        "permalink",
+        "caption",
+        "published_at"
+      ],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull",
+      "landing": "fact_daily_kpi"
+    }
+  ],
+  "canonical_metric_mapping": {
+    "account_reach": {
+      "canonical": "unique_reach",
+      "aggregation_rule": "max",
+      "non_additive": true
+    },
+    "account_profile_views": "profile_views",
+    "media_shares": {
+      "canonical": "shares",
+      "aggregation_rule": "latest",
+      "non_additive": true
+    },
+    "media_comments": {
+      "canonical": "comments",
+      "aggregation_rule": "latest",
+      "non_additive": true
+    }
+  },
+  "canonical_dimension_mapping": {
+    "date": "date",
+    "account_id": "account_id",
+    "media_id": "post_id",
+    "media_type": "media_type",
+    "media_product_type": "media_product_type",
+    "permalink": "post_url",
+    "caption": "post_caption",
+    "published_at": "published_at"
+  },
+  "error_map": {
+    "400:190": "auth_expired",
+    "401:190": "auth_expired",
+    "400:458": "auth_revoked",
+    "400:459": "auth_revoked",
+    "400:460": "auth_revoked",
+    "400:463": "auth_revoked",
+    "400:464": "auth_revoked",
+    "400:467": "auth_revoked",
+    "401:458": "auth_revoked",
+    "401:459": "auth_revoked",
+    "401:460": "auth_revoked",
+    "401:463": "auth_revoked",
+    "401:464": "auth_revoked",
+    "401:467": "auth_revoked",
+    "400:10": "permission_denied",
+    "400:200": "permission_denied",
+    "403:10": "permission_denied",
+    "403:200": "permission_denied",
+    "500:1": "provider_transient",
+    "500:2": "provider_transient"
+  },
+  "quota": {
+    "window_seconds": 3600,
+    "budget_points": 999999999,
+    "read_cost": 1,
+    "write_cost": 1,
+    "_quota_note": "Meta does not expose a stable numeric budget suitable for a pre-live manifest assertion. This large backstop avoids a false local circuit break; HTTP 429 and Retry-After remain authoritative until a live ratification captures usage headers.",
+    "validation_required": true
+  },
+  "source_capabilities": {
+    "contract_version": "1",
+    "field_discovery": {
+      "mode": "static",
+      "allowed_targets": []
+    },
+    "time_context": {
+      "locus": "none",
+      "fallback": "gap"
+    },
+    "fields": [
+      {
+        "field_id": "date",
+        "source_field": "values.end_time",
+        "kind": "dimension",
+        "physical_type": "date",
+        "description": "Provider reporting date derived from the UTC insight end timestamp.",
+        "semantic_hints": [
+          "date",
+          "reporting_period"
+        ],
+        "canonical_target": "date",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "account_id",
+        "source_field": "ig_user_id",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Selected Instagram professional account id.",
+        "semantic_hints": [
+          "account",
+          "identifier"
+        ],
+        "canonical_target": "account_id",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "media_id",
+        "source_field": "id",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Owned Instagram media id.",
+        "semantic_hints": [
+          "post",
+          "identifier"
+        ],
+        "canonical_target": "post_id",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "media_type",
+        "source_field": "media_type",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Provider media type.",
+        "semantic_hints": [
+          "content",
+          "type"
+        ],
+        "canonical_target": "media_type",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "media_product_type",
+        "source_field": "media_product_type",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Instagram product surface such as FEED or REELS; Stories are excluded from this V1 profile.",
+        "semantic_hints": [
+          "content",
+          "surface"
+        ],
+        "canonical_target": "media_product_type",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "permalink",
+        "source_field": "permalink",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Public media permalink when the API exposes it.",
+        "semantic_hints": [
+          "url",
+          "content"
+        ],
+        "canonical_target": "post_url",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "caption",
+        "source_field": "caption",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Media caption when the API exposes it.",
+        "semantic_hints": [
+          "content",
+          "label"
+        ],
+        "canonical_target": "post_caption",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "published_at",
+        "source_field": "timestamp",
+        "kind": "dimension",
+        "physical_type": "datetime",
+        "description": "UTC media publication timestamp.",
+        "semantic_hints": [
+          "time",
+          "publication"
+        ],
+        "canonical_target": "published_at",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "account_reach",
+        "source_field": "reach",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Unique accounts reached during the provider day; not additive across days or accounts.",
+        "semantic_hints": [
+          "reach",
+          "unique"
+        ],
+        "canonical_target": "unique_reach",
+        "aggregation": "max",
+        "non_additive": true
+      },
+      {
+        "field_id": "account_profile_views",
+        "source_field": "profile_views",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Profile views during the provider day.",
+        "semantic_hints": [
+          "profile",
+          "views"
+        ],
+        "canonical_target": "profile_views",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "media_shares",
+        "source_field": "shares",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Current lifetime shares for the media object at pull time.",
+        "semantic_hints": [
+          "engagement",
+          "snapshot"
+        ],
+        "canonical_target": "shares",
+        "aggregation": "latest",
+        "non_additive": true
+      },
+      {
+        "field_id": "media_comments",
+        "source_field": "comments",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Current lifetime comments for the media object at pull time.",
+        "semantic_hints": [
+          "engagement",
+          "snapshot"
+        ],
+        "canonical_target": "comments",
+        "aggregation": "latest",
+        "non_additive": true
+      }
+    ],
+    "reports": [
+      {
+        "id": "account_daily",
+        "display_name": "Account daily insights",
+        "description": "Daily reach and profile views for one selected professional account; missing metrics remain absent rather than zero.",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "dispatch": {
+          "callable": "pull_account_daily"
+        },
+        "landing": "fact_daily_kpi",
+        "metrics": [
+          "account_reach",
+          "account_profile_views"
+        ],
+        "dimensions": [
+          "date",
+          "account_id"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "account_id"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "none",
+          "completeness": "complete",
+          "max_pages": null,
+          "row_limit": null,
+          "truncation_signal": "none"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "request page"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        }
+      },
+      {
+        "id": "media_performance",
+        "display_name": "Post and Reel performance",
+        "description": "Current cumulative shares and comments for owned non-Story media published in the requested date window.",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "dispatch": {
+          "callable": "pull_media_performance"
+        },
+        "landing": "fact_daily_kpi",
+        "metrics": [
+          "media_shares",
+          "media_comments"
+        ],
+        "dimensions": [
+          "date",
+          "account_id",
+          "media_id",
+          "media_type",
+          "media_product_type",
+          "permalink",
+          "caption",
+          "published_at"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "account_id",
+            "media_id"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "cursor",
+          "completeness": "complete",
+          "max_pages": null,
+          "row_limit": null,
+          "truncation_signal": "none"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "media list page plus one request per media"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        }
+      }
+    ]
+  },
+  "_max_provider_backfill_days_note": "No max_provider_backfill_days is declared: this provider's published reporting window has not been established as of 2026-08-17. The key is left absent rather than filled with an estimate -- an invented re-collection bound promises the operator a history the provider never committed to. Establishing it means reading the provider's own documentation and recording the URL here, as the modules that do declare one have done."
+}

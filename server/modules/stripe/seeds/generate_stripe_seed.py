@@ -103,6 +103,15 @@ COLUMNS = [
     "revenue_source_currency",
 ]
 
+# AI-213 (2026-08-17, AI-66 motif): seed corpus anchor. A date.today() default
+# made the corpus machine-day-local, so the mart and the evals fixtures were
+# underivable. Same env seam as google-analytics; the default is the shared
+# corpus anchor (2026-07-19), which the Shopify generator also defaults to --
+# the Stripe/Shopify window alignment now rests on the anchor, not on the clock.
+DEFAULT_SEED_END_DATE: date = date.fromisoformat(
+    os.environ.get("TOOROW_SEED_END_DATE", "2026-07-19")
+)
+
 
 def _load_shopify_seed_generator():
     """Import the Shopify seed generator (module-owned) to correlate the Stripe seed.
@@ -145,14 +154,15 @@ def generate_rows(
     the golden conformance fixture is a SLICE of these rows and its expected_facts are
     produced by connector.transform() over the same rows.
 
-    end_date defaults to date.today() so the Stripe window aligns with the Shopify seed
-    (which also defaults to today()). Pass FIXTURE_END_DATE explicitly when regenerating
-    golden / expected fixture files to keep them reproducible.
+    end_date defaults to DEFAULT_SEED_END_DATE so the Stripe window aligns with the
+    Shopify seed (which defaults to the same anchor -- AI-213, never date.today()).
+    Pass FIXTURE_END_DATE explicitly when regenerating golden / expected fixture
+    files to keep them reproducible.
     """
     if end_date is None:
-        # Runtime default: today() so the window aligns with the Shopify seed loader.
-        # For fixture regeneration pass FIXTURE_END_DATE explicitly.
-        end_date = date.today()
+        # Anchored default (AI-213): the window aligns with the Shopify seed via
+        # the shared anchor. For fixture regeneration pass FIXTURE_END_DATE.
+        end_date = DEFAULT_SEED_END_DATE
     if rng is None:
         # Fixed seed -> deterministic seed data (reproducible fixtures/tests).
         rng = random.Random(15_7_2026)

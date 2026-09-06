@@ -35,7 +35,9 @@ ASCII-only (AI-03). No live GA4 / Postgres required.
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 from datetime import date
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -59,6 +61,29 @@ _SEEDS_DIR = (
     / "seeds"
 )
 
+
+# ---------------------------------------------------------------------------
+# The scope check needs a CONNECTION, not only a verdict.
+#
+# `core.cards_api` opens `core.db.get_connection()` and only then asks
+# `identity_can_read_project`. Since the fail-closed fix (commit `5e6e9356`,
+# "le controle de portee des cartes REST refuse au lieu de passer outre"), a
+# scope check that cannot be PERFORMED is a refusal -- it used to swallow the
+# exception and continue. So on a machine with no reachable Postgres these seams
+# stopped at 404 `forbidden` before the `identity_can_read_project` mock was ever
+# consulted: the verdict was mocked, the connection was not.
+#
+# Patching the connection is what the sibling seam suites already do
+# (`tests/core/test_cards_api.py`, `tests/integration/test_cards_integration_seams.py`);
+# these three GA4 files were the ones that never did. It also makes them
+# hermetic, which they were only pretending to be -- they passed or failed
+# depending on whether the developer happened to have a database running.
+# ---------------------------------------------------------------------------
+
+@contextmanager
+def _scope_check_connection():
+    """A connection the scope check can open; the verdict itself stays mocked."""
+    yield MagicMock()
 
 def _load_generate_seed():
     spec = importlib.util.spec_from_file_location(
@@ -451,7 +476,9 @@ def test_usertypes_card_endpoint_carries_user_type_rows_through_asgi():
 
     with patch("core.warehouse.query_daily_report", return_value=rows) as _mart, patch(
         "core.cards_api._check_auth", new=AsyncMock(return_value=(True, "test@test"))
-    ), patch("core.project_access.identity_has_project_access", return_value=True):
+    ), patch("core.project_access.identity_can_read_project", return_value=True), patch(
+        "core.db.get_connection", new=_scope_check_connection
+    ):
         with TestClient(app, raise_server_exceptions=True) as c:
             resp = c.get(
                 "/api/cards?project_id=default&template=usertypes"
@@ -497,7 +524,9 @@ def test_usertypes_card_envelope_carries_user_type_donut_with_fr_labels():
 
     with patch("core.warehouse.query_daily_report", return_value=rows), patch(
         "core.cards_api._check_auth", new=AsyncMock(return_value=(True, "test@test"))
-    ), patch("core.project_access.identity_has_project_access", return_value=True):
+    ), patch("core.project_access.identity_can_read_project", return_value=True), patch(
+        "core.db.get_connection", new=_scope_check_connection
+    ):
         with TestClient(app, raise_server_exceptions=True) as c:
             resp = c.get(
                 "/api/cards?project_id=default&template=usertypes"
@@ -530,7 +559,7 @@ def test_usertypes_card_envelope_carries_user_type_donut_with_fr_labels():
 
     # FR labels must be present (not raw 'new'/'returning'/'unknown').
     fr_labels = {s["label"] for s in slices}
-    expected_fr = {"Nouveaux", "Fidèles", "Indéterminés"}
+    expected_fr = {"Nouveaux", "Returning", "Undetermined"}
     assert fr_labels == expected_fr, (
         f"Expected FR labels {expected_fr} but got {fr_labels} -- "
         "_USER_TYPE_LABELS map not applied in _resolve_donut for user_type dimension"

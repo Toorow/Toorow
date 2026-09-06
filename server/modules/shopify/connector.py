@@ -39,23 +39,25 @@ from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-# Module-level FastMCP instance — the public surface the loader mounts.
+# Module-level FastMCP instance, kept as the conformance surface (AD-1 envelope,
+# validated by server/tests/conformance/test_envelope.py). Since AD-42 the core
+# no longer mounts it: execution uses the Datastream-parameterized core tools.
 mcp_app = FastMCP("shopify")
 
-# Story 25.7 (AC3): Shopify uses pure HTTP status semantics — no provider-level
-# numeric codes refine beyond the HTTP status. error_map is intentionally empty
-# (see manifest._error_map_note). Cached here so classify_http_error receives a
-# consistent map on every call (AD-2: core never hardcodes provider codes).
+# Story 25.7 (AC3): Shopify emits no numeric provider code -- its error
+# vocabulary is the verbatim message carried in the body's "errors" value. The
+# map lives in manifest.json (AD-2: core never hardcodes provider codes) and is
+# cached here so classify_http_error receives a consistent map on every call.
 _ERROR_MAP: dict[str, str] | None = None
 
 
 def _load_error_map() -> dict[str, str]:
-    """Return the manifest's ``error_map`` (empty for Shopify), cached."""
+    """Return the manifest's ``error_map`` (status:message -> class), cached."""
     global _ERROR_MAP
     if _ERROR_MAP is None:
         manifest_path = Path(__file__).parent / "manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        _ERROR_MAP = manifest.get("error_map", {})
+        _ERROR_MAP = manifest.get("error_map") or {}
     return _ERROR_MAP
 
 
@@ -107,7 +109,7 @@ def _query_bigquery(sql: str, params: dict) -> list[dict]:
     return [dict(zip(cols, row)) for row in result]
 
 
-def _get_mart_table(db_mode: str) -> str:
+def _get_mart_table(db_mode: str, project_id: str | None) -> str:
     """Fully-qualified mart table reference per engine.
 
     DuckDB: dbt materialises marts into the main_marts schema.
@@ -117,7 +119,7 @@ def _get_mart_table(db_mode: str) -> str:
     if db_mode == "duckdb":
         from core import warehouse_tenancy  # noqa: PLC0415
 
-        return f"{warehouse_tenancy.mart_prefix(None)}fact_daily_kpi"
+        return f"{warehouse_tenancy.mart_prefix(project_id)}fact_daily_kpi"
     dataset = os.environ.get("BQ_MARTS_DATASET", "marts")
     gcp_project = os.environ.get("GCP_PROJECT", "")
     prefix = f"{gcp_project}.{dataset}" if gcp_project else dataset
@@ -149,7 +151,7 @@ def _query_mart(date_from: str, date_to: str, project_id: str = "default") -> li
     # AD-12: MCP server reads marts only — never raw_* tables or CSV.
     """
     db_mode = _get_db_mode()
-    table = _get_mart_table(db_mode)
+    table = _get_mart_table(db_mode, project_id)
 
     if db_mode == "duckdb":
         sql = _MART_QUERY.format(table=table, p_project="?", p_from="?", p_to="?")
@@ -327,7 +329,7 @@ def _insert_raw_rows(
     db_mode: str,
     duckdb_path: str,
 ) -> int:
-    """Insert canonical rows into raw_shopify_orders (DuckDB only at P-dev).
+    """Insert canonical rows into raw_shopify_orders (DuckDB or BigQuery per TOOROW_DB_MODE).
 
     Same self-contained pattern as meta-ads/gsc _insert_raw_rows: the connector owns
     its raw table DDL and never imports from a non-package seeds/ folder.
@@ -335,7 +337,13 @@ def _insert_raw_rows(
     # refund_amount is stored in its OWN column (dedicated, positive). It is NEVER
     # subtracted from revenue here (decision de story 15.4, reference Stripe 15.7).
     """
-    if db_mode == "duckdb":
+    if db_mode in ("duckdb", "bigquery"):
+        # BOTH BACKENDS, ONE PATH. `open_raw_writer` resolves DuckDB or
+        # BigQuery from TOOROW_DB_MODE itself, so this branch already covers
+        # bigquery. An `elif db_mode == "bigquery"` used to sit below it,
+        # unreachable because this test captures both modes -- dead code that
+        # had quietly drifted to a different set of column names and would
+        # have become live the day someone narrowed this condition.
         from core import warehouse_write  # noqa: PLC0415
 
         con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
@@ -367,10 +375,7 @@ def _insert_raw_rows(
         con.close()
         return len(values)
     else:
-        raise ValueError(
-            f"_insert_raw_rows: unsupported db_mode {db_mode!r} at P-dev "
-            "(BigQuery path not yet implemented)"
-        )
+        raise ValueError(f"_insert_raw_rows: unsupported db_mode {db_mode!r}")
 
 
 def _extract_refund_amount(api_order: dict) -> float:
@@ -580,14 +585,20 @@ def pull(
 
         if resp.status_code != 200:
             # Story 25.2/25.7: canonical typed error; provider payload preserved.
-            # error_map is empty for Shopify (pure HTTP semantics, no provider codes).
+            # The manifest error_map keys on Shopify's verbatim `errors` message
+            # (no numeric code exists). The body is handed over UNTOUCHED:
+            # `_extract_provider_codes` reads a bare `errors` string itself, so
+            # the preserved payload stays the evidence the API actually sent.
+            # See manifest._error_map_note.
             from core.pull_errors import classify_http_error  # noqa: PLC0415
 
             try:
                 _body = resp.json()
             except Exception:
                 _body = resp.text
-            raise classify_http_error(resp.status_code, _body, _load_error_map())
+            raise classify_http_error(
+                resp.status_code, _body, _load_error_map()
+            )
 
         payload = resp.json()
         all_orders.extend(payload.get("orders") or [])
@@ -786,7 +797,9 @@ def pull_product_launch(
                 _body = resp.json()
             except Exception:
                 _body = resp.text
-            raise classify_http_error(resp.status_code, _body, _load_error_map())
+            raise classify_http_error(
+                resp.status_code, _body, _load_error_map()
+            )
 
         payload = resp.json()
         all_products.extend(payload.get("products") or [])
@@ -838,6 +851,7 @@ def pull_product_launch(
     return {
         "pull_id": pull_id,
         "event_count": event_count,
+        "row_count": event_count,
         "date_from": date_from,
         "date_to": date_to,
     }
@@ -1119,7 +1133,7 @@ def _insert_catalog_rows(
 
     # AD-22: raw_shopify_orders (the legacy pull() table) is never touched here.
     """
-    if db_mode != "duckdb":
+    if db_mode not in ("duckdb", "bigquery"):
         raise ValueError(f"_insert_catalog_rows: unsupported db_mode {db_mode!r}")
     from core import warehouse_write  # noqa: PLC0415
 
@@ -1273,7 +1287,9 @@ def pull_catalog_daily(
                 _body = resp.json()
             except Exception:
                 _body = resp.text
-            raise classify_http_error(resp.status_code, _body, _load_error_map())
+            raise classify_http_error(
+                resp.status_code, _body, _load_error_map()
+            )
 
         payload = resp.json()
         all_orders.extend(payload.get("orders") or [])

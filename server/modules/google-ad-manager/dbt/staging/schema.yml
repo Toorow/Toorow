@@ -3,7 +3,7 @@ version: 2
 sources:
   - name: raw_google_ad_manager
     description: "Immutable raw landing zone for Google Ad Manager report data (AD-7: append-only)."
-    schema: main
+    schema: "{{ var('raw_schema', 'main') }}"  # 24.4 AC2: org_<wslug>_raw injected by orchestrator, 'main' without var (bit-identique)
     tables:
       - name: raw_google_ad_manager_daily
         description: "Raw GAM Interactive Reports rows, long format. Append-only (AD-7)."

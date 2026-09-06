@@ -18,6 +18,7 @@ from check_migration_catalog import (
 
 _BOUNDARY = re.compile(r"^\s*(BEGIN|COMMIT);\s*(?:--.*)?$", re.IGNORECASE)
 _LOCK_NAME = "toorow:application-migrations"
+_MIGRATION_251_CHECKSUM = "658d2a90cfbf29b98fca8859863b6da6f35e1aea5b1900b8a0aea089a084f7dc"
 _LEDGER_DDL = """
 CREATE SCHEMA IF NOT EXISTS toorow_meta;
 CREATE TABLE IF NOT EXISTS toorow_meta.schema_migrations (
@@ -49,6 +50,26 @@ class Migration:
     @property
     def filename(self) -> str:
         return self.path.name
+
+
+def _compatibility_prelude(migration: Migration) -> str:
+    """Repair the sole known fresh-install parser dependency without checksum drift.
+
+    Migration 251 was already applied with this checksum before its fresh-install
+    path exposed PostgreSQL's sibling ALTER COLUMN name resolution. A 252/253
+    migration cannot repair a predecessor that never commits, so the official
+    runner performs the idempotent ADD in the same transaction immediately before
+    the byte-identical 251 body. Existing ledgers skip 251 and therefore skip this.
+    """
+    if (
+        migration.identifier == 251
+        and migration.filename == "251_feedback_review_exact_cohorts.sql"
+        and migration.checksum == _MIGRATION_251_CHECKSUM
+    ):
+        return (
+            "ALTER TABLE app.render_share_feedback ADD COLUMN IF NOT EXISTS observed_surface TEXT;"
+        )
+    return ""
 
 
 def _migration_body(path: Path) -> str:
@@ -109,9 +130,7 @@ def _prepare_ledger(conn: Any) -> None:
         return
     with conn.cursor() as cursor:
         cursor.execute(
-            "SELECT EXISTS ("
-            "SELECT 1 FROM information_schema.tables WHERE table_schema = 'app'"
-            ")"
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'app')"
         )
         if cursor.fetchone()[0]:
             raise MigrationApplyError(
@@ -137,6 +156,8 @@ def _ledger_rows(conn: Any) -> dict[int, tuple[str, str, str]]:
 def _validate_ledger(
     migrations: list[Migration],
     rows: dict[int, tuple[str, str, str]],
+    *,
+    fill_gaps: frozenset[int] = frozenset(),
 ) -> None:
     catalog = {migration.identifier: migration for migration in migrations}
     for identifier, (filename, checksum, status) in rows.items():
@@ -158,9 +179,15 @@ def _validate_ledger(
     if rows:
         highest = max(rows)
         missing = [identifier for identifier in range(1, highest + 1) if identifier not in rows]
-        if missing:
-            rendered = ", ".join(f"{identifier:03d}" for identifier in missing)
-            raise MigrationApplyError(f"migration ledger is not continuous; missing: {rendered}")
+        unauthorized = [identifier for identifier in missing if identifier not in fill_gaps]
+        if unauthorized:
+            rendered = ", ".join(f"{identifier:03d}" for identifier in unauthorized)
+            flags = " --fill-gap ".join(f"{identifier:d}" for identifier in unauthorized)
+            raise MigrationApplyError(
+                f"migration ledger is not continuous; missing: {rendered}. "
+                "Nothing can be applied until the hole is closed. To close it, name it: "
+                f"--fill-gap {flags}"
+            )
         failed = [identifier for identifier, row in rows.items() if row[2] == "failed"]
         if failed and (len(failed) > 1 or failed[0] != highest):
             raise MigrationApplyError(
@@ -174,7 +201,6 @@ def _verify_schema_contract(conn: Any) -> None:
         "app.organizations",
         "app.org_members",
         "app.projects",
-        "app.project_members",
         "app.operations",
         "app.invitations",
         "app.invitation_exchange_sessions",
@@ -216,7 +242,7 @@ def _verify_schema_contract(conn: Any) -> None:
         )
         row = cursor.fetchone()
         values = set(re.findall(r"'([^']+)'", row[0] if row else ""))
-        if values != {"nightly", "manual", "hourly"}:
+        if values != {"nightly", "manual", "hourly", "weekly"}:
             raise MigrationApplyError(
                 "schema postcondition invalid datastreams_schedule_mode_check"
             )
@@ -233,17 +259,31 @@ def _verify_schema_contract(conn: Any) -> None:
             raise MigrationApplyError(
                 "schema postcondition missing constraint: ck_invitation_grants_require_org"
             )
-        cursor.execute(
-            "SELECT to_regclass('app.operations_platform_idempotency') IS NOT NULL"
-        )
+        cursor.execute("SELECT to_regclass('app.operations_platform_idempotency') IS NOT NULL")
         if not cursor.fetchone()[0]:
             raise MigrationApplyError(
                 "schema postcondition missing index: operations_platform_idempotency"
             )
 
+
+def _why(exc: Exception) -> str:
+    """The class AND the sentence. One without the other names no repair.
+
+    Measured 2026-08-17: migration 273 declares RLS policies on 67 tables, so it
+    needs the schema OWNER. Run as the deployed application role it failed, and
+    the only thing anyone was told -- on screen and in the ledger -- was
+    `migration 273 ... failed` and the word `InsufficientPrivilege`. Neither says
+    WHICH object, so the runner had to be bypassed and the file applied by hand
+    to learn that the answer was "must be owner of table ...". A tool that
+    refuses without naming what it lacks costs exactly that detour.
+    """
+    detail = " ".join(str(exc).split())
+    return f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
+
+
 def _record_failure(conn: Any, migration: Migration, exc: Exception) -> None:
     sqlstate = getattr(exc, "sqlstate", None)
-    message = type(exc).__name__[:200]
+    message = _why(exc)[:2000]
     with conn.transaction():
         with conn.cursor() as cursor:
             cursor.execute(
@@ -271,19 +311,57 @@ def _record_failure(conn: Any, migration: Migration, exc: Exception) -> None:
             )
 
 
+def _validate_gap_requests(
+    identifiers: set[int],
+    rows: dict[int, tuple[str, str, str]],
+    fill_gaps: frozenset[int],
+) -> None:
+    """Refuse a --fill-gap that does not name an actual hole in the ledger.
+
+    A hole is an identifier the ledger has NO row for at all, below its head. A
+    recorded failure is a retry (the runner already reapplies it), and anything
+    above the head is ordinary pending work. Letting the flag cover those cases
+    would turn a narrow repair into a way to wave the continuity guard through.
+    """
+    head = max(rows) if rows else 0
+    for identifier in sorted(fill_gaps):
+        if identifier not in identifiers:
+            raise MigrationApplyError(f"--fill-gap {identifier:03d} does not exist in the catalog")
+        if identifier in rows:
+            raise MigrationApplyError(
+                f"--fill-gap {identifier:03d} is not a gap: the ledger records it as "
+                f"{rows[identifier][2]}"
+            )
+        if identifier > head:
+            raise MigrationApplyError(
+                f"--fill-gap {identifier:03d} is ahead of ledger head {head:03d}; "
+                "that is ordinary pending work, applied without a flag"
+            )
+
+
 def apply_migrations(
     conn: Any,
     migrations: list[Migration],
     *,
     target: int | None = None,
+    fill_gaps: frozenset[int] = frozenset(),
 ) -> tuple[list[int], list[int]]:
-    """Apply pending migrations through target; return (applied, skipped)."""
+    """Apply pending migrations through target; return (applied, skipped).
+
+    ``fill_gaps`` names identifiers that are missing BELOW the ledger head. The
+    continuity guard fires before anything is applied, so without this the runner
+    can report a hole and has no path to close it -- including the migration that
+    would close it. Each named gap is still applied by the runner itself, its DDL
+    and its ledger row in ONE transaction: naming a gap authorizes the repair, it
+    never hand-writes a ledger line.
+    """
     identifiers = {migration.identifier for migration in migrations}
     if target is not None and target not in identifiers:
         raise MigrationApplyError(f"migration target does not exist: {target:03d}")
     _prepare_ledger(conn)
     rows = _ledger_rows(conn)
-    _validate_ledger(migrations, rows)
+    _validate_gap_requests(identifiers, rows, fill_gaps)
+    _validate_ledger(migrations, rows, fill_gaps=fill_gaps)
     if target is not None and rows and target < max(rows):
         raise MigrationApplyError(
             f"migration target {target:03d} precedes ledger head {max(rows):03d}"
@@ -301,6 +379,9 @@ def apply_migrations(
         try:
             with conn.transaction():
                 with conn.cursor() as cursor:
+                    prelude = _compatibility_prelude(migration)
+                    if prelude:
+                        cursor.execute(prelude)
                     cursor.execute(migration.body)
                     cursor.execute(
                         """
@@ -328,7 +409,8 @@ def apply_migrations(
                     "failure status could not be recorded"
                 ) from record_exc
             raise MigrationApplyError(
-                f"migration {migration.identifier:03d} {migration.filename} failed"
+                f"migration {migration.identifier:03d} {migration.filename} failed -- "
+                f"{_why(exc)}"
             ) from exc
         applied.append(migration.identifier)
         rows[migration.identifier] = (
@@ -358,11 +440,13 @@ def verify_complete(conn: Any, migrations: list[Migration]) -> list[int]:
     _verify_schema_contract(conn)
     return [migration.identifier for migration in migrations]
 
+
 def _positive_int(value: str) -> int:
     parsed = int(value)
     if parsed <= 0:
         raise argparse.ArgumentTypeError("must be a positive integer")
     return parsed
+
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -375,6 +459,19 @@ def _parser() -> argparse.ArgumentParser:
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--target", type=int, default=None)
     action.add_argument("--verify-complete", action="store_true")
+    parser.add_argument(
+        "--fill-gap",
+        type=_positive_int,
+        action="append",
+        default=None,
+        metavar="IDENTIFIER",
+        dest="fill_gap",
+        help=(
+            "authorize applying a migration that is MISSING below the ledger head. "
+            "Repeatable. The runner still applies it and writes its ledger row in one "
+            "transaction; this only says which hole you meant to close."
+        ),
+    )
     parser.add_argument("--connect-timeout-seconds", type=_positive_int, default=10)
     parser.add_argument("--lock-timeout-seconds", type=_positive_int, default=30)
     parser.add_argument("--statement-timeout-seconds", type=_positive_int, default=900)
@@ -386,6 +483,13 @@ def main(argv: list[str] | None = None) -> int:
     dsn = args.dsn or os.getenv("PLATFORM_DB_URL") or os.getenv("PLATFORM_DATABASE_URL")
     if not dsn:
         print("migration runner requires --dsn or PLATFORM_DB_URL", file=sys.stderr)
+        return 2
+    fill_gaps = frozenset(args.fill_gap or ())
+    if fill_gaps and args.verify_complete:
+        print(
+            "--fill-gap repairs the ledger; --verify-complete only reads it",
+            file=sys.stderr,
+        )
         return 2
     try:
         migrations = load_migrations(args.migrations_dir, verify_manifest=True)
@@ -409,18 +513,26 @@ def main(argv: list[str] | None = None) -> int:
                 if not cursor.fetchone()[0]:
                     raise MigrationApplyError("another migration runner holds the advisory lock")
             try:
-
                 if args.verify_complete:
                     verified = verify_complete(conn, migrations)
                     print(f"migration ledger complete: {len(verified)} applied")
                     return 0
-                applied, skipped = apply_migrations(conn, migrations, target=args.target)
+                applied, skipped = apply_migrations(
+                    conn,
+                    migrations,
+                    target=args.target,
+                    fill_gaps=fill_gaps,
+                )
             finally:
                 with conn.cursor() as cursor:
                     cursor.execute("SELECT pg_advisory_unlock(hashtext(%s))", (_LOCK_NAME,))
     except (MigrationCatalogError, MigrationApplyError) as exc:
         print(f"migration runner failed: {exc}", file=sys.stderr)
         return 1
+    filled = sorted(fill_gaps & set(applied))
+    if filled:
+        rendered = ", ".join(f"{identifier:03d}" for identifier in filled)
+        print(f"migration runner CLOSED A LEDGER HOLE: {rendered} applied out of order")
     print(f"migration runner OK: {len(applied)} applied, {len(skipped)} already applied")
     return 0
 

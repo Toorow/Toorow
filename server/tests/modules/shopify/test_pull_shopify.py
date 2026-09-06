@@ -385,7 +385,7 @@ def test_pull_respects_nango_provider(connector, tmp_path, monkeypatch):
 def test_transform_renames_source_fields_to_canonical(connector):
     """transform() renomme les clés SOURCE de la golden fixture (total_price,
     total_refunded) vers les clés canoniques d'expected_facts (revenue, refund_amount)
-    via le canonical_metric_mapping du manifest — le rename map est réellement exercé
+    via le canonical_metric_mapping du manifest — le rename map est actuallement exercé
     (review-15-4 F-1, AI-54 : la fixture est le vrai payload post-parse, clés API).
 
     review-15-9 F-2 (couverture _parse_order) : la golden fixture est POST-parse par

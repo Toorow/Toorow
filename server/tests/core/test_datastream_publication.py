@@ -40,6 +40,12 @@ from core.datastream_publication import (  # noqa: E402
     resolve_dq_thresholds,
 )
 
+from tests.support.statement_router import (  # noqa: E402
+    StatementInventory,
+    UnknownStatement,
+    describe,
+)
+
 _HASH_A = "a" * 64
 _HASH_B = "b" * 64
 
@@ -324,6 +330,37 @@ def test_every_gate_issue_carries_code_detail_repair():
 # connection).
 # ---------------------------------------------------------------------------
 
+# EVERY STATEMENT THE PUBLICATION COMMIT AND ITS OUT-OF-BAND FAILURE MAKE. One
+# inventory for both fakes in this file, because both drive the same module and a
+# statement named twice with two spellings is the drift this is meant to stop.
+# The `else` each of them carried answered `fetchone() is None`, which
+# `commit_publication` reads as "the execution does not exist" -- so a moved read
+# produced the same refusal as a missing row (AI-317).
+_PUBLICATION = StatementInventory(
+    "test_datastream_publication fakes",
+    execution_state_project=(
+        "select state, project_id",
+        "from app.datastream_executions",
+    ),
+    lock_state=("select state, datastream_id, project_id", "from app.datastream_executions"),
+    execution_row=(
+        "select id, datastream_id, project_id, plan_version_id",
+        "from app.datastream_executions",
+    ),
+    execution_write="update app.datastream_executions",
+    datastream_lock=("from app.datastreams", "for update"),
+    execution_lock=("from app.datastream_executions", "for update"),
+    pointer_swap="update app.datastreams set current_published_execution_id",
+    audit_log="insert into app.audit_log",
+    step_open="insert into app.datastream_execution_step_evidence",
+    step_close="update app.datastream_execution_step_evidence",
+    # FOUND BY THE CONVERSION: the publication log row is the record that the
+    # group happened, and the fake never named it. It fell into the `else`, so
+    # the commit sequence this file is entirely about had one of its three writes
+    # answered by the same branch as a typo.
+    publication_log="insert into app.datastream_publication_log",
+)
+
 
 class _FakeCursor:
     def __init__(self, conn):
@@ -341,11 +378,46 @@ class _FakeCursor:
     def execute(self, sql, params=None):
         self._conn.executed.append((sql, params))
         s = " ".join(sql.split())
-        # Answer the two FOR UPDATE selects commit_publication issues.
-        if "FROM app.datastreams" in s and "FOR UPDATE" in s:
+        # AI-223: `commit_publication` no longer writes `state` itself -- it goes
+        # through `advance_state`, which LOCKS AND RE-READS the row before every
+        # transition. A double that answered one frozen tuple could not represent
+        # a machine, so this one carries the state and moves it, which is also
+        # what lets the test see `ready -> publishing -> published` happen.
+        self.description = None
+        self._last_result = None
+        self.rowcount = 1
+        statement = _PUBLICATION.match(s)
+        if statement == "lock_state":
+            self.description = describe(s)
+            self._last_result = (self._conn.state, self._conn.datastream_id, "proj_a")
+        elif statement == "execution_write":
+            if params:
+                self._conn.state = params[0]
+        elif statement == "execution_row":
+            # `advance_state`'s closing `_fetch_execution`. The sixteen column
+            # names used to be typed out here; they are now DERIVED from the
+            # SELECT and the row is projected through them, so a column added to
+            # the read reaches this fixture without an edit (AI-317).
+            self.description = describe(s)
+            values = {
+                "id": "dse_current",
+                "datastream_id": self._conn.datastream_id,
+                "project_id": "proj_a",
+                "plan_version_id": "dsp_x",
+                "mapping_version_id": "dmap_x",
+                "projection_plan_ref": {},
+                "state": self._conn.state,
+                "content_hash": _HASH_A,
+                "row_count": 100,
+                "created_by": "test",
+            }
+            self._last_result = tuple(values.get(name) for (name,) in self.description)
+        elif statement == "datastream_lock":
+            self.description = describe(s)
             self._last_result = (self._conn.prior_pointer,)
-        elif "FROM app.datastream_executions" in s and "FOR UPDATE" in s:
+        elif statement == "execution_lock":
             # datastream_id, plan_version_id, mapping_version_id, state, content_hash, row_count
+            self.description = describe(s)
             self._last_result = (
                 self._conn.datastream_id,
                 "dsp_x",
@@ -354,15 +426,11 @@ class _FakeCursor:
                 _HASH_A,
                 100,
             )
-        elif s.startswith("UPDATE app.datastreams SET current_published_execution_id"):
+        elif statement == "pointer_swap":
             # The pointer swap is the injected failure point.
             self._conn.pointer_swap_attempts += 1
             if self._conn.fail_on_pointer_swap:
                 raise RuntimeError("injected mid-transaction DB error")
-            self.rowcount = 1
-        else:
-            self._last_result = None
-            self.rowcount = 1
 
     def fetchone(self):
         return self._last_result
@@ -427,7 +495,9 @@ class _OutOfBandConn:
 class _OutOfBandCursor:
     def __init__(self, conn):
         self._conn = conn
-        self.description = [("state",), ("project_id",)]
+        # None until a statement says otherwise: a cursor that has run nothing
+        # has no description, and this one used to claim two columns.
+        self.description = None
         self._result = None
         self.rowcount = 1
 
@@ -440,35 +510,54 @@ class _OutOfBandCursor:
     def execute(self, sql, params=None):
         self._conn.executed.append((sql, params))
         s = " ".join(sql.split())
-        if "SELECT state, project_id FROM app.datastream_executions" in s:
+        self.description = None
+        self._result = None
+        self.rowcount = 1
+        statement = _PUBLICATION.match(s)
+        if statement == "execution_state_project":
+            self.description = describe(s)
             self._result = (self._conn.state, "proj_a")
-        elif "SELECT state, datastream_id, project_id" in s and "FOR UPDATE" in s:
-            self.description = [("state",), ("datastream_id",), ("project_id",)]
+        elif statement == "lock_state":
+            self.description = describe(s)
             self._result = (self._conn.state, "ds_1", "proj_a")
-        elif s.startswith("UPDATE app.datastream_executions"):
+        elif statement == "execution_write":
             self._conn.state = STATE_FAILED
-            self.rowcount = 1
-        elif "INSERT INTO app.audit_log" in s:
-            self.rowcount = 1
-        elif "SELECT id, datastream_id, project_id, plan_version_id" in s:
-            # advance_state's final _fetch_execution: return a full row.
-            self.description = [
-                ("id",), ("datastream_id",), ("project_id",), ("plan_version_id",),
-                ("mapping_version_id",), ("projection_plan_ref",), ("state",),
-                ("state_changed_at",), ("content_hash",), ("row_count",),
-                ("error_code",), ("error_detail",), ("idempotency_key_hash",),
-                ("created_by",), ("created_at",), ("updated_at",),
-            ]
-            self._result = (
-                "dse_current", "ds_1", "proj_a", "dsp_x", "dmap_x", {},
-                self._conn.state, None, None, None, "publication_error",
-                "rolled back", None, "test", None, None,
-            )
-        else:
-            self._result = None
+        elif statement == "execution_row":
+            # advance_state's final _fetch_execution: return a full row, with the
+            # column names DERIVED from the SELECT rather than typed again.
+            self.description = describe(s)
+            values = {
+                "id": "dse_current",
+                "datastream_id": "ds_1",
+                "project_id": "proj_a",
+                "plan_version_id": "dsp_x",
+                "mapping_version_id": "dmap_x",
+                "projection_plan_ref": {},
+                "state": self._conn.state,
+                "error_code": "publication_error",
+                "error_detail": "rolled back",
+                "created_by": "test",
+            }
+            self._result = tuple(values.get(name) for (name,) in self.description)
 
     def fetchone(self):
         return self._result
+
+
+def test_the_publication_fakes_refuse_a_statement_the_commit_never_declared():
+    """AI-317: the `else` answered `fetchone() is None` -- "no such execution".
+
+    That is the exact signal `commit_publication` turns into its refusal, so a
+    rewritten read would have produced a refusal the test would have read as the
+    product's decision. The conversion also found the publication-log INSERT:
+    one of the three writes this whole file is about was never modelled.
+    """
+    conn = _FakeConn(fail_on_pointer_swap=False)
+    cursor = _FakeCursor(conn)
+    with pytest.raises(UnknownStatement) as raised:
+        cursor.execute("SELECT id FROM app.datastream_outputs WHERE datastream_id=%s")
+    assert "app.datastream_outputs" in str(raised.value)
+    assert "publication_log" in str(raised.value)
 
 
 def test_commit_publication_rolls_back_and_fails_out_of_band(monkeypatch):

@@ -13,6 +13,9 @@ Use this order when documents disagree:
 3. **Accepted delivery scope:** current epics, stories and acceptance criteria.
 4. **Implementation reality:** code, migrations, manifests and executable tests.
 5. **Project memory:** `docs/project-context.md` and this documentation index.
+   `docs/product-architecture/README.md` is the concise cross-view control map;
+   its alignment register records decisions that still require canonical
+   reconciliation.
 6. **Research and proposals:** `doc/` informs direction but is not automatically
    binding; every claim must be reconciled with the current implementation.
 7. **Presence documentation:** Mintlify, Astro and Sanity content explain the
@@ -22,6 +25,11 @@ If implementation and a ratified contract disagree, record the discrepancy. Do
 not silently redefine the contract from the code or rewrite code from a stale
 research document.
 
+For a decision that changes several product views, update the relevant concise
+product-architecture page and its alignment row first. Then amend the canonical
+contract and create delivery stories. Do not copy story acceptance criteria,
+test inventories or implementation journals into the high-level map.
+
 ## Standard change loop
 
 All planned product work also follows the story gates in
@@ -30,7 +38,8 @@ Create Story, Dev Story, independent review, checkpoint and atomic commit.
 
 ### 1. Orient
 
-- Read `docs/index.md`, `docs/project-context.md` and the relevant canonical spec.
+- Read `docs/project-context.md`, `docs/product-direction.md`,
+  `docs/product-architecture/README.md` and the relevant canonical spec.
 - Inspect `git status` before touching files.
 - Identify existing user changes and preserve them.
 - Determine whether the change belongs to the shareable application or the

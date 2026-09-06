@@ -18,6 +18,8 @@ import uuid
 
 import pytest
 
+from tests.conftest import purge_fixture_project
+
 _DSN = os.environ.get("TEST_POSTGRES_DSN") or os.environ.get("PLATFORM_DB_URL")
 
 pytestmark = pytest.mark.skipif(
@@ -83,6 +85,8 @@ def test_multi_day_window_with_connection_ref_returns_real_status():
             cur.execute("DELETE FROM app.pull_jobs WHERE id = %s", (job_id,))
             cur.execute("DELETE FROM app.datastreams WHERE id = %s", (ds_id,))
             cur.execute("DELETE FROM app.connection_ref WHERE id = %s", (conn_ref_id,))
-            cur.execute("DELETE FROM app.projects WHERE id = %s", (project_id,))
+            # AI-291: le graphe prend le relais si une table gouvernee
+            # ajoutee depuis retient le projet en ON DELETE RESTRICT.
+            purge_fixture_project(cur.connection, project_id)
         conn.commit()
         conn.close()

@@ -113,7 +113,7 @@ class _Schemas:
 @pytest.mark.anyio
 async def test_org_preview_lists_composition_and_datasets():
     """The preview announces projects, per-table counts and the warehouse datasets."""
-    from core.admin_api import _org_deletion_preview
+    from core.organizations_api import _org_deletion_preview  # noqa: PLC0415
 
     cur = _RoutedCursor(
         one={
@@ -165,7 +165,7 @@ async def test_org_preview_lists_composition_and_datasets():
 @pytest.mark.anyio
 async def test_org_preview_reports_active_projects_as_blocker():
     """An active project is announced as a blocker, not discovered on the 409."""
-    from core.admin_api import _org_deletion_preview
+    from core.organizations_api import _org_deletion_preview  # noqa: PLC0415
 
     cur = _RoutedCursor(
         one={"SELECT id, name, slug FROM app.organizations": ("org_01", "Acme", "acme")},
@@ -188,7 +188,7 @@ async def test_org_preview_reports_active_projects_as_blocker():
 
 @pytest.mark.anyio
 async def test_org_preview_unknown_org_is_404():
-    from core.admin_api import _org_deletion_preview
+    from core.organizations_api import _org_deletion_preview  # noqa: PLC0415
 
     cur = _RoutedCursor(one={})
     with (
@@ -202,7 +202,7 @@ async def test_org_preview_unknown_org_is_404():
 @pytest.mark.anyio
 async def test_org_preview_requires_manager():
     """A non-manager cannot even read what an org is made of."""
-    from core.admin_api import _org_deletion_preview
+    from core.organizations_api import _org_deletion_preview  # noqa: PLC0415
     from starlette.responses import JSONResponse
 
     cur = _RoutedCursor(
@@ -227,7 +227,7 @@ async def test_org_preview_requires_manager():
 @pytest.mark.anyio
 async def test_delete_org_refused_for_non_manager():
     """Story 21.5 gate: a non owner/admin gets 403 and nothing is committed."""
-    from core.admin_api import _delete_org
+    from core.organizations_api import _delete_org  # noqa: PLC0415
     from starlette.responses import JSONResponse
 
     cur = _RoutedCursor(
@@ -252,7 +252,7 @@ async def test_delete_org_refused_for_non_manager():
 @pytest.mark.anyio
 async def test_delete_org_reports_what_was_removed():
     """200 carries `removed`, sourced from the same facts the preview shows."""
-    from core.admin_api import _delete_org
+    from core.organizations_api import _delete_org  # noqa: PLC0415
 
     cur = _RoutedCursor(
         one={
@@ -306,7 +306,7 @@ async def test_delete_org_reports_what_was_removed():
 @pytest.mark.anyio
 async def test_delete_org_no_partial_deletion_when_warehouse_drop_fails():
     """RGPD invariant: an unconfirmable warehouse drop rolls back the whole thing."""
-    from core.admin_api import _delete_org
+    from core.organizations_api import _delete_org  # noqa: PLC0415
 
     cur = _RoutedCursor(
         one={
@@ -361,7 +361,7 @@ def _membership_row(
 @pytest.mark.anyio
 async def test_me_preview_flags_sole_ownership_with_members():
     """The account preview names the org that would be orphaned, and why."""
-    from core.admin_api import _get_my_deletion_preview
+    from core.me_api import _get_my_deletion_preview  # noqa: PLC0415
 
     cur = _RoutedCursor(
         one={"FROM app.user_profiles": (_IDENTITY, "Jean", "jean@example.com", None, None, None)},
@@ -394,7 +394,7 @@ async def test_me_preview_flags_sole_ownership_with_members():
 @pytest.mark.anyio
 async def test_me_preview_lists_org_that_leaves_with_the_account():
     """Sole owner, nobody else active -> the org is announced as leaving too."""
-    from core.admin_api import _get_my_deletion_preview
+    from core.me_api import _get_my_deletion_preview  # noqa: PLC0415
 
     cur = _RoutedCursor(
         one={"FROM app.user_profiles": (_IDENTITY, None, None, None, None, None)},
@@ -413,7 +413,10 @@ async def test_me_preview_lists_org_that_leaves_with_the_account():
     with (
         patch(_AUTH, return_value=(True, _IDENTITY)),
         patch("core.db.get_connection", return_value=_cm(_conn(cur))),
-        patch("core.admin_api._org_deletion_facts", return_value=facts),
+        # AD-43 : l appel est fait DANS `_account_deletion_facts`, qui vit
+        # desormais dans `core.org_lifecycle` -- c est la que le nom se resout.
+        # Un patch sur `core.admin_api` serait un no-op vert.
+        patch("core.org_lifecycle._org_deletion_facts", return_value=facts),
     ):
         resp = await _get_my_deletion_preview(_request())
 
@@ -431,7 +434,7 @@ async def test_me_preview_lists_org_that_leaves_with_the_account():
 
 @pytest.mark.anyio
 async def test_delete_me_requires_confirmation_header():
-    from core.admin_api import _delete_me
+    from core.me_api import _delete_me  # noqa: PLC0415
 
     with patch(_AUTH, return_value=(True, _IDENTITY)):
         resp = await _delete_me(_request())
@@ -442,7 +445,7 @@ async def test_delete_me_requires_confirmation_header():
 @pytest.mark.anyio
 async def test_delete_me_refuses_sole_owner_with_active_members():
     """409 with the remedy spelled out -- no org is ever left ownerless."""
-    from core.admin_api import _delete_me
+    from core.me_api import _delete_me  # noqa: PLC0415
 
     cur = _RoutedCursor(
         one={"FROM app.user_profiles": (_IDENTITY, None, None, None, None, None)},
@@ -468,13 +471,15 @@ async def test_delete_me_refuses_sole_owner_with_active_members():
 
 @pytest.mark.anyio
 async def test_delete_me_erases_memberships_and_states_what_is_retained():
-    from core.admin_api import _delete_me
+    from core.me_api import _delete_me  # noqa: PLC0415
 
     cur = _RoutedCursor(
         one={"FROM app.audit_log": (12,)},
         rowcounts={
             "DELETE FROM app.org_members": 2,
-            "DELETE FROM app.project_members": 3,
+            # Story 46.4 retired `app.project_members`: a Project authority is an
+            # explicit `resource_grants` row now, and the receipt names it.
+            "DELETE FROM app.resource_grants": 3,
             "DELETE FROM app.user_profiles": 1,
         },
     )
@@ -491,7 +496,7 @@ async def test_delete_me_erases_memberships_and_states_what_is_retained():
     with (
         patch(_AUTH, return_value=(True, _IDENTITY)),
         patch("core.db.get_connection", return_value=_cm(conn)),
-        patch("core.admin_api._account_deletion_facts", return_value=facts),
+        patch("core.me_api._account_deletion_facts", return_value=facts),
         patch("core.audit.insert_audit_row", return_value="aud_1"),
     ):
         resp = await _delete_me(_request(headers={"X-Confirm-Delete": "erase-account"}))
@@ -502,7 +507,7 @@ async def test_delete_me_erases_memberships_and_states_what_is_retained():
     assert body["erased"] == {
         "profile": True,
         "org_memberships": 2,
-        "project_memberships": 3,
+        "project_grants": 3,
         "organizations": [],
     }
     # The honest half: audit entries survive, and the payload says why.
@@ -514,7 +519,7 @@ async def test_delete_me_erases_memberships_and_states_what_is_retained():
 @pytest.mark.anyio
 async def test_delete_me_erases_the_orgs_that_belong_to_nobody_else():
     """A sole-member org leaves with the account -- warehouse datasets included."""
-    from core.admin_api import _delete_me
+    from core.me_api import _delete_me  # noqa: PLC0415
 
     cur = _RoutedCursor(one={"FROM app.audit_log": (4,)})
     conn = _conn(cur)
@@ -537,9 +542,14 @@ async def test_delete_me_erases_the_orgs_that_belong_to_nobody_else():
     with (
         patch(_AUTH, return_value=(True, _IDENTITY)),
         patch("core.db.get_connection", return_value=_cm(conn)),
-        patch("core.admin_api._account_deletion_facts", return_value=facts),
+        patch("core.me_api._account_deletion_facts", return_value=facts),
         patch(
-            "core.admin_api._erase_org_transactional",
+            # Le binding suit L APPELANT, jamais la source. `_delete_me` a
+            # demenage deux fois : `admin_api` hier, `me_api` aujourd hui -- et
+            # cette ligne a suivi les deux fois. Ce n est plus a retenir : le
+            # garde `test_patch_targets_follow_the_caller` l a signalee tout
+            # seul, ce qui est le seul moyen de ne plus se tromper ici.
+            "core.me_api._erase_org_transactional",
             return_value=(erase_result, None),
         ) as erase,
         patch("core.audit.insert_audit_row", return_value="aud_1"),
@@ -559,7 +569,7 @@ async def test_delete_me_erases_the_orgs_that_belong_to_nobody_else():
 @pytest.mark.anyio
 async def test_delete_me_stops_when_an_org_erasure_is_refused():
     """A refused org erasure aborts the account erasure -- and says so."""
-    from core.admin_api import _delete_me
+    from core.me_api import _delete_me  # noqa: PLC0415
     from starlette.responses import JSONResponse
 
     cur = _RoutedCursor()
@@ -582,9 +592,14 @@ async def test_delete_me_stops_when_an_org_erasure_is_refused():
     with (
         patch(_AUTH, return_value=(True, _IDENTITY)),
         patch("core.db.get_connection", return_value=_cm(conn)),
-        patch("core.admin_api._account_deletion_facts", return_value=facts),
+        patch("core.me_api._account_deletion_facts", return_value=facts),
         patch(
-            "core.admin_api._erase_org_transactional", return_value=(None, refusal)
+            # Le binding suit L APPELANT, jamais la source. `_delete_me` a
+            # demenage deux fois : `admin_api` hier, `me_api` aujourd hui -- et
+            # cette ligne a suivi les deux fois. Ce n est plus a retenir : le
+            # garde `test_patch_targets_follow_the_caller` l a signalee tout
+            # seul, ce qui est le seul moyen de ne plus se tromper ici.
+            "core.me_api._erase_org_transactional", return_value=(None, refusal)
         ),
     ):
         resp = await _delete_me(_request(headers={"X-Confirm-Delete": "erase-account"}))

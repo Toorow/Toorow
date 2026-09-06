@@ -21,7 +21,8 @@ Story 9.7 — per-card builders:
     * produces <= 3 lines
     * cites numbers with provenance (connector:fact + pull_id style)
     * NEVER states a cause absent from the provided context_events (AD-9):
-      emits "Contexte manquant pour cette période." when context_events == []
+      emits the ``context_missing`` phrase verbatim when context_events == []
+      (the sentence itself is spelled once, in ``core.narrative_phrases``)
 
 Builder signature::
 
@@ -31,12 +32,19 @@ Builder signature::
         rollup: dict,             -- {metric: {value, delta, delta_pct, ...}}
         context_events: list[dict],
         pull_ids: list[str],
+        dimension_labels: dict | None = None,  -- the client's word per dimension
     ) -> str
 
   ``block_data`` carries the resolved payloads produced by the block resolvers in
   cards.py — e.g. block_data["bar"]["bars"], block_data["donut"]["slices"],
   block_data["gauge"]["value"] / "delta". This lets each builder cite the EXACT
   numbers the card renders, guaranteeing comment ↔ card consistency.
+
+  ``dimension_labels`` is the SAME already-resolved map the card's block titles are
+  composed from (``cards.get_card`` reads it once at cards.py:4197 and hands one
+  object to both). A sentence that names a dimension prints the client's word for
+  it — see ``dimension_word`` — so a heading and the sentence under it can never
+  call one dimension two things.
 
 # AD-1 ENFORCEMENT: This module has zero imports from warehouse, modules, or BigQuery.
 # It receives only pre-computed rollups, context events, alert dicts, and resolved
@@ -47,32 +55,127 @@ Builder signature::
 
 from __future__ import annotations
 
+# The label-source vocabulary of `meta.dimension_labels`, from the module that
+# declares the envelope contract. `core.envelope` imports nothing and reaches no
+# store, so reading it here does not give the narration an inch of data access
+# (AD-1, `scripts/check_narrative_no_raw.py`).
+from core.envelope import LABEL_SOURCE_CLIENT
+
 # ---------------------------------------------------------------------------
-# French metric labels (UX-DR10 French-first). Source-agnostic (AD-2): these are
-# warehouse-vocabulary metric names, not module names. Unknown metrics fall back
-# to their raw metric key.
+# THE WORDS ARE NOT IN THIS FILE, and that is the amendment of 2026-08-25
+# (`analyze-and-test.md`, « how a narrative sentence is rendered »), which is
+# Jean's arbitration of 2026-08-22 made mechanical: a récit is rendered in the
+# READER's language, so a narrative sentence written into the code -- in any
+# language -- is the defect. This module keeps the FORM of every sentence (which
+# facts, in which order, with which citation) and names each one by a stable
+# English key; `core.narrative_phrases` decides how that key reads.
+#
+# `core.narrative_phrases` imports nothing, so AD-1 is untouched.
 # ---------------------------------------------------------------------------
-_METRIC_LABELS: dict[str, str] = {
-    "clicks": "Clics",
-    "impressions": "Impressions",
-    "sessions": "Sessions",
-    "active_users": "Utilisateurs actifs",
-    "conversions": "Conversions",
-    "cost": "Coût",
-    "revenue": "Revenu",
-    "average_position": "Position moyenne",
-    "roas": "ROAS",
-    "ctr": "CTR",
-    "cpa": "CPA",
-}
+from core.narrative_phrases import dimension_default, metric_label, phrase
 
 # AD-9 / HG-1: the exact verbatim line emitted when no context events and no alerts
-# are present. NEVER omit, NEVER invent a cause.
-_CONTEXT_MISSING_LINE = "Contexte manquant pour cette période."
+# are present. NEVER omit, NEVER invent a cause. The NAME stays here -- callers and
+# tests read it as the contract; only its spelling moved to the catalogue.
+_CONTEXT_MISSING_LINE = phrase("context_missing")
+
+
+def context_absence_line(
+    context_unavailable: object, *, read_and_empty: str | None
+) -> str | None:
+    """THE one place a reader holding no context event picks which absence it says.
+
+    AI-350, and it is the class of AI-344 rather than one more instance of it.
+    "No event to show" has two causes that must never share a sentence: the window
+    was READ and holds none, or no store could serve it. Every reader of context
+    events reaches this fork -- the report's "Why" section, the daily report's
+    zero-row branch, the morning briefing's header line -- and each one used to
+    decide it for itself, which is how the zero-row branch of ``get_daily_report``
+    kept saying "aucun événement connu" while ``meta.context_events_unavailable``
+    said the opposite on the same response.
+
+    ``context_unavailable`` is the ``{reason, repair}`` payload of
+    ``core.context_events.ContextEventsUnavailable``; anything else (``None``, an
+    empty dict, a value of another type) means the window WAS read.
+
+    ``read_and_empty`` is the caller's OWN sentence for a read-and-empty window --
+    ``context_missing`` in the narrative, ``summary_context_none`` in the rollup
+    summary -- because those two surfaces have always worded that fact differently
+    and this function is not the place to unify them. ``None`` means the caller
+    says nothing at all when the window was read (the briefing header, which does
+    not spend a line on a non-event).
+
+    The unread sentence, on the other hand, is ONE clause for the whole product:
+    ``narrative_phrases``' ``context_unavailable`` (context-hub.md, note "Where
+    each reader carries the unread window", 2026-09-01 -- "the phrase is the one
+    from the catalogue, never a second wording"). The reason and the repair ride
+    the envelope, never the sentence.
+    """
+    if isinstance(context_unavailable, dict) and context_unavailable:
+        return phrase("context_unavailable")
+    return read_and_empty
+
+
+# How operator-authored commentary guidance is framed on the model channel
+# (story 53.5, CAV-18).
+#
+# `llm_commentary_guidelines` is free text an operator stores per report. It used
+# to be appended to the narrative prompt with no frame, so a directive like
+# "attribute drops to seasonality" reached the model indistinguishable from the
+# deterministic, cited comment sitting next to it -- and the model's elaboration
+# then carried that card's credibility while asserting a cause no evidence
+# supports. The deterministic builder already refuses to state an absent cause
+# (AD-9, `_CONTEXT_MISSING_LINE`); this frame extends the SAME rule to the channel
+# where the model elaborates, instead of leaving it enforced on one half only.
+#
+# Shared by `cards._build_summary` and `reports._build_report_summary` so the two
+# cannot drift on the wording that carries the constraint.
+GUIDANCE_FRAME = phrase("operator_guidance_frame")
 
 # Citation tightness rule (AC2): the full token including parens must not exceed
 # this many characters. When a ULID pull_id would push past it, truncate pull_id.
 _MAX_CITATION_CHARS = 60
+
+
+# ---------------------------------------------------------------------------
+# Story 27.9 -- THE CLIENT'S WORD IN A SENTENCE.
+#
+# governance.md, "A client label reaches every surface that shows the number",
+# lists a narrative sentence beside a chart and an axis. The render path was armed
+# and this one was not: a card whose heading read "Users by Terminal" (the client's
+# word, substituted by `cards._resolve_block_title`) carried a comment underneath
+# saying "Segment dominant" -- one dimension called two things in one session,
+# which is the defect the label exists to prevent, not a smaller version of it.
+#
+# AD-1 DECIDES WHERE THE RESOLUTION LIVES, AND IT IS NOT HERE. The narration reads
+# nothing: `cards.get_card` already resolves the map ONCE
+# (`dimension_lineage.resolve_report_dimension_labels`, cards.py:4197) and hands the
+# SAME object to the block titles and to the builders below, so the heading and the
+# sentence under it cannot disagree. `scripts/check_narrative_no_raw.py` keeps that
+# true mechanically.
+# ---------------------------------------------------------------------------
+
+
+def dimension_word(dimension_labels: dict | None, name: str, default: str) -> str:
+    """The word a SENTENCE prints for the canonical dimension *name* (PURE).
+
+    Same contract as ``cards._resolve_block_title``, and deliberately the same
+    shape, because it is the same rule on a second surface:
+
+    * the client's own word wins whenever one was stored for this dimension;
+    * where nobody named it the sentence keeps *default* -- the prose it ships,
+      which is the prose a person can read;
+    * the canonical identifier NEVER reaches the sentence. "Premier
+      device_category" is exactly what the label exists to prevent, so a map
+      entry that merely falls back to the identifier is treated as no name at
+      all;
+    * no label is ever invented: an absent map, an absent entry and a fallback
+      entry all yield the shipped prose, unchanged.
+    """
+    entry = (dimension_labels or {}).get(name) or {}
+    if entry.get("label_source") == LABEL_SOURCE_CLIENT and entry.get("display_label"):
+        return str(entry["display_label"])
+    return default
 
 
 def _format_number(value) -> str:
@@ -98,17 +201,28 @@ def _metric_citation(info: dict) -> str:
     Truncates ``pull_id`` to the first 10 chars only if the full token would exceed
     the 60-char tightness budget. Emits ``(contexte manquant)`` when provenance is
     absent (AD-9 — never fabricate a source).
+
+    MULTI-SOURCE. When the rollup value adds several connectors together, the
+    citation must not read as one source — that misattribution is what made a
+    cross-source sum look like a single provider's figure. ``rollup._provenance``
+    supplies ``source_systems``; a value built from more than one is cited as
+    ``a+b`` and, when that would blow the tightness budget, as ``N sources``. The
+    count is never dropped: losing "how many" is the failure, losing "which ones"
+    is only a display limit.
     """
     source_system = info.get("source_system") or ""
     source_field = info.get("source_field") or ""
     pull_id = info.get("pull_id")
+    source_count = int(info.get("source_count") or 0)
 
     if not pull_id or not source_system:
-        return "(contexte manquant)"
+        return phrase("citation_unavailable")
 
     token = f"({source_system}:{source_field}, {pull_id})"
     if len(token) > _MAX_CITATION_CHARS:
         token = f"({source_system}:{source_field}, {str(pull_id)[:10]})"
+    if len(token) > _MAX_CITATION_CHARS and source_count > 1:
+        token = f"({source_count} sources:{source_field}, {str(pull_id)[:10]})"
     return token
 
 
@@ -118,7 +232,7 @@ def _delta_fragment(info: dict) -> str:
     period = info.get("period") or ""
     if delta_pct is None:
         return ""
-    return f" ({delta_pct} vs {period})"
+    return phrase("delta_vs_period", delta_pct=delta_pct, period=period)
 
 
 def _what_lines(rollup: dict, narrative_prompt: str | None) -> list[str]:
@@ -140,11 +254,42 @@ def _what_lines(rollup: dict, narrative_prompt: str | None) -> list[str]:
         return (0 if delta is not None else 1, -abs(delta) if delta is not None else 0.0)
 
     for metric, info in sorted(rollup.items(), key=_sort_key):
-        label = _METRIC_LABELS.get(metric, metric)
-        value_str = _format_number(info.get("value"))
-        delta_str = _delta_fragment(info)
+        label = metric_label(metric)
         citation = _metric_citation(info)
-        lines.append(f"{label}: {value_str}{delta_str} {citation}")
+        # A combined total the reconciliation gate refused is not replaced by a
+        # plausible one: the line states the refusal and gives each source's own
+        # figure, so a reader can still act without being handed a sum that may
+        # double-count. `rollup._combination_refusal` owns the decision.
+        refusal = info.get("combination_refused")
+        if refusal:
+            per_source = info.get("per_source") or {}
+            detail = " ; ".join(
+                phrase("metric_per_source", name=name, value=_format_number(value))
+                for name, value in sorted(per_source.items())
+            )
+            lines.append(
+                phrase(
+                    "metric_combination_refused",
+                    label=label,
+                    refusal=refusal,
+                    detail=(
+                        phrase("metric_combination_detail", detail=detail)
+                        if detail
+                        else ""
+                    ),
+                    citation=citation,
+                )
+            )
+            continue
+        lines.append(
+            phrase(
+                "metric_line",
+                label=label,
+                value=_format_number(info.get("value")),
+                delta=_delta_fragment(info),
+                citation=citation,
+            )
+        )
     return lines
 
 
@@ -157,23 +302,33 @@ def _what_lines(rollup: dict, narrative_prompt: str | None) -> list[str]:
 # place that decides how a market bucket is named in prose, so no card builder
 # has to re-derive it (and none may fall back to the raw code).
 # ---------------------------------------------------------------------------
-OTHER_MARKETS_BUCKET_ID = "__other_markets__"
-UNKNOWN_MARKET_BUCKET_ID = "__unknown_market__"
+# Story 48.2: a bucket is identified by its KIND, not by a magic id. Rest of
+# World is now a governed node whose id differs per Project and whose label the
+# operator chooses, so a hard-coded `__other_markets__` string would name
+# nothing. Unknown keeps a reserved id because it is an evidence state.
+UNKNOWN_MARKET_BUCKET_ID = "__unknown__"
 
-# Prose used for the two non-country groupings. Deliberately NOT phrased as a
-# place: they are reporting groupings, not markets and not countries.
-_OTHER_MARKETS_PHRASE = "Hors marchés suivis"
-_UNKNOWN_MARKET_PHRASE = "Géographie non résolue"
+# Prose for the two non-country groupings. Deliberately NOT phrased as a place:
+# they are reporting groupings, not markets and not countries. Their WORDS are in
+# the catalogue like every other sentence; the two names stay here because the
+# rule they carry -- « a grouping is never named like a country » -- is this
+# module's, not the catalogue's.
+_REST_OF_WORLD_PHRASE = phrase("market_rest_of_world")
+_UNKNOWN_MARKET_PHRASE = phrase("market_unknown")
+
+
+def _bucket_kind(bucket: dict) -> str:
+    for key in ("geography_bucket_kind", "market_kind", "kind"):
+        value = bucket.get(key)
+        if value:
+            return str(value)
+    return ""
 
 
 def is_country_market_bucket(bucket: dict) -> bool:
-    """True only for a real client-defined market (never Other/Unknown)."""
+    """True only for a real client-defined market (never Rest of World/Unknown)."""
 
-    kind = bucket.get("market_kind") or bucket.get("kind")
-    bucket_id = bucket.get("market_id") or bucket.get("id") or bucket.get("breakdown_value")
-    if bucket_id in {OTHER_MARKETS_BUCKET_ID, UNKNOWN_MARKET_BUCKET_ID}:
-        return False
-    return kind == "tracked"
+    return _bucket_kind(bucket) == "assigned"
 
 
 def market_display_label(bucket: dict) -> str:
@@ -185,12 +340,13 @@ def market_display_label(bucket: dict) -> str:
     is never invented from a code.
     """
 
-    bucket_id = bucket.get("market_id") or bucket.get("id") or bucket.get("breakdown_value")
-    if bucket_id == OTHER_MARKETS_BUCKET_ID:
-        return _OTHER_MARKETS_PHRASE
-    if bucket_id == UNKNOWN_MARKET_BUCKET_ID:
-        return _UNKNOWN_MARKET_PHRASE
+    kind = _bucket_kind(bucket)
     label = bucket.get("market_label") or bucket.get("label")
+    if kind == "unknown":
+        return _UNKNOWN_MARKET_PHRASE
+    if kind == "rest_of_world":
+        # The operator may have renamed it; the governed label wins over ours.
+        return str(label) if label else _REST_OF_WORLD_PHRASE
     return str(label) if label else "?"
 
 
@@ -213,9 +369,18 @@ def build_market_split_lines(
         value = _format_number(bucket.get("value"))
         label = market_display_label(bucket)
         if is_country_market_bucket(bucket):
-            lines.append(f"Marché « {label} » : {value} {citation}")
+            lines.append(
+                phrase("market_split_line", label=label, value=value, citation=citation)
+            )
         else:
-            lines.append(f"{label} : {value} {citation}")
+            lines.append(
+                phrase(
+                    "market_split_grouping_line",
+                    label=label,
+                    value=value,
+                    citation=citation,
+                )
+            )
     return lines
 
 
@@ -223,12 +388,35 @@ def _why_lines(
     context_events: list[dict],
     alerts: list[dict],
     as_of: str | None,
+    context_scope: dict | None = None,
+    context_unavailable: dict | None = None,
 ) -> list[str]:
     """Build Section 2 (Why): context events + alerts, or the explicit-absence line.
 
     AD-9: when neither context events nor alerts are present, emit EXACTLY the
     ``_CONTEXT_MISSING_LINE`` (never omitted, never softened, never invented).
     When ``as_of`` is set, append the reconstitution line.
+
+    ``context_unavailable`` (AI-344, context-hub.md amendment of 2026-09-01) is
+    the ``{reason, repair}`` the caller received when the events could not be
+    READ from any store. The absence line then does not apply -- it would claim
+    the window was read and found empty -- and the section says the context is
+    unknown instead. The reason and the repair travel on the envelope, not here:
+    a narrative sentence is rendered from the catalogue, never from a payload.
+
+    ``context_scope`` is the pairing descriptor of
+    ``core.briefing.context_events_in_claim_scope`` -- what the events listed
+    below were compared to the claim ON, and what could not be compared. A "Why"
+    section ASSERTS a relationship, so when the caller scoped its events this
+    section says on what basis, in the same vocabulary the briefing and the
+    anomaly evaluator use. It is never composed here: a descriptor built next to
+    the render would describe a filter this function did not run.
+
+    A caller that passes no descriptor gets Story 6.4's behaviour unchanged --
+    the report and card builders of `core.reports` and `core.cards`, which answer
+    a question a person asked. The proactive path (`reporting_mcp
+    .get_daily_report`) passes one, and `test_why_lines_scope.py` holds that it
+    does.
     """
     lines: list[str] = []
 
@@ -238,32 +426,76 @@ def _why_lines(
         evt_label = evt.get("label", "?")
         description = evt.get("description")
         if not evt_id:
-            citation = "(contexte manquant)"
+            citation = phrase("citation_unavailable")
         elif str(evt_id).startswith("evt_"):
             citation = f"({evt_id})"
         else:
             citation = f"(evt_{evt_id})"
-        detail = f": {description}" if description else ""
-        lines.append(f"{evt_date} — {evt_label}{detail} {citation}")
+        lines.append(
+            phrase(
+                "context_event_line",
+                date=evt_date,
+                label=evt_label,
+                detail=(
+                    phrase("context_event_detail", description=description)
+                    if description
+                    else ""
+                ),
+                citation=citation,
+            )
+        )
 
     for alert in alerts or []:
         alert_id = alert.get("id")
-        alert_metric = alert.get("metric", alert.get("rule", "alerte"))
+        alert_metric = alert.get("metric", alert.get("rule", phrase("alert_subject_fallback")))
         message = alert.get("message", "")
         if alert_id:
             citation = f"({alert_id})" if "_" in str(alert_id) else f"(alert_{alert_id})"
         else:
-            citation = "(contexte manquant)"
-        lines.append(f"⚠ {alert_metric}: {message} {citation}")
+            citation = phrase("citation_unavailable")
+        lines.append(
+            phrase("alert_line", subject=alert_metric, message=message, citation=citation)
+        )
 
     if not lines:
-        # AD-9 / HG-1 hard gate: explicit absence, verbatim.
-        lines.append(_CONTEXT_MISSING_LINE)
+        # AD-9 / HG-1 hard gate: explicit absence, verbatim -- or, when the events
+        # were never read, the explicit UNKNOWN (AI-344). Never nothing. The fork
+        # itself is `context_absence_line`, shared with every other reader (AI-350).
+        lines.append(
+            context_absence_line(
+                context_unavailable, read_and_empty=_CONTEXT_MISSING_LINE
+            )
+        )
+
+    if context_scope:
+        lines.append(context_scope_line(context_scope))
 
     if as_of:
-        lines.append(f"Données reconstituées au {as_of}.")
+        lines.append(phrase("as_of_reconstituted", as_of=as_of))
 
     return lines
+
+
+def context_scope_line(context_scope: dict) -> str:
+    """One line naming what the attachment was checked on, and what it was not.
+
+    Composed from the descriptor's OWN lists, in their order, and from nothing
+    else. It carries no number, no event and no cause -- it is the sentence that
+    keeps an attached event from reading as a verified relationship when only one
+    of its three dimensions was verifiable.
+
+    An empty ``unscoped_dimensions`` prints no second half rather than an empty
+    one: "Non comparé :" followed by nothing is a sentence a reader has to guess
+    at, and there is nothing to guess -- everything was compared.
+    """
+    line = phrase(
+        "context_scope_line",
+        basis=", ".join(str(b) for b in context_scope.get("basis") or []),
+    )
+    unscoped = [str(d) for d in context_scope.get("unscoped_dimensions") or []]
+    if unscoped:
+        line += phrase("context_scope_unscoped", unscoped=", ".join(unscoped))
+    return line
 
 
 def _pull_citation(pull_ids: list[str], connector: str | None = None) -> str:
@@ -275,7 +507,7 @@ def _pull_citation(pull_ids: list[str], connector: str | None = None) -> str:
     pull_id = pull_ids[-1] if pull_ids else None
     source_system = connector or "connector"
     if not pull_id:
-        return "(contexte manquant)"
+        return phrase("citation_unavailable")
     token = f"({source_system}:fact_daily_kpi, {pull_id})"
     if len(token) > _MAX_CITATION_CHARS:
         token = f"({source_system}:fact_daily_kpi, {str(pull_id)[:10]})"
@@ -295,12 +527,12 @@ def _cause_line(context_events: list[dict]) -> str | None:
     evt_date = evt.get("event_date", "?")
     evt_label = evt.get("label", "?")
     if not evt_id:
-        citation = "(contexte manquant)"
+        citation = phrase("citation_unavailable")
     elif str(evt_id).startswith("evt_"):
         citation = f"({evt_id})"
     else:
         citation = f"(evt_{evt_id})"
-    return f"Contexte : {evt_date} — {evt_label} {citation}"
+    return phrase("cause_line", date=evt_date, label=evt_label, citation=citation)
 
 
 # ---------------------------------------------------------------------------
@@ -322,6 +554,7 @@ def build_keywords_comment(
     rollup: dict,
     context_events: list[dict],
     pull_ids: list[str],
+    dimension_labels: dict | None = None,
 ) -> str:
     """Keywords card: cite the biggest mover (|delta| position) by query name.
 
@@ -338,6 +571,9 @@ def build_keywords_comment(
     """
     citation = _pull_citation(pull_ids)
     lines: list[str] = []
+    # Story 27.9: the client's own word for the dimension these lines name. The
+    # blocks bind `query`; the catalogue holds the prose this card ships for it.
+    query_word = dimension_word(dimension_labels, "query", dimension_default("query"))
 
     # Line 1: biggest mover from the bar block.
     bars = (block_data.get("bar") or {}).get("bars") or []
@@ -347,25 +583,50 @@ def build_keywords_comment(
         delta = top.get("value")
         direction = top.get("direction", "")
         if delta is not None:
-            sign = "+" if float(delta) > 0 else ""
-            dir_fr = "gain" if direction == "up" else "perte"
             lines.append(
-                f"Requête « {label} » : {dir_fr} de {sign}{_format_number(delta)} pos. {citation}"
+                phrase(
+                    "keywords_top_mover",
+                    word=query_word,
+                    label=label,
+                    direction=phrase(
+                        "direction_gain" if direction == "up" else "direction_loss"
+                    ),
+                    sign="+" if float(delta) > 0 else "",
+                    delta=_format_number(delta),
+                    citation=citation,
+                )
             )
         else:
-            lines.append(f"Requête « {label} » en mouvement. {citation}")
+            lines.append(
+                phrase(
+                    "keywords_mover_unquantified",
+                    word=query_word,
+                    label=label,
+                    citation=citation,
+                )
+            )
     else:
         # No movers found — cite the rollup total instead.
         clicks_entry = rollup.get("clicks") or {}
-        clicks_val = _format_number(clicks_entry.get("value"))
-        lines.append(f"Clics totaux : {clicks_val}. {citation}")
+        lines.append(
+            phrase(
+                "keywords_total_clicks",
+                value=_format_number(clicks_entry.get("value")),
+                citation=citation,
+            )
+        )
 
     # Line 2: overall impressions from rollup (secondary context).
     imp_entry = rollup.get("impressions") or {}
     if imp_entry.get("value") is not None:
-        imp_val = _format_number(imp_entry.get("value"))
-        imp_delta = _delta_fragment(imp_entry)
-        lines.append(f"Impressions : {imp_val}{imp_delta} {citation}")
+        lines.append(
+            phrase(
+                "keywords_impressions",
+                value=_format_number(imp_entry.get("value")),
+                delta=_delta_fragment(imp_entry),
+                citation=citation,
+            )
+        )
 
     # Line 3: cause or explicit-absence.
     cause = _cause_line(context_events)
@@ -377,12 +638,21 @@ def build_keywords_comment(
     lines = lines[:3]
     cannib = (block_data.get("cannibalisation") or {}).get("rows") or []
     if cannib:
-        top_query = cannib[0].get("Requête") or "?"
+        # AI-59: rows are keyed by the column `key`, like every other table block.
+        top_query = cannib[0].get("_dim") or "?"
         # Competing-page count = distinct pages of the top query in the rendered rows.
-        n_pages = sum(1 for r in cannib if r.get("Requête") == top_query)
+        n_pages = sum(1 for r in cannib if r.get("_dim") == top_query)
+        # The SAME word as line 1: a comment that called `query` two things would
+        # reopen, inside one comment, the drift this story closes between the
+        # heading and the numbers.
         lines.append(
-            f"Cannibalisation : requête « {top_query} » en compétition sur "
-            f"{n_pages} pages. {citation}"
+            phrase(
+                "keywords_cannibalisation",
+                word=query_word,
+                label=top_query,
+                page_count=n_pages,
+                citation=citation,
+            )
         )
 
     return "\n".join(lines[:4])
@@ -394,11 +664,17 @@ def build_conversions_comment(
     rollup: dict,
     context_events: list[dict],
     pull_ids: list[str],
+    dimension_labels: dict | None = None,
 ) -> str:
     """Conversions card: cite the winning source + the notable CPA move.
 
     Reads block_data["donut"]["slices"] (winning source by conversions share) and
     block_data["gauge"] (CPA value + prior delta).
+
+    ``dimension_labels`` is accepted for registry uniformity and used by NOTHING
+    here, on purpose: this card groups on the row-level ``connector`` column
+    (cards.py:157), which is not a canonical dimension and therefore carries no
+    client label. Naming it from the label map would invent a name.
 
     <= 3 lines:
       1. Winning conversion source (name + share %) with citation
@@ -416,13 +692,23 @@ def build_conversions_comment(
         src_pct = top.get("pct")
         pct_str = f"{src_pct:.1f} %" if src_pct is not None else "?"
         lines.append(
-            f"Source principale : « {src_label} » ({pct_str} des conversions) {citation}"
+            phrase(
+                "conversions_top_source",
+                label=src_label,
+                pct=pct_str,
+                citation=citation,
+            )
         )
     else:
         # Fallback: total conversions from rollup.
         conv_entry = rollup.get("conversions") or {}
-        conv_val = _format_number(conv_entry.get("value"))
-        lines.append(f"Conversions totales : {conv_val}. {citation}")
+        lines.append(
+            phrase(
+                "conversions_total",
+                value=_format_number(conv_entry.get("value")),
+                citation=citation,
+            )
+        )
 
     # Line 2: CPA delta from gauge block.
     gauge = block_data.get("gauge") or {}
@@ -434,15 +720,26 @@ def build_conversions_comment(
         unit_str = f" {unit}" if unit else ""
         if cpa_delta is not None:
             sign = "+" if float(cpa_delta) > 0 else ""
-            delta_str = f"{sign}{_format_number(cpa_delta)}{unit_str}"
-            lines.append(f"CPA : {cpa_str}{unit_str} ({delta_str} vs période préc.) {citation}")
+            lines.append(
+                phrase(
+                    "conversions_cpa_with_delta",
+                    value=cpa_str,
+                    unit=unit_str,
+                    delta=f"{sign}{_format_number(cpa_delta)}{unit_str}",
+                    citation=citation,
+                )
+            )
         else:
             # review-epic-9-integration F-6: when the prior CPA is unavailable, cite the
             # absence EXPLICITLY rather than silently dropping the "move" -- the LLM must be
             # able to tell "no prior period" apart from "CPA comparison suppressed".
             lines.append(
-                f"CPA : {cpa_str}{unit_str} (évolution du CPA indisponible : "
-                f"période précédente manquante) {citation}"
+                phrase(
+                    "conversions_cpa_no_prior",
+                    value=cpa_str,
+                    unit=unit_str,
+                    citation=citation,
+                )
             )
 
     # Line 3: cause or explicit-absence.
@@ -458,6 +755,7 @@ def build_usertypes_comment(
     rollup: dict,
     context_events: list[dict],
     pull_ids: list[str],
+    dimension_labels: dict | None = None,
 ) -> str:
     """User types card: cite the dominant user type and device/country context.
 
@@ -488,63 +786,96 @@ def build_usertypes_comment(
     # composition, so block_data["donut"] (first-wins) holds user_type, not device.
     dev_slices = (block_data.get("donut_device_category") or {}).get("slices") or []
 
+    # Story 27.9: the client's word for the three dimensions these lines name.
+    # The defaults are the prose the card ships, held by the catalogue -- never
+    # the identifier: `Segment dominant` is readable and `device_category
+    # dominant` is the defect.
+    user_type_word = dimension_word(
+        dimension_labels, "user_type", dimension_default("user_type")
+    )
+    device_word = dimension_word(
+        dimension_labels, "device_category", dimension_default("device_category")
+    )
+    country_word = dimension_word(
+        dimension_labels, "country", dimension_default("country")
+    )
+
     # Line 1: dominant segment.
-    if ut_slices:
-        top = ut_slices[0]
-        seg_label = top.get("label") or "?"
+    if ut_slices or dev_slices:
+        top = (ut_slices or dev_slices)[0]
         seg_pct = top.get("pct")
-        pct_str = f"{seg_pct:.1f} %" if seg_pct is not None else "?"
         lines.append(
-            f"Type dominant : « {seg_label} » ({pct_str} des utilisateurs actifs) {citation}"
-        )
-    elif dev_slices:
-        top = dev_slices[0]
-        seg_label = top.get("label") or "?"
-        seg_pct = top.get("pct")
-        pct_str = f"{seg_pct:.1f} %" if seg_pct is not None else "?"
-        lines.append(
-            f"Segment dominant : « {seg_label} » ({pct_str} des utilisateurs actifs) {citation}"
+            phrase(
+                "usertypes_dominant_segment",
+                word=user_type_word if ut_slices else device_word,
+                label=top.get("label") or "?",
+                pct=f"{seg_pct:.1f} %" if seg_pct is not None else "?",
+                citation=citation,
+            )
         )
     else:
         # Fallback: total active_users.
         au_entry = rollup.get("active_users") or {}
-        au_val = _format_number(au_entry.get("value"))
-        lines.append(f"Utilisateurs actifs : {au_val}. {citation}")
+        lines.append(
+            phrase(
+                "usertypes_active_total",
+                value=_format_number(au_entry.get("value")),
+                citation=citation,
+            )
+        )
 
     # Line 2: top country from bar block.
     bars = (block_data.get("bar") or {}).get("bars") or []
     if bars:
         top_country = bars[0]
         country_val = _format_number(top_country.get("value"))
-        top_id = (
-            top_country.get("market_id")
-            or top_country.get("id")
-            or top_country.get("label")
-        )
-        if top_id in {OTHER_MARKETS_BUCKET_ID, UNKNOWN_MARKET_BUCKET_ID}:
-            # Story 37.8: these groupings are never presented as a country.
+        if _bucket_kind(top_country) in {"rest_of_world", "unknown"}:
+            # Story 37.8, kept by 48.2: a grouping is never presented as a
+            # country. The test is now the bucket KIND -- Rest of World has a
+            # per-Project governed id, so matching a literal would match nothing.
             lines.append(
-                f"{market_display_label(top_country)} : "
-                f"{country_val} utilisateurs actifs {citation}"
+                phrase(
+                    "usertypes_geography_grouping",
+                    label=market_display_label(top_country),
+                    value=country_val,
+                    citation=citation,
+                )
             )
-        elif top_country.get("market_kind") == "tracked":
+        elif is_country_market_bucket(top_country):
+            # NOT `country_word`, and not an oversight: a market is a group of
+            # countries the operator named (story 37.8/48.2), a governed object
+            # with its own label -- `market_display_label` above. Renaming
+            # `country` renames the dimension, never this grouping.
             lines.append(
-                f"Premier marché : « {market_display_label(top_country)} » "
-                f"({country_val} utilisateurs actifs) {citation}"
+                phrase(
+                    "usertypes_top_market",
+                    label=market_display_label(top_country),
+                    value=country_val,
+                    citation=citation,
+                )
             )
         else:
-            country_label = top_country.get("label") or "?"
             lines.append(
-                f"Premier pays : « {country_label} » "
-                f"({country_val} utilisateurs actifs) {citation}"
+                phrase(
+                    "usertypes_top_country",
+                    word=country_word,
+                    label=top_country.get("label") or "?",
+                    value=country_val,
+                    citation=citation,
+                )
             )
     else:
         # Fallback: sessions from rollup.
         sess_entry = rollup.get("sessions") or {}
         if sess_entry.get("value") is not None:
-            sess_val = _format_number(sess_entry.get("value"))
-            sess_delta = _delta_fragment(sess_entry)
-            lines.append(f"Sessions : {sess_val}{sess_delta} {citation}")
+            lines.append(
+                phrase(
+                    "usertypes_sessions",
+                    value=_format_number(sess_entry.get("value")),
+                    delta=_delta_fragment(sess_entry),
+                    citation=citation,
+                )
+            )
 
     # Line 3: cause or explicit-absence.
     cause = _cause_line(context_events)
@@ -559,6 +890,7 @@ def build_journey_comment(
     rollup: dict,
     context_events: list[dict],
     pull_ids: list[str],
+    dimension_labels: dict | None = None,
 ) -> str:
     """Journey card: cite the biggest drop-off step in the funnel + top entry page.
 
@@ -588,17 +920,25 @@ def build_journey_comment(
     eligible = [s for s in steps if s.get("rate") is not None and s.get("rate") != 1.0]
     if eligible:
         worst = min(eligible, key=lambda s: s["rate"])
-        step_label = worst.get("label") or "?"
         step_rate = worst.get("rate")
-        rate_pct = f"{step_rate * 100:.1f} %" if step_rate is not None else "?"
         lines.append(
-            f"Décroché principal : étape « {step_label} » (taux de passage {rate_pct}) {citation}"
+            phrase(
+                "journey_worst_step",
+                label=worst.get("label") or "?",
+                rate=f"{step_rate * 100:.1f} %" if step_rate is not None else "?",
+                citation=citation,
+            )
         )
     else:
         # No funnel data -- cite total sessions from rollup.
         sess_entry = rollup.get("sessions") or {}
-        sess_val = _format_number(sess_entry.get("value"))
-        lines.append(f"Sessions totales : {sess_val}. {citation}")
+        lines.append(
+            phrase(
+                "journey_sessions_total",
+                value=_format_number(sess_entry.get("value")),
+                citation=citation,
+            )
+        )
 
     # Line 2: Story 10.4 — top entry page from the landing_page bar block (preferred
     # when present), else fall back to the overall funnel conversion rate.
@@ -607,22 +947,40 @@ def build_journey_comment(
     entry_bars = (block_data.get("bar") or {}).get("bars") or []
     if entry_bars:
         top_bar = entry_bars[0]
-        page_label = top_bar.get("label") or "?"
-        page_sessions = top_bar.get("value")
-        sessions_str = _format_number(page_sessions)
+        # Story 27.9: the bar binds `landing_page`; the catalogue holds the prose
+        # this card ships for it, and the client's word replaces it when set.
+        landing_word = dimension_word(
+            dimension_labels, "landing_page", dimension_default("landing_page")
+        )
         lines.append(
-            f"Première page d'entrée : « {page_label} » ({sessions_str} sessions) {citation}"
+            phrase(
+                "journey_top_landing_page",
+                word=landing_word,
+                label=top_bar.get("label") or "?",
+                sessions=_format_number(top_bar.get("value")),
+                citation=citation,
+            )
         )
     elif overall_rate is not None:
-        rate_pct = f"{overall_rate * 100:.1f} %"
-        lines.append(f"Taux de conversion global : {rate_pct}. {citation}")
+        lines.append(
+            phrase(
+                "journey_overall_rate",
+                rate=f"{overall_rate * 100:.1f} %",
+                citation=citation,
+            )
+        )
     else:
         # Fallback: conversions from rollup.
         conv_entry = rollup.get("conversions") or {}
         if conv_entry.get("value") is not None:
-            conv_val = _format_number(conv_entry.get("value"))
-            conv_delta = _delta_fragment(conv_entry)
-            lines.append(f"Conversions : {conv_val}{conv_delta} {citation}")
+            lines.append(
+                phrase(
+                    "journey_conversions",
+                    value=_format_number(conv_entry.get("value")),
+                    delta=_delta_fragment(conv_entry),
+                    citation=citation,
+                )
+            )
 
     # Line 3: cause or explicit-absence.
     cause = _cause_line(context_events)
@@ -639,6 +997,7 @@ def build_connectors_comment(
     rollup: dict | None = None,
     context_events: list[dict] | None = None,
     pull_ids: list[str] | None = None,
+    dimension_labels: dict | None = None,
 ) -> str:
     """Connecteurs card (Story 9.8): cite the LEAST-FRESH connector.
 
@@ -647,7 +1006,8 @@ def build_connectors_comment(
     (``least_fresh`` + ``connector_count``).
 
     review-epic-9-backend F-10: it ALSO accepts the STANDARD fact-card builder kwargs
-    (``block_data``, ``rollup``, ``context_events``, ``pull_ids``) and IGNORES the ones it
+    (``block_data``, ``rollup``, ``context_events``, ``pull_ids``, ``dimension_labels``)
+    and IGNORES the ones it
     does not need, so CARD_COMMENT_BUILDERS is UNIFORM -- a caller going through the generic
     registry dispatch (get_card's block-data path) never hits a TypeError on the connectors
     entry. When called that way (no inventory summary), it degrades to the designed
@@ -661,23 +1021,26 @@ def build_connectors_comment(
     An empty inventory yields a single designed-empty line (never blank).
     """
     if not least_fresh or connector_count <= 0:
-        return "Aucun connecteur configuré pour ce projet."
+        return phrase("connectors_none")
 
     name = least_fresh.get("connector") or "?"
     last_date = least_fresh.get("last_extract")
     lines: list[str] = []
 
-    plural = "s" if connector_count > 1 else ""
-    lines.append(f"{connector_count} connecteur{plural} configuré{plural} pour ce projet.")
+    # Plural is a property of a LANGUAGE, not of a count: gluing an "s" onto a
+    # template decided French grammar at the call site. Two keys, and a language
+    # that pluralises differently answers in its own column.
+    lines.append(
+        phrase(
+            "connectors_count_many" if connector_count > 1 else "connectors_count_one",
+            count=connector_count,
+        )
+    )
 
     if last_date:
-        lines.append(
-            f"Connecteur le moins frais : « {name} » (dernier extrait le {last_date})."
-        )
+        lines.append(phrase("connectors_least_fresh", name=name, date=last_date))
     else:
-        lines.append(
-            f"Connecteur le moins frais : « {name} » (jamais extrait)."
-        )
+        lines.append(phrase("connectors_least_fresh_never", name=name))
 
     return "\n".join(lines[:3])
 
@@ -693,6 +1056,12 @@ def build_connectors_comment(
 # summary, but (review-epic-9-backend F-10) it is now SIGNATURE-COMPATIBLE with the generic
 # block-data dispatch too (accepts + ignores block_data/rollup/context_events/pull_ids), so
 # the registry is uniform and no caller can hit a TypeError on this entry.
+#
+# Story 27.9 extends that uniformity to ``dimension_labels``: the generic dispatch
+# passes it to WHATEVER builder is registered, so every entry accepts it, and the
+# three that name no canonical dimension (conversions, dedup, mediaplan_pacing)
+# say at their signature WHY they ignore it. A builder that quietly dropped it
+# would print our word under a heading printing the client's.
 # ---------------------------------------------------------------------------
 
 def build_attribution_comment(
@@ -701,6 +1070,7 @@ def build_attribution_comment(
     rollup: dict,
     context_events: list[dict],
     pull_ids: list[str],
+    dimension_labels: dict | None = None,
 ) -> str:
     """Attribution card (Story 16.3): cite the last-click leader + first-click comparison.
 
@@ -723,6 +1093,15 @@ def build_attribution_comment(
     """
     citation = _pull_citation(pull_ids)
     lines: list[str] = []
+    # Story 27.9: both bars of this card break down the SAME canonical dimension
+    # (`session_source_medium` last click, `first_user_source_medium` first click)
+    # under ONE prose word, held by the catalogue. One word, so the two lines of
+    # one comment cannot call it two things.
+    channel_word = dimension_word(
+        dimension_labels,
+        "session_source_medium",
+        dimension_default("session_source_medium"),
+    )
 
     # Line 1: leading last-click channel.
     # block_data["bar"] holds the FIRST bar block = last-click channels (composition order).
@@ -736,17 +1115,30 @@ def build_attribution_comment(
         bar_subtotal = sum(b.get("value") or 0 for b in last_bars)
         share_str = ""
         if bar_subtotal > 0 and conv is not None:
-            share_pct = round((conv / bar_subtotal) * 100.0, 1)
-            share_str = f", {share_pct} % du top-N dernier clic"
+            share_str = phrase(
+                "attribution_share_fragment",
+                pct=round((conv / bar_subtotal) * 100.0, 1),
+            )
         lines.append(
-            f"Canal leader (dernier clic) : « {channel} » "
-            f"({conv_str} conversions{share_str}) {citation}"
+            phrase(
+                "attribution_last_click_leader",
+                word=channel_word,
+                label=channel,
+                conversions=conv_str,
+                share=share_str,
+                citation=citation,
+            )
         )
     else:
         # Fallback: total conversions from rollup when no acquisition data present.
         conv_entry = rollup.get("conversions") or {}
-        conv_val = _format_number(conv_entry.get("value"))
-        lines.append(f"Conversions totales : {conv_val}. {citation}")
+        lines.append(
+            phrase(
+                "conversions_total",
+                value=_format_number(conv_entry.get("value")),
+                citation=citation,
+            )
+        )
 
     # Line 2: first vs last comparison on the top canal, IF both bars are populated
     # and the delta is notable (>= 5 pp). This is a DESCRIPTIVE GAP, never a cause.
@@ -771,15 +1163,19 @@ def build_attribution_comment(
         if top_first_pct is not None:
             gap = abs(top_last_pct - top_first_pct)
             if gap >= 5.0:
-                direction = (
-                    "plus fort en dernier clic"
-                    if top_last_pct > top_first_pct
-                    else "plus fort en premier clic"
-                )
                 lines.append(
-                    f"Écart last/first pour « {last_bars[0].get('label', '?')} » : "
-                    f"{top_last_pct} % (dernier clic) vs {top_first_pct} % "
-                    f"(premier clic) — {direction}. {citation}"
+                    phrase(
+                        "attribution_gap",
+                        label=last_bars[0].get("label", "?"),
+                        last_pct=top_last_pct,
+                        first_pct=top_first_pct,
+                        direction=phrase(
+                            "attribution_stronger_last"
+                            if top_last_pct > top_first_pct
+                            else "attribution_stronger_first"
+                        ),
+                        citation=citation,
+                    )
                 )
                 noted_gap = True
 
@@ -787,9 +1183,15 @@ def build_attribution_comment(
         # No notable gap or first-click data missing — use conversions fallback if
         # the first bars are present but gap is < 5 pp, cite first-click availability.
         if first_bars and last_bars:
+            # "canal(aux)" was the dimension named a SECOND time, in a second
+            # spelling: the day a client renamed it, line 1 said their word and
+            # this one still said ours. It counts values now, and names nothing.
             lines.append(
-                f"Premier clic disponible : {len(first_bars)} canal(aux) — "
-                f"écart non significatif vs dernier clic. {citation}"
+                phrase(
+                    "attribution_gap_not_significant",
+                    value_count=len(first_bars),
+                    citation=citation,
+                )
             )
         # else: if first_bars absent, line 2 stays absent (3-line budget, <= 3 lines).
 
@@ -813,16 +1215,21 @@ def build_dedup_comment(
     rate_coverage_days: int | None = None,
     rate_claimed_days: int | None = None,
     measured_coverage_rate: float | None = None,
+    dimension_labels: dict | None = None,
 ) -> str:
     """Déduplication card (Story 17.3): cited deterministic comment.
+
+    ``dimension_labels`` is accepted (registry uniformity, F-10) and used by
+    nothing: this card's bars group on ``channel_connector``, which is not a
+    canonical dimension and carries no client label.
 
     AD-9 / Epic 17 mandate (non-négociable) :
       * L'estimation est TOUJOURS étiquetée comme telle — le mot « estimation » est
         VERBATIM dans chaque rendu.
-      * La formule est toujours citée (taux = Σ revendiqué ÷ réel).
+      * La formule est toujours citée (rate = Σ claimed ÷ actual).
       * La source de vérité désignée est nommée explicitement.
       * NULL rate → « source de vérification indisponible » — jamais un 0% déguisé.
-      * Sans context_events → « Contexte manquant pour cette période. » verbatim (AD-9).
+      * Sans context_events → la phrase ``context_missing`` verbatim (AD-9).
 
     <= 3 lines:
       1. Taux de duplication estimé + formule + source de vérité [cité]
@@ -838,40 +1245,49 @@ def build_dedup_comment(
     # When rate_coverage_days < rate_claimed_days the rate is computed on a subset of
     # days (only those carrying BOTH claimed and verified). This must be surfaced to
     # the user honestly rather than presenting the rate as if it covered the full window.
-    formula = "taux = Σ revendiqué ÷ réel"
+    formula = phrase("dedup_formula")
     if duplication_rate is not None:
         rate_str = f"{duplication_rate:.1f}x".replace(".", ",")
         source_str = ""
         if verification_source_type:
-            source_str = f", source : {verification_source_type}"
+            source_str = phrase(
+                "dedup_source_fragment", source=verification_source_type
+            )
             if verification_source_type == "ga4" and lead_event_name:
-                source_str += f" (évènement : {lead_event_name})"
+                source_str += phrase("dedup_event_fragment", event=lead_event_name)
         # Coverage wording: mention the days covered vs total days claimed.
         if (
             rate_coverage_days is not None
             and rate_claimed_days is not None
             and rate_coverage_days < rate_claimed_days
         ):
-            coverage_str = (
-                f"sur {rate_coverage_days} des {rate_claimed_days} jours "
-                f"de la fenêtre portant la vérité"
+            coverage_str = phrase(
+                "dedup_coverage_partial",
+                covered=rate_coverage_days,
+                claimed=rate_claimed_days,
             )
         elif rate_coverage_days is not None:
-            coverage_str = f"sur {rate_coverage_days} jours"
+            coverage_str = phrase("dedup_coverage_days", covered=rate_coverage_days)
         else:
             coverage_str = None
-        rate_label = f"Taux de duplication estimé : {rate_str}"
+        rate_label = phrase("dedup_rate_label", rate=rate_str)
         if coverage_str:
-            rate_label += f" ({coverage_str})"
+            rate_label += phrase("dedup_rate_coverage", coverage=coverage_str)
         lines.append(
-            f"Estimation : {rate_label} "
-            f"({formula}{source_str}) {citation}"
+            phrase(
+                "dedup_estimation",
+                rate_label=rate_label,
+                formula=formula,
+                source=source_str,
+                citation=citation,
+            )
         )
     else:
         # AD-9: NULL rate -> honest absence, never 0%.
         lines.append(
-            f"Estimation indisponible : source de vérification absente ou non configurée "
-            f"({formula}) {citation}"
+            phrase(
+                "dedup_estimation_unavailable", formula=formula, citation=citation
+            )
         )
 
     # Line 2: leading canal from the bar series (dedup contribution, first bar set).
@@ -895,8 +1311,13 @@ def build_dedup_comment(
             )
             part_str = f"{part_pct:.1f} %" if part_pct is not None else "?"
             lines.append(
-                f"Canal leader (estimation dédupliquée) : « {ch_label} » "
-                f"({_format_number(dedup_val)} conversions, {part_str} du réel) {citation}"
+                phrase(
+                    "dedup_leading_channel",
+                    label=ch_label,
+                    conversions=_format_number(dedup_val),
+                    share=part_str,
+                    citation=citation,
+                )
             )
 
     # Line 3 (optional extra): measured reconciliation for shopify source (review-17-5 fix-7).
@@ -905,8 +1326,9 @@ def build_dedup_comment(
     if measured_coverage_rate is not None:
         coverage_pct_str = f"{measured_coverage_rate:.1f} %".replace(".", ",")
         lines.append(
-            f"Réconciliation par transaction (mesurée) : couverture {coverage_pct_str} "
-            f"{citation}"
+            phrase(
+                "dedup_measured_coverage", pct=coverage_pct_str, citation=citation
+            )
         )
 
     # Line 3 (last): cause or explicit-absence (AD-9 / HG-1 verbatim).
@@ -928,12 +1350,17 @@ def build_mediaplan_pacing_comment(
     plan_only_keys: list,
     pull_ids: list[str],
     context_events: list[dict],
+    dimension_labels: dict | None = None,
 ) -> str:
     """Médiaplan pacing card (Story 22.5): cited deterministic comment.
 
+    ``dimension_labels`` is accepted (registry uniformity, F-10) and used by
+    nothing: this card reads plan lines from the pacing marts, not a canonical
+    dimension of ``fact_daily_kpi``.
+
     AD-9 / Epic 22 mandate (non-négociable) :
       * L'extrapolation est TOUJOURS étiquetée « Estimation ».
-      * La formule de pace est citée (Pace = (réel − prévu to-date) / prévu to-date).
+      * La formule de pace est citée (Pace = (actual − planned to-date) / planned to-date).
       * La couverture est affichée (as_of_day + nombre de jours de réel).
       * Les lignes plan-only sont signalées « plan seul » (jamais 0 %).
       * La source est citée (version du plan + mart).
@@ -948,26 +1375,35 @@ def build_mediaplan_pacing_comment(
     # Citation token: version du plan + mart (AD-9 provenance).
     version_str = plan_version_id or "?"
     plan_display = plan_name or plan_id
-    pull_citation = f"(plan version {version_str}, mart plan_pacing_by_line)"
     if pull_ids:
-        last_pull = pull_ids[-1]
-        pull_citation = f"(plan version {version_str}, mart plan_pacing_by_line, pull {last_pull})"
+        pull_citation = phrase(
+            "pacing_citation_with_pull", version=version_str, pull_id=pull_ids[-1]
+        )
+    else:
+        pull_citation = phrase("pacing_citation", version=version_str)
 
     lines: list[str] = []
-    formula = "Pace = (réel − prévu to-date) / prévu to-date"
+    formula = phrase("pacing_formula")
 
     # --- Line 1: plan header + formule + couverture ----------------------------
     # Review 22.5 F-2: never a bare "?" in user-facing copy.
-    as_of_str = as_of_day or "(date indisponible)"
+    as_of_str = as_of_day or phrase("pacing_as_of_unavailable")
     # Review 22.5 F-3 (leçon 17.5): coverage in DAYS of real data, not just the
     # as-of date. days_elapsed comes from the plan-level pacing row when present.
     days_elapsed = plan_rows[0].get("days_elapsed") if plan_rows else None
-    coverage_str = f", {int(days_elapsed)} jour(s) de réel" if days_elapsed else ""
-    line1 = (
-        f"Plan « {plan_display} » — arrêté au {as_of_str}{coverage_str} "
-        f"({formula}) {pull_citation}"
+    coverage_str = (
+        phrase("pacing_coverage_days", days=int(days_elapsed)) if days_elapsed else ""
     )
-    lines.append(line1)
+    lines.append(
+        phrase(
+            "pacing_plan_header",
+            plan=plan_display,
+            as_of=as_of_str,
+            coverage=coverage_str,
+            formula=formula,
+            citation=pull_citation,
+        )
+    )
 
     # --- Line 2: plan-only signal OU résumé pace niveau plan -------------------
     # Line 2 carries BOTH signals when both exist (vitest AI-54 catch: the
@@ -981,35 +1417,57 @@ def build_mediaplan_pacing_comment(
         overall_budget = pr.get("budget")
         if overall_pace is not None:
             pace_pct = round(overall_pace * 100.0, 1)
-            sign = "+" if pace_pct >= 0 else ""
-            actual_s = (
-                f"{overall_actual:.0f} €" if overall_actual is not None else "n/d"
-            )
-            budget_s = (
-                f"{overall_budget:.0f} €" if overall_budget is not None else "n/d"
-            )
-            pace_part = (
-                f"Pace global : {sign}{pace_pct:.1f} % "
-                f"(réel {actual_s} / budget {budget_s}) — "
-                f"Estimation extrapolation (run-rate linéaire)"
+            pace_part = phrase(
+                "pacing_overall",
+                sign="+" if pace_pct >= 0 else "",
+                pct=f"{pace_pct:.1f}",
+                actual=(
+                    phrase("pacing_amount", amount=f"{overall_actual:.0f}")
+                    if overall_actual is not None
+                    else phrase("pacing_amount_unavailable")
+                ),
+                budget=(
+                    phrase("pacing_amount", amount=f"{overall_budget:.0f}")
+                    if overall_budget is not None
+                    else phrase("pacing_amount_unavailable")
+                ),
             )
 
-    plan_only_part: str | None = None
+    plan_only_str: str | None = None
     if plan_only_keys:
         plan_only_labels = [str(k) for k in plan_only_keys[:5]]
         plan_only_str = ", ".join(f"« {k} »" for k in plan_only_labels)
-        suffix = f" (+ {len(plan_only_keys) - 5} autres)" if len(plan_only_keys) > 5 else ""
-        plan_only_part = f"lignes plan seul (aucun pacing calculé) : {plan_only_str}{suffix}"
+        if len(plan_only_keys) > 5:
+            plan_only_str += phrase(
+                "pacing_plan_only_overflow", count=len(plan_only_keys) - 5
+            )
 
-    if pace_part and plan_only_part:
-        lines.append(f"{pace_part} ; {plan_only_part} {pull_citation}")
-    elif pace_part:
-        lines.append(f"{pace_part} {pull_citation}")
-    elif plan_only_part:
-        # Capitalise when the plan-only signal stands alone.
+    if pace_part and plan_only_str is not None:
         lines.append(
-            f"Lignes plan seul (aucun pacing calculé) : "
-            f"{plan_only_part.split(' : ', 1)[1]} {pull_citation}"
+            phrase(
+                "pacing_line_both",
+                pace=pace_part,
+                plan_only=phrase("pacing_plan_only", lines=plan_only_str),
+                citation=pull_citation,
+            )
+        )
+    elif pace_part:
+        lines.append(
+            phrase("pacing_line_single", part=pace_part, citation=pull_citation)
+        )
+    elif plan_only_str is not None:
+        # The plan-only signal STANDS ALONE, so it opens the line and is
+        # capitalised. It used to be produced by slicing the joined sentence back
+        # apart on ": " -- a split that read French typography out of the string
+        # and broke the day the phrase was translated. Two keys instead: the
+        # capitalisation is a property of the language, and the language is the
+        # catalogue's business.
+        lines.append(
+            phrase(
+                "pacing_plan_only_standalone",
+                lines=plan_only_str,
+                citation=pull_citation,
+            )
         )
     # else: no line 2 (honest: nothing to say)
 
@@ -1048,6 +1506,8 @@ def build_narrative(
     as_of: str | None,
     narrative_prompt: str | None,
     max_lines: int = 30,
+    context_scope: dict | None = None,
+    context_unavailable: dict | None = None,
 ) -> str:
     """Assemble the deterministic what+why narrative with inline citations.
 
@@ -1060,9 +1520,21 @@ def build_narrative(
     AD-1: keyword-only signature with NO ``rows`` parameter — passing ``rows=`` is a
     TypeError (mechanical enforcement of the raw-row boundary; see
     ``test_ad1_no_raw_rows_accepted``).
+
+    NO ``dimension_labels`` PARAMETER, and that is measured rather than forgotten
+    (story 27.9): this builder writes one line per METRIC and one per context event
+    or alert, and names no dimension anywhere — so there is nothing here for a
+    client label to rename. Threading the map in "just in case" would produce a
+    call site that looks armed and is not, which is worse than the absence.
+    ``test_narrative_speaks_the_client_word.py`` holds that claim: the day a line
+    here names a dimension, it goes red and the map has to arrive.
+
+    ``context_scope`` travels straight to :func:`_why_lines`. It is the caller's
+    to build, because only the caller knows which events it scoped and how; see
+    ``core.briefing.context_events_in_claim_scope``.
     """
     what = _what_lines(rollup, narrative_prompt)
-    why = _why_lines(context_events, alerts, as_of)
+    why = _why_lines(context_events, alerts, as_of, context_scope, context_unavailable)
 
     # Assemble: What, blank separator, Why.
     lines: list[str] = list(what)
@@ -1085,7 +1557,7 @@ def build_narrative(
         # Even Section 1 overflows — keep the first (max_lines - 1) lines and add a
         # truncation note as the final line.
         kept = what[: max_lines - 1]
-        kept.append(f"[… contexte tronqué — {n_events} événements disponibles]")
+        kept.append(phrase("narrative_truncated", event_count=n_events))
         return "\n".join(kept)
 
     # Section 1 fits; fill the remaining budget with Section 2, reserving one line
@@ -1096,5 +1568,5 @@ def build_narrative(
     budget -= 1  # the blank line consumes budget too
     if budget > 0:
         kept.extend(why[:budget])
-    kept.append(f"[… contexte tronqué — {n_events} événements disponibles]")
+    kept.append(phrase("narrative_truncated", event_count=n_events))
     return "\n".join(kept[:max_lines])

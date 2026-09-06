@@ -16,7 +16,7 @@ WITH coverage AS (
     SELECT
         COUNT(*)                                                        AS total_orders,
         COUNT(transaction_id)                                           AS with_txn,
-        CAST(COUNT(transaction_id) AS DOUBLE) / NULLIF(COUNT(*), 0)     AS present_ratio
+        CAST(COUNT(transaction_id) AS {{ toorow_float_type() }}) / NULLIF(COUNT(*), 0)     AS present_ratio
     FROM {{ ref('stg_shopify_orders_daily') }}
 )
 

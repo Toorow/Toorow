@@ -11,8 +11,16 @@
       "fetched_at": "2026-07-22"
     }
   ],
-  "section_tier_map": {"FILTER": "core", "METRIC": "core"},
+  "section_tier_map": {
+    "FILTER": "core",
+    "METRIC": "core"
+  },
   "default_tier": "standard",
   "exposure_policy": "catalog_driven",
-  "excluded_sections": {}
+  "excluded_sections": {},
+  "probe": {
+    "request_style": "metrics_dimensions",
+    "batch_size": 20,
+    "structural_note": "DV360 / Bid Manager API queries specify metrics and dimensions over a date window. 400 InvalidArgument errors are bisected to capture rejected fields."
+  }
 }

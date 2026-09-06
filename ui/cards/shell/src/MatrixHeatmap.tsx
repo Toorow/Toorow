@@ -5,16 +5,15 @@
  * légende à paliers (thresholds), état vide designé, aria complet.
  * Hand-rolled SVG/HTML — aucune lib graphique externe (AD-11).
  * Couleurs uniquement via getVizPalette(useTheme()) — jamais de hex en dur.
- * Light + dark via MUI theme. Copy français-first (UX-DR10).
+ * Light + dark via le thème partagé. Copy français-first (UX-DR10).
  *
  * Ref visuelle : card « Visitor Counter » (matrice pays × tranches d'âge,
  * cellules roses d'intensité variable, légende à paliers, tooltip au survol).
  */
 
-import { useTheme, alpha } from "@mui/material/styles";
-import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
 import { getVizPalette } from "./vizTheme";
+import { formatValue } from "./viz/theme/formatters";
+import { Box, Typography, alpha, useTheme } from "@toorow/shell";
 
 // ─── Constantes de layout ────────────────────────────────────────────────────
 const CELL_W = 36;      // px — largeur d'une cellule
@@ -68,9 +67,9 @@ export interface MatrixHeatmapProps {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Formate un nombre en français (séparateur de milliers, décimales). */
+/** The number goes through the Render's pinned formatter (story 76-8). */
 function fmt(v: number): string {
-  return v.toLocaleString("fr-FR");
+  return formatValue(v);
 }
 
 /** Tooltip textuel d'une cellule : « {row} × {col} — {valeur}{unit} ». */

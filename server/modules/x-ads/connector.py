@@ -11,6 +11,12 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+
+# Import au niveau module (et non paresseux comme les appels a `core` dans les
+# fonctions) : les classes d'exception ci-dessous en HERITENT, donc il doit etre
+# resolu au moment ou le fichier est lu. Precedent : `google-sheets` importe
+# `core.quota` de la meme facon.
+from core import pull_errors
 from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
@@ -26,12 +32,52 @@ MAX_PROCESSING_JOBS = 100
 REFETCH_DAYS = (3, 14)
 
 
-class XAdsOnboardingError(RuntimeError):
-    """Typed app-approval, role or account-access failure."""
+class XAdsOnboardingError(pull_errors.PermissionDeniedError):
+    """Typed app-approval, role or account-access failure.
+
+    `permission_denied` : le credential est authentifie et n'atteint rien --
+    approbation Ads API absente, role de compte insuffisant. L'action juste est
+    de se reconnecter avec les bons droits, et `permission_denied` est ce qui la
+    fait remonter a l'ecran (`user_action="reconnect"`).
+
+    Avant le 2026-08-01 cette classe heritait de `RuntimeError` nu : le worker la
+    voyait `unclassified`, la rejouait jusqu'au `dead_letter` contre un
+    credential qui ne marchera jamais, et n'affichait aucune action.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message)
 
 
-class XAdsCompatibilityError(ValueError):
-    """An entity/metric-group/segmentation combination is illegal."""
+class XAdsNotConfiguredError(XAdsOnboardingError):
+    """Le credential va bien -- c'est la requete qui ne peut pas etre formee.
+
+    Derive de l'erreur d'onboarding pour qu'un `except XAdsOnboardingError`
+    existant continue de l'attraper, mais porte `invalid_request` : dire
+    << reconnecte-toi >> enverrait l'operateur au mauvais ecran, puisque le
+    compte se choisit dans l'assistant Datastream et pas sur la connexion.
+    """
+
+    error_class = pull_errors.INVALID_REQUEST
+    user_action = pull_errors.SELECT_SOURCE_ACCOUNT
+
+
+class XAdsCompatibilityError(pull_errors.InvalidRequestError, ValueError):
+    """An entity/metric-group/segmentation combination is illegal.
+
+    `invalid_request` : rejouer la meme requete redonne la meme reponse, et
+    c'est aussi le signal `pull_invalid_request_drift` -- une forme devenue
+    illegale est une derive du catalogue. `ValueError` reste dans les bases, des
+    appelants et des tests l'attrapent sous ce nom.
+    """
+
+    #: -> `Mapping` : le plan demande ce que la source ne rend plus
+    #: (datastream-workbench-and-wizard.md:107). L'operateur a un endroit
+    #: ou aller, contrairement a une derive de version d'API.
+    user_action = pull_errors.REVIEW_MAPPING
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message)
 
 
 def _manifest() -> dict:
@@ -122,13 +168,18 @@ def discover_accounts(connection_id: str, *, _proxy=None) -> list[dict]:
         )
     return [
         {
-            "id": f"x_ads_selection_{index}",
+            # L'`id` est la SEULE chose que le coeur persiste
+            # (`app.connection_account_scope.account_id`) et la seule qu'il rende
+            # au pull. Un numero d'ordre de decouverte laissait le vrai
+            # identifiant dans une cle voisine que rien ne transporte -- et
+            # designait un AUTRE compte des que la liste reordonnait.
+            "id": str(item["id"]),
             "account_id": str(item["id"]),
             "display_name": item.get("name") or str(item["id"]),
             "timezone": item.get("timezone") or "",
             "currency": item.get("currency") or item.get("currency_code") or "",
         }
-        for index, item in enumerate(accounts, start=1)
+        for item in accounts
     ]
 
 
@@ -299,11 +350,19 @@ CREATE TABLE IF NOT EXISTS raw_x_ads_daily (
 )
 """
 
+_RAW_INSERT_SQL = """
+INSERT INTO raw_x_ads_daily
+    (report_profile, account_id, entity_type, entity_id, placement, segment_type,
+    segment_value, interval_start, interval_end, timezone, currency, metric, value,
+    provider_value, non_additive, request_hash, pull_id, loaded_at, project_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+
 
 def _land(rows: list[dict], context: dict) -> int:
-    if os.environ.get("TOOROW_DB_MODE", "duckdb") != "duckdb":
-        raise ValueError("x-ads local landing currently requires duckdb")
-    import duckdb  # noqa: PLC0415
+    if os.environ.get("TOOROW_DB_MODE", "duckdb") not in ("duckdb", "bigquery"):
+        raise ValueError("x-ads landing supports duckdb and bigquery")
+    from core import warehouse_write  # noqa: PLC0415
 
     path = os.environ.get(
         "TOOROW_DUCKDB_PATH", str(Path(__file__).parent / "seeds" / "local.duckdb")
@@ -348,23 +407,42 @@ def _land(rows: list[dict], context: dict) -> int:
                         context["project_id"],
                     )
                 )
-    connection = duckdb.connect(path)
+    connection = warehouse_write.open_raw_writer(path, project_id=context["project_id"])
     connection.execute(_RAW_DDL)
     if values:
-        connection.executemany(
-            "INSERT INTO raw_x_ads_daily VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", values
-        )
+        connection.executemany(_RAW_INSERT_SQL, values)
     connection.close()
     return len(values)
 
 
 def _pull_profile(
-    connection_id, date_from, date_to, project_id, pull_id, profile_id, selection, *, _proxy=None
+    connection_id,
+    date_from,
+    date_to,
+    project_id,
+    pull_id,
+    profile_id,
+    selection,
+    account_id,
+    *,
+    _proxy=None,
 ):
     from core.pull_errors import ProviderTransientError  # noqa: PLC0415
 
-    if not selection:
-        raise XAdsOnboardingError("X Ads account selection is required")
+    # Le COMPTE vient du parametre declare ; `selection` ne porte que la forme du
+    # RAPPORT. Celui que le plan fournit est ferme sur selection_mode / metrics /
+    # dimensions / grain / filters (datastream-intent.schema.json,
+    # additionalProperties: false) : il ne pouvait pas porter un ads account.
+    if not account_id:
+        raise XAdsNotConfiguredError(
+            "X Ads requires a selected ads account: the operator picks one in the "
+            "Datastream wizard (discover_accounts lists GET /12/accounts) and the "
+            "worker passes it as `account_id` (manifest "
+            "account_topology.pull_parameter). No account was selected for this "
+            "connection, and there is no deployment-wide default -- one would pull "
+            "the same account for every project."
+        )
+    selection = selection or {}
     profile = next(
         item for item in _manifest()["source_capabilities"]["reports"] if item["id"] == profile_id
     )
@@ -381,11 +459,9 @@ def _pull_profile(
         # catalog_sources/ROLLOUT_NOTES.md (M-1). It must not appear in
         # production selection payloads or manifest profiles.
         if days <= SYNC_MAX_DAYS and not segmentation and selection.get("prefer_sync", False):
-            rows = sync_stats(connection_id, selection["account_id"], request, _proxy=_proxy)
+            rows = sync_stats(connection_id, account_id, request, _proxy=_proxy)
         else:
-            outcome = run_async_stats(
-                connection_id, selection["account_id"], request, _proxy=_proxy
-            )
+            outcome = run_async_stats(connection_id, account_id, request, _proxy=_proxy)
             if outcome["status"] != "completed":
                 raise ProviderTransientError(
                     message=f"X Ads stats job deferred for {outcome.get('report_ref')}"
@@ -393,6 +469,7 @@ def _pull_profile(
             rows = outcome["rows"]
         context = {
             **selection,
+            "account_id": account_id,
             "report_profile": profile_id,
             "entity_type": _compatibility()["profiles"][profile_id]["entity"],
             "date_from": window_from,
@@ -412,35 +489,58 @@ def _pull_profile(
     }
 
 
-def pull(connection_id, date_from, date_to, project_id, pull_id, selection=None):
+def pull(
+    connection_id,
+    date_from,
+    date_to,
+    project_id,
+    pull_id,
+    selection=None,
+    # OPTIONNEL, jamais requis : le worker ne passe le compte que si une selection
+    # existe (core/queue.py). Requis, il leverait un `TypeError` nu -- hors de
+    # toute taxonomie -- pour un Datastream sans selection.
+    account_id=None,
+):
+    """Pull par defaut -- profil `campaign_daily`."""
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "campaign_daily", selection
+        connection_id, date_from, date_to, project_id, pull_id, "campaign_daily", selection,
+        account_id,
     )
 
 
-def pull_campaign_daily(connection_id, date_from, date_to, project_id, pull_id, selection=None):
+def pull_campaign_daily(
+    connection_id, date_from, date_to, project_id, pull_id, selection=None, account_id=None
+):
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "campaign_daily", selection
+        connection_id, date_from, date_to, project_id, pull_id, "campaign_daily", selection,
+        account_id,
     )
 
 
-def pull_line_item_daily(connection_id, date_from, date_to, project_id, pull_id, selection=None):
+def pull_line_item_daily(
+    connection_id, date_from, date_to, project_id, pull_id, selection=None, account_id=None
+):
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "line_item_daily", selection
+        connection_id, date_from, date_to, project_id, pull_id, "line_item_daily", selection,
+        account_id,
     )
 
 
 def pull_promoted_post_daily(
-    connection_id, date_from, date_to, project_id, pull_id, selection=None
+    connection_id, date_from, date_to, project_id, pull_id, selection=None, account_id=None
 ):
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "promoted_post_daily", selection
+        connection_id, date_from, date_to, project_id, pull_id, "promoted_post_daily", selection,
+        account_id,
     )
 
 
-def pull_segmented_daily(connection_id, date_from, date_to, project_id, pull_id, selection=None):
+def pull_segmented_daily(
+    connection_id, date_from, date_to, project_id, pull_id, selection=None, account_id=None
+):
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "segmented_daily", selection
+        connection_id, date_from, date_to, project_id, pull_id, "segmented_daily", selection,
+        account_id,
     )
 
 

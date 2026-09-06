@@ -46,18 +46,38 @@ infra/keys/
 !infra/keys/.gitkeep
 
 # --- Story 1.4 generated artifacts (seeds) ---
-# These are generated at dev/CI time; never committed.
-server/modules/google-analytics/seeds/ga4_seed.csv
-server/modules/google-analytics/seeds/ga4_user_type_seed.csv
-server/modules/google-analytics/seeds/ga4_landing_seed.csv
-server/modules/google-analytics/seeds/ga4_paths_seed.csv
-server/modules/google-analytics/seeds/ga4_acquisition_session_seed.csv
-server/modules/google-analytics/seeds/ga4_acquisition_first_user_seed.csv
+# These are generated at dev/CI time; never committed. La regle vaut pour TOUT
+# module : chaque seeds/ porte son generate_*_seed.py, qui EST la source ; le CSV
+# est sa sortie. Verifie le 2026-08-01 : aucun CSV de server/modules/*/seeds/
+# n'etait suivi, et neuf trainaient en non-suivis a chaque git status.
+# NB : cette regle est volontairement ancree sur server/modules/. Un
+# `*/seeds/*.csv` non qualifie avalerait les 19 CSV de dbt/seeds/ (dim_country,
+# fx_rates, dim_metric...), qui sont eux de la donnee de reference committee.
+server/modules/*/seeds/*.csv
 server/modules/google-analytics/seeds/local.duckdb
 server/modules/google-analytics/seeds/*.duckdb
 
 # --- Local diagnostic/scratch artifacts ---
 server/core/scratch_*
+
+# Repertoires temporaires d'agent (pytest tmp_path roots, builds dbt de sonde,
+# duckdb jetables). Le suffixe est un numero de tache, jamais le meme deux fois :
+# sans cette ligne chaque campagne laisse des centaines d'entrees non suivies
+# dans `git status`, et c'est la qu'un `git add -A` en emporte une.
+.task-tmp-*/
+
+# Bac a sable de session : sondes, captures, dumps JSON de traduction. Rien de
+# ce qui compte ne vit ici -- ce qui compte part en commit. Une exception, un
+# script reellement partage qui y a ete pose avant cette regle.
+scratch/
+!scratch/push_all_docs_repos.py
+
+# Sorties d'audit datees (conformance, ledger) -- l'instrument les regenere.
+reports/
+
+# Couverture pytest -- artefact de run.
+.coverage
+.coverage.*
 
 # --- design-sync (claude.ai/design) — staged scripts + build output; durable state
 # (design-sync.config.json, .design-sync/NOTES.md|previews/|overrides/) IS committed ---
@@ -85,8 +105,10 @@ server/modules/*/catalog_sources/supermetrics.md
 # Local DuckDB seed/build artifacts -- never committed (local test material)
 server/modules/*/seeds/*.duckdb
 
-# Firebase Hosting deploy cache -- local artifact, never committed
-web/.firebase/
+# Firebase Hosting deploy cache -- local artifact, never committed.
+# The rule covers EVERY deploy target: `web/` was named alone, so
+# `ui/admin/.firebase/` stayed tracked and came back dirty after each deploy.
+.firebase/
 
 # Codex parallel-session scratch (audit scripts, backups, JSON dumps) -- never committed
 .codex-tmp/
@@ -98,6 +120,11 @@ web/.firebase/
 # committed. The run reports next door (_bmad-output/qa/runs/*.json) ARE committed:
 # they are the dated evidence a gate result rests on, and they stay small.
 _bmad-output/qa/screenshots/
+
+# Harness chain pins (e2e/arm_harness_project.py -> e2e/chain_pins.py) -- a LOCAL
+# file naming this deployment's own project, feed, host and service accounts. Never
+# committed: those are production identifiers (CLAUDE.md, "Jamais").
+_bmad-output/qa/pins/
 
 # Visual-QA artifacts (Playwright route-mock harnesses + screenshots) -- never committed
 /*qa.mjs

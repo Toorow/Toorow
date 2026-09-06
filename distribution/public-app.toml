@@ -75,6 +75,22 @@ exclude_globs = [
   "**/scratch_*",
   "dbt/profiles/profiles.yml",
   "infra/keys/**",
+  # `docs/` est publie parce que docs.toorow.com EST ce dossier : Mintlify lit
+  # `docs/` sur main du depot PUBLIC. Mais tout ce qui vit sous `docs/` n en fait
+  # pas partie. Mesure du 2026-09-06, sur la premiere projection depuis le
+  # 2026-07-26 : elle emportait 43 documents jamais publies -- 38 documents
+  # d architecture ratifiee portant des arbitrages nominatifs, un registre de
+  # dette, un registre de caveats, et cinq notes de travail internes. Un push
+  # public est irreversible (historique, forks, caches) : ce qui n a jamais ete
+  # publie ne le devient pas par effet de bord. La page publiee correspondante
+  # est `docs/repository-boundary.mdx`, dont la ligne `docs/` = prive contredit
+  # ce fichier depuis que Mintlify sert `docs/` -- arbitrage ouvert (AI-372).
+  "docs/product-architecture/**",
+  "docs/claude-md-incidents.md",
+  "docs/console-visual-gate-g1-status.md",
+  "docs/note_de_suivi_controle.md",
+  "docs/ui-architect-guide.md",
+  "docs/ui-css-strategy.md",
   "server/modules/**/seeds/*.csv",
 ]
 

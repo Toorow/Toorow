@@ -15,10 +15,17 @@ Auth: the shared _check_auth from core.admin_api. Reads require org membership
 FORBIDDEN via the API (seeds are the authority), exactly like 27.2.
 
 STRICT PROJECT/ORG ISOLATION (lesson F-3 of 27.2): a project_id is NEVER trusted on its
-own -- it is verified to belong to the guarded org before any read, otherwise 404
-(existence-hiding). The core read model itself has no guard (S-4 trust contract).
+own -- it is verified to belong to the guarded org before any read, otherwise the
+door's ONE non-disclosing refusal (`_unreachable`). The core read model itself has no
+guard (S-4 trust contract).
 
-French error messages (house style). ASCII-only stdout (AI-03).
+ONE REFUSAL, AND ONE EXCEPTION TO IT. Denied, absent and unavailable are the same
+answer here -- see `_unreachable`. The single exception is a PROVEN MEMBER of the
+organization who is not an owner or an admin (`_needs_manage`, 403): membership is
+asked first, so that envelope discloses nothing a member did not already know, and it
+is the only refusal that names a gesture a person can actually perform.
+
+ASCII-only stdout (AI-03).
 """
 
 from __future__ import annotations
@@ -44,7 +51,7 @@ async def _check_auth(request: Request) -> tuple[bool, str]:
 
 def _unauthorized() -> Response:
     return JSONResponse(
-        {"code": "unauthorized", "message": "Authentification requise."}, status_code=401
+        {"code": "unauthorized", "message": "Authentication required."}, status_code=401
     )
 
 
@@ -53,8 +60,58 @@ def _not_found(message: str) -> Response:
 
 
 def _server_error() -> Response:
+    """A failure AFTER the guard passed: the caller is entitled to be here."""
     return JSONResponse(
-        {"code": "server_error", "message": "Erreur serveur."}, status_code=500
+        {"code": "server_error", "message": "Server error."}, status_code=500
+    )
+
+
+def _unreachable() -> Response:
+    """THE refusal of this door -- one envelope for every reason it says no.
+
+    "You may not", "it does not exist" and "it could not be checked" wear ONE
+    envelope here, because two of them side by side are an oracle: a caller who
+    reads 403 for a project of a neighbouring organization and 404 for an id
+    nobody ever created has just learned which Projects exist. Measured
+    2026-08-31 on this very function -- an existing foreign project answered
+    `403 Droits insuffisants` while an absent one answered `404 Project not
+    found.`, and comparing the two enumerated the platform.
+
+    The words are the ones the MODEL door already answers with (`core.mcp_scope`,
+    `ORG_NOT_FOUND_*`), imported and never retyped: two doors onto one state that
+    refuse in two vocabularies are two answers to "who may name here". The
+    sentence names the GESTURE that repairs -- being invited in -- and never the
+    cause, which is the only half a caller could act on anyway.
+    """
+    from core.mcp_scope import (  # noqa: PLC0415
+        ORG_NOT_FOUND_CODE,
+        ORG_NOT_FOUND_MESSAGE,
+    )
+
+    return JSONResponse(
+        {"code": ORG_NOT_FOUND_CODE, "message": ORG_NOT_FOUND_MESSAGE}, status_code=404
+    )
+
+
+def _needs_manage() -> Response:
+    """The one refusal that is NOT an existence question, and may keep its own envelope.
+
+    It is only ever reached by a PROVEN MEMBER of the organization addressed: the
+    membership question is asked first, below, and a caller who fails it leaves
+    through `_unreachable` like everybody else. A member already knows the
+    organization exists, so saying "you are not an admin of it" discloses nothing
+    -- and it is the only refusal a person can act on, which is why governance
+    requires it to name the gesture rather than the cause.
+    """
+    return JSONResponse(
+        {
+            "code": "forbidden",
+            "message": (
+                "Naming a dimension is an owner's or an admin's gesture. Ask one of "
+                "the owners or admins of this organization to name it."
+            ),
+        },
+        status_code=403,
     )
 
 
@@ -63,9 +120,17 @@ def _guard_org_and_project(
 ) -> Response | None:
     """Return an error Response when the caller may not touch (org_id, project_id).
 
-    Resolves the org from the project when org_id is absent, verifies membership (or
-    owner/admin when *manage*), and verifies the project belongs to that org. Any
-    unresolvable piece -> 404 (never a fall-through to an unguarded read/write).
+    Resolves the org from the project when org_id is absent, verifies MEMBERSHIP,
+    verifies the project belongs to that org, and only then -- for a write -- asks
+    whether the member is an owner or an admin.
+
+    THE ORDER IS THE WHOLE GUARD. Membership is asked BEFORE the manage rank, so
+    the 403 below is reachable only by somebody who has already proved they may
+    see the organization. Every other outcome -- absent project, foreign project,
+    project of an organization that is not yours, org you are not in, a store that
+    could not answer -- leaves through the SAME `_unreachable` envelope. An
+    authorization that cannot be evaluated is not an authorization granted
+    (`admin_api._refuse_unless_project_allowed` holds the same line for projects).
     """
     from core.db import get_connection  # noqa: PLC0415
     from core.project_access import (  # noqa: PLC0415
@@ -83,29 +148,22 @@ def _guard_org_and_project(
                     )
                     row = cur.fetchone()
                 if not row or not row[0]:
-                    return _not_found("Projet introuvable.")
+                    return _unreachable()
                 project_org_id = row[0]
                 if guard_org_id is None:
                     guard_org_id = project_org_id
                 elif project_org_id != guard_org_id:
-                    return _not_found("Projet introuvable.")
+                    return _unreachable()
             if guard_org_id is None:
-                return _not_found("Organisation introuvable.")
-            allowed = (
-                identity_can_manage_org(guard_org_id, identity, conn)
-                if manage
-                else identity_has_org_access(guard_org_id, identity, conn)
-            )
-    except Exception as exc:  # noqa: BLE001
-        logger.error("dimension_lineage_api: guard failed: %s", exc)
-        return _server_error()
+                return _unreachable()
+            if not identity_has_org_access(guard_org_id, identity, conn):
+                return _unreachable()
+            if manage and not identity_can_manage_org(guard_org_id, identity, conn):
+                return _needs_manage()
+    except Exception as exc:  # noqa: BLE001 -- refuse on an unreachable seam
+        logger.error("dimension_lineage_api: guard failed: %s", type(exc).__name__)
+        return _unreachable()
 
-    if not allowed:
-        if manage:
-            return JSONResponse(
-                {"code": "forbidden", "message": "Droits insuffisants."}, status_code=403
-            )
-        return _not_found("Organisation introuvable.")
     return None
 
 
@@ -133,11 +191,11 @@ async def _fed_by(request: Request) -> Response:
 
     if project_id is None:
         return JSONResponse(
-            {"code": "missing_param", "message": "project_id est requis."}, status_code=400
+            {"code": "missing_param", "message": "project_id is required."}, status_code=400
         )
     if canonical_dimension is None:
         return JSONResponse(
-            {"code": "missing_param", "message": "canonical_dimension est requis."},
+            {"code": "missing_param", "message": "canonical_dimension is required."},
             status_code=400,
         )
 
@@ -184,7 +242,7 @@ async def _get_labels(request: Request) -> Response:
 
     if org_id is None and project_id is None:
         return JSONResponse(
-            {"code": "missing_param", "message": "org_id ou project_id est requis."},
+            {"code": "missing_param", "message": "org_id or project_id is required."},
             status_code=400,
         )
 
@@ -240,11 +298,11 @@ async def _set_label(request: Request) -> Response:
         body = json.loads(await request.body())
     except (json.JSONDecodeError, UnicodeDecodeError):
         return JSONResponse(
-            {"code": "invalid_json", "message": "Corps JSON invalide."}, status_code=400
+            {"code": "invalid_json", "message": "Invalid JSON body."}, status_code=400
         )
     if not isinstance(body, dict):
         return JSONResponse(
-            {"code": "invalid_json", "message": "Corps JSON invalide."}, status_code=400
+            {"code": "invalid_json", "message": "Invalid JSON body."}, status_code=400
         )
 
     scope_level = (body.get("scope_level") or "").strip().upper()
@@ -252,13 +310,13 @@ async def _set_label(request: Request) -> Response:
         return JSONResponse(
             {
                 "code": "forbidden",
-                "message": "La portee PLATFORM ne peut pas etre modifiee via l'API.",
+                "message": "The PLATFORM scope cannot be modified through the API.",
             },
             status_code=403,
         )
     if scope_level not in _VALID_WRITE_SCOPES:
         return JSONResponse(
-            {"code": "invalid_param", "message": "scope_level doit etre ORG ou PROJECT."},
+            {"code": "invalid_param", "message": "scope_level must be ORG or PROJECT."},
             status_code=422,
         )
 
@@ -271,18 +329,18 @@ async def _set_label(request: Request) -> Response:
         return JSONResponse(
             {
                 "code": "missing_param",
-                "message": "canonical_dimension et display_label sont requis.",
+                "message": "canonical_dimension and display_label are required.",
             },
             status_code=422,
         )
     if scope_level == "PROJECT" and project_id is None:
         return JSONResponse(
-            {"code": "missing_param", "message": "project_id est requis."},
+            {"code": "missing_param", "message": "project_id is required."},
             status_code=422,
         )
     if scope_level == "ORG" and org_id is None:
         return JSONResponse(
-            {"code": "missing_param", "message": "org_id est requis."}, status_code=422
+            {"code": "missing_param", "message": "org_id is required."}, status_code=422
         )
 
     guard = _guard_org_and_project(org_id, project_id, identity, manage=True)
@@ -308,7 +366,7 @@ async def _set_label(request: Request) -> Response:
         # Never propagate the internal text (it can leak scope/id internals), S-1 of 27.2.
         logger.warning("dimension_lineage_api: set_label rejected: %s", exc)
         return JSONResponse(
-            {"code": "invalid_scope", "message": "Scope invalide."}, status_code=422
+            {"code": "invalid_scope", "message": "Invalid scope."}, status_code=422
         )
     except Exception as exc:  # noqa: BLE001
         logger.error("dimension_lineage_api: set_label failed: %s", exc)
@@ -342,17 +400,17 @@ async def _delete_label(request: Request) -> Response:
         return JSONResponse(
             {
                 "code": "forbidden",
-                "message": "La portee PLATFORM ne peut pas etre supprimee via l'API.",
+                "message": "The PLATFORM scope cannot be deleted through the API.",
             },
             status_code=403,
         )
     if scope_level not in _VALID_WRITE_SCOPES:
         return JSONResponse(
-            {"code": "invalid_param", "message": "scope_level doit etre ORG ou PROJECT."},
+            {"code": "invalid_param", "message": "scope_level must be ORG or PROJECT."},
             status_code=422,
         )
     if not canonical_dimension:
-        return _not_found("Libelle introuvable.")
+        return _not_found("No client name is stored at that scope for this dimension.")
 
     guard = _guard_org_and_project(org_id, project_id, identity, manage=True)
     if guard is not None:
@@ -374,14 +432,14 @@ async def _delete_label(request: Request) -> Response:
     except InvalidScope as exc:
         logger.warning("dimension_lineage_api: delete_label rejected: %s", exc)
         return JSONResponse(
-            {"code": "invalid_scope", "message": "Scope invalide."}, status_code=422
+            {"code": "invalid_scope", "message": "Invalid scope."}, status_code=422
         )
     except Exception as exc:  # noqa: BLE001
         logger.error("dimension_lineage_api: delete_label failed: %s", exc)
         return _server_error()
 
     if not deleted:
-        return _not_found("Libelle introuvable.")
+        return _not_found("No client name is stored at that scope for this dimension.")
     return JSONResponse({"deleted": True})
 
 

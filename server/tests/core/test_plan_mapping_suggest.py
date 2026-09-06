@@ -20,6 +20,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.conftest import purge_fixture_project
+
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
@@ -174,17 +176,44 @@ def test_duplicate_campaign_refs_deduped():
 
 
 def test_payload_groups_by_line_key_without_weight():
-    """Sec.10: groups by line_key, entries {connector, campaign_ref} WITHOUT split_weight."""
+    """Sec.10: groups by line_key, entries WITHOUT split_weight.
+
+    STORY 61.3 ADDED TWO KEYS, and it is the whole point of that story: until it,
+    the entry was `{connector, campaign_ref}` and nothing else, so the level died
+    at the exact moment a person validated the suggestion. `set_line_mappings`
+    also replaces a line's WHOLE set, so a level that did not travel here would be
+    erased again by the next write on the same line.
+    """
     lines = [_line("l1", "Summer Sale")]
     actuals = {"meta-ads": ["Summer Sale"], "google-ads": ["Summer Sale"]}
     sugs = pms.suggest_line_mappings(lines, actuals)
     payload = pms.propose_set_line_mappings_payload(sugs)
     assert set(payload) == {"l1"}
     for entry in payload["l1"]:
-        assert set(entry) == {"connector", "campaign_ref"}
+        assert set(entry) == {"connector", "campaign_ref", "match_method", "match_score"}
         assert "split_weight" not in entry
+        assert entry["match_method"] == "exact"
+        assert entry["match_score"] == 1.0
     # Deterministic entry order (sorted by connector, campaign_ref).
     assert [e["connector"] for e in payload["l1"]] == ["google-ads", "meta-ads"]
+
+
+def test_the_payload_carries_the_level_of_each_pair_and_not_of_the_line():
+    """Story 61.3: two campaigns on one line can have been paired differently.
+
+    A payload that carried one level per line would have to pick one of them, and
+    the one it picked would be a fabrication for the other.
+    """
+    lines = [_line("l1", "Summer Sale")]
+    actuals = {"meta-ads": ["Summer Sale", "Summer Sales"]}
+    sugs = pms.suggest_line_mappings(lines, actuals, similarity_threshold=0.5)
+    payload = pms.propose_set_line_mappings_payload(sugs)
+
+    by_ref = {entry["campaign_ref"]: entry for entry in payload["l1"]}
+    assert by_ref["Summer Sale"]["match_method"] == "exact"
+    assert by_ref["Summer Sales"]["match_method"] == "similarity"
+    # And the similarity carries the ratio it was judged on, not a rounded 1.0.
+    assert 0.5 <= by_ref["Summer Sales"]["match_score"] < 1.0
 
 
 def test_payload_with_default_weights_annotation():
@@ -212,6 +241,91 @@ def test_payload_consumable_shape_matches_set_line_mappings_entries():
     entry = payload["l1"][0]
     assert entry["connector"] == "meta-ads"
     assert entry["campaign_ref"] == "Summer Sale"
+
+
+# ===========================================================================
+# Story 61.3 -- the connector scope, and what an empty answer has to say
+# ===========================================================================
+
+
+def test_the_connector_scope_keeps_only_the_candidates_that_surface_can_show(monkeypatch):
+    """Arbitrage A7: the `Placements` tab reaches ONE connector, so this does too.
+
+    Without it the sweep proposes matches on connectors that surface cannot draw,
+    and a person is offered a decision about something they have no way to look
+    at. The PURE `suggest_line_mappings` is untouched -- it stays a function of
+    what it is given.
+    """
+    plan = {"id": "plan-1", "project_id": "proj-1", "lines": [_line("l1", "Summer Sale")]}
+    _patch_get_plan(monkeypatch, plan)
+
+    everything = {"meta-ads": ["Summer Sale"], "google-ads": ["Summer Sale"]}
+    unscoped = pms.suggest_line_mappings_for_plan("plan-1", actuals_by_connector=everything)
+    scoped = pms.suggest_line_mappings_for_plan(
+        "plan-1", connector="google-ads", actuals_by_connector=everything
+    )
+
+    assert {s["connector"] for s in unscoped["suggestions"]} == {"meta-ads", "google-ads"}
+    assert {s["connector"] for s in scoped["suggestions"]} == {"google-ads"}
+    assert scoped["connector"] == "google-ads"
+    # And nothing of the other connector survives into the entries either.
+    assert all(
+        entry["connector"] == "google-ads"
+        for entries in scoped["payload_by_line_key"].values()
+        for entry in entries
+    )
+
+
+def test_a_scope_with_no_campaign_says_so_instead_of_answering_silence(monkeypatch):
+    """"This connector reported nothing" and "we did not look at it" are not the same."""
+    plan = {"id": "plan-1", "project_id": "proj-1", "lines": [_line("l1", "Summer Sale")]}
+    _patch_get_plan(monkeypatch, plan)
+
+    out = pms.suggest_line_mappings_for_plan(
+        "plan-1", connector="google-ads", actuals_by_connector={"meta-ads": ["Summer Sale"]}
+    )
+
+    assert out["suggestions"] == []
+    assert any("requested connector" in note for note in out["notes"])
+
+
+def test_an_empty_answer_says_over_what_it_looked(monkeypatch):
+    """A measurement that cannot state its threshold and its window is an opinion."""
+    plan = {
+        "id": "plan-1",
+        "project_id": "proj-1",
+        "lines": [_line("l1", "Winter Coats", start="2026-03-01", end="2026-03-31")],
+    }
+    _patch_get_plan(monkeypatch, plan)
+
+    out = pms.suggest_line_mappings_for_plan(
+        "plan-1", connector="meta-ads", actuals_by_connector={"meta-ads": ["Summer Sale"]}
+    )
+
+    assert out["suggestions"] == []
+    assert out["similarity_threshold"] == pms.DEFAULT_SIMILARITY_THRESHOLD
+    assert out["window"] == {"start": "2026-03-01", "end": "2026-03-31"}
+    assert out["project_id"] == "proj-1"
+
+
+def test_the_scoped_read_still_writes_nothing(monkeypatch):
+    """The module gained a parameter and a payload key, not a write.
+
+    `test_write_frontier_no_mutation` greps the source; this one drives the
+    orchestration with a connector scope and proves no statement was executed on
+    the connection it opened.
+    """
+    plan = {"id": "plan-1", "project_id": "proj-1", "lines": [_line("l1", "Summer Sale")]}
+    _patch_get_plan(monkeypatch, plan)
+
+    out = pms.suggest_line_mappings_for_plan(
+        "plan-1", connector="meta-ads", actuals_by_connector={"meta-ads": ["Summer Sale"]}
+    )
+
+    assert len(out["suggestions"]) == 1
+    # `_FakeConn.cursor()` hands back a cursor with no `execute` at all, so any
+    # statement issued here would have raised instead of passing quietly.
+    assert not hasattr(_FakeCursor, "execute")
 
 
 # ===========================================================================
@@ -409,9 +523,8 @@ def _seed_project(conn) -> str:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO app.projects (id, name, slug, status, currency, timezone, created_by,
-                org_id)
-            VALUES (%s, %s, %s, 'active', 'EUR', 'Europe/Paris', 'system', 'org_test_fixture')
+            INSERT INTO app.projects (id, name, slug, status, created_by, org_id)
+            VALUES (%s, %s, %s, 'active', 'system', 'org_test_fixture')
             """,
             (project_id, "Bridge Test", project_id),
         )
@@ -422,10 +535,34 @@ def _seed_project(conn) -> str:
 def _drop_project(conn, project_id: str) -> None:
     with conn.cursor() as cur:
         cur.execute("ALTER TABLE app.media_plan_versions DISABLE TRIGGER USER")
-        try:
+        # Same fixture-only bypass as test_plan_actual_alignment._drop (the file
+        # this teardown was copied from BEFORE f1112fda repaired it there): the
+        # guard trigger (rightly) refuses deleting a published version's
+        # allocations, and this teardown erases the whole fixture project.
+        cur.execute("ALTER TABLE app.plan_allocation_daily DISABLE TRIGGER USER")
+        # The audit log is append-only (FR12) and its guard blocks the DELETE
+        # below -- a failure the old `finally:` masked behind
+        # InFailedSqlTransaction. Same fixture-only bypass as the sibling file.
+        cur.execute("ALTER TABLE app.audit_log DISABLE TRIGGER USER")
+        try:  # noqa: SIM105 -- the except ROLLS BACK, see below
             cur.execute(
                 "DELETE FROM app.plan_line_mappings WHERE plan_id IN "
                 "(SELECT id FROM app.media_plans WHERE project_id = %s)",
+                (project_id,),
+            )
+            # mediaplan_store materialises a daily allocation per line
+            # (mediaplan_store.py:547, migration 040 FK ON DELETE RESTRICT), so
+            # the allocations go before the lines they reference. Same
+            # pre-existing red as the sibling file's, proven on HEAD bb5b0038
+            # (2026-08-18): this teardown, not the read under test.
+            cur.execute(
+                """
+                DELETE FROM app.plan_allocation_daily WHERE line_id IN (
+                    SELECT l.id FROM app.media_plan_lines l
+                    JOIN app.media_plan_versions v ON v.id = l.version_id
+                    JOIN app.media_plans p ON p.id = v.plan_id WHERE p.project_id = %s
+                )
+                """,
                 (project_id,),
             )
             cur.execute(
@@ -443,10 +580,50 @@ def _drop_project(conn, project_id: str) -> None:
                 (project_id,),
             )
             cur.execute("DELETE FROM app.media_plans WHERE project_id = %s", (project_id,))
+            # The governed mutations of this fixture (publish_version,
+            # set_line_mappings) each wrote an app.operations row holding its
+            # audit event in ON DELETE RESTRICT (060:121), and operations and
+            # operation_outbox reference EACH OTHER -- the cycle is broken by
+            # nulling the outbox pointer first. Without this sweep the audit
+            # delete below is refused, which the old `finally:` masked.
+            cur.execute(
+                """
+                UPDATE app.operations SET outbox_event_id = NULL
+                WHERE audit_event_id IN
+                    (SELECT id FROM app.audit_log WHERE identity IN ('tester', 'system'))
+                """
+            )
+            cur.execute(
+                """
+                DELETE FROM app.operation_outbox ob USING app.operations o
+                WHERE ob.operation_id = o.id AND o.audit_event_id IN
+                    (SELECT id FROM app.audit_log WHERE identity IN ('tester', 'system'))
+                """
+            )
+            cur.execute(
+                """
+                DELETE FROM app.operations WHERE audit_event_id IN
+                    (SELECT id FROM app.audit_log WHERE identity IN ('tester', 'system'))
+                """
+            )
             cur.execute("DELETE FROM app.audit_log WHERE identity IN ('tester', 'system')")
-            cur.execute("DELETE FROM app.projects WHERE id = %s", (project_id,))
-        finally:
-            cur.execute("ALTER TABLE app.media_plan_versions ENABLE TRIGGER USER")
+            # AI-291: le graphe prend le relais si une table gouvernee
+            # ajoutee depuis retient le projet en ON DELETE RESTRICT.
+            purge_fixture_project(cur.connection, project_id)
+        except Exception:
+            # A failed statement leaves this transaction ABORTED: the ENABLE
+            # statements a `finally` would issue are refused (masking the real
+            # failure behind InFailedSqlTransaction), the DISABLEs roll back
+            # with the transaction anyway, but the ACCESS EXCLUSIVE locks they
+            # took are held until rollback -- and an open aborted connection
+            # blocks every other teardown on the cluster. Roll back, THEN let
+            # the failure speak (test_plan_actual_alignment._drop, same shape).
+            conn.rollback()
+            raise
+        cur.execute("SET CONSTRAINTS ALL IMMEDIATE")
+        cur.execute("ALTER TABLE app.audit_log ENABLE TRIGGER USER")
+        cur.execute("ALTER TABLE app.plan_allocation_daily ENABLE TRIGGER USER")
+        cur.execute("ALTER TABLE app.media_plan_versions ENABLE TRIGGER USER")
     conn.commit()
 
 

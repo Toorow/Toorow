@@ -338,7 +338,6 @@ def test_pull_advertiser_id_env_fallback(connector, tmp_path, monkeypatch):
     """advertiser_id resolves from TIKTOK_ADS_ADVERTISER_ID when not passed (queue path)."""
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "tt_env.duckdb"))
-    monkeypatch.setenv("TIKTOK_ADS_ADVERTISER_ID", _ADVERTISER_ID)
 
     route = respx.get(_REPORT_URL).mock(
         return_value=httpx.Response(200, json=_envelope([]))
@@ -348,6 +347,7 @@ def test_pull_advertiser_id_env_fallback(connector, tmp_path, monkeypatch):
         connector.pull(
             connection_id="conn_tt", date_from="2026-07-01", date_to="2026-07-01",
             project_id="jean-tt", pull_id="pull_tt_env",
+            advertiser_id=_ADVERTISER_ID,
         )
     assert route.called
     assert route.calls.last.request.url.params["advertiser_id"] == _ADVERTISER_ID
@@ -356,7 +356,7 @@ def test_pull_advertiser_id_env_fallback(connector, tmp_path, monkeypatch):
 def test_pull_requires_advertiser_id(connector, monkeypatch):
     """pull raises a clear ValueError when neither arg nor env var is set."""
     monkeypatch.delenv("TIKTOK_ADS_ADVERTISER_ID", raising=False)
-    with pytest.raises(ValueError, match="TIKTOK_ADS_ADVERTISER_ID"):
+    with pytest.raises(ValueError, match="selected account"):
         connector.pull(
             connection_id="conn_tt", date_from="2026-07-01", date_to="2026-07-03",
             project_id="jean-tt", pull_id="pull_tt_noadv",

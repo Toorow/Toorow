@@ -47,9 +47,23 @@ it("strips the bootstrap fragment before rendering authenticated setup", async (
       body: JSON.stringify({ bootstrap_bearer: "installer-secret" }),
     }),
   );
-  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(claimCalls(fetchMock)).toHaveLength(1);
   expect(document.getElementById("gsi-script")).toBeNull();
 });
+
+/** The calls this file is about: the claim command chain.
+ *
+ *  The screen also READS two reference vocabularies (currencies, timezones) to
+ *  offer the reporting defaults. Those are not part of the claim, and the
+ *  assertions below used to index `mock.calls[1]` and `[2]` positionally — so
+ *  adding any unrelated read silently shifted what they inspected. Selecting by
+ *  path makes each assertion say what it means.
+ */
+function claimCalls(mock: { mock: { calls: unknown[][] } }) {
+  return mock.mock.calls.filter(
+    ([path]) => !String(path).startsWith("/api/reference/"),
+  );
+}
 
 it("fails closed when the bootstrap capability is absent or rejected", async () => {
   const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 404 });
@@ -85,6 +99,13 @@ it("submits the first organization and project through the claim command", async
   window.history.replaceState({}, "", "/setup#bootstrap=installer-secret");
   const fetchMock = vi
     .fn()
+    // The screen reads two reference vocabularies at mount to offer the
+    // reporting defaults. A `...Once` queue is consumed BEFORE any default
+    // implementation, so those two reads would otherwise eat the first two
+    // claim responses and shift the whole chain. Answering them here, first and
+    // explicitly, keeps the queue below reserved for the claim command.
+    .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ items: [] }) })
+    .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ items: [] }) })
     .mockResolvedValueOnce({ ok: true, status: 200 })
     .mockResolvedValueOnce({
       ok: true,
@@ -118,12 +139,12 @@ it("submits the first organization and project through the claim command", async
   });
   fireEvent.click(screen.getByRole("button", { name: "Claim instance" }));
 
-  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-  const [confirmationPath, confirmationInit] = fetchMock.mock.calls[1] as [
+  await waitFor(() => expect(claimCalls(fetchMock)).toHaveLength(3));
+  const [confirmationPath, confirmationInit] = claimCalls(fetchMock)[1] as [
     string,
     RequestInit,
   ];
-  const [path, init] = fetchMock.mock.calls[2] as [string, RequestInit];
+  const [path, init] = claimCalls(fetchMock)[2] as [string, RequestInit];
   expect(confirmationPath).toBe("/api/instance/claim/confirmation");
   expect(confirmationInit.body).toBe(init.body);
   expect(path).toBe("/api/instance/claim");
@@ -150,8 +171,18 @@ it("submits the first organization and project through the claim command", async
 it("resumes a tokenless claim session and retries a network failure without reload", async () => {
   const fetchMock = vi
     .fn()
+    // The screen reads two reference vocabularies at mount to offer the
+    // reporting defaults. A `...Once` queue is consumed BEFORE any default
+    // implementation, so those two reads would otherwise eat the first two
+    // claim responses and shift the whole chain. Answering them here, first and
+    // explicitly, keeps the queue below reserved for the claim command.
     .mockRejectedValueOnce(new Error("offline"))
-    .mockResolvedValueOnce({ ok: true, status: 200 });
+    .mockResolvedValueOnce({ ok: true, status: 200 })
+    // Here the session read comes FIRST: the form (and its vocabulary reads)
+    // only appear once the session resolves, so these two answers belong at the
+    // end rather than at the head as in the tests above.
+    .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ items: [] }) })
+    .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ items: [] }) });
   vi.stubGlobal("fetch", fetchMock);
   render(<ClaimInstance />);
 
@@ -160,17 +191,24 @@ it("resumes a tokenless claim session and retries a network failure without relo
   expect(
     await screen.findByRole("heading", { name: "Claim this toorow instance" }),
   ).toBeVisible();
-  expect(fetchMock).toHaveBeenCalledTimes(2);
-  expect(fetchMock).toHaveBeenLastCalledWith(
+  expect(claimCalls(fetchMock)).toHaveLength(2);
+  expect(claimCalls(fetchMock).at(-1)).toEqual([
     "/api/instance/claim/session",
     expect.objectContaining({ method: "GET" }),
-  );
+  ]);
 });
 
 it("keeps claim success visible until the explicit next-step CTA", async () => {
   window.history.replaceState({}, "", "/setup#bootstrap=installer-secret");
   const fetchMock = vi
     .fn()
+    // The screen reads two reference vocabularies at mount to offer the
+    // reporting defaults. A `...Once` queue is consumed BEFORE any default
+    // implementation, so those two reads would otherwise eat the first two
+    // claim responses and shift the whole chain. Answering them here, first and
+    // explicitly, keeps the queue below reserved for the claim command.
+    .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ items: [] }) })
+    .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ items: [] }) })
     .mockResolvedValueOnce({ ok: true, status: 200 })
     .mockResolvedValueOnce({
       ok: true,

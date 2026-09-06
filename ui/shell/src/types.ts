@@ -25,10 +25,24 @@ export interface WidgetMeta {
      * Machine-readable alert code.
      * Known codes:
      *   - "auth_expired" — OAuth token is invalid; show reconnect affordance (AD-15)
+     *   - "populate_failed" — a collection landed no rows (or too few) and the
+     *     sticky red is holding newer collections back; the message names the
+     *     collection and the repair gesture (AI-302)
      */
     code: string;
     severity: "info" | "warn" | "error";
     message: string;
+    /**
+     * AI-302 (populate_failed only, and only when the platform recorded it —
+     * reds raised before migration 276 carry none): the pull whose verification
+     * verdict raised the red, so a screen can link to the collection instead of
+     * parsing the sentence.
+     */
+    pull_id?: string;
+    /** "empty" (nothing landed) or "partial" (too little landed). */
+    verdict?: string;
+    /** ISO-8601 datetime the red was raised. */
+    raised_at?: string;
   }>;
   /**
    * Story 4.6 (AC5): ISO-8601 datetime of the as-of replay boundary.

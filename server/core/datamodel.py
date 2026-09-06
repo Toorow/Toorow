@@ -53,6 +53,18 @@ import logging
 import re
 from collections.abc import Sequence
 
+from core.audit import declare_action
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12) : elles etaient retapees en dur a l appel, donc rien
+# ne pouvait distinguer une action d une faute de frappe. Declarees ici,
+# a cote du code qui les ecrit.
+ACTION_TARGET_FIELD_UPDATED = declare_action("target_field.updated")
+ACTION_TARGET_FIELD_DELETED = declare_action("target_field.deleted")
+ACTION_MAPPING_UPDATED = declare_action("mapping.updated")
+
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -348,9 +360,9 @@ def _detect_conflicts(
                 {
                     "code": "CURRENCY_CONFLICT",
                     "message": (
-                        "Ce champ est alimenté par des modules distincts dont les unités "
-                        "monétaires peuvent différer (ex. USD brut vs EUR normalisé). "
-                        "Vérifiez la cohérence des devises avant d'agréger."
+                        "This field is fed by distinct connectors whose monetary "
+                        "units may differ (e.g. raw USD vs normalized EUR). "
+                        "Check currency consistency before aggregating."
                     ),
                     "affected_streams": affected,
                     # --- Story 39.3 additive enrichment (backward-compatible) ---
@@ -379,10 +391,10 @@ def _detect_conflicts(
                 {
                     "code": "CURRENCY_GAP",
                     "message": (
-                        "Ce champ monétaire n'a aucune devise source résolvable : aucun flux "
-                        "ne déclare sa devise. Fail-closed : un montant sans devise n'est ni "
-                        "sommé ni converti tant que sa devise n'est pas déclarée (liez une "
-                        "devise source par flux)."
+                        "This monetary field has no resolvable source currency: no "
+                        "Datastream declares its currency. Fail-closed: an amount without "
+                        "a currency is neither summed nor converted until its currency is "
+                        "declared (bind a source currency per Datastream)."
                     ),
                     "affected_streams": affected,
                     # --- Story 39.3 additive keys (shape-aligned with CURRENCY_CONFLICT) ---
@@ -422,16 +434,65 @@ def _detect_conflicts(
     # PURE (no realign, no warehouse read, realignable:false constant); append its dict verbatim.
     # Appended AFTER the currency/gap blocks and BEFORE MEASURE_NULL -- strictly additive, no
     # existing code/key touched (backward-compatible, mirrors 39.3's discipline).
+    # AI-132 : `report_timezone_has_lever` etait LU ICI et ECRIT NULLE PART.
+    #
+    # Les deux cles ne sont produites par aucun chemin du depot (mesure : deux
+    # occurrences, ces deux lectures). `has_lever` valait donc toujours False et
+    # toute la branche levier du moteur etait inatteignable -- la classe AI-85,
+    # et la raison pour laquelle le critere [2] de `reporting-timezone.md` ne
+    # pouvait pas se fermer. Les 51 tests timezone etaient verts parce qu'ils
+    # passent `has_lever` EN ENTREE du moteur pur : aucun n'exigeait un
+    # producteur.
+    #
+    # Le producteur est la DECLARATION du connecteur, resolue par module (la
+    # ligne used-by le porte deja) et non par datastream, ce qui couterait un
+    # aller-retour en base par flux pour ce que le manifeste sait deja.
+    #
+    # Import LOCAL : le bloc au-dessus n'importe `report_timezone` que dans la
+    # branche `is_monetary`, et ce signal-ci n'est deliberement PAS gate dessus
+    # (un decalage de jour entre sessions non monetaires est exactement le cas a
+    # signaler). S'appuyer sur cet import laisserait le nom non lie.
+    from core import report_timezone as _report_timezone  # noqa: PLC0415
+
+    # AI-167 : le fuseau vient de ce qu'un RUN a observe, faute de quoi il ne vient
+    # de nulle part.
+    #
+    # `_stream_report_timezone` le dit lui-meme : « today the used-by SELECT carries
+    # none of these ». Donc en production chaque flux etait non placable, et le signal
+    # ne pouvait dire que « N flux sans fuseau resolvable » -- jamais « ces flux tirent
+    # leur jour sur des horloges differentes », qui est precisement le signal que
+    # l'epic demande. La branche existait et aucun parcours ne l'atteignait.
+    #
+    # La zone existe maintenant : le pull la rend, le worker l'enregistre (AI-161).
+    # UNE requete pour tout le champ, pas une par flux. La cle generique de la ligne
+    # used-by garde la priorite : le jour ou la SELECT la portera, elle gagnera sans
+    # qu'on touche ici.
+    from core.time_boundary import observed_zones_for_datastreams  # noqa: PLC0415
+
+    _observed = observed_zones_for_datastreams(
+        project_id, [ub.get("datastream_id") for ub in used_by]
+    )
     tz_streams = [
         {
             "datastream": ub.get("datastream_name") or ub.get("module_name"),
-            "report_timezone": _stream_report_timezone(ub),
-            "has_lever": bool(ub.get("report_timezone_has_lever")),
-            "lever_hint": ub.get("report_timezone_lever_hint"),
+            "report_timezone": (
+                _stream_report_timezone(ub) or _observed.get(str(ub.get("datastream_id") or ""))
+            ),
+            **_report_timezone.lever_for_module(ub.get("module_name")),
         }
         for ub in used_by
     ]
-    if len({s["report_timezone"] for s in tz_streams if s["report_timezone"]}) >= 2:
+    # 2026-08-01 : cette garde recreait A L'EXTERIEUR du moteur l'exclusion que la
+    # story 48.3 avait retiree A L'INTERIEUR en la nommant « the defect »
+    # (timezone_signal.py:180-184). En ne comptant que les fuseaux CONNUS, elle
+    # n'appelait jamais le moteur dans le cas meme que 48.3 repare : deux flux
+    # d'accord plus trois non placables. La reparation etait donc livree et
+    # inatteignable par tout parcours -- la classe AI-85.
+    #
+    # Le moteur est PUR et sait deja se taire : il rend None quand il y a moins de
+    # deux fuseaux distincts ET rien de non placable (timezone_signal.py:195-197).
+    # C'est a lui de decider s'il y a un signal, pas a son appelant de le pre-juger.
+    if len(tz_streams) > 1:
         from core.timezone_signal import check_cross_source_day_offset  # noqa: PLC0415
 
         offset_signal = check_cross_source_day_offset(
@@ -447,9 +508,9 @@ def _detect_conflicts(
             {
                 "code": "MEASURE_NULL",
                 "message": (
-                    "La sémantique d'agrégation (measure) n'est pas définie pour ce champ "
-                    "numérique. Les consommateurs pourraient appliquer une agrégation incorrecte "
-                    "(somme vs moyenne). Définissez 'measure' pour sécuriser les rollups."
+                    "The aggregation semantics (measure) are not defined for this "
+                    "numeric field. Consumers could apply the wrong aggregation "
+                    "(sum vs average). Set 'measure' to make rollups safe."
                 ),
                 "affected_streams": affected,
             }
@@ -463,6 +524,134 @@ def _detect_conflicts(
 # ---------------------------------------------------------------------------
 
 
+def _active_target_bindings_cte(project_id: str | None) -> tuple[str, list[str]]:
+    """Return the canonical active-mapping projection and its scope params.
+
+    Story 8.5 originally read only ``app.datastream_mappings``. Universal
+    Datastreams publish immutable mappings through
+    ``app.datastream_mapping_versions`` instead. This CTE is the single read
+    seam for both brownfield representations. Exact dual-store attributions are
+    deduplicated with the current version preferred, while non-overlapping legacy
+    rows remain visible during brownfield transitions. The projection never
+    advances a pointer and ignores non-current, non-executable, suggested,
+    blocking, and excluded bindings.
+    """
+    project_clause = ""
+    params: list[str] = []
+    if project_id:
+        project_clause = "AND ds.project_id = %s"
+        # The scope predicate is applied independently to both physical stores
+        # so a project-scoped read never materializes another project's rows.
+        params = [project_id, project_id]
+
+    sql = f"""
+        WITH legacy_bindings AS (
+            SELECT
+                dm.datastream_id,
+                ds.name AS datastream_name,
+                ds.module_name,
+                ds.project_id,
+                ds.enabled,
+                dm.source_field,
+                dm.target_field,
+                dm.is_key_column,
+                'legacy'::text AS binding_source
+            FROM app.datastream_mappings dm
+            JOIN app.datastreams ds ON ds.id = dm.datastream_id
+            WHERE dm.target_field IS NOT NULL
+              AND ds.archived_at IS NULL
+
+              {project_clause}
+        ),
+        versioned_bindings AS (
+            SELECT
+                ds.id AS datastream_id,
+                ds.name AS datastream_name,
+                ds.module_name,
+                ds.project_id,
+                ds.enabled,
+                source_field.value ->> 'field_id' AS source_field,
+                -- The MDM entry REFINES the declared target; it does not replace
+                -- it. `dictionary_field_name` is optional by design
+                -- (`canonical_field_registry.py:286`: "optionally derives the
+                -- field from the governed dictionary") and this expression used
+                -- to consume it as mandatory: the moment a binding carried an
+                -- `mdm_target`, the answer became that column and NOTHING else,
+                -- so an entry that derives from no dictionary row silently took
+                -- the whole binding out of the data model through the
+                -- `IS NOT NULL` below. Measured 2026-08-17: 418 confirmed
+                -- bindings carried BOTH keys, 0 carried `mdm_target` alone, and
+                -- 0 survived. COALESCE restores the documented optionality --
+                -- and when there is no `mdm_target` the LEFT JOIN yields NULL,
+                -- which is exactly what the old ELSE branch did.
+                COALESCE(
+                    mdm.dictionary_field_name,
+                    NULLIF(source_field.value -> 'binding' ->> 'canonical_target', '')
+                ) AS target_field,
+                CASE
+                    WHEN jsonb_typeof(mv.mapping_payload -> 'grain') = 'array'
+                    THEN (mv.mapping_payload -> 'grain')
+                         ? (source_field.value ->> 'field_id')
+                    ELSE FALSE
+                END AS is_key_column,
+                'versioned'::text AS binding_source
+            FROM app.datastreams ds
+            JOIN app.datastream_mapping_versions mv
+              ON mv.id = ds.current_mapping_version_id
+             AND mv.datastream_id = ds.id
+             AND mv.project_id = ds.project_id
+             AND mv.executable = TRUE
+            CROSS JOIN LATERAL jsonb_array_elements(
+                CASE
+                    WHEN jsonb_typeof(mv.mapping_payload -> 'fields') = 'array'
+                    THEN mv.mapping_payload -> 'fields'
+                    ELSE '[]'::jsonb
+                END
+            ) AS source_field(value)
+            LEFT JOIN app.mdm_canonical_fields mdm
+              ON mdm.id = NULLIF(source_field.value -> 'binding' ->> 'mdm_target', '')
+             AND mdm.status = 'active'
+             AND (mdm.project_id IS NULL OR mdm.project_id = ds.project_id)
+            WHERE ds.archived_at IS NULL
+              AND NULLIF(source_field.value ->> 'field_id', '') IS NOT NULL
+              AND source_field.value -> 'binding' ->> 'status' IN ('confirmed', 'resolved')
+              AND COALESCE(
+                    mdm.dictionary_field_name,
+                    NULLIF(source_field.value -> 'binding' ->> 'canonical_target', '')
+                  ) IS NOT NULL
+              {project_clause}
+        ),
+        ranked_bindings AS (
+            SELECT
+                combined.*,
+                ROW_NUMBER() OVER (
+                    PARTITION BY project_id, datastream_id, source_field, target_field
+                    ORDER BY CASE binding_source WHEN 'versioned' THEN 0 ELSE 1 END
+                ) AS representation_rank
+            FROM (
+                SELECT * FROM legacy_bindings
+                UNION ALL
+                SELECT * FROM versioned_bindings
+            ) combined
+        ),
+        active_target_bindings AS (
+            SELECT
+                datastream_id,
+                datastream_name,
+                module_name,
+                project_id,
+                enabled,
+                source_field,
+                target_field,
+                is_key_column,
+                binding_source
+            FROM ranked_bindings
+            WHERE representation_rank = 1
+        )
+    """
+    return sql, params
+
+
 def list_target_fields(
     conn,
     *,
@@ -471,105 +660,44 @@ def list_target_fields(
     usage: str | None = None,
     module: str | None = None,
 ) -> list[dict]:
-    """Return target fields with used_by_count.
+    """Return target fields with project-scoped active Datastream attribution.
 
-    Args:
-        project_id: When given, scopes used_by_count to datastreams in that project (AD-5).
-        kind:       'metric' | 'dimension' | None (all).
-        usage:      'used' (used_by_count > 0) | 'unmapped' (used_by_count = 0) | None.
-        module:     When given, restricts to fields that have at least one mapping via a
-                    datastream whose module_name = module (JOIN datastream_mappings ->
-                    datastreams). Unknown module -> empty list (200, not an error).
-
-    Response shape per item:
-        name, display_name, data_type, field_kind, measure, description,
-        created_by, is_default, created_at, used_by_count, status
+    ``used_by_count`` counts distinct Datastreams, not physical mapping rows.
+    ``used_by`` is a compact Datastream summary for the list UI. Both legacy
+    and current immutable mappings flow through the same projection.
     """
-    # Build the used_by_count sub-select, optionally scoped to a project
-    if project_id:
-        used_by_subq = """
-            (
-                SELECT COUNT(*)
-                FROM app.datastream_mappings dm
-                JOIN app.datastreams ds ON ds.id = dm.datastream_id
-                WHERE dm.target_field = tf.name
-                  AND ds.project_id = %s
-            ) AS used_by_count
-        """
-        base_params: list = [project_id]
-    else:
-        used_by_subq = """
-            (
-                SELECT COUNT(*)
-                FROM app.datastream_mappings dm
-                WHERE dm.target_field = tf.name
-            ) AS used_by_count
-        """
-        base_params = []
+    bindings_cte, params = _active_target_bindings_cte(project_id)
 
-    conditions: list[str] = []
-    extra_params: list = []
-
-    # Story 44.7: soft-deleted fields never appear in list results (history
-    # outlives visibility -- the row and its versions survive in the DB, but
-    # the API/UI never lists a deleted field). No opt-in flag: history is
-    # read via list_field_versions(name, conn), not this listing.
-    conditions.append("tf.status != 'deleted'")
-
-    # AI-49: ?module= filter -- restrict to fields mapped by datastreams of the given module.
-    # Unknown module name -> no rows match -> empty list (200, never an error).
+    conditions = ["tf.status != 'deleted'"]
     if module is not None:
         conditions.append(
             """
-            tf.name IN (
-                SELECT dm2.target_field
-                FROM app.datastream_mappings dm2
-                JOIN app.datastreams ds2 ON ds2.id = dm2.datastream_id
-                WHERE ds2.module_name = %s
-                  AND dm2.target_field IS NOT NULL
+            EXISTS (
+                SELECT 1
+                FROM active_target_bindings module_binding
+                WHERE module_binding.target_field = tf.name
+                  AND module_binding.module_name = %s
             )
             """
         )
-        extra_params.append(module)
-
+        params.append(module)
     if kind is not None:
         conditions.append("tf.field_kind = %s")
-        extra_params.append(kind)
+        params.append(kind)
 
-    where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-
-    # usage filter requires the count -> wrap in a CTE / subquery
-    having_clause = ""
+    target_where = "WHERE " + " AND ".join(conditions)
+    usage_where = ""
     if usage == "used":
-        having_clause = "HAVING used_by_count > 0"
+        usage_where = "WHERE used_by_count > 0"
     elif usage == "unmapped":
-        having_clause = "HAVING used_by_count = 0"
+        # API compatibility: the source-facing wire value remains `unmapped`,
+        # while the semantic-target UI calls this honest state `Not used`.
+        usage_where = "WHERE used_by_count = 0"
 
-    if having_clause:
-        sql = f"""
-            SELECT name, display_name, data_type, field_kind, measure, description,
-                   created_by, is_default, created_at, used_by_count, status
-            FROM (
-                SELECT
-                    tf.name,
-                    tf.display_name,
-                    tf.data_type,
-                    tf.field_kind,
-                    tf.measure,
-                    tf.description,
-                    tf.created_by,
-                    tf.is_default,
-                    tf.created_at,
-                    tf.status,
-                    {used_by_subq}
-                FROM app.target_fields tf
-                {where_clause}
-            ) sub
-            {having_clause}
-            ORDER BY field_kind ASC, name ASC
-        """  # noqa: S608
-    else:
-        sql = f"""
+    sql = f"""
+        {bindings_cte}
+        SELECT *
+        FROM (
             SELECT
                 tf.name,
                 tf.display_name,
@@ -581,13 +709,41 @@ def list_target_fields(
                 tf.is_default,
                 tf.created_at,
                 tf.status,
-                {used_by_subq}
+                (
+                    SELECT COUNT(DISTINCT binding.datastream_id)
+                    FROM active_target_bindings binding
+                    WHERE binding.target_field = tf.name
+                ) AS used_by_count,
+                COALESCE(
+                    (
+                        SELECT jsonb_agg(
+                            jsonb_build_object(
+                                'datastream_id', attribution.datastream_id,
+                                'datastream_name', attribution.datastream_name,
+                                'module_name', attribution.module_name,
+                                'enabled', attribution.enabled
+                            )
+                            ORDER BY attribution.datastream_name, attribution.datastream_id
+                        )
+                        FROM (
+                            SELECT DISTINCT ON (binding.datastream_id)
+                                binding.datastream_id,
+                                binding.datastream_name,
+                                binding.module_name,
+                                binding.enabled
+                            FROM active_target_bindings binding
+                            WHERE binding.target_field = tf.name
+                            ORDER BY binding.datastream_id, binding.datastream_name
+                        ) attribution
+                    ),
+                    '[]'::jsonb
+                ) AS used_by
             FROM app.target_fields tf
-            {where_clause}
-            ORDER BY tf.field_kind ASC, tf.name ASC
-        """  # noqa: S608
-
-    params = base_params + extra_params
+            {target_where}
+        ) fields
+        {usage_where}
+        ORDER BY field_kind ASC, name ASC
+    """  # noqa: S608
 
     with conn.cursor() as cur:
         cur.execute(sql, params)
@@ -595,27 +751,29 @@ def list_target_fields(
         results = []
         for row in cur.fetchall():
             rec = _row_to_dict(cols, row)
-            # Coerce count to int (psycopg may return Decimal from COUNT)
             rec["used_by_count"] = int(rec.get("used_by_count") or 0)
+            if not isinstance(rec.get("used_by"), list):
+                rec["used_by"] = []
             results.append(rec)
     return results
-
 
 # ---------------------------------------------------------------------------
 # get_target_field (with used-by detail + conflict detection)
 # ---------------------------------------------------------------------------
 
 
-def get_target_field(name: str, conn) -> dict | None:
-    """Return full field detail including used-by list and conflict warnings.
+def get_target_field(
+    name: str,
+    conn,
+    *,
+    project_id: str | None = None,
+) -> dict | None:
+    """Return one field and its active Datastream attribution.
 
-    The USED-BY view (Jean's «quels flux alimentent clicks ?») returns for each
-    mapping: datastream (name, module, project, enabled), source_field, last extract
-    info (latest pull loaded_at + verification verdict via LATERAL join).
-
-    Returns None if the field does not exist.
+    When ``project_id`` is supplied, every attribution row is scoped before it
+    is materialized. Callers that intentionally need a platform-wide conflict
+    view may omit it for backward compatibility.
     """
-    # 1. Fetch the field itself
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -634,43 +792,47 @@ def get_target_field(name: str, conn) -> dict | None:
         cols = [d[0] for d in cur.description]
         field = _row_to_dict(cols, row)
 
-    # 2. Fetch used-by list with last pull info (LATERAL join mirrors datastreams.py summaries)
+    bindings_cte, binding_params = _active_target_bindings_cte(project_id)
+    params: list = [*binding_params, name]
     with conn.cursor() as cur:
         cur.execute(
-            """
+            f"""
+            {bindings_cte}
             SELECT
-                dm.datastream_id,
-                ds.name          AS datastream_name,
-                ds.module_name,
-                ds.project_id,
-                ds.enabled,
-                dm.source_field,
-                lp.loaded_at     AS last_loaded_at,
-                lp.verdict       AS last_verdict,
-                fx.resolved_source_currency AS source_currency
-            FROM app.datastream_mappings dm
-            JOIN app.datastreams ds ON ds.id = dm.datastream_id
+                binding.datastream_id,
+                binding.datastream_name,
+                binding.module_name,
+                binding.project_id,
+                binding.enabled,
+                binding.source_field,
+                lp.loaded_at AS last_loaded_at,
+                lp.verdict AS last_verdict,
+                fx.resolved_source_currency AS source_currency,
+                binding.binding_source
+            FROM active_target_bindings binding
             LEFT JOIN LATERAL (
                 SELECT pv.verified_at AS loaded_at, pv.verdict
                 FROM app.pull_jobs pj
                 JOIN app.pull_verifications pv ON pv.pull_id = pj.pull_id
-                WHERE pj.datastream_id = dm.datastream_id
+                WHERE pj.datastream_id = binding.datastream_id
                 ORDER BY pv.verified_at DESC
                 LIMIT 1
             ) lp ON true
-            -- Story 39.3: source-agnostic currency provenance seam. The per-stream declared
-            -- source currency (Epic 13's currency binding, app.fx_conflict_resolutions) is
-            -- surfaced on the used-by row so _detect_conflicts can name conflicting_currencies
-            -- and decide the CURRENCY_GAP. Source-agnostic: keyed by (project, target_field,
-            -- module_name), never a provider-specific column (AD-2).
-            LEFT JOIN app.fx_conflict_resolutions fx
-                   ON fx.project_id   = ds.project_id
-                  AND fx.target_field = dm.target_field
-                  AND fx.source_module = ds.module_name
-            WHERE dm.target_field = %s
-            ORDER BY ds.project_id ASC, ds.name ASC
-            """,
-            (name,),
+            -- The DECLARED source currency, read from the governed projection
+            -- (migration 282) rather than from `app.fx_conflict_resolutions`,
+            -- which migration 145 dethroned and 282 sealed. Same three join keys,
+            -- same column: what changed is that the value now comes from a
+            -- published Rule Set version that names who declared it.
+            LEFT JOIN app.fx_source_currency_bindings_v fx
+                   ON fx.project_id = binding.project_id
+                  AND fx.target_field = binding.target_field
+                  AND fx.source_module = binding.module_name
+            WHERE binding.target_field = %s
+            ORDER BY binding.project_id ASC,
+                     binding.datastream_name ASC,
+                     binding.source_field ASC
+            """,  # noqa: S608
+            params,
         )
         ub_cols = [d[0] for d in cur.description]
         used_by: list[dict] = []
@@ -681,13 +843,7 @@ def get_target_field(name: str, conn) -> dict | None:
                     rec[col] = val.isoformat()
                 else:
                     rec[col] = val
-            # Story 39.8: surface the captured report timezone per used-by stream under the
-            # generic ``report_timezone`` key (the source-agnostic seam _detect_conflicts /
-            # _stream_report_timezone reads). Resolved via 39.7's single-source-of-truth accessor
-            # ``report_timezone.report_timezone_for_datastream`` (manifest/declaration read -- NO
-            # new warehouse cursor; datamodel stays app-DB only). None/unknown => the key is
-            # simply absent (fail-closed: an undetermined zone is 39.7's GAP, never a fabricated
-            # UTC), so a stream without a resolvable zone is EXCLUDED from the day-offset compare.
+
             ds_id = rec.get("datastream_id")
             if ds_id is not None:
                 try:
@@ -696,26 +852,22 @@ def get_target_field(name: str, conn) -> dict | None:
                     )
 
                     zone = report_timezone_for_datastream(str(ds_id))
-                except Exception:  # noqa: BLE001 -- fail-soft: an accessor hiccup drops to None.
+                except Exception:  # noqa: BLE001
                     zone = None
                 if isinstance(zone, str) and zone.strip():
                     rec["report_timezone"] = zone.strip()
             used_by.append(rec)
 
-    # 3. Conflict detection (R2, pure Python). Story 39.1/39.3: pass a project context when the
-    # used-by streams share a single project, so the monetary classification resolves through
-    # the PROJECT > ORG > PLATFORM cascade (a project may reclassify a custom metric); else
-    # None -> platform default (target_fields is platform-global, so a mixed-project field has
-    # no single project context).
     ub_projects = {ub.get("project_id") for ub in used_by if ub.get("project_id")}
     detect_project_id = next(iter(ub_projects)) if len(ub_projects) == 1 else None
     conflicts = _detect_conflicts(field, used_by, project_id=detect_project_id)
 
     field["used_by"] = used_by
-    field["used_by_count"] = len(used_by)
+    field["used_by_count"] = len(
+        {row.get("datastream_id") for row in used_by if row.get("datastream_id")}
+    )
     field["conflicts"] = conflicts
     return field
-
 
 # ---------------------------------------------------------------------------
 # create_target_field
@@ -829,8 +981,8 @@ def create_target_field(data: dict, created_by: str, conn) -> dict:
         raise ValueError("name est requis")
     if not _SNAKE_CASE_RE.match(name):
         raise ValueError(
-            "name doit etre en snake_case (lettres minuscules, chiffres, underscores; "
-            "commence par une lettre) : " + repr(name)
+            "name must be snake_case (lowercase letters, digits, underscores; "
+            "starts with a letter): " + repr(name)
         )
     if not display_name:
         raise ValueError("display_name est requis")
@@ -864,10 +1016,10 @@ def create_target_field(data: dict, created_by: str, conn) -> dict:
         and is_ratio_name(name)
     ):
         raise ValueError(
-            f"Le champ {name!r} est un ratio (non additif) et ne peut pas etre declare "
+            f"Field {name!r} is a ratio (non-additive) and cannot be declared "
             "comme metrique additive (measure='sum', AD-4) : sommer un ratio sur plusieurs "
             "jours ou canaux est mathematiquement faux et corromprait fact_daily_kpi. "
-            "Utilisez measure='average' (ou aucun) pour un ratio recalcule a la volee, ou "
+            "Use measure='average' (or none) for a ratio recomputed on the fly, or "
             "declarez son numerateur/denominateur via le dictionnaire de metriques."
         )
 
@@ -979,17 +1131,17 @@ def update_target_field(
     # Immutability guards
     if "name" in patch:
         raise ValueError(
-            "name est immuable : le nom d'un champ cible ne peut pas etre modifie "
+            "name is immutable: the name of a target field cannot be changed "
             "apres creation."
         )
     if "data_type" in patch:
         raise ValueError(
-            "data_type est immuable : le type de donnee d'un champ cible ne peut pas "
+            "data_type is immutable: the data type of a target field cannot "
             "etre modifie apres creation."
         )
     if "field_kind" in patch:
         raise ValueError(
-            "field_kind est immuable : la nature metrique/dimension ne peut pas etre "
+            "field_kind is immutable: the metric/dimension nature cannot be "
             "modifiee apres creation."
         )
 
@@ -1020,7 +1172,7 @@ def update_target_field(
         elif field == "display_name":
             val = (val or "").strip()
             if not val:
-                raise ValueError("display_name ne peut pas etre vide")
+                raise ValueError("display_name cannot be empty")
             set_pairs.append("display_name = %s")
             params.append(val)
         elif field == "description":
@@ -1115,7 +1267,7 @@ def update_target_field(
             audit_metadata["restored_from"] = restored_from
         write_audit_row(
             identity=identity,
-            action="target_field.updated",
+            action=ACTION_TARGET_FIELD_UPDATED,
             provider_account="",
             connection_ref="",
             metadata=audit_metadata,
@@ -1282,20 +1434,20 @@ def delete_target_field(name: str, identity: str, conn) -> None:
         row = cur.fetchone()
 
     if row is None or row[3] == "deleted":
-        raise ValueError(f"Champ '{name}' introuvable")
+        raise ValueError(f"Field '{name}' not found")
 
     is_default = bool(row[1])
     if is_default:
         raise FieldInUseError(
-            "Les champs par defaut du socle ne peuvent pas etre supprimes."
+            "The platform default fields cannot be deleted."
         )
 
     used_by_count = int(row[2] or 0)
     if used_by_count > 0:
         raise FieldInUseError(
-            f"Impossible de supprimer le champ '{name}' : il est utilisé par "
-            f"{used_by_count} mapping(s) actif(s). "
-            f"Retirez les mappings avant de supprimer ce champ."
+            f"Cannot delete field '{name}': it is used by "
+            f"{used_by_count} active mapping(s). "
+            f"Remove those mappings before deleting this field."
         )
 
     # 2. Soft-delete: flip status only. Audit rows in app.target_field_approvals
@@ -1330,7 +1482,7 @@ def delete_target_field(name: str, identity: str, conn) -> None:
 
         write_audit_row(
             identity=identity,
-            action="target_field.deleted",
+            action=ACTION_TARGET_FIELD_DELETED,
             provider_account="",
             connection_ref="",
             metadata={"name": name},
@@ -1469,44 +1621,35 @@ def list_mappings_for_target_field(
     target_field: str,
     project_id: str | None = None,
 ) -> list[dict]:
-    """Return the datastream mappings that FEED ``target_field`` (Story 44.10).
+    """Return active mappings feeding one target field.
 
-    Powers the knowledge graph's "Fed by" panel: which source field of which
-    datastream (and therefore which connector module) lands in this dictionary
-    field. Deliberately a thin read -- get_target_field's used_by view carries
-    last-pull verdicts, currency provenance and conflict detection, none of
-    which the graph drawer shows; running that whole pipeline for a read-only
-    list would be a lot of work thrown away.
-
-    ``project_id``, when given, restricts to datastreams of that project.
+    The Knowledge Graph and Semantic model now share the same legacy/versioned
+    projection, so neither surface can silently lose Universal Datastreams.
     """
-    conditions = ["dm.target_field = %s"]
-    params: list = [target_field]
-    if project_id:
-        conditions.append("ds.project_id = %s")
-        params.append(project_id)
-    where_clause = "WHERE " + " AND ".join(conditions)
-
+    bindings_cte, params = _active_target_bindings_cte(project_id)
+    params.append(target_field)
     sql = f"""
+        {bindings_cte}
         SELECT
-            dm.datastream_id,
-            ds.name          AS datastream_name,
-            ds.module_name,
-            ds.project_id,
-            ds.enabled,
-            dm.source_field,
-            dm.is_key_column
-        FROM app.datastream_mappings dm
-        JOIN app.datastreams ds ON ds.id = dm.datastream_id
-        {where_clause}
-        ORDER BY ds.module_name ASC, ds.name ASC, dm.source_field ASC
+            binding.datastream_id,
+            binding.datastream_name,
+            binding.module_name,
+            binding.project_id,
+            binding.enabled,
+            binding.source_field,
+            binding.is_key_column,
+            binding.binding_source
+        FROM active_target_bindings binding
+        WHERE binding.target_field = %s
+        ORDER BY binding.module_name ASC,
+                 binding.datastream_name ASC,
+                 binding.source_field ASC
     """  # noqa: S608
 
     with conn.cursor() as cur:
         cur.execute(sql, params)
         cols = [d[0] for d in cur.description]
         return [_row_to_dict(cols, row) for row in cur.fetchall()]
-
 
 def target_field_exists(name: str, conn) -> bool:
     """Return True iff `name` exists in app.target_fields in ANY status.
@@ -1624,7 +1767,7 @@ def upsert_mapping(
 
             write_audit_row(
                 identity=identity or "anonymous",
-                action="mapping.updated",
+                action=ACTION_MAPPING_UPDATED,
                 provider_account="",
                 connection_ref="",
                 metadata={

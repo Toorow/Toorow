@@ -388,10 +388,15 @@ def resolve_market_binding(posture: GeographicPosture, market_id: object) -> Mar
     synthetic ``Other markets`` / ``Unknown`` groupings out of budgeting.
     """
 
-    from core.geographic_semantics import OTHER_MARKETS, UNKNOWN_MARKET  # noqa: PLC0415
+    # Story 48.2: `Other markets` stopped being a reserved string and became a
+    # governed Rest of World node, which no posture lists -- so it now falls
+    # through to "unknown market id" on its own. Unknown keeps a reserved
+    # identity because it is an evidence state, not a node, and must be refused
+    # by name rather than by absence.
+    from core.geographic_semantics import UNKNOWN_BUCKET_ID  # noqa: PLC0415
 
     wanted = str(market_id or "").strip()
-    if wanted in {OTHER_MARKETS, UNKNOWN_MARKET}:
+    if wanted == UNKNOWN_BUCKET_ID:
         raise InvalidGeographicPosture(
             f"{wanted} is a reporting grouping, not a budgetable market"
         )

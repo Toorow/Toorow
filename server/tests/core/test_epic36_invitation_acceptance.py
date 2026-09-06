@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from core import invitations_api  # AD-43 : le handler vit chez son sujet
 from starlette.requests import Request
 
 
@@ -59,6 +60,20 @@ def _exchange_result(invitations):
             explicit_grants=(),
             expires_at=datetime(2030, 1, 2, tzinfo=timezone.utc),
         ),
+    )
+
+
+
+def _invited_principal(verified_email: str):
+    """The canonical person an invitation transition resolves its caller to."""
+    from core.api_auth import ResolvedPrincipal
+
+    return ResolvedPrincipal(
+        person_id="person_invited",
+        issuer="static://toorow",
+        subject=verified_email,
+        verified_email=verified_email,
+        display_name="Invited",
     )
 
 
@@ -127,14 +142,12 @@ def test_exchange_identity_mismatch_is_nondisclosing_and_writes_nothing(monkeypa
 
 
 def test_acceptance_materializes_exact_role_and_grants_atomically(monkeypatch):
-    from core import invitations, operations, setup_responsibilities
+    from core import getting_started, invitations, operations
 
     monkeypatch.setenv("TOOROW_INVITATION_PEPPER", "p" * 32)
-    monkeypatch.setattr(
-        setup_responsibilities,
-        "bootstrap_journey_from_acceptance",
-        lambda *_a, **_k: "setup-1",
-    )
+    # Story 46.4 routed every entry path through ONE idempotent journey
+    # bootstrap; acceptance no longer has a bootstrap of its own.
+    monkeypatch.setattr(getting_started, "bootstrap_project_journey", lambda *_a, **_k: "setup-1")
     identity_hash = invitations.prepare_identity_binding("user@example.com").identity_hash
     conn, cur = _conn(
         (
@@ -183,7 +196,9 @@ def test_acceptance_materializes_exact_role_and_grants_atomically(monkeypatch):
 
     assert result.role == "member"
     assert result.explicit_none is False
-    assert result.next_url == "/p/proj-1/overview/getting-started"
+    # Story 46.1 made every route organization-rooted; 46.4 made Getting Started
+    # a global surface rather than an Overview section.
+    assert result.next_url == "/org/org-1/project/proj-1/getting-started"
     sql = " ".join(call.args[0] for call in cur.execute.call_args_list)
     assert "INSERT INTO app.org_members" in sql
     assert sql.count("INSERT INTO app.resource_grants") == 2
@@ -197,7 +212,7 @@ def test_acceptance_materializes_exact_role_and_grants_atomically(monkeypatch):
 
 
 def test_exchange_api_sets_only_strict_http_only_cookie(monkeypatch):
-    from core import admin_api, db, invitations, project_access
+    from core import admin_api, db, invitations
 
     conn, _ = _conn()
 
@@ -207,10 +222,14 @@ def test_exchange_api_sets_only_strict_http_only_cookie(monkeypatch):
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "static")
     monkeypatch.setattr(db, "get_connection", get_connection)
+    # An invitation transition binds a PERSON, not just an address. Patching
+    # `_check_invitation_identity` here stopped meaning anything on 2026-08-24:
+    # `_check_invitation_principal` no longer has a branch that calls it.
     monkeypatch.setattr(
-        admin_api, "_check_invitation_identity", AsyncMock(return_value=(True, "user@example.com"))
+        admin_api,
+        "_check_canonical_principal",
+        AsyncMock(return_value=(True, _invited_principal("user@example.com"))),
     )
-    monkeypatch.setattr(project_access, "epic36_production_access_enabled", lambda: True)
     monkeypatch.setattr(
         invitations,
         "exchange_invitation",
@@ -218,7 +237,7 @@ def test_exchange_api_sets_only_strict_http_only_cookie(monkeypatch):
     )
 
     response = asyncio.run(
-        admin_api._exchange_invitation(
+        invitations_api._exchange_invitation(
             _request("/api/invitations/exchange", {"bearer": "raw-secret"})
         )
     )
@@ -238,7 +257,7 @@ def test_exchange_api_sets_only_strict_http_only_cookie(monkeypatch):
 
 
 def test_accept_api_returns_tokenless_scope_context_and_clears_cookie(monkeypatch):
-    from core import admin_api, db, invitations, project_access
+    from core import admin_api, db, invitations
 
     conn, _ = _conn()
 
@@ -248,10 +267,14 @@ def test_accept_api_returns_tokenless_scope_context_and_clears_cookie(monkeypatc
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "static")
     monkeypatch.setattr(db, "get_connection", get_connection)
+    # An invitation transition binds a PERSON, not just an address. Patching
+    # `_check_invitation_identity` here stopped meaning anything on 2026-08-24:
+    # `_check_invitation_principal` no longer has a branch that calls it.
     monkeypatch.setattr(
-        admin_api, "_check_invitation_identity", AsyncMock(return_value=(True, "user@example.com"))
+        admin_api,
+        "_check_canonical_principal",
+        AsyncMock(return_value=(True, _invited_principal("user@example.com"))),
     )
-    monkeypatch.setattr(project_access, "epic36_production_access_enabled", lambda: True)
     monkeypatch.setattr(
         invitations,
         "accept_invitation",
@@ -264,13 +287,13 @@ def test_accept_api_returns_tokenless_scope_context_and_clears_cookie(monkeypatc
             operation_id="op-1",
             audit_event_id="audit-1",
             outbox_event_id="outbox-1",
-            next_url="/onboarding/responsibilities",
+            next_url="/org/org-1/project/proj-1/getting-started",
             replayed=False,
         ),
     )
 
     response = asyncio.run(
-        admin_api._accept_invitation(
+        invitations_api._accept_invitation(
             _request(
                 "/api/invitations/accept",
                 {"confirmed": True},
@@ -283,16 +306,16 @@ def test_accept_api_returns_tokenless_scope_context_and_clears_cookie(monkeypatc
     body = json.loads(response.body)
     assert body["authority"]["role_derived"] == "viewer"
     assert body["authority"]["explicit_none"] is True
-    assert body["next_url"] == "/onboarding/responsibilities"
+    assert body["next_url"] == "/org/org-1/project/proj-1/getting-started"
     assert "session-secret" not in response.body.decode()
     assert "max-age=0" in response.headers["set-cookie"].lower()
     conn.commit.assert_called_once()
 
 
 def test_migration_063_contains_one_time_exchange_contract():
-    from pathlib import Path
+    from tests.conftest import REPO_ROOT
 
-    sql = Path("infra/nango/migrations/063_invitation_acceptance.sql").read_text()
+    sql = (REPO_ROOT / "infra/nango/migrations/063_invitation_acceptance.sql").read_text()
     assert "invitation_exchange_sessions" in sql
     assert "session_hash" in sql
     assert "bearer_consumed_at" in sql
@@ -350,7 +373,7 @@ def test_consumed_acceptance_returns_resolved_state_without_replaying_effects(mo
         "org_id": "org-1",
         "role": "viewer",
         "explicit_grants": [],
-        "next_url": "/onboarding/responsibilities",
+        "next_url": "/org/org-1/project/proj-1/getting-started",
     }
     conn, cur = _conn(
         (
@@ -390,14 +413,12 @@ def test_consumed_acceptance_returns_resolved_state_without_replaying_effects(mo
 
 
 def test_canonical_acceptance_materializes_authority_for_bound_person(monkeypatch):
-    from core import invitations, operations, setup_responsibilities
+    from core import getting_started, invitations, operations
 
     monkeypatch.setenv("TOOROW_INVITATION_PEPPER", "p" * 32)
-    monkeypatch.setattr(
-        setup_responsibilities,
-        "bootstrap_journey_from_acceptance",
-        lambda *_a, **_k: "setup-1",
-    )
+    # Story 46.4 routed every entry path through ONE idempotent journey
+    # bootstrap; acceptance no longer has a bootstrap of its own.
+    monkeypatch.setattr(getting_started, "bootstrap_project_journey", lambda *_a, **_k: "setup-1")
     identity_hash = invitations.prepare_identity_binding("user@example.com").identity_hash
     conn, cur = _conn(
         (
@@ -445,7 +466,7 @@ def test_canonical_acceptance_materializes_authority_for_bound_person(monkeypatc
     )
 
     assert result.role == "member"
-    assert result.next_url == "/p/proj-canonical/overview/getting-started"
+    assert result.next_url == "/org/org-1/project/proj-canonical/getting-started"
     assert captured["spec"].actor == "person-1"
     mutation_params = repr(
         [call.args[1] for call in cur.execute.call_args_list if len(call.args) > 1]
@@ -494,7 +515,7 @@ def test_canonical_acceptance_rejects_a_different_or_legacy_person(monkeypatch):
 
 
 def test_exchange_api_binds_session_to_canonical_person(monkeypatch):
-    from core import admin_api, db, invitations, project_access
+    from core import admin_api, db, invitations
     from core.api_auth import ResolvedPrincipal
 
     conn, _ = _conn()
@@ -517,18 +538,16 @@ def test_exchange_api_binds_session_to_canonical_person(monkeypatch):
         return _exchange_result(invitations)
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "static")
-    monkeypatch.setenv("TOOROW_CANONICAL_IDENTITY_ENABLED", "1")
     monkeypatch.setattr(db, "get_connection", get_connection)
     monkeypatch.setattr(
         admin_api,
         "_check_canonical_principal",
         AsyncMock(return_value=(True, principal)),
     )
-    monkeypatch.setattr(project_access, "epic36_production_access_enabled", lambda: True)
     monkeypatch.setattr(invitations, "exchange_invitation", exchange)
 
     response = asyncio.run(
-        admin_api._exchange_invitation(
+        invitations_api._exchange_invitation(
             _request("/api/invitations/exchange", {"bearer": "raw-secret"})
         )
     )

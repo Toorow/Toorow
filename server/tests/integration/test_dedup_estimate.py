@@ -217,7 +217,7 @@ def test_duplication_rate_manual_single_channel(ga4_con):
     Formule du doc §2.2 : contribution = claimed x verified / SUM(claimed)
     = 80 x 100/80 = 100 == verified. Avec UNE seule régie, TOUTE la vérité lui est
     attribuée — la mise à l'échelle joue dans les DEUX sens (rate < 1 = sous-
-    attribution : les régies revendiquent MOINS que le réel, la contribution est
+    attribution : les régies revendiquent MOINS que le actual, la contribution est
     scalée vers le haut ; rate > 1 = sur-attribution, scalée vers le bas).
     L'invariant testé par test_sum_contributions_equals_verified : Σ == verified.
     """

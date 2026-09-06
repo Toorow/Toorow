@@ -1,27 +1,29 @@
 # toorow -- inbound async bridge runtime (Epic 38).
 #
-# [HUMAN GATE] Validated locally (`terraform validate`) but NOT applied by any
-# agent. `terraform apply` requires live GCP credentials + billing supplied by
+# [HUMAN GATE] The Terraform binary is unavailable in this workspace, so the
+# module was contract-tested but not locally validated or applied. Apply requires
 # Jean out-of-band. No secret VALUE is committed here -- only Secret Manager
 # *references*; the versions (the actual worker secret and the DB DSN) are set
 # manually by the operator, never in git (mirrors the signing-secret posture in
 # inbound_runtime.tf).
 #
-# Scope: a dedicated, DB-enabled, scale-to-zero HTTP "bridge" service that reacts
-# when a manifest object is finalized in the quarantine bucket and invokes the
-# already-built worker `core.inbound_processing.process_inbound_delivery`. The
-# receipt service (inbound_runtime.tf) is objectCreator-ONLY and has no DB; this
-# bridge is a SEPARATE service that READS the quarantine bucket and has DB
-# access -- mirroring how the receipt app is its own service, selected by the
-# container entrypoint. Data stays in the EU (AD-6).
+# Scope: a dedicated, DB-enabled, scale-to-zero bridge persists one durable job
+# per attachment before dispatching bounded Cloud Tasks. Each task claims and
+# commits its attempt before the quarantined bytes are read or scanned. The
+# receipt service (inbound_runtime.tf) remains objectCreator-only and has no DB;
+# this separate bridge reads quarantine objects and owns the AD-36 job ledger,
+# retry/dead-letter evidence and recovery reconciliation. Data stays in the EU
+# (AD-6).
 #
 # Event flow:
 #   GCS OBJECT_FINALIZE (quarantine bucket, prefix inbound/)
 #     -> google_storage_notification -> Pub/Sub topic (inbound_manifest)
 #     -> Pub/Sub PUSH subscription (OIDC-authenticated) -> bridge Cloud Run
 #        POST /v1/internal/inbound-process
-#     -> bridge filters for the reserved _manifest.json object, reads it, and
-#        runs the worker (idempotent on provider_event_id, so redelivery-safe).
+#     -> bridge validates the reserved manifest and commits attachment jobs
+#     -> Cloud Tasks invokes POST /v1/internal/inbound-scan-task per attachment
+#     -> a scheduler reconciles lost tasks/attempts and terminal receipt state.
+# Manifest redelivery is safe because receipt + attachment ordinal are unique.
 #
 # ---------------------------------------------------------------------------
 # Push authentication -- DECISION (documented for the orchestrator).
@@ -36,18 +38,16 @@
 #      Pub/Sub can invoke the service. This is the PRIMARY, infrastructure-level
 #      gate and needs no application code.
 #
-#   2. Shared-secret header (defence in depth): the application enforces an
-#      X-Inbound-Worker-Secret check. Pub/Sub push has NO mechanism to attach a
-#      custom request header (push_config exposes no header field, and message
-#      attributes are not turned into request headers), so the MANAGED Pub/Sub
-#      path does NOT satisfy this header -- it passes on OIDC alone (layer 1).
-#      The header gate exists for SELF-HOSTED / manual-smoke invocations that
-#      front the endpoint themselves and drive it directly with the secret.
+#   2. The shared-secret header is the self-hosted/manual transport gate. Pub/Sub
+#      push cannot attach that header, so this managed service explicitly sets
+#      INBOUND_REQUIRE_WORKER_SECRET=false and relies on Cloud Run IAM/OIDC.
+#      Self-hosted deployments leave the default enabled and must provide
+#      X-Inbound-Worker-Secret.
 #
-# The INBOUND_WORKER_SECRET env is ALWAYS required: the app 500s (never accepts
-# unauthenticated) when it is unset. Managed deployments rely on OIDC (layer 1)
-# as the transport gate; self-hosted deployments that do not use Pub/Sub OIDC can
-# drive the endpoint with the header alone (layer 2).
+# The secret reference remains mounted for self-hosted parity, but it is not the
+# managed transport credential. Managed unauthenticated traffic is rejected by
+# Cloud Run before the application; self-hosted traffic is rejected by the
+# header check.
 #
 # NOTE for the orchestrator: if a stricter posture is desired, replace the
 # ingress with INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER + a serverless NEG; the
@@ -132,6 +132,26 @@ resource "google_storage_bucket_iam_member" "inbound_quarantine_object_viewer" {
   member = "serviceAccount:${google_service_account.inbound_bridge.email}"
 }
 
+# Legal holds need object metadata get/update, never delete. A custom role avoids
+# the destructive storage.objectAdmin grant while making the DB hold effective
+# on the corresponding GCS generation.
+resource "google_project_iam_custom_role" "inbound_quarantine_hold_manager" {
+  project     = google_project.dev.project_id
+  role_id     = "inboundQuarantineHoldManager"
+  title       = "Inbound quarantine hold manager"
+  description = "Read and update quarantine object holds without delete access."
+  permissions = [
+    "storage.objects.get",
+    "storage.objects.update",
+  ]
+}
+
+resource "google_storage_bucket_iam_member" "inbound_quarantine_hold_manager" {
+  bucket = google_storage_bucket.inbound_quarantine.name
+  role   = google_project_iam_custom_role.inbound_quarantine_hold_manager.name
+  member = "serviceAccount:${google_service_account.inbound_bridge.email}"
+}
+
 # ---------------------------------------------------------------------------
 # Cloud Run (v2) bridge service -- scale-to-zero.
 #   * min_instance_count = 0 -> EUR0 at idle.
@@ -160,6 +180,7 @@ resource "google_cloud_run_v2_service" "inbound_bridge" {
 
   template {
     service_account = google_service_account.inbound_bridge.email
+    timeout         = "${var.inbound_scan_timeout_seconds}s"
 
     scaling {
       min_instance_count = 0
@@ -167,7 +188,14 @@ resource "google_cloud_run_v2_service" "inbound_bridge" {
     }
 
     containers {
+      name  = "bridge"
       image = var.inbound_image
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = var.inbound_scan_memory
+        }
+      }
 
       # Serve the bridge ASGI app from the shared image. `--factory` calls the
       # zero-arg build_bridge_app() to construct the Starlette app. PORT is
@@ -196,6 +224,42 @@ resource "google_cloud_run_v2_service" "inbound_bridge" {
         name  = "PORT"
         value = "8080"
       }
+      env {
+        name  = "INBOUND_CLAMAV_HOST"
+        value = "127.0.0.1"
+      }
+      env {
+        name  = "INBOUND_CLAMAV_PORT"
+        value = "3310"
+      }
+      env {
+        name  = "CLOUD_TASKS_PROJECT"
+        value = google_project.dev.project_id
+      }
+      env {
+        name  = "CLOUD_TASKS_LOCATION"
+        value = var.region
+      }
+      env {
+        name  = "INBOUND_SCAN_TASK_QUEUE"
+        value = google_cloud_tasks_queue.inbound_scan.name
+      }
+      env {
+        name  = "INBOUND_SCAN_MAX_ATTEMPTS"
+        value = tostring(var.inbound_scan_max_attempts)
+      }
+      env {
+        name  = "INBOUND_BRIDGE_URL"
+        value = google_cloud_run_v2_service.inbound_bridge.uri
+      }
+      env {
+        name  = "INBOUND_TASKS_SERVICE_ACCOUNT"
+        value = google_service_account.inbound_pubsub_invoker.email
+      }
+      env {
+        name  = "INBOUND_REQUIRE_WORKER_SECRET"
+        value = "false"
+      }
       # Worker secret injected as a Secret Manager reference (never a value).
       env {
         name = "INBOUND_WORKER_SECRET"
@@ -218,6 +282,31 @@ resource "google_cloud_run_v2_service" "inbound_bridge" {
         }
       }
     }
+    containers {
+      name  = "clamav"
+      image = var.inbound_clamav_image
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = var.inbound_clamav_memory
+        }
+      }
+
+      ports {
+        container_port = 3310
+      }
+
+      startup_probe {
+        failure_threshold     = 30
+        initial_delay_seconds = 5
+        period_seconds        = 10
+        timeout_seconds       = 5
+        tcp_socket {
+          port = 3310
+        }
+      }
+    }
   }
 
   depends_on = [
@@ -225,6 +314,7 @@ resource "google_cloud_run_v2_service" "inbound_bridge" {
     google_secret_manager_secret_iam_member.inbound_worker_secret_accessor,
     google_secret_manager_secret_iam_member.platform_db_url_accessor,
     google_storage_bucket_iam_member.inbound_quarantine_object_viewer,
+    google_storage_bucket_iam_member.inbound_quarantine_hold_manager,
   ]
 }
 
@@ -301,11 +391,14 @@ resource "google_pubsub_subscription" "inbound_manifest_push" {
   ack_deadline_seconds = var.inbound_bridge_ack_deadline_seconds
 
   # Dead-letter after repeated failures so a poison manifest cannot loop forever.
-  # (The topic is reused as a simple DLT target; a dedicated DLT topic can be
-  # split out later if desired.)
   retry_policy {
     minimum_backoff = "10s"
     maximum_backoff = "600s"
+  }
+
+  dead_letter_policy {
+    dead_letter_topic     = google_pubsub_topic.inbound_manifest_dead_letter.id
+    max_delivery_attempts = var.inbound_scan_max_attempts
   }
 
   push_config {
@@ -313,11 +406,102 @@ resource "google_pubsub_subscription" "inbound_manifest_push" {
 
     oidc_token {
       service_account_email = google_service_account.inbound_pubsub_invoker.email
-      # Audience defaults to the push endpoint; Cloud Run validates it.
+      audience              = google_cloud_run_v2_service.inbound_bridge.uri
     }
   }
 
   depends_on = [
     google_cloud_run_v2_service_iam_member.bridge_pubsub_invoker,
   ]
+}
+
+resource "google_cloud_tasks_queue" "inbound_scan" {
+  project  = google_project.dev.project_id
+  name     = var.inbound_scan_task_queue
+  location = var.region
+
+  rate_limits {
+    max_concurrent_dispatches = var.inbound_bridge_max_instances
+    max_dispatches_per_second = 5
+  }
+  retry_config {
+    max_attempts       = var.inbound_scan_max_attempts
+    min_backoff        = "10s"
+    max_backoff        = "600s"
+    max_doublings      = 5
+    max_retry_duration = "3600s"
+  }
+  stackdriver_logging_config {
+    sampling_ratio = 1
+  }
+  depends_on = [google_project_service.dev_additional_services]
+}
+
+resource "google_project_iam_member" "inbound_bridge_task_enqueuer" {
+  project = google_project.dev.project_id
+  role    = "roles/cloudtasks.enqueuer"
+  member  = "serviceAccount:${google_service_account.inbound_bridge.email}"
+}
+
+resource "google_service_account_iam_member" "inbound_bridge_task_identity_user" {
+  service_account_id = google_service_account.inbound_pubsub_invoker.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.inbound_bridge.email}"
+}
+
+resource "google_cloud_scheduler_job" "inbound_scan_reconcile" {
+  project          = google_project.dev.project_id
+  region           = var.region
+  name             = "inbound-scan-reconcile"
+  schedule         = "*/5 * * * *"
+  time_zone        = "Etc/UTC"
+  attempt_deadline = "60s"
+
+  retry_config {
+    retry_count          = 3
+    min_backoff_duration = "10s"
+    max_backoff_duration = "60s"
+    max_doublings        = 2
+  }
+  http_target {
+    http_method = "POST"
+    uri = "${google_cloud_run_v2_service.inbound_bridge.uri}/v1/internal/inbound-scan-reconcile"
+    oidc_token {
+      service_account_email = google_service_account.inbound_pubsub_invoker.email
+      audience              = google_cloud_run_v2_service.inbound_bridge.uri
+    }
+  }
+  depends_on = [
+    google_cloud_run_v2_service_iam_member.bridge_pubsub_invoker,
+    google_cloud_tasks_queue.inbound_scan,
+  ]
+}
+
+resource "google_pubsub_topic" "inbound_manifest_dead_letter" {
+  project = google_project.dev.project_id
+  name    = "${var.inbound_manifest_topic}-dead-letter"
+  depends_on = [google_project_service.dev_additional_services]
+}
+resource "google_pubsub_subscription" "inbound_manifest_dead_letter" {
+  project                    = google_project.dev.project_id
+  name                       = "${var.inbound_manifest_topic}-dead-letter-inspection"
+  topic                      = google_pubsub_topic.inbound_manifest_dead_letter.id
+  ack_deadline_seconds       = 60
+  message_retention_duration = "604800s"
+
+  depends_on = [google_project_service.dev_additional_services]
+}
+
+resource "google_pubsub_topic_iam_member" "inbound_dead_letter_publisher" {
+  project = google_project.dev.project_id
+  topic   = google_pubsub_topic.inbound_manifest_dead_letter.name
+  role    = "roles/pubsub.publisher"
+  member  = "serviceAccount:service-${google_project.dev.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+}
+
+resource "google_pubsub_subscription_iam_member" "inbound_dead_letter_subscriber" {
+  project      = google_project.dev.project_id
+  subscription = google_pubsub_subscription.inbound_manifest_push.name
+  role         = "roles/pubsub.subscriber"
+  member       = "serviceAccount:service-${google_project.dev.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
 }

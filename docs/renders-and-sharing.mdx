@@ -1,0 +1,151 @@
+---
+title: Renders, Dossiers and Sharing
+description: How an answer in toorow becomes a frozen figure, an addressable document, and a revocable link a colleague can open.
+---
+
+An analysis is only finished when someone else can read it. **toorow** has one
+governed path from a question to a page a colleague opens, and every step of it
+is addressable, versioned and revocable.
+
+```
+Query Spec -> Result -> Visualization -> Render -> Dossier version -> Share
+```
+
+Nothing on this path is a screenshot, and nothing is a live re-query. A reader
+opening a link sees the exact figure that was drawn, from the exact data that
+was executed, with the runtime build that drew it.
+
+---
+
+## 1. The objects, and what each one owns
+
+| Object | What it is | What it pins |
+| --- | --- | --- |
+| **Query Spec** | A governed question — measures, dimensions, filters, grain, window — with immutable versions | The Semantic View and the governed names it asks for |
+| **Result** | One execution of a Query Spec version. Immutable. | The data, the definitions, the quality findings, the provenance, the freshness, and the reasoning path that produced it |
+| **Chart Template** | A reusable, validated presentation starting point with immutable versions | Compatibility predicates and optional governed defaults — never data |
+| **Visualization** | A saved presentation for a compatible Result shape | Visual type, bindings, presentation intent |
+| **Render** | An immutable presentation snapshot | The exact Result, the exact Visualization Spec version, the renderer build, the theme, the formatters, the responsive profile and the evidence manifest |
+| **Dossier** | An ordered composition of Renders and narrative blocks, immutable per version | The exact Render identities it shows, and the author of every narrative block |
+| **Share** | A revocable grant of access to exactly one target | Either one Render **or** one Dossier version — never both, and never *the latest* |
+
+A Render is a snapshot, not a rerun instruction. A Share never follows the
+latest anything: what you granted is what the reader sees, until you revoke it.
+
+---
+
+## 2. Where this lives in the console
+
+Everything on this path is reached from **Analyze**.
+
+- **Analyze › Results** — the executions, each opening on its data, its
+  definitions, its quality and its reasoning path.
+- **Analyze › Renders** — the frozen figures, plus the **Dossiers** panel. A
+  project with no Dossier yet says so, and names the gesture that creates one.
+- **Reports › Templates** — the Chart Template catalog, and its workbench, where
+  a template is edited, versioned, archived and restored. An archived version
+  stays readable, and a pin onto an archived version is named as such rather
+  than silently broken.
+
+The console, the MCP App surface and the public share page all draw through the
+**same rendering runtime**. They may choose different responsive profiles; they
+may not change analytical meaning. A figure that reads one way in the console
+cannot read another way in the link you sent.
+
+---
+
+## 3. Composing a Dossier from an AI host
+
+A model working over MCP does not hand you a picture — it keeps what it drew.
+`compose_dossier` freezes one immutable Render per figure and writes the Dossier
+version in a single transaction.
+
+```python
+compose_dossier(
+    project_id: str,
+    label: str,
+    blocks: list[dict],     # render blocks and narrative blocks, in reading order
+    description: str = "",
+    dossier_id: str = ""    # omit to create; pass to append a new version
+) -> dict
+```
+
+Three properties are worth knowing before you call it:
+
+- **All or nothing.** A block referencing a figure from another project, or from
+  another organization, fails the whole call. There is no partial Dossier.
+- **Authorship is recorded, not inferred.** Every narrative block carries
+  `authored_by`: `model` when the MCP gate stamped it, `human` when a person
+  wrote it. The share page and the console both show which is which.
+- **A version is immutable.** Appending to a Dossier creates a new version. The
+  version someone is reading does not change under them.
+
+Each figure keeps its reasoning path, resolved at read time, so a reader can ask
+of any chart in the document: *which question produced this, against which
+definitions?*
+
+---
+
+## 4. Sharing: two people, one link
+
+Nothing leaves the platform on one person's signature.
+
+1. **Request.** Someone with the project capability requests a Share, from the
+   Sharing tab of the Render Workbench or from the Dossier. The response
+   deliberately carries **no link**.
+2. **Confirm.** A *second* role holder authorizes the exit and receives the only
+   link. The confirmation is stamped: who confirmed, and when. The requester and
+   the confirmer cannot be the same person — the database refuses it.
+3. **Read.** The recipient opens the link. The share page draws every figure
+   through the same runtime as the console, with each figure's provenance stated
+   beside it, and states plainly when a fact is absent rather than omitting it.
+4. **Revoke.** Revocation is a single act, available at any time, and it does not
+   need a second holder. A revoked link stops working.
+
+The grant freezes every Render in the pinned version at the moment of
+confirmation. If one of them cannot be frozen, the request is refused and the
+offending figure is named — you never get a link that half works.
+
+<Note>
+  **PDF export is not available yet.** A Dossier version is shareable as a page
+  today. Export to PDF is a stated target for this surface and is not built: it
+  will render through the same path as the share page, so the document on paper
+  shows exactly what the link shows.
+</Note>
+
+---
+
+## 5. Evidence travels with the figure
+
+Every Render carries an evidence manifest, and it is not decorative. A reader —
+person or agent — can go from a drawn point back to:
+
+- the **Result** that produced it, and the Query Spec version that asked for it;
+- the **definitions** used, at the Semantic View version that was in force;
+- the **quality findings** that applied to the underlying data;
+- the **freshness** and the pull provenance of each source;
+- the **reasoning path**, when a model produced the answer, or an explicit
+  *No AI path* when none exists.
+
+Feedback attaches to that same anchor: `submit_analyze_feedback` records a rating
+against the exact observation a reader was looking at, not against the page as a
+whole.
+
+---
+
+## Next Steps & Cross-References
+
+<CardGroup cols={2}>
+  <Card title="Agent Tools" icon="wrench" href="/agent-tools">
+    The MCP tools that execute, render and compose along this path.
+  </Card>
+  <Card title="Semantic Layer" icon="sitemap" href="/semantic-layer">
+    The governed measures and dimensions a Query Spec is allowed to ask for.
+  </Card>
+  <Card title="Data Quality" icon="shield-check" href="/data-quality">
+    The findings a Result carries with it.
+  </Card>
+  <Card title="Host Integration" icon="plug" href="/mcp-host-integration">
+    Connect an AI host and compose a Dossier from a conversation.
+  </Card>
+</CardGroup>

@@ -182,15 +182,15 @@ def _call_tool(
         return dq_ctx
 
     with (
-        patch("core.main._resolve_project", side_effect=lambda x: x),
+        patch("core.main._resolve_project", side_effect=lambda x, identity=None: x),
         patch("core.db.get_connection", side_effect=_get_conn),
         patch("core.main.get_access_token", return_value=None),
         patch(
-            "core.project_access.identity_has_project_access",
+            "core.project_access.identity_can_read_project",
             return_value=scope_granted,
         ),
     ):
-        return get_data_quality_report(project_id=project_id, module=module)
+        return get_data_quality_report(project_id=project_id, connector=module)
 
 
 # ---------------------------------------------------------------------------
@@ -291,12 +291,23 @@ def test_monitors_healthy_pct_calculated():
     assert monitors["dq_timeliness"]["healthy_pct"] == 100.0
 
 
-def test_summary_mentions_all_monitors():
-    """LLM channel must mention all 5 monitor labels."""
+def test_summary_mentions_every_monitor_in_english():
+    """LLM channel must mention EVERY displayable monitor, by its registry label.
+
+    Story 59.5: this test named five French labels, so it proved the vocabulary of
+    2024 and would have stayed green while `dq_null_rate` and `dq_zero_rows` --
+    two monitors the product ships -- were absent from the summary entirely. It
+    reads the registry now, and the sentence around the labels is English too.
+    """
+    from core import dq_monitor_registry
+
+    from tests.english_guard import assert_english
+
     result = _call_tool(stream_count=1, firing_rows=[], evaluated_days=3)
     text = result.content[0].text
-    for label in ("Volume", "Ponctualite", "Doublons", "Coherence", "Lignes rejetees"):
+    for label in dq_monitor_registry.LABELS_BY_ALERT_TYPE.values():
         assert label in text, f"monitor label '{label}' missing from summary:\n{text}"
+    assert_english(text, where="get_data_quality_report summary")
 
 
 def test_freshness_in_summary_and_envelope():
@@ -384,7 +395,7 @@ def test_degraded_zero_monitors():
         raise RuntimeError("DB unavailable in test")
 
     with (
-        patch("core.main._resolve_project", side_effect=lambda x: x),
+        patch("core.main._resolve_project", side_effect=lambda x, identity=None: x),
         patch("core.db.get_connection", side_effect=_fail),
         patch("core.main.get_access_token", return_value=None),
     ):
@@ -786,12 +797,12 @@ def test_h1_summary_mentions_monitors_unavailable_when_partial():
     }
 
     with (
-        _patch("core.main._resolve_project", side_effect=lambda x: x),
+        _patch("core.main._resolve_project", side_effect=lambda x, identity=None: x),
         _patch("core.db.get_connection", side_effect=RuntimeError("no scope DB")),
         _patch("core.main.get_access_token", return_value=None),
         _patch("core.dq_api.fetch_dq_report_data", return_value=partial_data),
         _patch(
-            "core.project_access.identity_has_project_access",
+            "core.project_access.identity_can_read_project",
             return_value=True,
         ),
     ):
@@ -810,7 +821,7 @@ def test_h1_summary_mentions_monitors_unavailable_when_partial():
         )
 
     text = result.content[0].text.lower()
-    assert "indisponible" in text or "unavailable" in text or "moniteur" in text, (
+    assert "unavailable" in text or "unavailable" in text or "moniteur" in text, (
         f"Summary should mention monitors unavailable in H1 scenario:\n{text}"
     )
     # total_unresolved must be visible (1, not 0)
@@ -835,14 +846,14 @@ def test_m1_scope_db_down_returns_denied_not_data():
         raise ProjectAccessUnavailable("DB down in test")
 
     with (
-        patch("core.main._resolve_project", side_effect=lambda x: x),
+        patch("core.main._resolve_project", side_effect=lambda x, identity=None: x),
         patch("core.db.get_connection", return_value=MagicMock(
             __enter__=MagicMock(return_value=MagicMock()),
             __exit__=MagicMock(return_value=False),
         )),
         patch("core.main.get_access_token", return_value=None),
         patch(
-            "core.project_access.identity_has_project_access",
+            "core.project_access.identity_can_read_project",
             side_effect=_raise_pau,
         ),
     ):
@@ -883,7 +894,7 @@ def test_m1_scope_connection_fails_returns_denied():
         )
 
     with (
-        patch("core.main._resolve_project", side_effect=lambda x: x),
+        patch("core.main._resolve_project", side_effect=lambda x, identity=None: x),
         patch("core.db.get_connection", side_effect=_failing_get_conn),
         patch("core.main.get_access_token", return_value=None),
     ):

@@ -491,6 +491,31 @@ def test_validate_selection_unknown_field_is_a_typed_refusal_listing_ids() -> No
     assert resolved["source_fields"] == {"alpha_metric": "alpha_metric_raw"}
 
 
+def test_validate_selection_refuses_a_field_the_catalog_excludes() -> None:
+    """Story 27.9 -- `exposure: excluded` means NOT SELECTABLE, on an explicit selection too.
+
+    `catalog_default_selection` has always skipped excluded fields, so nobody noticed
+    that an explicit selection walked straight past them: the id exists in the catalog,
+    so it resolved, and the pull went to the provider to fail there in the provider's own
+    words. Measured 2026-08-22: 1466 fields across the shipped tree are excluded, and
+    each of them carries a reason a person can act on -- "a DSP seat is required" is an
+    answer, a 400 from the provider is not.
+    """
+    catalog = _load("valid.json")
+    catalog = json.loads(json.dumps(catalog))
+    for field in catalog["fields"]:
+        if field["field_id"] == "beta_dimension":
+            field["exposure"] = "excluded"
+            field["exclusion_reason"] = "a DSP seat is required to reach this field"
+    selection = {"metrics": ["alpha_metric"], "dimensions": ["beta_dimension"]}
+    resolved, issues = validate_selection(catalog, selection)
+    assert [issue.code for issue in issues] == ["excluded_selection_field"]
+    # The connector's OWN reason travels: the refusal names why, not merely that.
+    assert "a DSP seat is required" in issues[0].message
+    # And the excluded field never resolves to a source field, so nothing can pull it.
+    assert resolved["source_fields"] == {"alpha_metric": "alpha_metric_raw"}
+
+
 def test_validate_selection_none_falls_back_to_tier_core_default() -> None:
     """A None selection resolves to the catalog's tier-core default (no issues)."""
     catalog = _load("valid.json")

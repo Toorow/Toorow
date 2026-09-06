@@ -4,7 +4,7 @@
  * Verifies:
  *   1. Fixture envelope renders KPI tiles + heatmap without throwing.
  *   2. Malformed envelope (missing rows/data) hits the error boundary and
- *      renders the French fallback message, OR renders an empty-state gracefully.
+ *      renders the fallback message, OR renders an empty-state gracefully.
  *
  * No-network discipline: WidgetShell does NOT fetch. html-to-image is mocked
  * via vi.mock so toPng does not attempt any DOM-to-canvas work in jsdom.
@@ -135,16 +135,16 @@ describe("GA widget App — malformed envelope (empty/missing rows)", () => {
     };
     render(<App envelope={emptyEnvelope} />);
     expect(
-      screen.getByText(/Aucune donnée pour la sélection actuelle/i)
+      screen.getByText(/No data for the current selection/i)
     ).toBeInTheDocument();
   });
 });
 
 // ---------------------------------------------------------------------------
-// Smoke test 3: ErrorBoundary renders French fallback when child throws
+// Smoke test 3: ErrorBoundary renders its fallback when a child throws
 // ---------------------------------------------------------------------------
 
-describe("ErrorBoundary — French fallback on render error", () => {
+describe("ErrorBoundary — fallback on render error", () => {
   // Suppress React error output during this test
   const originalConsoleError = console.error;
   beforeEach(() => {
@@ -154,7 +154,7 @@ describe("ErrorBoundary — French fallback on render error", () => {
     console.error = originalConsoleError;
   });
 
-  it("renders French fallback when a child component throws", () => {
+  it("renders its fallback when a child component throws", () => {
     function Bomb() {
       throw new Error("Intentional test error");
     }
@@ -167,7 +167,7 @@ describe("ErrorBoundary — French fallback on render error", () => {
 
     expect(
       screen.getByText(
-        "Une erreur est survenue lors de l'affichage du rapport."
+        "This report could not be displayed."
       )
     ).toBeInTheDocument();
   });

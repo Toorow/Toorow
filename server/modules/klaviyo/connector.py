@@ -44,7 +44,9 @@ from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-# Module-level FastMCP instance — the public surface the loader mounts.
+# Module-level FastMCP instance, kept as the conformance surface (AD-1 envelope,
+# validated by server/tests/conformance/test_envelope.py). Since AD-42 the core
+# no longer mounts it: execution uses the Datastream-parameterized core tools.
 mcp_app = FastMCP("klaviyo")
 
 # ---------------------------------------------------------------------------
@@ -96,7 +98,7 @@ def _query_bigquery(sql: str, params: dict) -> list[dict]:
     return [dict(zip(cols, row)) for row in result]
 
 
-def _get_mart_table(db_mode: str) -> str:
+def _get_mart_table(db_mode: str, project_id: str | None) -> str:
     """Reference qualifiee du mart fact_daily_kpi selon le moteur.
 
     DuckDB: dbt materialise les marts dans le schema main_marts.
@@ -105,7 +107,7 @@ def _get_mart_table(db_mode: str) -> str:
     if db_mode == "duckdb":
         from core import warehouse_tenancy  # noqa: PLC0415
 
-        return f"{warehouse_tenancy.mart_prefix(None)}fact_daily_kpi"
+        return f"{warehouse_tenancy.mart_prefix(project_id)}fact_daily_kpi"
     dataset = os.environ.get("BQ_MARTS_DATASET", "marts")
     gcp_project = os.environ.get("GCP_PROJECT", "")
     prefix = f"{gcp_project}.{dataset}" if gcp_project else dataset
@@ -173,7 +175,7 @@ def _query_mart(
     #      les lignes campaign_id (campaign_daily) ou flow_id (flow_daily).
     """
     db_mode = _get_db_mode()
-    table = _get_mart_table(db_mode)
+    table = _get_mart_table(db_mode, project_id)
     dim_clause, dim_params = _build_dim_filter(report_profile, db_mode)
 
     if db_mode == "duckdb":
@@ -392,10 +394,16 @@ def _insert_raw_rows(
     sont stockes dans leurs propres colonnes. Le staging dbt ne les additionne
     JAMAIS a des colonnes de revenue ou de conversions cross-source.
     """
-    if db_mode == "duckdb":
-        import duckdb  # noqa: PLC0415
+    if db_mode in ("duckdb", "bigquery"):
+        # BOTH BACKENDS, ONE PATH. `open_raw_writer` resolves DuckDB or
+        # BigQuery from TOOROW_DB_MODE itself, so this branch already covers
+        # bigquery. An `elif db_mode == "bigquery"` used to sit below it,
+        # unreachable because this test captures both modes -- dead code that
+        # had quietly drifted to a different set of column names and would
+        # have become live the day someone narrowed this condition.
+        from core import warehouse_write  # noqa: PLC0415
 
-        con = duckdb.connect(duckdb_path)
+        con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
         con.execute(_RAW_CREATE_DDL)
         values = [
             (
@@ -424,15 +432,13 @@ def _insert_raw_rows(
             )
             for r in rows
         ]
-        if values:
-            con.executemany(_RAW_INSERT_SQL, values)
-        con.close()
-        return len(values)
+        if db_mode == "duckdb":
+            if values:
+                con.executemany(_RAW_INSERT_SQL, values)
+            con.close()
+            return len(values)
     else:
-        raise ValueError(
-            f"_insert_raw_rows: db_mode {db_mode!r} non supporte a P-dev "
-            "(BigQuery non encore implemente)"
-        )
+        raise ValueError(f"_insert_raw_rows: db_mode {db_mode!r} non supporte")
 
 
 def _parse_reporting_row(
@@ -532,6 +538,38 @@ def _build_reporting_request(
 # On ajoute un cap par precaution (AI-53 : a confirmer si la reponse est paginee).
 _MAX_PAGES = 10
 
+# AI-114 (2026-08-01) -- jugement au niveau du STATUT, pas un raffinement de code
+# provider. `manifest.error_map` a un seul lecteur, core.classify_http_error, et
+# une seule grammaire de cle, "<status>:<provider_code>" ; une cle nue "422" n'y
+# etait jamais consultee, et `_post_reporting` ne passait meme pas la map. Le
+# jugement est juste (422 Unprocessable Entity = requete malformee, NON
+# rejouable) et vit desormais ici, ou il s'applique reellement -- core laisse
+# 422 en `unclassified`, donc rejouable a l'infini.
+#: VIDE, et c'est une declaration -- pas une cle qu'on aurait oubliee. Klaviyo n'y
+#: portait qu'un `422 -> invalid_request`, que `core.pull_errors` connait depuis le
+#: 2026-08-01 : 422 est une semantique HTTP generique, pas du vocabulaire Klaviyo.
+#: Le dictionnaire reste pour que le jour ou l'API repond un statut auquel elle
+#: donne un sens PARTICULIER, l'endroit ou l'ecrire soit deja la.
+_STATUS_OVERRIDES: dict[int, str] = {}
+
+_ERROR_MAP: dict[str, str] | None = None
+
+
+def _load_error_map() -> dict[str, str]:
+    """L'`error_map` du manifeste (status:code -> classe canonique), cachee.
+
+    Les cles sont "<statut>:<code JSON:API>" -- les valeurs enumerees que Klaviyo
+    publie ('not_authenticated', 'authentication_failed', 'permission_denied',
+    'invalid', 'not_found', 'server_error'). Le manifeste est la SEULE place ou
+    un code fournisseur est ecrit (AD-2) ; core ne connait aucun vocabulaire.
+    """
+    global _ERROR_MAP
+    if _ERROR_MAP is None:
+        manifest_path = Path(__file__).parent / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        _ERROR_MAP = manifest.get("error_map") or {}
+    return _ERROR_MAP
+
 
 def _post_reporting(
     client: httpx.Client,
@@ -566,13 +604,20 @@ def _post_reporting(
 
         if resp.status_code != 200:
             # Story 25.2: canonical typed error; provider payload preserved.
-            from core.pull_errors import classify_http_error  # noqa: PLC0415
+            from core import pull_errors  # noqa: PLC0415
 
             try:
                 _body = resp.json()
             except Exception:
                 _body = resp.text
-            raise classify_http_error(resp.status_code, _body)
+            _override = pull_errors.error_for_class(
+                _STATUS_OVERRIDES.get(resp.status_code), resp.status_code, _body
+            )
+            if _override is not None:
+                raise _override
+            raise pull_errors.classify_http_error(
+                resp.status_code, _body, _load_error_map()
+            )
 
         payload = resp.json()
         results = payload.get("data", {}).get("attributes", {}).get("results", [])

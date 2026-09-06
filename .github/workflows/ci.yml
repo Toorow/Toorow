@@ -50,6 +50,8 @@ jobs:
               - 'scripts/apply_migrations.py'
               - 'scripts/check_migration_catalog.py'
               - 'scripts/verify_migration_upgrade.py'
+              - 'scripts/run_evals.py'
+              - 'scripts/eval_gate.py'
               - '.github/workflows/ci.yml'
               - '.github/workflows/nightly.yml'
             connectors:
@@ -76,15 +78,37 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Lint — assert core/ is source-agnostic (AC5 / AD-2 / T8.2)
-        run: |
-          if grep -rE "google-analytics|meta-ads|ga4|gsc|google_analytics" server/core/; then
-            echo "FAIL: server/core/ contains module-specific strings (violates AD-2 source-agnostic invariant)"
-            exit 1
-          fi
-          echo "OK: server/core/ is source-agnostic"
+        run: make check-core-source-agnostic
 
       - name: AD-1 guard — narrative.py must not import warehouse or read raw rows (Story 6.4, AC8)
         run: make check-narrative-no-raw
+
+      # Three guards that existed as Makefile targets and were called by nothing.
+      # They are pure greps and one CSV/SQL read — no service, no database, no
+      # pytest suite, so they respect the standing decision that backend suites
+      # do NOT run here (see the header of this file and of nightly.yml).
+      - name: AD-4 guard — average_position is never summed in a mart (Story 6.2)
+        run: make check-non-additive-guard
+
+      - name: Epic 66 guard — a ratio's formula says the same thing in the seed and in its mart
+        run: make check-metric-formula-parity
+
+      - name: Epic 66 guard — a common key version is immutable, with one writer
+        run: make check-mdm-invariants
+
+      # The ratchet, not a wall: it refuses a NEW canonical target that nobody
+      # classified, and refuses a line that is listed after being fixed. What is
+      # not classified cannot be understood or automated — a field nobody typed
+      # is summed by whatever reads it first.
+      - name: AI-288 ratchet — a canonical target is classified, or it is refused
+        run: make check-canonical-classification
+
+      # Same shape, different subject: `admin_api.py` went 21 727 -> 2 886 lines
+      # and every `path:line` citation into it stopped meaning anything, silently.
+      # Three reviews REJECTED on a stale citation before this existed. A pure
+      # file read — no service, no database, no pytest.
+      - name: AI-250 ratchet — no NEW line citation into a decomposed file
+        run: make check-decomposed-citations
 
       - name: Secret grep gate — assert no secret assignments in source (Story 2.1 T5.1)
         run: |
@@ -128,6 +152,26 @@ jobs:
 
       - name: Lint (ruff)
         run: uv run ruff check server
+
+      # AD-42 bounds the CONNECTOR catalog (zero provider-named tools); this
+      # bounds the CORE one (113 assembled / 48 wire when the bound landed,
+      # after +15 tools in 8 days unbounded). Raising a budget in the script is
+      # a stated decision, never a silent drift (audit 2026-08-20, C14).
+      - name: MCP catalog growth bound — the core surface stays under budget
+        run: uv run python scripts/mcp_tool_surface_report.py --gate
+
+      # CAP-16 exception to the no-backend-suite rule: three pure, service-free
+      # contract tests over the canonical 50-question corpus and shared scorers.
+      - name: Golden Questions contract (CAP-16)
+        run: uv run pytest server/tests/evals/test_golden_questions.py -q
+
+      # Second exception (audit 2026-08-20, C11): the ~39 unmounted connector
+      # tools (AD-42) were exercised ONLY out of CI, so an AD-1 envelope drift
+      # on them had no green witness. This layer is stub-based (no Postgres, no
+      # service, ~3 s) and validates every connector tool against the envelope
+      # schema -- it runs here, the heavier conformance layers stay local.
+      - name: Connector envelope contract (AD-1, stub-based)
+        run: uv run pytest server/tests/conformance/test_envelope.py -q
 
       - name: Validate migration catalog
         run: uv run python scripts/check_migration_catalog.py
@@ -177,6 +221,9 @@ jobs:
 
       - name: Install UI deps
         run: pnpm -C ui install --frozen-lockfile
+
+      - name: Bundle checker fixture tests
+        run: pnpm -C ui test:bundle-check
 
       - name: Build design tokens (Style Dictionary → dist/theme.ts)
         run: pnpm -C ui build:tokens
@@ -305,9 +352,42 @@ jobs:
             exit 1
           fi
 
+      - name: Build project-capability-impact widget (Epic 39 — capability impact app)
+        run: pnpm -C ui --filter @toorow/widget-project-capability-impact build
+
+      # SANS --max-bytes, et c'est deliberé : ce bundle mesure 5 242 457 octets
+      #   wc -c < ui/widgets/project-capability-impact/dist/index.html
+      # soit 3,3x le budget de 1,5 Mo de l'AC7 -- mais l'AC7 a été ratifié pour
+      # le widget google-analytics (story 1.6) puis étendu à la famille
+      # `ui/cards/*`, jamais à ce widget-ci, et aucun document ne lui fixe de
+      # budget. Poser un seuil inventé ici rendrait la CI rouge sur une décision
+      # que personne n'a prise ; l'omettre laisserait croire que la taille est
+      # jugée. AD-11 (aucune référence externe) est gardé dès maintenant ; le
+      # budget de taille est un manque nommé, pas un oubli.
+      - name: Bundle gate — project-capability-impact widget (AD-11 / NFR4, no size budget ratified)
+        run: node ui/scripts/bundle-check.mjs ui/widgets/project-capability-impact/dist/index.html
+
+      # AI-107(b) : le runtime de visualisation partage est l'artefact qu'AD-11
+      # nomme en toutes lettres (« the shared Visualization runtime compiles for
+      # MCP Apps to one self-contained HTML resource »), et c'est celui que
+      # rendent REELLEMENT les 26 connecteurs -- tous declarent
+      # `widget_ref: ui://core/daily-report`, resolu vers
+      # `ui://core/visualization-runtime` par la story 50.6. Il n'etait ni
+      # construit ni controle ici : la seule regle du depot qui interdit a un
+      # widget de parler a quelqu'un ne s'appliquait a aucun des 26.
+      - name: Build shared Visualization runtime (Story 50.5 — @toorow/card-shell)
+        run: pnpm -C ui --filter @toorow/card-shell build
+
+      - name: Bundle gate — shared Visualization runtime, MCP App + Share (AD-11 / NFR4)
+        run: |
+          node ui/scripts/bundle-check.mjs ui/cards/shell/dist/viz/mcp-app.html --max-bytes 1500000
+          node ui/scripts/bundle-check.mjs ui/cards/shell/dist/viz/share.html --max-bytes 1500000
+
+      # `attribution`, `dedup` et `mediaplan-pacing` manquaient a cette liste :
+      # construits, livres, et jamais passes a la garde (AI-107(b)).
       - name: Build + bundle gate — card widgets (Epic 9, AD-11; review-9-2b F-2)
         run: |
-          for pkg in kpi keywords conversions usertypes journey connectors; do
+          for pkg in kpi keywords conversions usertypes journey connectors attribution dedup mediaplan-pacing; do
             pnpm -C ui --filter @toorow/card-$pkg build
             node ui/scripts/bundle-check.mjs ui/cards/$pkg/dist/index.html --max-bytes 1500000
           done
@@ -343,8 +423,8 @@ jobs:
         run: pnpm --filter @toorow/admin build
         working-directory: ui
 
-      - name: Bundle gate -- admin console external URL check (Story 2.4, AC7)
-        run: node ui/scripts/bundle-check.mjs ui/admin/dist/index.html --max-bytes 3000000
+      - name: Bundle gate -- complete admin artifact, URLs + 6 MB raw budget
+        run: node ui/scripts/bundle-check.mjs ui/admin/dist --max-bytes 6000000
 
       - name: Admin console Vitest tests (Story 2.4, AC8)
         run: pnpm --filter @toorow/admin test

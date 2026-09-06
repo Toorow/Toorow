@@ -16,10 +16,36 @@ zscore = (observed_value - rolling_mean) / rolling_stddev
 ```
 
 Where:
-- `rolling_mean` and `rolling_stddev` are calculated over a trailing 30-day window (`ANOMALY_BASELINE_WINDOW=29`, 29 preceding days + current row).
+- `rolling_mean` and `rolling_stddev` are calculated over a trailing window of **30 rows**, not 30 days (`ANOMALY_BASELINE_WINDOW=29`, i.e. `ROWS BETWEEN 29 PRECEDING AND CURRENT ROW`). The frame counts *rows present in the series*, so a series with gaps — a connector that skipped days, a metric that only appears on active days — stretches the same 30-row window over 40 or more calendar days. Nothing signals that stretch; if you need a calendar guarantee, the frame would have to be `RANGE`, and it is not.
+- The window **includes the observation being tested**: it is in its own mean and in its own sample standard deviation. See *Minimum evidence before the detector can speak* below — this bounds what the z-score can reach.
 - Source data is sourced from `fact_daily_kpi` totals using single-canonical-dimension selection to prevent double-counting.
 
 The exact SQL transformations are implemented in `dbt/models/marts/metric_baselines.sql` and `dbt/models/marts/anomalies_daily.sql`.
+
+---
+
+## 1b. Minimum evidence before the detector can speak
+
+Because the tested observation sits inside its own mean and its own sample standard deviation, the attainable z-score is bounded:
+
+```
+max |z| = (n - 1) / sqrt(n)
+```
+
+where `n` is the number of observations in the frame. The consequence is not statistical subtlety, it is arithmetic: **below a certain `n`, no data whatsoever can reach the configured threshold.** A ×10 spike on day 5 is mathematically incapable of firing.
+
+The bound is stated here; the number is **not** hardcoded in this document. It is derived from the configured threshold by `core.anomaly_alerts.minimum_observations_for_threshold()` — the smallest `n` such that `(n-1)/sqrt(n) >= ANOMALY_Z_THRESHOLD`. Editing the environment variable moves the number, and every surface that discloses it follows.
+
+`metric_baselines` therefore carries `observation_count`, computed over the *identical* frame as the mean and the standard deviation. It exists on every row of the mart, including the days nothing fires — which is exactly where the state has to be readable, because `anomalies_daily` keeps only rows that already cleared the threshold.
+
+A surface reading this data must separate two answers that look identical on `anomalies_count`:
+
+| The data says | The honest answer |
+|---|---|
+| `observation_count` below the derived minimum | `insufficient observations (n/N)` — the detector is *absent*, not quiet |
+| `observation_count` at or above it, nothing flagged | `no anomaly` |
+
+The window is deliberately **not** re-specified to exclude the tested point: doing so would change detection sensitivity and add firings. This bound is disclosed, not engineered away.
 
 ---
 
@@ -42,9 +68,9 @@ An anomaly is flagged whenever `|zscore| >= ANOMALY_Z_THRESHOLD` (default 3.0):
 
 ---
 
-## 4. Context Event Citations (AD-9)
+## 4. Context Event Citations
 
-Anomalies **never assert causality** (AD-9 requirement). When context events exist for an anomaly date, they are listed strictly as **candidate context**.
+Anomalies **never assert causality**. When context events exist for an anomaly date, they are listed strictly as **candidate context**.
 
 Prohibited causal phrases in generated messages:
 - `"caused by"`, `"due to"`, `"because of"`, `"en raison de"`, `"causé par"`.
@@ -59,7 +85,7 @@ Enforced by unit test `test_causal_language_absent` in `server/tests/core/test_a
 |---|---|---|
 | `ANOMALY_ALERTS_ENABLED` | `false` | Master switch for anomaly evaluator thread. |
 | `ANOMALY_Z_THRESHOLD` | `3.0` | Z-score threshold for flagging anomalies. |
-| `ANOMALY_BASELINE_WINDOW` | `29` | Trailing window in days (29 preceding + current = 30 days). |
+| `ANOMALY_BASELINE_WINDOW` | `29` | Trailing window in **rows**, not days (`ROWS BETWEEN 29 PRECEDING AND CURRENT ROW` = 30 rows). A gappy series spans more calendar days than the row count suggests, and the frame gives no calendar guarantee. It also sets the upper bound of `observation_count`, hence of the derived minimum described in §1b. |
 
 ---
 
@@ -73,7 +99,7 @@ Enforced by unit test `test_causal_language_absent` in `server/tests/core/test_a
     Explore the canonical marts providing baseline metric data.
   </Card>
   <Card title="Security & Constraints" icon="shield-check" href="/constraints">
-    Review AD-9 non-black-box provenance invariants.
+    Review how context is offered without asserting a cause.
   </Card>
   <Card title="Self-Hosting Guide" icon="server" href="/self-hosting">
     Configure `ANOMALY_ALERTS_ENABLED` in your `.env` deployment environment.

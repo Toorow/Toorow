@@ -113,7 +113,7 @@ describe("apiJson error handling", () => {
         })
       )
     );
-    const err = (await apiGet("/api/overview").catch((e: unknown) => e)) as ApiError;
+    const err = (await apiGet("/api/projects/project-1/overview").catch((e: unknown) => e)) as ApiError;
     expect(err.status).toBe(502);
     expect(err.message).toBe("HTTP 502");
     expect(err.unauthenticated).toBe(false);
@@ -121,7 +121,7 @@ describe("apiJson error handling", () => {
 
   it("turns a network failure into ApiError(0, unreachable)", async () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new TypeError("Failed to fetch"))));
-    const err = (await apiGet("/api/overview").catch((e: unknown) => e)) as ApiError;
+    const err = (await apiGet("/api/projects/project-1/overview").catch((e: unknown) => e)) as ApiError;
     expect(err).toBeInstanceOf(ApiError);
     expect(err.status).toBe(0);
     expect(err.code).toBe("unreachable");

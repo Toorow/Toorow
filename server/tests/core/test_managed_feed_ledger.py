@@ -31,6 +31,7 @@ from core.managed_feed_ledger import (  # noqa: E402  # noqa: E402
     FORMAT_CSV,
     FORMAT_EXCEL,
     FORMAT_GOOGLE_SHEETS,
+    FORMAT_SAV,
     GATE_REJECTION_THRESHOLD_EXCEEDED,
     MARKABLE_TERMINAL_OUTCOMES,
     OUTCOME_FAILED,
@@ -243,7 +244,7 @@ def test_landing_relation_is_per_datastream_stable():
 
 def test_valid_formats_are_the_closed_enum():
     assert VALID_FORMATS == frozenset(
-        {FORMAT_CSV, FORMAT_EXCEL, FORMAT_GOOGLE_SHEETS}
+        {FORMAT_CSV, FORMAT_EXCEL, FORMAT_GOOGLE_SHEETS, FORMAT_SAV}
     )
 
 

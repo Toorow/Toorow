@@ -29,8 +29,7 @@
  */
 
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { ThemeProvider } from "@mui/material";
-import { createTheme } from "@mui/material/styles";
+import { ThemeProvider } from "../themeContext";
 import FeedbackBar from "../FeedbackBar";
 import {
   connectMcpApp,
@@ -39,10 +38,8 @@ import {
 } from "../mcpApp";
 
 // ---------------------------------------------------------------------------
-// Setup: minimal MUI theme wrapper + postMessage mock
+// Setup: theme wrapper + postMessage mock
 // ---------------------------------------------------------------------------
-
-const theme = createTheme();
 
 const ORIGINAL_PARENT = window.parent;
 
@@ -66,7 +63,7 @@ function renderFeedbackBar(props?: Partial<Parameters<typeof FeedbackBar>[0]>) {
     ...props,
   };
   return render(
-    <ThemeProvider theme={theme}>
+    <ThemeProvider>
       <FeedbackBar {...defaultProps} />
     </ThemeProvider>,
   );
@@ -410,7 +407,41 @@ describe("FeedbackBar -- SDK path (Story 9.10)", () => {
       project_id: "proj_test",
       rating: 1,
       trace_id: "trace_abc",
+      // The tool schema declares `connector`, never `module`, and refuses
+      // additional properties. `report_ref` is empty because the grant names
+      // the Result (amendment of 2026-08-30, mcp-tool-surface.md).
+      report_ref: "",
+      connector: "test-module",
+      handle: "",
     });
+    expect(params.arguments).not.toHaveProperty("module");
+  });
+
+  it("forwards the server-minted handle verbatim as `handle`", async () => {
+    const { app, handle } = connectWithMockApp(async () => ({ content: [] }));
+    await handle.ready;
+
+    renderFeedbackBar({ handle: "rh_01J0000000000000000000000A" });
+    fireEvent.click(screen.getByTestId("feedback-thumbs-up"));
+    fireEvent.click(screen.getByTestId("feedback-submit"));
+
+    await waitFor(() =>
+      expect(screen.getByText("Retour envoyé. Merci !")).toBeInTheDocument(),
+    );
+    const [params] = app.callServerTool.mock.calls[0];
+    const sent = params.arguments as Record<string, unknown>;
+    expect(sent.handle).toBe("rh_01J0000000000000000000000A");
+    // Every key on the wire is one the tool declares. `additionalProperties` is
+    // false server-side, so an extra key is a refusal, not a spare field.
+    expect(Object.keys(sent).sort()).toEqual([
+      "comment",
+      "connector",
+      "handle",
+      "project_id",
+      "rating",
+      "report_ref",
+      "trace_id",
+    ]);
   });
 
   it("rejected callServerTool → designed error state (F-11 reachable)", async () => {

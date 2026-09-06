@@ -23,6 +23,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from tests.conftest import purge_fixture_project
+
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
@@ -52,45 +54,50 @@ _AUTH = "core.admin_api._check_auth"
 # ---------------------------------------------------------------------------
 
 
-def test_resolve_org_role_anonymous_disabled_shortcircuits_no_db(monkeypatch):
-    """disabled-auth + 'anonymous' -> 'owner' BEFORE any cursor call (mock asserts)."""
-    from core.project_access import resolve_org_role
-
-    monkeypatch.setenv("TOOROW_AUTH_MODE", "disabled")
-    conn = MagicMock()
-    # If the resolver were to query, it would call conn.cursor(); assert it does NOT.
-    assert resolve_org_role("org_x", "anonymous", conn) == "owner"
-    conn.cursor.assert_not_called()
-
-
-def test_resolve_org_role_non_disabled_anonymous_does_query(monkeypatch):
-    """Outside disabled auth, 'anonymous' is NOT special: the DB is consulted."""
-    from core.project_access import resolve_org_role
-
-    monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
+def _role_conn(row):
+    """A cursor answering the membership query: ``(role,)`` or None."""
     cur = MagicMock()
     cur.__enter__ = MagicMock(return_value=cur)
     cur.__exit__ = MagicMock(return_value=False)
-    cur.fetchone.return_value = ("active", False, None)  # zero members -> open
+    cur.fetchone.return_value = row
     conn = MagicMock()
     conn.cursor.return_value = cur
-    assert resolve_org_role("org_x", "anonymous", conn) == "owner"
-    conn.cursor.assert_called()
+    return conn
+
+
+def test_anonymous_gets_no_short_circuit_and_no_role(monkeypatch):
+    """Story 46.4 removed the disabled-auth 'anonymous -> owner' short-circuit.
+
+    The resolver asks the database like it does for anybody else, and an
+    identity with no ACTIVE membership row gets no role — in every auth mode.
+    """
+    from core.project_access import resolve_org_role
+
+    for mode in ("disabled", "static", "oauth"):
+        monkeypatch.setenv("TOOROW_AUTH_MODE", mode)
+        conn = _role_conn(None)
+        assert resolve_org_role("org_x", "anonymous", conn) is None
+        conn.cursor.assert_called()
+
+
+def test_an_active_membership_row_is_the_only_source_of_a_role(monkeypatch):
+    from core.project_access import resolve_org_role
+
+    monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
+    assert resolve_org_role("org_x", "member@example.com", _role_conn(("admin",))) == "admin"
 
 
 def test_production_never_opens_an_unclaimed_organization(monkeypatch):
+    """Zero membership used to read as 'unclaimed, therefore open'. It never does now.
+
+    There is no runtime switch left to turn this on or off: the query itself
+    joins ``app.org_members`` with ``status='active'``, so an organization with
+    no member simply returns nothing to an outsider.
+    """
     from core.project_access import resolve_org_role
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
-    monkeypatch.setenv("TOOROW_EPIC36_PRODUCTION_ENABLED", "true")
-    cur = MagicMock()
-    cur.__enter__ = MagicMock(return_value=cur)
-    cur.__exit__ = MagicMock(return_value=False)
-    cur.fetchone.return_value = ("active", False, None)
-    conn = MagicMock()
-    conn.cursor.return_value = cur
-
-    assert resolve_org_role("org_unclaimed", "outsider@example.com", conn) is None
+    assert resolve_org_role("org_unclaimed", "outsider@example.com", _role_conn(None)) is None
 
 # ---------------------------------------------------------------------------
 # Live-Postgres helpers (direct SQL; mirrors the 21.1-21.4 fixtures).
@@ -113,6 +120,32 @@ def _mk_member(cur, org_id: str, identity: str, role: str, suffix: str) -> None:
     )
 
 
+def _enrol(org_id: str, identity: str, role: str = "member") -> None:
+    """Put a person in an organization, the only way that still exists.
+
+    `POST /api/organizations/{id}/members` STOPPED ENROLLING ANYONE on 2026-08-24
+    (`org_members_api._add_org_member`): it answers `409 invitation_required` to
+    every caller, whatever their role, because direct enrolment wrote a
+    caller-supplied string into `app.org_members.identity` where canonical
+    identity requires a `person_<ULID>` minted from a verified pair. Four tests
+    below used that route as a FIXTURE -- "add a second owner, then remove one",
+    "add an extra member, then list" -- so the closed door did not fail them on
+    the assertion they were making; it failed them on the decor, and the 409 read
+    like the subject under test had regressed.
+
+    Seeding the row is what the invitation path leaves behind, and it is what
+    those tests were ever really asking for. The route's own refusal is asserted
+    by `test_the_enrolment_door_is_closed_to_everyone` below, so nothing that
+    used to be covered stops being covered.
+    """
+    from core.db import get_connection  # noqa: PLC0415
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            _mk_member(cur, org_id, identity, role, uuid.uuid4().hex[:8])
+        conn.commit()
+
+
 def _mk_member_status(cur, org_id: str, identity: str, role: str, status: str) -> None:
     cur.execute(
         "INSERT INTO app.org_members (id, org_id, identity, role, status, joined_at) "
@@ -130,21 +163,64 @@ def _mk_project(cur, proj_id: str, org_id, suffix: str) -> None:
 
 
 def _drop_org(org_id: str) -> None:
+    """Erase the org through the product's own purge, not by hand.
+
+    The comment that stood here -- "org delete cascades org_members +
+    resource_grants" -- named two children out of 175 and was the reason 20 of
+    this file's tests failed on teardown against a real Postgres:
+    `mdm_business_domains_org_id_fkey` and `project_capabilities_project_id_fkey`
+    are RESTRICT, so a bare DELETE on the org is refused and every later test in
+    the module inherits the poisoned transaction.
+
+    `purge_org_tree` is the ONE function that knows the whole tree, and it is the
+    function `DELETE /api/organizations` runs. A teardown that reimplements it
+    tests a deletion path no user ever takes -- and, worse, goes green while the
+    real one is broken. That is exactly what happened: the purge raised on EVERY
+    organization for months and this file could not see it.
+    """
     from core.db import get_connection
 
+    from tests.conftest import purge_fixture_org
+
     with get_connection() as conn:
-        with conn.cursor() as cur:
-            # org delete cascades org_members + resource_grants.
-            cur.execute("DELETE FROM app.organizations WHERE id = %s", (org_id,))
+        purge_fixture_org(conn, org_id)
         conn.commit()
 
 
 def _drop_project(proj_id: str) -> None:
+    """Drop a project -- but ONLY one that hangs off no organization.
+
+    Deleting a project is not a product operation: it is ARCHIVED. The schema
+    says so out loud -- 63 of the foreign keys pointing at `app.projects` are
+    RESTRICT or NO ACTION and exactly zero cascade, measured with:
+
+        SELECT count(*) FROM pg_constraint
+         WHERE contype='f' AND confrelid='app.projects'::regclass
+           AND confdeltype <> 'c';   -> 63
+
+    So `DELETE FROM app.projects` could only ever succeed on a project with no
+    content, and it broke the moment one of these tests gave a project a
+    capability row. Every call site but one pairs this with `_drop_org`, and
+    `purge_org_tree` already erases projects with the rest of the tenant tree --
+    which makes the call redundant as well as refused. It is skipped there, and
+    the org purge does the work.
+
+    The one project created with `org_id=None` has no tree above it to erase it,
+    so it is deleted here -- the only case a bare DELETE is the right statement.
+    """
     from core.db import get_connection
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM app.projects WHERE id = %s", (proj_id,))
+            cur.execute("SELECT org_id FROM app.projects WHERE id = %s", (proj_id,))
+            row = cur.fetchone()
+            if row is None:
+                return
+            if row[0] is not None:
+                return  # the org purge owns it
+            # AI-291: le graphe prend le relais si une table gouvernee
+            # ajoutee depuis retient le projet en ON DELETE RESTRICT.
+            purge_fixture_project(cur.connection, proj_id)
         conn.commit()
 
 
@@ -211,7 +287,16 @@ def test_archived_org_closed_to_everyone(monkeypatch):
 
 
 @pg_available
-def test_default_open_zero_members_resolves_owner(monkeypatch):
+def test_zero_members_opens_nothing(monkeypatch):
+    """An organization with no member is NOT open. Renamed and inverted.
+
+    This asserted `resolve_org_role(...) == "owner"` for any passer-by on a
+    memberless org -- the *default-open-until-enrolled* rule of Epic 21. Story
+    46.4 removed it, and this file's own offline layer already says so in
+    `test_production_never_opens_an_unclaimed_organization`. Two tests in one
+    module asserted opposite contracts, and only the live one could fail, so the
+    stale one read as fixture noise on a real database.
+    """
     from core.db import get_connection
     from core.project_access import identity_can_manage_org, resolve_org_role
 
@@ -223,9 +308,9 @@ def test_default_open_zero_members_resolves_owner(monkeypatch):
             with conn.cursor() as cur:
                 _mk_org(cur, org, suffix)
             conn.commit()
-            # ZERO members -> OPEN: any identity resolves to owner + can manage.
-            assert resolve_org_role(org, "someone@x", conn) == "owner"
-            assert identity_can_manage_org(org, "someone@x", conn) is True
+            # ZERO members -> CLOSED. Nothing about emptiness grants authority.
+            assert resolve_org_role(org, "someone@x", conn) is None
+            assert identity_can_manage_org(org, "someone@x", conn) is False
     finally:
         _drop_org(org)
 
@@ -260,7 +345,13 @@ def test_enrolled_closed_role_and_manage(monkeypatch):
 
 
 @pg_available
-def test_anonymous_is_owner_even_on_enrolled_org(monkeypatch):
+def test_anonymous_is_owner_of_nothing(monkeypatch):
+    """`anonymous` gets no role, in every auth mode. Renamed and inverted.
+
+    The disabled-auth short-circuit that made `anonymous` an owner was removed by
+    Story 46.4 -- see `test_anonymous_gets_no_short_circuit_and_no_role` in this
+    same file, which has asserted the opposite of this test since.
+    """
     from core.db import get_connection
     from core.project_access import resolve_org_role
 
@@ -273,14 +364,24 @@ def test_anonymous_is_owner_even_on_enrolled_org(monkeypatch):
                 _mk_org(cur, org, suffix)
                 _mk_member(cur, org, "real@acme", "member", suffix)
             conn.commit()
-            # disabled auth -> 'anonymous' is always owner even on a CLOSED org.
-            assert resolve_org_role(org, "anonymous", conn) == "owner"
+            # No short-circuit left: `anonymous` holds no active membership row,
+            # so it resolves to nothing here exactly as it does in oauth.
+            assert resolve_org_role(org, "anonymous", conn) is None
     finally:
         _drop_org(org)
 
 
 @pg_available
-def test_member_project_allow_list(monkeypatch):
+def test_project_access_needs_a_grant_not_a_membership(monkeypatch):
+    """Renamed and half-inverted: org membership alone no longer opens a Project.
+
+    The first half asserted *default-open within the org* -- a member with no
+    grant sees every Project of its organization. `identity_can_access_project_in_org`
+    is now a compatibility name over `identity_can_read_project`, the STRICT
+    decision, so that half is stale for the same reason the org-level default-open
+    is. The second half -- a grant admits its Project and only its Project -- was
+    always the target and is kept verbatim.
+    """
     from core.db import get_connection
     from core.project_access import identity_can_access_project_in_org
 
@@ -298,10 +399,11 @@ def test_member_project_allow_list(monkeypatch):
                 _mk_project(cur, p1, org, suffix)
                 _mk_project(cur, p2, org, suffix)
             conn.commit()
-            # NO grants -> member sees ALL org projects (default-open within org).
-            assert identity_can_access_project_in_org(p1, x, conn) is True
-            assert identity_can_access_project_in_org(p2, x, conn) is True
-            # First project grant engages the allow-list: only P1 remains visible.
+            # NO grants -> nothing is visible. Being a member of the organization
+            # is not, by itself, permission to read one of its Projects.
+            assert identity_can_access_project_in_org(p1, x, conn) is False
+            assert identity_can_access_project_in_org(p2, x, conn) is False
+            # The grant admits its Project, and only its Project.
             with conn.cursor() as cur:
                 cur.execute(
                     "INSERT INTO app.resource_grants "
@@ -319,23 +421,30 @@ def test_member_project_allow_list(monkeypatch):
 
 
 @pg_available
-def test_legacy_no_org_project_falls_back_to_project_default_open(monkeypatch):
+def test_a_project_without_an_organization_can_no_longer_exist(monkeypatch):
+    """The legacy no-org Project is gone from the SCHEMA, not merely from policy.
+
+    This test used to create a project with `org_id=NULL` -- the pre-Epic-21
+    "legacy" shape -- and assert that Story 7.4 default-open let anyone reach it.
+    Both halves are obsolete, and the first one is why: `app.projects.org_id` is
+    NOT NULL, so the row the test needs cannot be inserted at all. It failed with
+    a `NotNullViolation` that named the column and was read as fixture noise.
+
+    Kept rather than deleted, and inverted rather than weakened: an untenanted
+    Project is the one shape that would sit outside every org-scoped guard in this
+    file, so the fact that the database refuses it is worth a test of its own.
+    """
+    import psycopg
     from core.db import get_connection
-    from core.project_access import identity_can_access_project_in_org
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
     suffix = uuid.uuid4().hex[:8]
     proj = f"proj_legacy_{suffix}"
-    try:
-        with get_connection() as conn:
+    with get_connection() as conn:
+        with pytest.raises(psycopg.errors.NotNullViolation):
             with conn.cursor() as cur:
-                # org_id NULL = legacy no-org project (pre-Epic-21).
                 _mk_project(cur, proj, None, suffix)
-            conn.commit()
-            # No project_members -> Story 7.4 default-open -> anyone reaches it.
-            assert identity_can_access_project_in_org(proj, "whoever@x", conn) is True
-    finally:
-        _drop_project(proj)
+        conn.rollback()
 
 
 @pg_available
@@ -418,22 +527,101 @@ def _member_request(org_id: str, body: dict) -> MagicMock:
     return req
 
 
+async def _new_org(name: str, slug: str, owner: str) -> str:
+    """Seed an enrolled organization for a test that is about ENFORCEMENT.
+
+    These tests used to build their org by calling ``_create_org`` and reading
+    ``json.loads(resp.body)["id"]`` with no look at the status. Two things were
+    wrong with that, and the second hid the first for months.
+
+    **The status was never checked**, so any refusal surfaced as
+    ``KeyError: 'id'`` -- a message naming neither code nor reason. Twenty-eight
+    failures arrived as twenty-eight identical mysteries, and the answer had been
+    sitting in the response body the whole time.
+
+    **And the refusal was correct.** ``_create_org`` refuses whenever
+    ``TOOROW_AUTH_MODE != "disabled"`` (409 ``entry_scope_required``,
+    ``server/core/organizations_api.py#_create_org``): creating the first
+    organization went to the hosted
+    ENTRY scope command. Every test here calls
+    ``monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")`` **on purpose**, because
+    oauth is the mode whose enforcement they exist to test. So they were asking
+    the product to do something it is designed to refuse in exactly the mode they
+    had selected. The tests were stale, not the guard.
+
+    None of them is about *how* an organization comes into being -- they are about
+    what happens to roles, members and grants once one exists. So the org is
+    seeded directly, the way this file's own live-Postgres layer already does
+    (``_mk_org`` / ``_mk_member``), and the creator is enrolled as the active
+    owner because that is the state ``_create_org`` used to leave behind.
+
+    The one test that IS about creation asserts the current contract instead --
+    see ``test_direct_org_creation_is_refused_outside_disabled_auth``.
+    """
+    from core.db import get_connection  # noqa: PLC0415
+
+    org_id = f"org_{slug.replace('-', '_')}"
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO app.organizations (id, name, slug, created_by) "
+                "VALUES (%s, %s, %s, %s)",
+                (org_id, name, slug, owner),
+            )
+            cur.execute(
+                "INSERT INTO app.org_members (id, org_id, identity, role, status, joined_at) "
+                "VALUES (%s, %s, %s, 'owner', 'active', NOW())",
+                (f"omem_{uuid.uuid4().hex[:12]}", org_id, owner),
+            )
+        conn.commit()
+    return org_id
+
+
 @pg_available
 @pytest.mark.anyio
-async def test_create_org_auto_enrolls_creator_who_can_then_manage(monkeypatch):
-    """The API-created org enrolls its creator as owner -> creator can PATCH; a
-    stranger is refused 403 (the org is now CLOSED)."""
-    from core.admin_api import _create_org, _patch_org
+async def test_direct_org_creation_is_refused_outside_disabled_auth(monkeypatch):
+    """`POST /api/organizations` is NOT how an organization comes into being.
+
+    This test used to assert 201 on that route and then read its `id`. It was
+    written before `server/core/organizations_api.py#_create_org`, which refuses
+    direct creation whenever
+    `TOOROW_AUTH_MODE != "disabled"` and points at the hosted ENTRY scope
+    command instead. Since every test in this section selects `oauth` on
+    purpose -- oauth being the mode whose enforcement they exist to test -- they
+    were all asking the product to do the one thing it is designed to refuse
+    there, and reading `["id"]` off the refusal.
+
+    So the assertion is inverted rather than deleted: the refusal IS the
+    contract, and a test that stops naming it would let the guard disappear
+    unnoticed. Where the organization actually comes from is
+    `_create_hosted_entry_scope` (`POST /api/entry/scope`).
+    """
+    from core.organizations_api import _create_org  # noqa: PLC0415
+
+    monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
+    slug = f"ae-{uuid.uuid4().hex[:8]}"
+    # `_check_auth` must be patched even here: in oauth mode the real one demands
+    # TOOROW_JWT_PUBLIC_KEY or TOOROW_JWKS_URI and raises before the guard runs.
+    with patch(_AUTH, return_value=(True, "owner@x")):
+        r = await _create_org(_post_request({"name": "AE", "slug": slug}))
+    assert r.status_code == 409
+    body = json.loads(r.body)
+    assert body["code"] == "entry_scope_required"
+    assert "ENTRY scope" in body["message"]
+
+
+@pg_available
+@pytest.mark.anyio
+async def test_enrolled_owner_can_manage_and_a_stranger_cannot(monkeypatch):
+    """The enrolled owner CAN patch; a stranger is refused 403 (the org is CLOSED)."""
+    from core.organizations_api import _patch_org  # noqa: PLC0415
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
     slug = f"ae-{uuid.uuid4().hex[:8]}"
     oid = None
     try:
         with patch(_AUTH, return_value=(True, "owner@x")):
-            r = await _create_org(_post_request({"name": "AE", "slug": slug}))
-            assert r.status_code == 201
-            oid = json.loads(r.body)["id"]
-            # Creator (auto-enrolled owner) CAN manage.
+            oid = await _new_org("AE", slug, "owner@x")
             ok = await _patch_org(_patch_request(oid, {"name": "AE2"}))
             assert ok.status_code == 200
         # A stranger CANNOT manage the now-enrolled org -> 403.
@@ -448,10 +636,23 @@ async def test_create_org_auto_enrolls_creator_who_can_then_manage(monkeypatch):
 
 @pg_available
 @pytest.mark.anyio
-async def test_add_member_denied_for_non_manager(monkeypatch):
-    """A non-member of an ENROLLED org is refused 403 when adding a member."""
-    from core.admin_api import _add_org_member
+async def test_the_enrolment_door_is_closed_to_everyone(monkeypatch):
+    """A STRANGER cannot add a member -- and neither can the owner.
+
+    This test asked for `403 forbidden` on a non-manager. The answer is `409
+    invitation_required`, and it is not a regression: direct enrolment was
+    withdrawn on 2026-08-24 (`org_members_api._add_org_member`, whose docstring
+    carries the reason -- a caller-supplied string cannot be a canonical
+    `person_<ULID>` minted from a verified pair, so the route could only insert a
+    key that authorizes nobody or collides with a real person).
+
+    Asserting the refusal for the OWNER as well as the stranger is what makes
+    this stronger than what it replaces: "a non-manager is refused" is implied by
+    "everyone is refused", and a future reopening of the route for managers only
+    -- the shape that would bring the defect back -- turns this red.
+    """
     from core.db import get_connection
+    from core.org_members_api import _add_org_member  # noqa: PLC0415
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
     suffix = uuid.uuid4().hex[:8]
@@ -460,14 +661,26 @@ async def test_add_member_denied_for_non_manager(monkeypatch):
         with get_connection() as conn:
             with conn.cursor() as cur:
                 _mk_org(cur, org, suffix)
-                _mk_member(cur, org, "real@acme", "member", suffix)
+                _mk_member(cur, org, "real@acme", "owner", suffix)
             conn.commit()
-        with patch(_AUTH, return_value=(True, "stranger@x")):
-            resp = await _add_org_member(
-                _member_request(org, {"identity": "new@acme", "role": "member"})
-            )
-        assert resp.status_code == 403
-        assert json.loads(resp.body)["code"] == "forbidden"
+        for caller in ("stranger@x", "real@acme"):
+            with patch(_AUTH, return_value=(True, caller)):
+                resp = await _add_org_member(
+                    _member_request(org, {"identity": "new@acme", "role": "member"})
+                )
+            assert resp.status_code == 409, caller
+            body = json.loads(resp.body)
+            assert body["code"] == "invitation_required", caller
+            # The refusal names the gesture that replaces it.
+            assert "invitation" in body["message"].lower(), caller
+
+        # And it enrolled nobody, which is the half a status code cannot say.
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT count(*) FROM app.org_members WHERE org_id = %s", (org,)
+                )
+                assert cur.fetchone()[0] == 1
     finally:
         _drop_org(org)
 
@@ -491,16 +704,14 @@ def _org_id_request(org_id: str) -> MagicMock:
 async def test_get_org_denied_for_non_member_404(monkeypatch):
     """Reads scoping: a non-member of an enrolled org gets 404 (existence hidden);
     the member (auto-enrolled creator) gets 200."""
-    from core.admin_api import _create_org, _get_org
+    from core.organizations_api import _get_org  # noqa: PLC0415
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
     slug = f"rs-{uuid.uuid4().hex[:8]}"
     oid = None
     try:
         with patch(_AUTH, return_value=(True, "owner@rs")):
-            oid = json.loads(
-                (await _create_org(_post_request({"name": "RS", "slug": slug}))).body
-            )["id"]
+            oid = await _new_org("RS", slug, "owner@rs")
             assert (await _get_org(_org_id_request(oid))).status_code == 200
         with patch(_AUTH, return_value=(True, "stranger@rs")):
             assert (await _get_org(_org_id_request(oid))).status_code == 404
@@ -514,16 +725,14 @@ async def test_get_org_denied_for_non_member_404(monkeypatch):
 async def test_list_orgs_excludes_other_tenants(monkeypatch):
     """Reads scoping: an enrolled org appears in its member's list but not in a
     stranger's."""
-    from core.admin_api import _create_org, _list_orgs
+    from core.organizations_api import _list_orgs  # noqa: PLC0415
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
     slug = f"ls-{uuid.uuid4().hex[:8]}"
     oid = None
     try:
         with patch(_AUTH, return_value=(True, "owner@ls")):
-            oid = json.loads(
-                (await _create_org(_post_request({"name": "LS", "slug": slug}))).body
-            )["id"]
+            oid = await _new_org("LS", slug, "owner@ls")
             mine = json.loads((await _list_orgs(_post_request({}))).body)["organizations"]
             assert any(o["id"] == oid for o in mine)
         with patch(_AUTH, return_value=(True, "stranger@ls")):
@@ -538,16 +747,14 @@ async def test_list_orgs_excludes_other_tenants(monkeypatch):
 @pytest.mark.anyio
 async def test_remove_last_active_owner_refused_409(monkeypatch):
     """Removing the sole active owner would silently reopen the tenant -> 409."""
-    from core.admin_api import _create_org, _remove_org_member
+    from core.org_members_api import _remove_org_member  # noqa: PLC0415
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
     slug = f"lo-{uuid.uuid4().hex[:8]}"
     oid = None
     try:
         with patch(_AUTH, return_value=(True, "mgr@x")):
-            oid = json.loads(
-                (await _create_org(_post_request({"name": "LO", "slug": slug}))).body
-            )["id"]
+            oid = await _new_org("LO", slug, "mgr@x")
             # mgr@x is the sole auto-enrolled owner -> cannot remove itself.
             resp = await _remove_org_member(_member_mgmt_request(oid, "mgr@x"))
         assert resp.status_code == 409
@@ -559,19 +766,15 @@ async def test_remove_last_active_owner_refused_409(monkeypatch):
 @pg_available
 @pytest.mark.anyio
 async def test_remove_one_of_two_owners_ok(monkeypatch):
-    from core.admin_api import _add_org_member, _create_org, _remove_org_member
+    from core.org_members_api import _remove_org_member  # noqa: PLC0415
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
     slug = f"two-{uuid.uuid4().hex[:8]}"
     oid = None
     try:
         with patch(_AUTH, return_value=(True, "mgr@x")):
-            oid = json.loads(
-                (await _create_org(_post_request({"name": "TWO", "slug": slug}))).body
-            )["id"]
-            await _add_org_member(
-                _member_request(oid, {"identity": "o2@x", "role": "owner"})
-            )
+            oid = await _new_org("TWO", slug, "mgr@x")
+            _enrol(oid, "o2@x", "owner")  # the invitation path's residue, seeded
             resp = await _remove_org_member(_member_mgmt_request(oid, "o2@x"))
         assert resp.status_code == 200
     finally:
@@ -582,16 +785,14 @@ async def test_remove_one_of_two_owners_ok(monkeypatch):
 @pg_available
 @pytest.mark.anyio
 async def test_downgrade_sole_owner_refused_409(monkeypatch):
-    from core.admin_api import _create_org, _update_org_member
+    from core.org_members_api import _update_org_member  # noqa: PLC0415
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
     slug = f"dg-{uuid.uuid4().hex[:8]}"
     oid = None
     try:
         with patch(_AUTH, return_value=(True, "mgr@x")):
-            oid = json.loads(
-                (await _create_org(_post_request({"name": "DG", "slug": slug}))).body
-            )["id"]
+            oid = await _new_org("DG", slug, "mgr@x")
             resp = await _update_org_member(
                 _member_mgmt_request(oid, "mgr@x", {"role": "member"})
             )
@@ -603,17 +804,89 @@ async def test_downgrade_sole_owner_refused_409(monkeypatch):
 
 @pg_available
 @pytest.mark.anyio
+async def test_demote_last_owner_with_admin_remaining_refused_409(monkeypatch):
+    """AI-348, ratified 2026-09-02 (organization-settings.md).
+
+    The manager floor is satisfied -- an admin remains -- and the demotion is
+    still a dead end: FIX 3 forbids that admin from ever assigning `owner`
+    again. The refusal names the transfer gesture instead of letting the 200
+    through.
+    """
+    from core.org_members_api import _update_org_member  # noqa: PLC0415
+
+    monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
+    slug = f"lot-{uuid.uuid4().hex[:8]}"
+    oid = None
+    try:
+        with patch(_AUTH, return_value=(True, "mgr@x")):
+            oid = await _new_org("LOT", slug, "mgr@x")
+            _enrol(oid, "adm@x", "admin")
+            resp = await _update_org_member(
+                _member_mgmt_request(oid, "mgr@x", {"role": "admin"})
+            )
+        assert resp.status_code == 409
+        assert json.loads(resp.body)["code"] == "last_owner_transfer_required"
+    finally:
+        if oid:
+            _drop_org(oid)
+
+
+@pg_available
+@pytest.mark.anyio
+async def test_remove_last_owner_with_admin_remaining_refused_409(monkeypatch):
+    """The remove door composes into the same dead end and gets the same 409."""
+    from core.org_members_api import _remove_org_member  # noqa: PLC0415
+
+    monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
+    slug = f"rot-{uuid.uuid4().hex[:8]}"
+    oid = None
+    try:
+        with patch(_AUTH, return_value=(True, "mgr@x")):
+            oid = await _new_org("ROT", slug, "mgr@x")
+            _enrol(oid, "adm@x", "admin")
+            resp = await _remove_org_member(_member_mgmt_request(oid, "mgr@x"))
+        assert resp.status_code == 409
+        assert json.loads(resp.body)["code"] == "last_owner_transfer_required"
+    finally:
+        if oid:
+            _drop_org(oid)
+
+
+@pg_available
+@pytest.mark.anyio
+async def test_demote_an_owner_when_a_second_owner_exists_ok(monkeypatch):
+    """With ownership transferred -- a second active owner -- the demotion is
+    ordinary. This is exactly the gesture the 409 above names."""
+    from core.org_members_api import _update_org_member  # noqa: PLC0415
+
+    monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
+    slug = f"ok2-{uuid.uuid4().hex[:8]}"
+    oid = None
+    try:
+        with patch(_AUTH, return_value=(True, "mgr@x")):
+            oid = await _new_org("OK2", slug, "mgr@x")
+            _enrol(oid, "o2@x", "owner")
+            resp = await _update_org_member(
+                _member_mgmt_request(oid, "mgr@x", {"role": "admin"})
+            )
+        assert resp.status_code == 200
+        assert json.loads(resp.body)["role"] == "admin"
+    finally:
+        if oid:
+            _drop_org(oid)
+
+
+@pg_available
+@pytest.mark.anyio
 async def test_remove_nonmember_404(monkeypatch):
-    from core.admin_api import _create_org, _remove_org_member
+    from core.org_members_api import _remove_org_member  # noqa: PLC0415
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
     slug = f"nm-{uuid.uuid4().hex[:8]}"
     oid = None
     try:
         with patch(_AUTH, return_value=(True, "mgr@x")):
-            oid = json.loads(
-                (await _create_org(_post_request({"name": "NM", "slug": slug}))).body
-            )["id"]
+            oid = await _new_org("NM", slug, "mgr@x")
             resp = await _remove_org_member(_member_mgmt_request(oid, "ghost@x"))
         assert resp.status_code == 404
     finally:
@@ -632,21 +905,17 @@ async def test_list_org_members_authorized_member_gets_list(monkeypatch):
     """(a) An active member of the org gets 200 with a 'members' list.
 
     The auto-enrolled creator is itself in the list (role='owner', status='active').
-    An extra member added via _add_org_member also appears.
+    A second member, seeded the way an accepted invitation leaves one, also appears.
     """
-    from core.admin_api import _add_org_member, _create_org, _list_org_members
+    from core.org_members_api import _list_org_members  # noqa: PLC0415
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
     slug = f"lm-{uuid.uuid4().hex[:8]}"
     oid = None
     try:
         with patch(_AUTH, return_value=(True, "owner@lm")):
-            oid = json.loads(
-                (await _create_org(_post_request({"name": "LM", "slug": slug}))).body
-            )["id"]
-            await _add_org_member(
-                _member_request(oid, {"identity": "extra@lm", "role": "member"})
-            )
+            oid = await _new_org("LM", slug, "owner@lm")
+            _enrol(oid, "extra@lm", "member")
             resp = await _list_org_members(_org_id_request(oid))
         assert resp.status_code == 200
         body = json.loads(resp.body)
@@ -671,16 +940,14 @@ async def test_list_org_members_authorized_member_gets_list(monkeypatch):
 @pytest.mark.anyio
 async def test_list_org_members_non_member_gets_404(monkeypatch):
     """(b) A non-member of an enrolled org gets 404 (existence not disclosed)."""
-    from core.admin_api import _create_org, _list_org_members
+    from core.org_members_api import _list_org_members  # noqa: PLC0415
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
     slug = f"lm2-{uuid.uuid4().hex[:8]}"
     oid = None
     try:
         with patch(_AUTH, return_value=(True, "owner@lm2")):
-            oid = json.loads(
-                (await _create_org(_post_request({"name": "LM2", "slug": slug}))).body
-            )["id"]
+            oid = await _new_org("LM2", slug, "owner@lm2")
         # A stranger cannot see the enrolled org's member list.
         with patch(_AUTH, return_value=(True, "stranger@lm2")):
             resp = await _list_org_members(_org_id_request(oid))
@@ -699,21 +966,20 @@ async def test_list_org_members_includes_suspended_member(monkeypatch):
     The *caller's* own active membership gates the route; the suspended member
     appears as a row with status='suspended'.
     """
-    from core.admin_api import _add_org_member, _create_org, _list_org_members, _update_org_member
+    from core.org_members_api import (  # noqa: PLC0415
+        _list_org_members,
+        _update_org_member,
+    )
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
     slug = f"lm3-{uuid.uuid4().hex[:8]}"
     oid = None
     try:
         with patch(_AUTH, return_value=(True, "owner@lm3")):
-            oid = json.loads(
-                (await _create_org(_post_request({"name": "LM3", "slug": slug}))).body
-            )["id"]
-            # Add a second owner so we can suspend the extra member without
-            # triggering the last-owner guard on the original owner.
-            await _add_org_member(
-                _member_request(oid, {"identity": "extra@lm3", "role": "member"})
-            )
+            oid = await _new_org("LM3", slug, "owner@lm3")
+            # A second member, so suspending it does not trip the last-owner
+            # guard on the creator.
+            _enrol(oid, "extra@lm3", "member")
             # Suspend the extra member.
             await _update_org_member(
                 _member_mgmt_request(oid, "extra@lm3", {"status": "suspended"})
@@ -758,10 +1024,24 @@ def _drop_credential(cred_id: str) -> None:
         conn.commit()
 
 
-def _cred_post_req(credential_id: str, body: dict) -> MagicMock:
+def _cred_post_req(credential_id: str, body: dict, **extra_params) -> MagicMock:
+    """A credential POST with REAL headers.
+
+    A bare `MagicMock()` answers `request.headers.get("Idempotency-Key")` with
+    another MagicMock -- truthy, and `.strip()` on it returns a MagicMock too. So
+    the guard that refuses a request without the header sees one, and the mock
+    travels on into the durable-operation layer, where it fails as a 500. The
+    test then reads "the route is broken" from a request no client would send.
+
+    `_create_account_grant` is one of the 23 routes that REFUSE a missing
+    `Idempotency-Key` (422 `missing_idempotency_key`) -- the same header whose
+    omission made the console's Expose button answer 422 on every click (AI-188).
+    These tests predate the guard; they now send what a client sends.
+    """
     req = MagicMock()
-    req.path_params = {"credential_id": credential_id}
+    req.path_params = {"credential_id": credential_id, **extra_params}
     req.body = AsyncMock(return_value=json.dumps(body).encode())
+    req.headers = {"Idempotency-Key": f"test-{uuid.uuid4().hex[:12]}"}
     return req
 
 
@@ -785,8 +1065,8 @@ async def test_remove_sole_active_admin_no_owner_refused_409(monkeypatch):
     Seed: org with one active ADMIN + two non-manager members (viewer + member).
     The guard must fire even though the org has no owner at all.
     """
-    from core.admin_api import _remove_org_member
     from core.db import get_connection
+    from core.org_members_api import _remove_org_member  # noqa: PLC0415
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
     suffix = uuid.uuid4().hex[:8]
@@ -813,8 +1093,8 @@ async def test_remove_sole_active_admin_no_owner_refused_409(monkeypatch):
 @pytest.mark.anyio
 async def test_demote_sole_active_admin_to_member_refused_409(monkeypatch):
     """FIX 1(b): demoting the sole active admin to 'member' returns 409."""
-    from core.admin_api import _update_org_member
     from core.db import get_connection
+    from core.org_members_api import _update_org_member  # noqa: PLC0415
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
     suffix = uuid.uuid4().hex[:8]
@@ -840,8 +1120,8 @@ async def test_demote_sole_active_admin_to_member_refused_409(monkeypatch):
 @pytest.mark.anyio
 async def test_suspend_sole_active_admin_refused_409(monkeypatch):
     """FIX 1(b): suspending the sole active admin returns 409."""
-    from core.admin_api import _update_org_member
     from core.db import get_connection
+    from core.org_members_api import _update_org_member  # noqa: PLC0415
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
     suffix = uuid.uuid4().hex[:8]
@@ -881,8 +1161,8 @@ async def test_remove_sole_active_owner_with_suspended_owner_refused_409(monkeyp
     concurrent-connection harness to exercise directly -- this test exercises the
     counting logic without concurrency.
     """
-    from core.admin_api import _remove_org_member
     from core.db import get_connection
+    from core.org_members_api import _remove_org_member  # noqa: PLC0415
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
     suffix = uuid.uuid4().hex[:8]
@@ -899,7 +1179,10 @@ async def test_remove_sole_active_owner_with_suspended_owner_refused_409(monkeyp
         with patch(_AUTH, return_value=(True, active_owner)):
             resp = await _remove_org_member(_member_mgmt_request(org, active_owner))
         assert resp.status_code == 409
-        assert json.loads(resp.body)["code"] == "conflict"
+        # Re-stated 2026-09-02: the sole ACTIVE owner is the last owner, so the
+        # AI-348 refusal (organization-settings.md amendment) answers first and
+        # names the transfer gesture -- the floor guard behind it still holds.
+        assert json.loads(resp.body)["code"] == "last_owner_transfer_required"
     finally:
         _drop_org(org)
 
@@ -913,8 +1196,8 @@ async def test_remove_sole_active_owner_with_suspended_owner_refused_409(monkeyp
 @pytest.mark.anyio
 async def test_admin_cannot_add_member_with_role_owner_403(monkeypatch):
     """FIX 3(a): an ADMIN actor adding a new member with role='owner' -> 403."""
-    from core.admin_api import _add_org_member
     from core.db import get_connection
+    from core.org_members_api import _add_org_member  # noqa: PLC0415
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
     suffix = uuid.uuid4().hex[:8]
@@ -928,13 +1211,25 @@ async def test_admin_cannot_add_member_with_role_owner_403(monkeypatch):
                 _mk_member_status(cur, org, owner_id, "owner", "active")
                 _mk_member_status(cur, org, admin_id, "admin", "active")
             conn.commit()
-        # Admin actor tries to add a new member with role='owner' -> must be denied.
+        # Admin actor tries to add a new member with role='owner'. It is refused,
+        # and since 2026-08-24 the refusal is the CLOSED DOOR rather than the role
+        # hierarchy: `_add_org_member` enrolls nobody at all. The rule this test
+        # names is not weakened -- an admin still cannot make an owner -- and the
+        # half that matters, that no `owner` row appears, is now asserted instead
+        # of inferred from a status code.
         with patch(_AUTH, return_value=(True, admin_id)):
             resp = await _add_org_member(
                 _member_request(org, {"identity": "new@fix3", "role": "owner"})
             )
-        assert resp.status_code == 403
-        assert json.loads(resp.body)["code"] == "forbidden"
+        assert resp.status_code == 409
+        assert json.loads(resp.body)["code"] == "invitation_required"
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT count(*) FROM app.org_members WHERE org_id = %s AND role = 'owner'",
+                    (org,),
+                )
+                assert cur.fetchone()[0] == 1
     finally:
         _drop_org(org)
 
@@ -943,8 +1238,8 @@ async def test_admin_cannot_add_member_with_role_owner_403(monkeypatch):
 @pytest.mark.anyio
 async def test_admin_cannot_patch_member_role_to_owner_403(monkeypatch):
     """FIX 3(b): an ADMIN actor PATCHing another member's role to 'owner' -> 403."""
-    from core.admin_api import _update_org_member
     from core.db import get_connection
+    from core.org_members_api import _update_org_member  # noqa: PLC0415
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
     suffix = uuid.uuid4().hex[:8]
@@ -974,8 +1269,8 @@ async def test_admin_cannot_patch_member_role_to_owner_403(monkeypatch):
 @pytest.mark.anyio
 async def test_admin_cannot_self_promote_to_owner_403(monkeypatch):
     """FIX 3(c): an ADMIN self-promoting to 'owner' -> 403 (self-escalation blocked)."""
-    from core.admin_api import _update_org_member
     from core.db import get_connection
+    from core.org_members_api import _update_org_member  # noqa: PLC0415
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
     suffix = uuid.uuid4().hex[:8]
@@ -1002,26 +1297,43 @@ async def test_admin_cannot_self_promote_to_owner_403(monkeypatch):
 @pg_available
 @pytest.mark.anyio
 async def test_owner_can_assign_owner_role_positive_control(monkeypatch):
-    """FIX 3 positive control: an OWNER actor CAN add a new member with role='owner'."""
-    from core.admin_api import _add_org_member
+    """FIX 3 positive control, ON THE DOOR THAT STILL OPENS.
+
+    It used to be `_add_org_member` with role='owner' -> 201. That door answers
+    409 to everyone since 2026-08-24, so the control proved nothing about the
+    role hierarchy any more -- it only proved the door was shut, which the
+    negative cases above already say. The hierarchy lives on `_update_org_member`
+    now: `test_admin_cannot_patch_member_role_to_owner_403` is its negative half,
+    and this is the positive one it was missing -- an OWNER really can promote an
+    existing member. Without it, a rule that refused EVERYONE would read green.
+    """
     from core.db import get_connection
+    from core.org_members_api import _update_org_member  # noqa: PLC0415
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
     suffix = uuid.uuid4().hex[:8]
     org = f"org_fix3_ok_{suffix}"
     owner_id = "owner@fix3ok"
+    member_id = "member@fix3ok"
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
                 _mk_org(cur, org, suffix)
                 _mk_member_status(cur, org, owner_id, "owner", "active")
+                _mk_member_status(cur, org, member_id, "member", "active")
             conn.commit()
         with patch(_AUTH, return_value=(True, owner_id)):
-            resp = await _add_org_member(
-                _member_request(org, {"identity": "new-owner@fix3ok", "role": "owner"})
+            resp = await _update_org_member(
+                _member_mgmt_request(org, member_id, {"role": "owner"})
             )
-        assert resp.status_code == 201
-        assert json.loads(resp.body)["role"] == "owner"
+        assert resp.status_code == 200, resp.body
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT role FROM app.org_members WHERE org_id = %s AND identity = %s",
+                    (org, member_id),
+                )
+                assert cur.fetchone()[0] == "owner"
     finally:
         _drop_org(org)
 
@@ -1033,13 +1345,28 @@ async def test_owner_can_assign_owner_role_positive_control(monkeypatch):
 
 @pg_available
 @pytest.mark.anyio
-async def test_null_owner_credential_create_grant_returns_404(monkeypatch):
+async def test_create_grant_refuses_a_non_manager_of_the_owner_org_403(monkeypatch):
     """FIX 4: POST grant on a credential with owner_org_id IS NULL -> 404 (not 403).
 
     The handler emits a non-disclosing 404 so callers cannot distinguish a
     missing credential from a credential whose owner org is un-backfilled.
+
+    A CREDENTIAL WITHOUT AN OWNER ORGANIZATION CANNOT EXIST. `connection_ref.
+    owner_org_id` is NOT NULL and carries `fk_connection_ref_owner_org` to
+    `app.organizations` (verified on the live schema, 2026-08-04), so the "legacy
+    NULL owner" this test was written for was abolished by the schema.
+
+    The seed was already patched once, to `owner_org_id = 'org_test_fixture'` --
+    a row that DOES exist. That silently changed the question: it stopped asking
+    "what happens when the owner is unknown" and started asking "what happens
+    when the owner is known and I do not manage it". The answer to the second is
+    **403**, and it is correct; only the name and the assertion still carried the
+    first. A test whose premise is edited out from under its name is worse than a
+    red one, because it goes green while proving something else.
+
+    Renamed and inverted to what it now measures.
     """
-    from core.admin_api import _create_account_grant
+    from core.credential_accounts_api import _create_account_grant  # noqa: PLC0415
     from core.db import get_connection
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
@@ -1061,10 +1388,15 @@ async def test_null_owner_credential_create_grant_returns_404(monkeypatch):
                 )
                 # Register the account via direct SQL so the FK exists and the
                 # handler reaches the owner_org_id check (not the account-missing 404).
+                # `source_account_id` is NOT NULL since migration 133:14. This
+                # fixture predates it and inserted two columns, so the row it was
+                # meant to plant never existed and the handler was judged on a
+                # path it never took.
                 cur.execute(
                     "INSERT INTO app.credential_accounts "
-                    "(credential_id, external_account_id) VALUES (%s, %s)",
-                    (cred, "acct_null"),
+                    "(source_account_id, credential_id, external_account_id) "
+                    "VALUES (%s, %s, %s)",
+                    (f"sacct_{uuid.uuid4().hex[:20]}", cred, "acct_null"),
                 )
             conn.commit()
         req = MagicMock()
@@ -1075,8 +1407,8 @@ async def test_null_owner_credential_create_grant_returns_404(monkeypatch):
         req.body = AsyncMock(return_value=json.dumps({"grantee_org_id": org}).encode())
         with patch(_AUTH, return_value=(True, "anyone@fix4")):
             resp = await _create_account_grant(req)
-        assert resp.status_code == 404
-        assert json.loads(resp.body)["code"] == "not_found"
+        assert resp.status_code == 403
+        assert json.loads(resp.body)["code"] == "forbidden"
     finally:
         _drop_credential(cred)
         _drop_project(proj)
@@ -1085,9 +1417,24 @@ async def test_null_owner_credential_create_grant_returns_404(monkeypatch):
 
 @pg_available
 @pytest.mark.anyio
-async def test_null_owner_credential_revoke_grant_returns_404(monkeypatch):
-    """FIX 4: DELETE revoke on a credential with owner_org_id IS NULL -> 404."""
-    from core.admin_api import _revoke_account_grant
+async def test_revoke_grant_refuses_a_non_manager_of_the_owner_org_403(monkeypatch):
+    """FIX 4: DELETE revoke on a credential with owner_org_id IS NULL -> 404.
+    A CREDENTIAL WITHOUT AN OWNER ORGANIZATION CANNOT EXIST. `connection_ref.
+    owner_org_id` is NOT NULL and carries `fk_connection_ref_owner_org` to
+    `app.organizations` (verified on the live schema, 2026-08-04), so the "legacy
+    NULL owner" this test was written for was abolished by the schema.
+
+    The seed was already patched once, to `owner_org_id = 'org_test_fixture'` --
+    a row that DOES exist. That silently changed the question: it stopped asking
+    "what happens when the owner is unknown" and started asking "what happens
+    when the owner is known and I do not manage it". The answer to the second is
+    **403**, and it is correct; only the name and the assertion still carried the
+    first. A test whose premise is edited out from under its name is worse than a
+    red one, because it goes green while proving something else.
+
+    Renamed and inverted to what it now measures.
+    """
+    from core.credential_accounts_api import _revoke_account_grant  # noqa: PLC0415
     from core.db import get_connection
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
@@ -1115,8 +1462,8 @@ async def test_null_owner_credential_revoke_grant_returns_404(monkeypatch):
         }
         with patch(_AUTH, return_value=(True, "anyone@fix4rv")):
             resp = await _revoke_account_grant(req)
-        assert resp.status_code == 404
-        assert json.loads(resp.body)["code"] == "not_found"
+        assert resp.status_code == 403
+        assert json.loads(resp.body)["code"] == "forbidden"
     finally:
         _drop_credential(cred)
         _drop_project(proj)
@@ -1128,7 +1475,10 @@ async def test_null_owner_credential_revoke_grant_returns_404(monkeypatch):
 async def test_credential_with_owner_org_create_grant_positive_control(monkeypatch):
     """FIX 4 positive control: a credential WITH a valid owner_org_id lets an
     owner/admin of that org successfully create a grant (201)."""
-    from core.admin_api import _create_account_grant, _register_credential_account
+    from core.credential_accounts_api import (  # noqa: PLC0415
+        _create_account_grant,
+        _register_credential_account,
+    )
     from core.db import get_connection
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
@@ -1154,11 +1504,7 @@ async def test_credential_with_owner_org_create_grant_positive_control(monkeypat
             )
             assert r_reg.status_code == 201
             # Grant access to org_b.
-            req = MagicMock()
-            req.path_params = {"credential_id": cred, "external_account_id": "acct_ok"}
-            req.body = AsyncMock(
-                return_value=json.dumps({"grantee_org_id": org_b}).encode()
-            )
+            req = _cred_post_req(cred, {"grantee_org_id": org_b}, external_account_id="acct_ok")
             r_grant = await _create_account_grant(req)
         assert r_grant.status_code == 201
     finally:
@@ -1178,7 +1524,7 @@ async def test_credential_with_owner_org_create_grant_positive_control(monkeypat
 async def test_register_credential_account_non_manager_denied_403(monkeypatch):
     """FIX 5: a caller who is NOT a manager (owner/admin) of the credential's
     owner org is denied 403."""
-    from core.admin_api import _register_credential_account
+    from core.credential_accounts_api import _register_credential_account  # noqa: PLC0415
     from core.db import get_connection
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
@@ -1212,9 +1558,24 @@ async def test_register_credential_account_non_manager_denied_403(monkeypatch):
 
 @pg_available
 @pytest.mark.anyio
-async def test_register_credential_account_null_owner_org_returns_404(monkeypatch):
-    """FIX 5: a credential with owner_org_id IS NULL -> non-disclosing 404."""
-    from core.admin_api import _register_credential_account
+async def test_register_account_refuses_a_non_manager_of_the_owner_org_403(monkeypatch):
+    """FIX 5: a credential with owner_org_id IS NULL -> non-disclosing 404.
+    A CREDENTIAL WITHOUT AN OWNER ORGANIZATION CANNOT EXIST. `connection_ref.
+    owner_org_id` is NOT NULL and carries `fk_connection_ref_owner_org` to
+    `app.organizations` (verified on the live schema, 2026-08-04), so the "legacy
+    NULL owner" this test was written for was abolished by the schema.
+
+    The seed was already patched once, to `owner_org_id = 'org_test_fixture'` --
+    a row that DOES exist. That silently changed the question: it stopped asking
+    "what happens when the owner is unknown" and started asking "what happens
+    when the owner is known and I do not manage it". The answer to the second is
+    **403**, and it is correct; only the name and the assertion still carried the
+    first. A test whose premise is edited out from under its name is worse than a
+    red one, because it goes green while proving something else.
+
+    Renamed and inverted to what it now measures.
+    """
+    from core.credential_accounts_api import _register_credential_account  # noqa: PLC0415
     from core.db import get_connection
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
@@ -1239,8 +1600,8 @@ async def test_register_credential_account_null_owner_org_returns_404(monkeypatc
             resp = await _register_credential_account(
                 _cred_post_req(cred, {"external_account_id": "acct_no"})
             )
-        assert resp.status_code == 404
-        assert json.loads(resp.body)["code"] == "not_found"
+        assert resp.status_code == 403
+        assert json.loads(resp.body)["code"] == "forbidden"
     finally:
         _drop_credential(cred)
         _drop_project(proj)
@@ -1251,7 +1612,7 @@ async def test_register_credential_account_null_owner_org_returns_404(monkeypatc
 @pytest.mark.anyio
 async def test_register_credential_account_owner_org_manager_succeeds(monkeypatch):
     """FIX 5 positive control: an owner/admin of the credential's owner org -> 201."""
-    from core.admin_api import _register_credential_account
+    from core.credential_accounts_api import _register_credential_account  # noqa: PLC0415
     from core.db import get_connection
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")

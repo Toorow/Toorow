@@ -20,19 +20,18 @@
  * the comment is secondary/muted, light+dark via WidgetShell, French-first with accents.
  */
 
-import { useState, useId, useRef, type ReactNode } from "react";
+import { useState, useId, useRef, type CSSProperties, type ReactNode } from "react";
 import WidgetShell from "@toorow/shell";
 import type { WidgetMeta } from "@toorow/shell";
-import Box from "@mui/material/Box";
-import Collapse from "@mui/material/Collapse";
-import Typography from "@mui/material/Typography";
-import Button from "@mui/material/Button";
-import { useTheme, alpha } from "@mui/material/styles";
+
 import { SHADOW_CARD_LIGHT, SHADOW_CARD_DARK } from "../../../tokens/dist/theme";
 import type { CardMeta, MetricDefinition } from "./types";
-import { metricLabel } from "./types";
+import { metricLabel, metricUnitSuffix, sourceSystemLabel } from "./types";
+import VariationLegend from "./VariationLegend";
+import type { VariationConvention } from "./VariationLegend";
 import CardFeedbackBar from "./CardFeedbackBar";
 import type { CardFeedbackBarProps } from "./CardFeedbackBar";
+import { Box, Button, Collapse, Typography, alpha, useTheme } from "@toorow/shell";
 
 interface CardShellProps {
   title: string;
@@ -51,16 +50,58 @@ interface CardShellProps {
    * When omitted, the feedback chrome row is not rendered.
    */
   feedbackProps?: CardFeedbackBarProps;
+  /**
+   * ONE PLACEMENT FOR THE VARIATION LEGEND, and arbitrage 5 of story 76-8 names
+   * it: the card footer. The colour conventions in force are derived from the
+   * composition (`variationConventions`) and stated once here, rather than
+   * repeated as four near-identical grey sentences down the card — which is the
+   * same as not having one, because nobody reads the fourth.
+   */
+  variationConventions?: VariationConvention[];
   children: ReactNode;
 }
 
-/** Format an ISO timestamp to a compact "il y a ..." freshness badge (French). */
+/**
+ * The freshness badge. English, like every other string the shell writes itself
+ * (`console-presentation.md`, amendment of 2026-09-05 evening: only the
+ * narrative the server composes follows the reader's language).
+ */
 function freshnessLabel(lastPull: string | null | undefined): string | null {
   if (!lastPull) return null;
   const d = new Date(lastPull);
   if (isNaN(d.getTime())) return null;
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `MAJ ${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+  return `Updated ${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+}
+
+/**
+ * A TECHNICAL IDENTIFIER IS SHOWN IN DOUBLE (`console-presentation.md` §4).
+ *
+ * The card footer read « Source : google-search-console » and the tooltip
+ * « Pull : pull_KW_FIXTURE0000000000000 »: two database tokens addressed to a
+ * reader. The human label carries the meaning; the identifier stays beside it,
+ * in discreet monospace, because it is what finds the trace.
+ */
+const MONO_STYLE: CSSProperties = {
+  marginLeft: 6,
+  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+  fontSize: "0.85em",
+  opacity: 0.65,
+  wordBreak: "break-all",
+};
+
+/**
+ * The token is marked technical by a REAL `<code>`:
+ * `ScreensDoNotPrintIdentifiersAsProse` reads every front tree and accepts only
+ * an actionable control or a technical marking. The colour comes from opacity,
+ * never from a literal outside the tokens.
+ */
+function TechnicalId({ value, testId }: { value: string; testId?: string }) {
+  return (
+    <code className="font-mono" style={MONO_STYLE} data-testid={testId}>
+      {value}
+    </code>
+  );
 }
 
 /** Source affordance — a muted chip revealing provenance on hover/focus. */
@@ -120,13 +161,20 @@ function SourceAffordance({ meta }: { meta: CardMeta }) {
             Provenance
           </Typography>
           {src && (
-            <Typography variant="caption" component="p">
-              Système : {src}
+            <Typography variant="caption" component="p" data-testid="card-source-system">
+              {sourceSystemLabel(src)}
+              <TechnicalId value={src} testId="card-source-system-id" />
             </Typography>
           )}
           {pull && (
-            <Typography variant="caption" component="p" color="text.secondary">
-              Pull : {pull}
+            <Typography
+              variant="caption"
+              component="p"
+              color="text.secondary"
+              data-testid="card-source-run"
+            >
+              Run
+              <TechnicalId value={pull} testId="card-source-run-id" />
             </Typography>
           )}
         </Box>
@@ -144,6 +192,7 @@ export default function CardShell({
   metricDefinitions,
   adminConsoleUrl = "/admin",
   feedbackProps,
+  variationConventions,
   children,
 }: CardShellProps) {
   const theme = useTheme();
@@ -290,7 +339,7 @@ export default function CardShell({
                       sx={{ display: "block", lineHeight: 1.3 }}
                     >
                       {metricLabel(metric)}
-                      {def.unit ? ` (${def.unit})` : ""}
+                      {metricUnitSuffix(def.unit)}
                     </Typography>
                     <Typography variant="body2" sx={{ lineHeight: 1.5 }}>
                       {def.definition}
@@ -346,23 +395,45 @@ export default function CardShell({
           </Box>
         )}
 
-        {/* 6. Slim footer — source system + date range */}
+        {/* 6. Slim footer — the variation legend (once, arbitrage 5), then the
+            source system and the date range. */}
         <Box
           sx={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
             pt: 1,
             borderTop: `1px solid ${alpha(theme.palette.text.primary, 0.06)}`,
           }}
           data-testid="card-footer"
         >
-          <Typography variant="caption" color="text.secondary">
-            {sourceSystem ? `Source : ${sourceSystem}` : "Source : —"}
+        {variationConventions && variationConventions.length > 0 && (
+          <Box sx={{ mb: 0.75 }}>
+            <VariationLegend
+              conventions={variationConventions}
+              comparison="the previous period"
+            />
+          </Box>
+        )}
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <Typography variant="caption" color="text.secondary" data-testid="card-footer-source">
+            Source:{" "}
+            {sourceSystem ? (
+              <>
+                {sourceSystemLabel(sourceSystem)}
+                <TechnicalId value={sourceSystem} />
+              </>
+            ) : (
+              "—"
+            )}
           </Typography>
           <Typography variant="caption" color="text.secondary">
             {dateRange.start} → {dateRange.end}
           </Typography>
+        </Box>
         </Box>
       </Box>
     </WidgetShell>

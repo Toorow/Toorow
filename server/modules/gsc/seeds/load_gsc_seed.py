@@ -46,12 +46,35 @@ from pathlib import Path
 
 from ulid import ULID
 
+# AI-213 (2026-08-17, AI-66 motif): seed corpus anchor. The inline generators
+# below computed `date.today() - 1`, so the corpus was machine-day-local by
+# construction -- the mart and the evals fixtures were underivable. Same env
+# seam as google-analytics; the default is the shared corpus anchor
+# (2026-07-19), which IS the last emitted day (the anchor already names the
+# last complete day).
+DEFAULT_SEED_END_DATE: date = date.fromisoformat(
+    os.environ.get("TOOROW_SEED_END_DATE", "2026-07-19")
+)
+
+# THE SAME COLUMNS AS THE LANDING TABLE, IN THE SAME ORDER.
+#
+# `query` / `search_type` / `search_appearance` / `hour` used to be absent here
+# and were bolted on by the ALTER guards below, which append: a freshly seeded
+# file therefore held raw_gsc_daily with the four columns LAST, while a pull
+# created them in the middle (connector.py declares them after `device`). Both
+# tables answered to the same name and neither was the other. The seed is the
+# third copy of this table -- after the connector's declaration and the dbt
+# staging model -- and test_raw_table_has_one_declaration now compares all three.
 _CREATE_DDL = """
 CREATE TABLE IF NOT EXISTS raw_gsc_daily (
     date                VARCHAR,
     page                VARCHAR,
     country             VARCHAR,
     device              VARCHAR,
+    query               VARCHAR,
+    search_type         VARCHAR,
+    search_appearance   VARCHAR,
+    hour                VARCHAR,
     clicks              INTEGER,
     impressions         INTEGER,
     average_position    DOUBLE,
@@ -73,6 +96,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 # page/country/device rows above leave query NULL; only the _CANNIB_QUERIES rows below
 # populate it. search_type/search_appearance/hour stay NULL in seeds (NULL == 'web'
 # for the staging filters), matching legacy raw rows.
+# These four are now declared in _CREATE_DDL above, in the landing table's own
+# order, so on a fresh file every ALTER is a no-op. They stay for the DuckDB files
+# that already exist without the columns -- that is the only job left to them.
 _ADD_QUERY_COLUMN_DDL = "ALTER TABLE raw_gsc_daily ADD COLUMN IF NOT EXISTS query VARCHAR"
 _ADD_COVERAGE_COLUMN_DDLS = (
     "ALTER TABLE raw_gsc_daily ADD COLUMN IF NOT EXISTS search_type VARCHAR",
@@ -289,14 +315,17 @@ def _clicks_for_impressions(base_clk: int, impressions: int, base_impr: int) -> 
     return max(0, int(round(base_clk * impressions / base_impr)))
 
 
-def generate_rows(days: int = 90, project_id: str = "default") -> list[dict]:
+def generate_rows(
+    days: int = 90, project_id: str = "default", end_date: date | None = None
+) -> list[dict]:
     """Return deterministic raw GSC rows for the last *days* days (90d x 10 pages).
 
     Positions drift sinusoidally with a 14-day period so week-over-week deltas
     are predictable and at least 3 pages produce |delta| >= 2 per week pair.
+    end_date defaults to DEFAULT_SEED_END_DATE (AI-213: anchored, never today).
     """
     rows: list[dict] = []
-    end = date.today() - timedelta(days=1)
+    end = end_date if end_date is not None else DEFAULT_SEED_END_DATE
     for offset in range(days):
         d = end - timedelta(days=offset)
         d_str = d.isoformat()
@@ -319,14 +348,17 @@ def generate_rows(days: int = 90, project_id: str = "default") -> list[dict]:
     return rows
 
 
-def generate_cannib_rows(days: int = 30, project_id: str = "default") -> list[dict]:
+def generate_cannib_rows(
+    days: int = 30, project_id: str = "default", end_date: date | None = None
+) -> list[dict]:
     """Return deterministic (query, page)-grain cannibalisation seed rows (Story 10.5).
 
     30 days x _CANNIB_QUERIES, flat (no drift). Each row carries a populated ``query`` so
     it lands in stg_gsc_query_page_daily (query IS NOT NULL) and the query>page composite.
+    end_date defaults to DEFAULT_SEED_END_DATE (AI-213: anchored, never today).
     """
     rows: list[dict] = []
-    end = date.today() - timedelta(days=1)
+    end = end_date if end_date is not None else DEFAULT_SEED_END_DATE
     for offset in range(days):
         d_str = (end - timedelta(days=offset)).isoformat()
         for q in _CANNIB_QUERIES:
@@ -429,12 +461,14 @@ def load_duckdb(
 def seed_context_events(duckdb_path: str, project_id: str = "default") -> int:
     """Seed two deployment context events into mirror.context_events.
 
-    Events at day-14 and day-35 before today. Returns count of seeded events.
-    Used by the post_deploy_regressions test path (Story 6.3, AC6).
+    Events at day-14 and day-35 before the corpus anchor (AI-213: anchored,
+    never date.today() -- dated rows must not be machine-day-local). Returns
+    count of seeded events. Used by the post_deploy_regressions test path
+    (Story 6.3, AC6).
     """
     import duckdb  # noqa: PLC0415
 
-    today = date.today()
+    today = DEFAULT_SEED_END_DATE
     events = [
         {
             "id": _mint_evt_id(),
@@ -482,17 +516,26 @@ def seed_context_events(duckdb_path: str, project_id: str = "default") -> int:
     return len(events)
 
 
-def run(duckdb_path: str, days: int = 90, project_id: str = "default") -> tuple[str, int]:
+def run(
+    duckdb_path: str,
+    days: int = 90,
+    project_id: str = "default",
+    end_date: date | None = None,
+) -> tuple[str, int]:
     """Generate + load GSC seed rows (page grain + Story 10.5 cannibalisation grain).
 
     Returns (pull_id, total_row_count). Both blocks share the same pull_id.
+    ``end_date`` is the corpus-anchor seam the seed_all_connectors driver fills
+    (AI-213); None falls back to DEFAULT_SEED_END_DATE, never date.today().
     """
     pull_id = _mint_pull_id()
     loaded_at = datetime.now(tz=timezone.utc).isoformat().replace("+00:00", "Z")
-    rows = generate_rows(days=days, project_id=project_id)
+    rows = generate_rows(days=days, project_id=project_id, end_date=end_date)
     count = load_duckdb(rows, pull_id, loaded_at, duckdb_path, project_id=project_id)
     # Story 10.5: cannibalisation (query, page)-grain rows (30 days).
-    cannib_rows = generate_cannib_rows(days=min(days, 30), project_id=project_id)
+    cannib_rows = generate_cannib_rows(
+        days=min(days, 30), project_id=project_id, end_date=end_date
+    )
     count += load_cannib_duckdb(
         cannib_rows, pull_id, loaded_at, duckdb_path, project_id=project_id
     )

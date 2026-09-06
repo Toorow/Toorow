@@ -92,7 +92,6 @@ def connector():
 @respx.mock
 def test_pull_ga4_mocked_response(connector, tmp_path, monkeypatch):
     """pull returns {pull_id, row_count, date_from, date_to} and lands rows in DuckDB."""
-    monkeypatch.setenv("GA4_PROPERTY_ID", "TEST123")
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "test.duckdb"))
 
@@ -109,6 +108,7 @@ def test_pull_ga4_mocked_response(connector, tmp_path, monkeypatch):
             date_to="2026-01-07",
             project_id="jean-ga4",
             pull_id="pull_test_01",
+            property_id="TEST123",
         )
 
     assert result["pull_id"] == "pull_test_01"
@@ -131,7 +131,6 @@ def test_pull_ga4_mocked_response(connector, tmp_path, monkeypatch):
 @respx.mock
 def test_pull_ga4_authorization_header_used(connector, tmp_path, monkeypatch):
     """pull uses Authorization: Bearer <token> (AD-3: token used immediately)."""
-    monkeypatch.setenv("GA4_PROPERTY_ID", "TEST123")
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "auth_test.duckdb"))
 
@@ -152,6 +151,7 @@ def test_pull_ga4_authorization_header_used(connector, tmp_path, monkeypatch):
             date_to="2026-01-07",
             project_id="jean-ga4",
             pull_id="pull_auth_test",
+            property_id="TEST123",
         )
 
     assert len(captured_headers) == 1
@@ -169,7 +169,6 @@ def test_pull_ga4_authorization_header_used(connector, tmp_path, monkeypatch):
 @respx.mock
 def test_pull_ga4_token_never_logged(connector, tmp_path, monkeypatch, caplog):
     """AD-3: the OAuth token must NEVER appear in any log output at any level."""
-    monkeypatch.setenv("GA4_PROPERTY_ID", "TEST123")
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "nolog.duckdb"))
 
@@ -185,6 +184,7 @@ def test_pull_ga4_token_never_logged(connector, tmp_path, monkeypatch, caplog):
                 date_to="2026-01-07",
                 project_id="jean-ga4",
                 pull_id="pull_nolog_test",
+                property_id="TEST123",
             )
 
     # The token string must not appear in any log record
@@ -206,7 +206,6 @@ def test_pull_ga4_ga4_api_error(connector, tmp_path, monkeypatch):
     Story 3.3 (AC7): 429 now raises RateLimitError so the worker can trip the circuit
     breaker. Other errors still raise RuntimeError.
     """
-    monkeypatch.setenv("GA4_PROPERTY_ID", "TEST123")
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "error_test.duckdb"))
 
@@ -225,6 +224,7 @@ def test_pull_ga4_ga4_api_error(connector, tmp_path, monkeypatch):
                 date_to="2026-01-07",
                 project_id="jean-ga4",
                 pull_id="pull_error_test",
+                property_id="TEST123",
             )
 
     assert exc_info.value.platform == "google-analytics"
@@ -233,7 +233,6 @@ def test_pull_ga4_ga4_api_error(connector, tmp_path, monkeypatch):
 @respx.mock
 def test_pull_ga4_non_429_api_error(connector, tmp_path, monkeypatch):
     """pull raises RuntimeError on non-200, non-429 responses."""
-    monkeypatch.setenv("GA4_PROPERTY_ID", "TEST123")
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "error_test2.duckdb"))
 
@@ -251,6 +250,7 @@ def test_pull_ga4_non_429_api_error(connector, tmp_path, monkeypatch):
                 date_to="2026-01-07",
                 project_id="jean-ga4",
                 pull_id="pull_error_test2",
+                property_id="TEST123",
             )
 
     assert "500" in str(exc_info.value), (
@@ -267,7 +267,7 @@ def test_pull_ga4_missing_property_id(connector, monkeypatch):
     """pull raises ValueError when GA4_PROPERTY_ID is not set and property_id is None."""
     monkeypatch.delenv("GA4_PROPERTY_ID", raising=False)
 
-    with pytest.raises(ValueError, match="GA4_PROPERTY_ID"):
+    with pytest.raises(ValueError, match="selected account"):
         connector.pull(
             connection_id="conn_test",
             date_from="2026-01-01",
@@ -496,7 +496,6 @@ def test_pull_e2e_with_real_ga4(connector, tmp_path, monkeypatch):
     property_id = os.environ["GA4_E2E_PROPERTY_ID"]
     connection_id = os.environ.get("GA4_E2E_CONNECTION_ID", "test-ga4-connection")
 
-    monkeypatch.setenv("GA4_PROPERTY_ID", property_id)
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "e2e.duckdb"))
 

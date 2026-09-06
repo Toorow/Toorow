@@ -26,9 +26,20 @@ import os
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
+
+_RETIRED_SNAPSHOT_SHARE_REASON = (
+    "Story 50.7 retired this path. Converted to strict-xfail rather than deleted: "
+    "deleted, the retirement leaves no trace and the next reader remounts the route -- "
+    "which is exactly what happened once already (SESSIONS.md, 'Desaccord CLOS: "
+    "_create_datastream_mapping_version'). Strict-xfail turns a remount into an "
+    "UNEXPECTEDLY PASSING failure, so the absence stays loud. Replacement: "
+    "core.render_shares / core.render_shares_api."
+)
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +100,7 @@ def test_list_runs_ok_shape():
     with (
         patch("core.api_auth.authenticate_api_request", new=_auth_ok),
         patch("core.db.get_connection", new=_fake_get_connection()),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.project_access.identity_can_read_project", return_value=True),
         patch("core.daily_insights.list_runs", return_value=runs),
     ):
         app = build_asgi_app()
@@ -111,7 +122,7 @@ def test_list_runs_ad5_denied():
     with (
         patch("core.api_auth.authenticate_api_request", new=_auth_ok),
         patch("core.db.get_connection", new=_fake_get_connection()),
-        patch("core.project_access.identity_has_project_access", return_value=False),
+        patch("core.project_access.identity_can_read_project", return_value=False),
     ):
         app = build_asgi_app()
         resp = _client(app).get("/api/daily-insights/runs?project_id=proj_other")
@@ -142,7 +153,7 @@ def test_get_run_404_when_absent():
     with (
         patch("core.api_auth.authenticate_api_request", new=_auth_ok),
         patch("core.db.get_connection", new=_fake_get_connection()),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.project_access.identity_can_read_project", return_value=True),
         patch("core.daily_insights.get_run", return_value=None),
     ):
         app = build_asgi_app()
@@ -175,7 +186,7 @@ def test_get_run_ok_shape():
     with (
         patch("core.api_auth.authenticate_api_request", new=_auth_ok),
         patch("core.db.get_connection", new=_fake_get_connection()),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.project_access.identity_can_read_project", return_value=True),
         patch("core.daily_insights.get_run", return_value=run),
     ):
         app = build_asgi_app()
@@ -190,10 +201,133 @@ def test_get_run_ok_shape():
 
 
 # ---------------------------------------------------------------------------
+# POST /api/daily-insights/insights/{insight_id}/retract
+#
+# `proactive-assertions.md` decision 4, migration 321. The one console door that
+# withdraws a published claim -- and there is no door that removes the row.
+# ---------------------------------------------------------------------------
+
+
+def test_retract_is_the_only_insight_write_and_no_delete_route_exists():
+    """The route list mounts a retraction and mounts no DELETE on an insight."""
+    from core.daily_insights_api import DAILY_INSIGHTS_ROUTES
+
+    retract = [r for r in DAILY_INSIGHTS_ROUTES if r.path.endswith("/retract")]
+    assert len(retract) == 1
+    assert set(retract[0].methods or ()) >= {"POST"}
+    insight_deletes = [
+        r
+        for r in DAILY_INSIGHTS_ROUTES
+        if "/insights/" in r.path and "DELETE" in (r.methods or ())
+    ]
+    assert insight_deletes == []
+
+
+def test_retract_ok_returns_the_withdrawn_row():
+    retracted = {
+        "id": "din_1",
+        "project_id": "proj_a",
+        "insight_date": "2026-07-21",
+        "slot": 0,
+        "payload": {"insight": {"title": "Spend spiked"}},
+        "retracted_at": "2026-07-23T11:00:00+00:00",
+        "retracted_by": "test_user",
+        "retracted_reason": "the window was wrong",
+    }
+    with (
+        patch("core.api_auth.authenticate_api_request", new=_auth_ok),
+        patch("core.db.get_connection", new=_fake_get_connection()),
+        patch("core.project_access.identity_has_project_role", return_value=True),
+        patch("core.daily_insights.retract_insight", return_value=retracted),
+    ):
+        app = build_asgi_app()
+        resp = _client(app).post(
+            "/api/daily-insights/insights/din_1/retract?project_id=proj_a",
+            json={"reason": "the window was wrong"},
+        )
+
+    assert resp.status_code == 200, f"got {resp.status_code}: {resp.text}"
+    body = resp.json()
+    assert body["retracted_by"] == "test_user"
+    assert body["retracted_reason"] == "the window was wrong"
+    # The claim is HANDED BACK, not removed: the row is the evidence it was made.
+    assert body["payload"]["insight"]["title"] == "Spend spiked"
+
+
+def test_retract_without_edit_is_a_non_disclosing_404():
+    """A read-only holder may not unsay an assertion in this project."""
+    with (
+        patch("core.api_auth.authenticate_api_request", new=_auth_ok),
+        patch("core.db.get_connection", new=_fake_get_connection()),
+        patch("core.project_access.identity_has_project_role", return_value=False),
+    ):
+        app = build_asgi_app()
+        resp = _client(app).post(
+            "/api/daily-insights/insights/din_1/retract?project_id=proj_a",
+            json={"reason": "no"},
+        )
+
+    assert resp.status_code == 404
+    assert resp.json()["code"] == "not_found"
+
+
+@pytest.mark.parametrize(
+    ("code", "status"),
+    [("missing_reason", 422), ("already_retracted", 409), ("not_found", 404)],
+)
+def test_retract_maps_each_named_refusal_onto_its_own_answer(code, status):
+    from core.daily_insights import DailyInsightRefusal
+
+    def _refuse(**_kwargs):
+        raise DailyInsightRefusal(code, "a sentence naming the gesture", status=status)
+
+    with (
+        patch("core.api_auth.authenticate_api_request", new=_auth_ok),
+        patch("core.db.get_connection", new=_fake_get_connection()),
+        patch("core.project_access.identity_has_project_role", return_value=True),
+        patch("core.daily_insights.retract_insight", new=_refuse),
+    ):
+        app = build_asgi_app()
+        resp = _client(app).post(
+            "/api/daily-insights/insights/din_1/retract?project_id=proj_a",
+            json={"reason": "x"},
+        )
+
+    assert resp.status_code == status
+    assert resp.json()["code"] == code
+    assert "gesture" in resp.json()["message"]
+
+
+def test_a_run_read_says_whether_this_caller_may_retract():
+    """So the screen never draws a control that would answer 404."""
+    run = {
+        "id": "dir_1",
+        "project_id": "proj_a",
+        "insight_date": "2026-07-21",
+        "status": "published",
+        "coverage": {},
+        "insights": [],
+    }
+    for allowed in (True, False):
+        with (
+            patch("core.api_auth.authenticate_api_request", new=_auth_ok),
+            patch("core.db.get_connection", new=_fake_get_connection()),
+            patch("core.project_access.identity_can_read_project", return_value=True),
+            patch("core.project_access.identity_has_project_role", return_value=allowed),
+            patch("core.daily_insights.get_run", return_value=run),
+        ):
+            app = build_asgi_app()
+            resp = _client(app).get("/api/daily-insights/runs/2026-07-21?project_id=proj_a")
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["canRetract"] is allowed
+
+
+# ---------------------------------------------------------------------------
 # POST /api/daily-insights/insights/{insight_id}/share
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_share_409_when_no_snapshot_lineage():
     """POST /insights/{id}/share -> 409 when the insight has no render_snapshot_id."""
     insight = {"id": "din_1", "project_id": "proj_a", "render_snapshot_id": None}
@@ -201,7 +335,7 @@ def test_share_409_when_no_snapshot_lineage():
     with (
         patch("core.api_auth.authenticate_api_request", new=_auth_ok),
         patch("core.db.get_connection", new=_fake_get_connection()),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.project_access.identity_can_read_project", return_value=True),
         patch("core.daily_insights.get_insight", return_value=insight),
     ):
         app = build_asgi_app()
@@ -213,6 +347,7 @@ def test_share_409_when_no_snapshot_lineage():
     assert resp.json()["code"] == "no_snapshot_lineage"
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_share_success_path():
     """POST /insights/{id}/share -> 201 {share_id, token, url} via create_share."""
     insight = {"id": "din_1", "project_id": "proj_a", "render_snapshot_id": "rsn_1"}
@@ -220,7 +355,7 @@ def test_share_success_path():
     with (
         patch("core.api_auth.authenticate_api_request", new=_auth_ok),
         patch("core.db.get_connection", new=_fake_get_connection()),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.project_access.identity_can_read_project", return_value=True),
         patch("core.daily_insights.get_insight", return_value=insight),
         patch("core.snapshot_shares.create_share", return_value=("rss_1", "tok_abc")),
     ):
@@ -236,12 +371,13 @@ def test_share_success_path():
     assert body["url"] == "/api/rendus/shared/tok_abc"
 
 
+@pytest.mark.xfail(strict=True, reason=_RETIRED_SNAPSHOT_SHARE_REASON)
 def test_share_404_when_insight_absent():
     """POST /insights/{id}/share -> 404 when the insight does not resolve."""
     with (
         patch("core.api_auth.authenticate_api_request", new=_auth_ok),
         patch("core.db.get_connection", new=_fake_get_connection()),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.project_access.identity_can_read_project", return_value=True),
         patch("core.daily_insights.get_insight", return_value=None),
     ):
         app = build_asgi_app()
@@ -263,7 +399,7 @@ def test_recipe_ok_shape():
     with (
         patch("core.api_auth.authenticate_api_request", new=_auth_ok),
         patch("core.db.get_connection", new=_fake_get_connection()),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.project_access.identity_can_read_project", return_value=True),
     ):
         app = build_asgi_app()
         resp = _client(app).get(
@@ -284,7 +420,7 @@ def test_recipe_default_timezone_and_hour():
     with (
         patch("core.api_auth.authenticate_api_request", new=_auth_ok),
         patch("core.db.get_connection", new=_fake_get_connection()),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.project_access.identity_can_read_project", return_value=True),
     ):
         app = build_asgi_app()
         resp = _client(app).get("/api/daily-insights/recipe?project_id=proj_a")
@@ -300,7 +436,7 @@ def test_recipe_bad_hour_400():
     with (
         patch("core.api_auth.authenticate_api_request", new=_auth_ok),
         patch("core.db.get_connection", new=_fake_get_connection()),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.project_access.identity_can_read_project", return_value=True),
     ):
         app = build_asgi_app()
         resp = _client(app).get("/api/daily-insights/recipe?project_id=proj_a&hour=99")
@@ -314,7 +450,7 @@ def test_recipe_non_integer_hour_400():
     with (
         patch("core.api_auth.authenticate_api_request", new=_auth_ok),
         patch("core.db.get_connection", new=_fake_get_connection()),
-        patch("core.project_access.identity_has_project_access", return_value=True),
+        patch("core.project_access.identity_can_read_project", return_value=True),
     ):
         app = build_asgi_app()
         resp = _client(app).get("/api/daily-insights/recipe?project_id=proj_a&hour=noon")

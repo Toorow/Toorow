@@ -6,16 +6,12 @@ via TestClient. Auth is bypassed via patching _check_auth.
 Tests:
   - GET /api/datamodel/fields (list, filters)
   - GET /api/datamodel/fields/{name} (detail, 404)
-  - POST /api/datamodel/fields (create, validation errors, 409)
-  - PATCH /api/datamodel/fields/{name} (update, immutability 422)
-  - PUT /api/datamodel/mappings (upsert, validation, FK error)
-  - POST /api/datamodel/fields/{name}/approve  [Story 13.1]
-  - DELETE /api/datamodel/fields/{name}        [Story 13.1]
+  - GET /api/datamodel/fields/{name}/history (timeline, 404) [Story 44.8]
+  - the five write doors REFUSE (409 legacy_store_is_read_only) [story 49.3 AC1]
 """
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -40,8 +36,10 @@ def client():
         "core.datamodel_api._check_auth",
         new=AsyncMock(return_value=(True, "test@test")),
     ):
-        with TestClient(app, raise_server_exceptions=True) as c:
-            yield c
+        with patch("core.admin_api._strict_project_capability_allowed", return_value=True):
+            with patch("core.datamodel_api._datastream_in_project", return_value=True):
+                with TestClient(app, raise_server_exceptions=True) as c:
+                    yield c
 
 
 @pytest.fixture()
@@ -114,23 +112,27 @@ class TestListFields:
              patch("core.datamodel.list_target_fields", return_value=[_FIELD]):
             mock_conn.return_value.__enter__ = MagicMock(return_value=MagicMock())
             mock_conn.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.get("/api/datamodel/fields")
+            resp = client.get("/api/datamodel/fields?project_id=proj_a")
 
         assert resp.status_code == 200
         data = resp.json()
         assert isinstance(data, list)
 
+    def test_missing_project_id_returns_422(self, client):
+        resp = client.get("/api/datamodel/fields")
+        assert resp.status_code == 422
+        assert resp.json()["code"] == "missing_param"
     def test_401_without_auth(self, client_unauth):
         resp = client_unauth.get("/api/datamodel/fields")
         assert resp.status_code == 401
 
     def test_invalid_kind_returns_422(self, client):
-        resp = client.get("/api/datamodel/fields?kind=invalid")
+        resp = client.get("/api/datamodel/fields?project_id=proj_a&kind=invalid")
         assert resp.status_code == 422
         assert "kind" in resp.json()["message"]
 
     def test_invalid_usage_returns_422(self, client):
-        resp = client.get("/api/datamodel/fields?usage=wrong")
+        resp = client.get("/api/datamodel/fields?project_id=proj_a&usage=wrong")
         assert resp.status_code == 422
         assert "usage" in resp.json()["message"]
 
@@ -139,7 +141,7 @@ class TestListFields:
              patch("core.datamodel.list_target_fields", side_effect=Exception("db down")):
             mock_conn.return_value.__enter__ = MagicMock(return_value=MagicMock())
             mock_conn.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.get("/api/datamodel/fields")
+            resp = client.get("/api/datamodel/fields?project_id=proj_a")
         assert resp.status_code == 500
 
     def test_kind_filter_forwarded(self, client):
@@ -156,7 +158,7 @@ class TestListFields:
              ):
             mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            client.get("/api/datamodel/fields?kind=metric")
+            client.get("/api/datamodel/fields?project_id=proj_a&kind=metric")
 
         assert calls and calls[0].get("kind") == "metric"
 
@@ -194,7 +196,7 @@ class TestListFields:
              ):
             mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.get("/api/datamodel/fields?module=google-analytics")
+            resp = client.get("/api/datamodel/fields?project_id=proj_a&module=google-analytics")
 
         assert resp.status_code == 200
         assert calls and calls[0].get("module") == "google-analytics"
@@ -205,7 +207,7 @@ class TestListFields:
              patch("core.datamodel.list_target_fields", return_value=[]):
             mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.get("/api/datamodel/fields?module=no-such-module")
+            resp = client.get("/api/datamodel/fields?project_id=proj_a&module=no-such-module")
 
         assert resp.status_code == 200
         assert resp.json() == []
@@ -248,7 +250,7 @@ class TestListFields:
              ):
             mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.get("/api/datamodel/fields")
+            resp = client.get("/api/datamodel/fields?project_id=proj_a")
 
         assert resp.status_code == 200
         # module kwarg should be None (or absent) -- never a non-None value
@@ -263,261 +265,175 @@ class TestListFields:
 class TestGetField:
     def test_returns_200_with_detail(self, client):
         with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.get_target_field", return_value=_FIELD_DETAIL):
-            mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
+             patch("core.datamodel.get_target_field", return_value=_FIELD_DETAIL) as mock_get:
+            connection = MagicMock()
+            mc.return_value.__enter__ = MagicMock(return_value=connection)
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.get("/api/datamodel/fields/clicks")
+            resp = client.get("/api/datamodel/fields/clicks?project_id=proj_a")
 
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "clicks"
         assert "used_by" in data
         assert "conflicts" in data
+        mock_get.assert_called_once_with("clicks", connection, project_id="proj_a")
 
     def test_returns_404_when_not_found(self, client):
         with patch("core.db.get_connection") as mc, \
              patch("core.datamodel.get_target_field", return_value=None):
             mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.get("/api/datamodel/fields/nonexistent")
+            resp = client.get("/api/datamodel/fields/nonexistent?project_id=proj_a")
 
         assert resp.status_code == 404
         assert resp.json()["code"] == "not_found"
 
     def test_401_without_auth(self, client_unauth):
-        resp = client_unauth.get("/api/datamodel/fields/clicks")
+        resp = client_unauth.get("/api/datamodel/fields/clicks?project_id=proj_a")
         assert resp.status_code == 401
 
 
 # ---------------------------------------------------------------------------
-# POST /api/datamodel/fields
+# THE FIVE WRITE DOORS REFUSE -- story 49.3 AC1, cutover of 2026-08-25.
+#
+# WHAT THESE TESTS REPLACE. Six classes used to prove the writes: TestCreateField,
+# TestPatchField, TestUpsertMapping, TestApproveField, TestDeleteField and
+# TestApproveFieldIdempotency. They proved a behaviour the product no longer has,
+# so keeping them would have been the greenest possible way to hide the cutover.
+# What they proved is now proved on the Semantic Model, which is where a measure,
+# a dimension and a binding are declared.
+#
+# TWO ATTACKS, BECAUSE ONE IS NOT ENOUGH. The first fixes the CONTRACT: 409,
+# `legacy_store_is_read_only`, and a sentence that names the surface that works
+# rather than a table. The second reads the module's own SOURCE and refuses the
+# store calls: a handler restored by hand would answer 200 again and the contract
+# test alone would go red one release too late -- the source test goes red in the
+# same edit.
 # ---------------------------------------------------------------------------
 
 
-class TestCreateField:
-    def test_creates_field_returns_201(self, client):
-        new_field = {**_FIELD, "is_default": False, "used_by_count": 0}
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.create_target_field", return_value=new_field):
+_WRITE_DOORS = (
+    ("post", "/api/datamodel/fields?project_id=proj_a"),
+    ("patch", "/api/datamodel/fields/clicks?project_id=proj_a"),
+    ("post", "/api/datamodel/fields/clicks/approve?project_id=proj_a"),
+    ("delete", "/api/datamodel/fields/clicks?project_id=proj_a"),
+    ("put", "/api/datamodel/mappings"),
+)
+
+
+class TestLegacyWritesRefuse:
+    @pytest.mark.parametrize(("verb", "path"), _WRITE_DOORS)
+    def test_every_write_door_answers_409_legacy_store_is_read_only(
+        self, client, verb, path
+    ):
+        resp = client.request(verb.upper(), path, content=b"{}")
+
+        assert resp.status_code == 409, (verb, path, resp.text)
+        assert resp.json()["code"] == "legacy_store_is_read_only"
+
+    @pytest.mark.parametrize(("verb", "path"), _WRITE_DOORS)
+    def test_the_refusal_names_a_gesture_and_never_a_table(self, client, verb, path):
+        """A refusal names what to do, not what failed (CLAUDE.md, `L'ecran`)."""
+        message = client.request(verb.upper(), path, content=b"{}").json()["message"]
+
+        assert "Semantic Model" in message or "Mapping tab" in message, message
+        for db_word in ("target_fields", "datastream_mappings", "app.", "table"):
+            assert db_word not in message, (db_word, message)
+
+    @pytest.mark.parametrize(("verb", "path"), _WRITE_DOORS)
+    def test_a_refused_write_never_reaches_the_store(self, client, verb, path):
+        """The refusal is BEFORE the store, not a rollback after it."""
+        writers = {
+            name: patch(f"core.datamodel.{name}")
+            for name in (
+                "create_target_field",
+                "update_target_field",
+                "approve_target_field",
+                "delete_target_field",
+                "upsert_mapping",
+            )
+        }
+        started = {name: cm.start() for name, cm in writers.items()}
+        try:
+            with patch("core.db.get_connection") as mc:
+                client.request(verb.upper(), path, content=b"{}")
+            mc.assert_not_called()
+            for name, mock in started.items():
+                assert not mock.called, name
+        finally:
+            for cm in writers.values():
+                cm.stop()
+
+    def test_the_module_no_longer_calls_a_single_field_write(self):
+        """The permanent attack: re-wiring a handler goes red HERE, in the same edit.
+
+        The five store functions still EXIST -- `update_target_field` is called by
+        `conflict_resolutions_api` to resolve a MEASURE_NULL conflict, a governed
+        path that did not go with these doors. What must never come back is a call
+        FROM THIS MODULE, and the way in is the lazy import every handler here uses
+        (`from core.datamodel import ...`). So the module's own AST is read: a
+        handler cannot call a store function this module never imports, and a
+        re-wiring has to add the import back on the very same edit.
+
+        A text search would not do: `_upsert_mapping` is still the NAME of the
+        refusing handler, so `"upsert_mapping(" in source` is true and always will
+        be. The import list is the exact question.
+        """
+        import ast  # noqa: PLC0415
+        import inspect  # noqa: PLC0415
+
+        from core import datamodel_api  # noqa: PLC0415
+
+        tree = ast.parse(inspect.getsource(datamodel_api))
+        imported = {
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module == "core.datamodel"
+            for alias in node.names
+        }
+        # Not vacuous: the READS are still imported from the same module.
+        assert imported, "no core.datamodel import found -- the guard reads nothing"
+        assert "list_target_fields" in imported, sorted(imported)
+
+        forbidden = imported & {
+            "create_target_field",
+            "update_target_field",
+            "approve_target_field",
+            "delete_target_field",
+            "upsert_mapping",
+        }
+        assert not forbidden, sorted(forbidden)
+
+    def test_the_reads_stayed(self, client):
+        """The other half of the cutover, and the one a lens depends on.
+
+        `GET /api/datamodel/fields` is what the governed `mapping-coverage` lens
+        of Governance reads (`ui/admin/src/shell/pages/ProjectMapping.tsx`).
+        Retiring it with the writes would have blinded it, so a test says so.
+        """
+        with patch("core.db.get_connection") as mc:
             mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.post(
-                "/api/datamodel/fields",
-                content=json.dumps({
-                    "name": "clicks",
-                    "display_name": "Clics",
-                    "data_type": "integer",
-                    "field_kind": "metric",
-                    "measure": "sum",
-                }),
-                headers={"Content-Type": "application/json"},
-            )
+            with patch("core.datamodel.list_target_fields", return_value=[]):
+                resp = client.get("/api/datamodel/fields?project_id=proj_a")
 
-        assert resp.status_code == 201
+        assert resp.status_code == 200
 
-    def test_validation_error_returns_422(self, client):
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.create_target_field",
-                   side_effect=ValueError("name est requis")):
-            mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
-            mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.post(
-                "/api/datamodel/fields",
-                content=json.dumps(
-                    {"display_name": "X", "data_type": "integer", "field_kind": "metric"}
-                ),
-                headers={"Content-Type": "application/json"},
-            )
+    @pytest.mark.parametrize(("verb", "path"), _WRITE_DOORS)
+    def test_the_refusal_is_unconditional_including_without_a_token(
+        self, client_unauth, verb, path
+    ):
+        """409 even unauthenticated, and that is deliberate -- same as `notebooks_api`.
 
-        assert resp.status_code == 422
-        assert "validation_error" in resp.json()["code"]
-
-    def test_duplicate_name_returns_409(self, client):
-        class FakeUniqueViolation(Exception):
-            pass
-        FakeUniqueViolation.__name__ = "UniqueViolation"
-
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.create_target_field",
-                   side_effect=FakeUniqueViolation("unique constraint")):
-            mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
-            mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.post(
-                "/api/datamodel/fields",
-                content=json.dumps(
-                    {
-                        "name": "clicks", "display_name": "X",
-                        "data_type": "integer", "field_kind": "metric",
-                    }
-                ),
-                headers={"Content-Type": "application/json"},
-            )
+        The refusal carries no tenant fact: one constant code and one constant
+        sentence, identical for every caller. Checking a token first would only
+        answer 401 to a request that was going to be refused anyway, and would put
+        an auth branch back on a handler that must have no branches at all.
+        """
+        resp = client_unauth.request(verb.upper(), path, content=b"{}")
 
         assert resp.status_code == 409
-
-    def test_invalid_json_returns_400(self, client):
-        resp = client.post(
-            "/api/datamodel/fields",
-            content=b"not json",
-            headers={"Content-Type": "application/json"},
-        )
-        assert resp.status_code == 400
-
-    def test_401_without_auth(self, client_unauth):
-        resp = client_unauth.post("/api/datamodel/fields", content=b"{}")
-        assert resp.status_code == 401
-
-
-# ---------------------------------------------------------------------------
-# PATCH /api/datamodel/fields/{name}
-# ---------------------------------------------------------------------------
-
-
-class TestPatchField:
-    def test_updates_field_returns_200(self, client):
-        updated = {**_FIELD, "display_name": "Clics (MaJ)"}
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.update_target_field", return_value=updated):
-            mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
-            mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.patch(
-                "/api/datamodel/fields/clicks",
-                content=json.dumps({"display_name": "Clics (MaJ)"}),
-                headers={"Content-Type": "application/json"},
-            )
-
-        assert resp.status_code == 200
-        assert resp.json()["display_name"] == "Clics (MaJ)"
-
-    def test_immutability_error_returns_422(self, client):
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.update_target_field",
-                   side_effect=ValueError("name est immuable")):
-            mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
-            mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.patch(
-                "/api/datamodel/fields/clicks",
-                content=json.dumps({"name": "new_clicks"}),
-                headers={"Content-Type": "application/json"},
-            )
-
-        assert resp.status_code == 422
-
-    def test_returns_404_when_not_found(self, client):
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.update_target_field", return_value=None):
-            mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
-            mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.patch(
-                "/api/datamodel/fields/gone",
-                content=json.dumps({"description": "x"}),
-                headers={"Content-Type": "application/json"},
-            )
-
-        assert resp.status_code == 404
-
-    def test_401_without_auth(self, client_unauth):
-        resp = client_unauth.patch("/api/datamodel/fields/clicks", content=b"{}")
-        assert resp.status_code == 401
-
-    # -----------------------------------------------------------------------
-    # Story 44.8 finding #4: restored_from is validated + normalised HERE,
-    # before it ever reaches core.datamodel.update_target_field.
-    # -----------------------------------------------------------------------
-
-    def test_restored_from_int_is_verified_and_forwarded_as_int(self, client):
-        updated = {**_FIELD, "display_name": "Clics (restaure)"}
-        cur = MagicMock()
-        cur.__enter__ = MagicMock(return_value=cur)
-        cur.__exit__ = MagicMock(return_value=False)
-        cur.fetchone.return_value = (1,)  # (name, version_number) exists
-        conn = MagicMock()
-        conn.cursor.return_value = cur
-
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.update_target_field", return_value=updated) as mock_update:
-            mc.return_value.__enter__ = MagicMock(return_value=conn)
-            mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.patch(
-                "/api/datamodel/fields/clicks",
-                content=json.dumps(
-                    {"display_name": "Clics (restaure)", "restored_from": 2}
-                ),
-                headers={"Content-Type": "application/json"},
-            )
-
-        assert resp.status_code == 200
-        # The store only ever sees the validated plain int.
-        forwarded_patch = mock_update.call_args[0][1]
-        assert forwarded_patch["restored_from"] == 2
-
-    def test_restored_from_dict_with_version_number_is_normalised_to_int(self, client):
-        """Some UI snapshots pass the whole version object back; only the int
-        version_number is extracted and forwarded."""
-        updated = {**_FIELD, "display_name": "Clics (restaure)"}
-        cur = MagicMock()
-        cur.__enter__ = MagicMock(return_value=cur)
-        cur.__exit__ = MagicMock(return_value=False)
-        cur.fetchone.return_value = (1,)
-        conn = MagicMock()
-        conn.cursor.return_value = cur
-
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.update_target_field", return_value=updated) as mock_update:
-            mc.return_value.__enter__ = MagicMock(return_value=conn)
-            mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.patch(
-                "/api/datamodel/fields/clicks",
-                content=json.dumps(
-                    {
-                        "display_name": "Clics (restaure)",
-                        "restored_from": {"version_number": 3},
-                    }
-                ),
-                headers={"Content-Type": "application/json"},
-            )
-
-        assert resp.status_code == 200
-        forwarded_patch = mock_update.call_args[0][1]
-        assert forwarded_patch["restored_from"] == 3
-
-    def test_restored_from_invalid_type_returns_422_without_db_call(self, client):
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.update_target_field") as mock_update:
-            resp = client.patch(
-                "/api/datamodel/fields/clicks",
-                content=json.dumps({"restored_from": "not-an-int"}),
-                headers={"Content-Type": "application/json"},
-            )
-
-        assert resp.status_code == 422
-        assert resp.json()["code"] == "validation_error"
-        mc.assert_not_called()
-        mock_update.assert_not_called()
-
-    def test_restored_from_unknown_version_returns_422(self, client):
-        cur = MagicMock()
-        cur.__enter__ = MagicMock(return_value=cur)
-        cur.__exit__ = MagicMock(return_value=False)
-        cur.fetchone.return_value = None  # no such (name, version_number) row
-        conn = MagicMock()
-        conn.cursor.return_value = cur
-
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.update_target_field") as mock_update:
-            mc.return_value.__enter__ = MagicMock(return_value=conn)
-            mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.patch(
-                "/api/datamodel/fields/clicks",
-                content=json.dumps(
-                    {"display_name": "X", "restored_from": 999}
-                ),
-                headers={"Content-Type": "application/json"},
-            )
-
-        assert resp.status_code == 422
-        assert resp.json()["code"] == "validation_error"
-        mock_update.assert_not_called()
+        assert resp.json()["code"] == "legacy_store_is_read_only"
 
 
 # ---------------------------------------------------------------------------
@@ -596,7 +512,7 @@ class TestGetFieldHistory:
              patch("core.datamodel.list_field_versions", return_value=_VERSION_ROWS):
             mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.get("/api/datamodel/fields/clicks/history")
+            resp = client.get("/api/datamodel/fields/clicks/history?project_id=proj_a")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -619,7 +535,7 @@ class TestGetFieldHistory:
              patch("core.datamodel.list_field_versions", return_value=_VERSION_ROWS):
             mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.get("/api/datamodel/fields/clicks/history")
+            resp = client.get("/api/datamodel/fields/clicks/history?project_id=proj_a")
 
         assert resp.status_code == 200
         versions = resp.json()["versions"]
@@ -633,7 +549,7 @@ class TestGetFieldHistory:
              patch("core.datamodel.list_field_versions", return_value=[]):
             mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.get("/api/datamodel/fields/clicks/history")
+            resp = client.get("/api/datamodel/fields/clicks/history?project_id=proj_a")
 
         assert resp.status_code == 200
         assert resp.json() == {"versions": []}
@@ -646,14 +562,14 @@ class TestGetFieldHistory:
              patch("core.datamodel.list_field_versions") as mock_list:
             mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.get("/api/datamodel/fields/unknown/history")
+            resp = client.get("/api/datamodel/fields/unknown/history?project_id=proj_a")
 
         assert resp.status_code == 404
         assert resp.json()["code"] == "not_found"
         mock_list.assert_not_called()
 
     def test_401_without_auth(self, client_unauth):
-        resp = client_unauth.get("/api/datamodel/fields/clicks/history")
+        resp = client_unauth.get("/api/datamodel/fields/clicks/history?project_id=proj_a")
         assert resp.status_code == 401
 
     def test_db_error_returns_500(self, client):
@@ -662,301 +578,6 @@ class TestGetFieldHistory:
              patch("core.datamodel.list_field_versions", side_effect=Exception("db down")):
             mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.get("/api/datamodel/fields/clicks/history")
+            resp = client.get("/api/datamodel/fields/clicks/history?project_id=proj_a")
 
         assert resp.status_code == 500
-
-
-# ---------------------------------------------------------------------------
-# PUT /api/datamodel/mappings
-# ---------------------------------------------------------------------------
-
-
-class TestUpsertMapping:
-    def test_upserts_returns_200(self, client):
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.upsert_mapping", return_value=_MAPPING):
-            mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
-            mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.put(
-                "/api/datamodel/mappings",
-                content=json.dumps({
-                    "datastream_id": "ds_001",
-                    "source_field": "clicks",
-                    "target_field": "clicks",
-                }),
-                headers={"Content-Type": "application/json"},
-            )
-
-        assert resp.status_code == 200
-        assert resp.json()["datastream_id"] == "ds_001"
-
-    def test_missing_datastream_id_returns_400(self, client):
-        resp = client.put(
-            "/api/datamodel/mappings",
-            content=json.dumps({"source_field": "clicks", "target_field": "clicks"}),
-            headers={"Content-Type": "application/json"},
-        )
-        assert resp.status_code == 400
-        assert "datastream_id" in resp.json()["message"]
-
-    def test_missing_source_field_returns_400(self, client):
-        resp = client.put(
-            "/api/datamodel/mappings",
-            content=json.dumps({"datastream_id": "ds_001", "target_field": "clicks"}),
-            headers={"Content-Type": "application/json"},
-        )
-        assert resp.status_code == 400
-        assert "source_field" in resp.json()["message"]
-
-    def test_null_target_field_unmaps(self, client):
-        unmap_result = {**_MAPPING, "target_field": None}
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.upsert_mapping", return_value=unmap_result):
-            mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
-            mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.put(
-                "/api/datamodel/mappings",
-                content=json.dumps({
-                    "datastream_id": "ds_001",
-                    "source_field": "clicks",
-                    "target_field": None,
-                }),
-                headers={"Content-Type": "application/json"},
-            )
-
-        assert resp.status_code == 200
-        assert resp.json()["target_field"] is None
-
-    def test_fk_violation_returns_422(self, client):
-        class FakeFKViolation(Exception):
-            pass
-        FakeFKViolation.__name__ = "ForeignKeyViolation"
-
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.upsert_mapping",
-                   side_effect=FakeFKViolation("foreign key constraint")):
-            mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
-            mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.put(
-                "/api/datamodel/mappings",
-                content=json.dumps({
-                    "datastream_id": "ds_001",
-                    "source_field": "clicks",
-                    "target_field": "nonexistent_field",
-                }),
-                headers={"Content-Type": "application/json"},
-            )
-
-        assert resp.status_code == 422
-        assert resp.json()["code"] == "invalid_target"
-
-    def test_invalid_json_returns_400(self, client):
-        resp = client.put(
-            "/api/datamodel/mappings",
-            content=b"bad json",
-            headers={"Content-Type": "application/json"},
-        )
-        assert resp.status_code == 400
-
-    def test_401_without_auth(self, client_unauth):
-        resp = client_unauth.put("/api/datamodel/mappings", content=b"{}")
-        assert resp.status_code == 401
-
-
-# ---------------------------------------------------------------------------
-# Story 13.1: POST /api/datamodel/fields/{name}/approve
-# ---------------------------------------------------------------------------
-
-
-_APPROVED_FIELD = {
-    **_FIELD,
-    "status": "approved",
-    "approved_at": _NOW.isoformat(),
-    "approved_by": "test@test",
-}
-
-
-class TestApproveField:
-    def test_approve_returns_200_with_approved_status(self, client):
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.approve_target_field", return_value=_APPROVED_FIELD):
-            mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
-            mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.post("/api/datamodel/fields/clicks/approve")
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["status"] == "approved"
-        assert data["approved_by"] == "test@test"
-
-    def test_approve_returns_404_when_field_not_found(self, client):
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.approve_target_field", return_value=None):
-            mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
-            mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.post("/api/datamodel/fields/nonexistent/approve")
-
-        assert resp.status_code == 404
-        assert resp.json()["code"] == "not_found"
-
-    def test_approve_returns_401_without_auth(self, client_unauth):
-        resp = client_unauth.post("/api/datamodel/fields/clicks/approve")
-        assert resp.status_code == 401
-
-    def test_approve_returns_500_on_db_error(self, client):
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.approve_target_field",
-                   side_effect=Exception("db down")):
-            mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
-            mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.post("/api/datamodel/fields/clicks/approve")
-
-        assert resp.status_code == 500
-
-    def test_approve_identity_forwarded(self, client):
-        """The caller's identity is forwarded to approve_target_field."""
-        calls = []
-
-        def capture(name, identity, conn):
-            calls.append({"name": name, "identity": identity})
-            return _APPROVED_FIELD
-
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.approve_target_field", side_effect=capture):
-            mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
-            mc.return_value.__exit__ = MagicMock(return_value=False)
-            client.post("/api/datamodel/fields/clicks/approve")
-
-        assert calls and calls[0]["identity"] == "test@test"
-
-    def test_approve_does_not_modify_immutable_fields(self, client):
-        """Approve response preserves name/data_type/field_kind unchanged."""
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.approve_target_field", return_value=_APPROVED_FIELD):
-            mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
-            mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.post("/api/datamodel/fields/clicks/approve")
-
-        data = resp.json()
-        assert data["name"] == "clicks"
-        assert data["data_type"] == "integer"
-        assert data["field_kind"] == "metric"
-
-
-# ---------------------------------------------------------------------------
-# Story 13.1: DELETE /api/datamodel/fields/{name}
-# ---------------------------------------------------------------------------
-
-
-class TestDeleteField:
-    def test_delete_orphan_field_returns_204(self, client):
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.delete_target_field", return_value=None):
-            mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
-            mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.delete("/api/datamodel/fields/orphan_field")
-
-        assert resp.status_code == 204
-
-    def test_delete_field_in_use_returns_409_with_fr_message(self, client):
-        from core.datamodel import FieldInUseError
-
-        err_msg = (
-            "Impossible de supprimer le champ 'clicks' : il est utilisé par "
-            "3 mapping(s) actif(s). Retirez les mappings avant de supprimer ce champ."
-        )
-
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.delete_target_field",
-                   side_effect=FieldInUseError(err_msg)):
-            mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
-            mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.delete("/api/datamodel/fields/clicks")
-
-        assert resp.status_code == 409
-        data = resp.json()
-        assert data["code"] == "field_in_use"
-        assert "clicks" in data["message"]
-        assert "3" in data["message"]
-
-    def test_delete_nonexistent_field_returns_404(self, client):
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.delete_target_field",
-                   side_effect=ValueError("Champ 'gone' introuvable")):
-            mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
-            mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.delete("/api/datamodel/fields/gone")
-
-        assert resp.status_code == 404
-        assert resp.json()["code"] == "not_found"
-
-    def test_delete_returns_401_without_auth(self, client_unauth):
-        resp = client_unauth.delete("/api/datamodel/fields/clicks")
-        assert resp.status_code == 401
-
-    def test_delete_returns_500_on_db_error(self, client):
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.delete_target_field",
-                   side_effect=Exception("db error")):
-            mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
-            mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.delete("/api/datamodel/fields/clicks")
-
-        assert resp.status_code == 500
-
-    def test_delete_draft_field_returns_204(self, client):
-        """A draft (unnapproved) field with no mappings can be deleted."""
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.delete_target_field", return_value=None):
-            mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
-            mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.delete("/api/datamodel/fields/my_draft_field")
-
-        assert resp.status_code == 204
-
-    def test_delete_default_field_returns_409(self, client):
-        """H2: deleting a field with is_default=TRUE raises FieldInUseError -> 409."""
-        from core.datamodel import FieldInUseError
-
-        err_msg = "Les champs par defaut du socle ne peuvent pas etre supprimes."
-
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.delete_target_field",
-                   side_effect=FieldInUseError(err_msg)):
-            mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
-            mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.delete("/api/datamodel/fields/clicks")
-
-        assert resp.status_code == 409
-        data = resp.json()
-        assert data["code"] == "field_in_use"
-        # Message must convey the is_default restriction
-        assert "defaut" in data["message"].lower() or "socle" in data["message"].lower()
-
-
-# ---------------------------------------------------------------------------
-# Story 13.1 (M2 fix): approve idempotency at API layer
-# ---------------------------------------------------------------------------
-
-
-class TestApproveFieldIdempotency:
-    def test_re_approve_already_approved_returns_200(self, client):
-        """Re-approving an already-approved field must return 200 (no error)."""
-        already_approved = {
-            **_FIELD,
-            "status": "approved",
-            "approved_by": "original@test",
-            "approved_at": _NOW.isoformat(),
-        }
-        with patch("core.db.get_connection") as mc, \
-             patch("core.datamodel.approve_target_field", return_value=already_approved):
-            mc.return_value.__enter__ = MagicMock(return_value=MagicMock())
-            mc.return_value.__exit__ = MagicMock(return_value=False)
-            resp = client.post("/api/datamodel/fields/clicks/approve")
-
-        assert resp.status_code == 200
-        data = resp.json()
-        # Original approver must be preserved (not overwritten)
-        assert data["approved_by"] == "original@test"
-        assert data["status"] == "approved"

@@ -3,7 +3,7 @@ version: 2
 sources:
   - name: raw_microsoft_ads
     description: "Immutable raw landing zone for Microsoft Ads (Bing) v13 reporting data (AD-7: append-only)."
-    schema: main  # DuckDB default schema; BigQuery: override via profiles.yml dataset
+    schema: "{{ var('raw_schema', 'main') }}"  # 24.4 AC2: org_<wslug>_raw injected by orchestrator, 'main' without var (bit-identique)
     tables:
       - name: raw_microsoft_ads_daily
         description: >

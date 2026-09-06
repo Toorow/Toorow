@@ -35,6 +35,19 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
+from core.audit import declare_action
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12) : declarees ICI, a cote du code qui les ecrit, et non
+# dans `core/audit.py`. Ce fichier etait un carrefour -- 43 editions de 29
+# sujets depuis juin, dont 34 n'ajoutaient qu'une constante -- et 45 % des
+# actions reellement ecrites en production n'y etaient meme pas declarees,
+# parce que la liste etait trop loin pour valoir le detour. `write_audit_row`
+# refuse desormais une action que personne n'a declaree.
+ACTION_CONNECTOR_DOMAIN_CONFIG_DENIED = declare_action("connector.domain.config.denied")
+
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -56,15 +69,21 @@ async def _check_auth(request: Request) -> tuple[bool, str]:
 
 
 def _is_platform_admin(identity: str) -> bool:
-    """Return True iff identity is in the TOOROW_SUPER_ADMINS allow-list."""
-    from core.super_admin import is_super_admin  # noqa: PLC0415
+    """Return True iff *identity* resolves to a TOOROW_SUPER_ADMINS super-admin.
 
-    return is_super_admin(identity)
+    THE one resolution (audit 12, P1-2). Comparing the raw identity against the
+    allow-list was dead in canonical mode: the caller is a ``person_<ULID>`` and
+    the allow-list is keyed by email.
+    """
+    from core.super_admin import identity_is_super_admin  # noqa: PLC0415
+
+    return identity_is_super_admin(identity)
 
 
 def _idempotency_key(request: Request) -> str | None:
     """Extract and return the Idempotency-Key header value, or None."""
-    return request.headers.get("Idempotency-Key") or None
+    value = request.headers.get("Idempotency-Key")
+    return value.strip() if value and value.strip() else None
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +112,6 @@ async def _get_connector_domain(request: Request) -> Response:
     # Non-admin: nondisclosing 404 (existence not disclosed, AD-5).
     if not _is_platform_admin(identity):
         from core.audit import (  # noqa: PLC0415
-            ACTION_CONNECTOR_DOMAIN_CONFIG_DENIED,
             write_audit_row,
         )
 
@@ -108,9 +126,7 @@ async def _get_connector_domain(request: Request) -> Response:
                 "method": "GET",
             },
         )
-        logger.info(
-            "connector_domain_api: GET denied non-admin identity=%r", identity
-        )
+        logger.info("connector_domain_api: GET denied non-admin identity=%r", identity)
         return JSONResponse(_NOT_FOUND, status_code=404)
 
     connector_name = (request.path_params.get("connector_name") or "").strip()
@@ -188,7 +204,6 @@ async def _post_connector_domain(request: Request) -> Response:
     Invalid/duplicate domain: 409.
     """
     from core.audit import (  # noqa: PLC0415
-        ACTION_CONNECTOR_DOMAIN_CONFIG_DENIED,
         write_audit_row,
     )
 
@@ -212,9 +227,7 @@ async def _post_connector_domain(request: Request) -> Response:
                 "method": "POST",
             },
         )
-        logger.info(
-            "connector_domain_api: POST denied non-admin identity=%r", identity
-        )
+        logger.info("connector_domain_api: POST denied non-admin identity=%r", identity)
         return JSONResponse(_NOT_FOUND, status_code=404)
 
     connector_name = (request.path_params.get("connector_name") or "").strip()
@@ -230,21 +243,46 @@ async def _post_connector_domain(request: Request) -> Response:
             {"code": "missing_header", "message": "Idempotency-Key header is required"},
             status_code=422,
         )
+    if len(idempotency_key) > 255:
+        return JSONResponse(
+            {"code": "validation_error", "message": "Idempotency-Key is too long"},
+            status_code=422,
+        )
 
     try:
         body_bytes = await request.body()
-        body: dict = json.loads(body_bytes) if body_bytes.strip() else {}
-    except Exception as exc:
+        body = json.loads(body_bytes) if body_bytes.strip() else {}
+    except (json.JSONDecodeError, UnicodeDecodeError):
         return JSONResponse(
-            {"code": "invalid_body", "message": f"Invalid JSON body: {exc}"},
+            {"code": "invalid_body", "message": "Request body must be valid JSON"},
+            status_code=400,
+        )
+    if not isinstance(body, dict):
+        return JSONResponse(
+            {"code": "invalid_body", "message": "Request body must be a JSON object"},
             status_code=400,
         )
 
-    domain = (body.get("domain") or "").strip()
-    provider_adapter = (body.get("provider_adapter") or "").strip()
-    webhook_endpoint_version = (body.get("webhook_endpoint_version") or "v1").strip() or "v1"
-    signing_secret_ref = body.get("signing_secret_ref") or None
-    dns_evidence_class = body.get("dns_evidence_class") or None
+    typed_fields = {
+        "domain": body.get("domain"),
+        "provider_adapter": body.get("provider_adapter"),
+        "webhook_endpoint_version": body.get("webhook_endpoint_version", "v1"),
+        "signing_secret_ref": body.get("signing_secret_ref"),
+        "dns_evidence_class": body.get("dns_evidence_class"),
+        "dns_evidence_hash": body.get("dns_evidence_hash"),
+    }
+    for field, value in typed_fields.items():
+        if value is not None and not isinstance(value, str):
+            return JSONResponse(
+                {"code": "validation_error", "message": f"{field} must be a string"},
+                status_code=422,
+            )
+    domain = (typed_fields["domain"] or "").strip()
+    provider_adapter = (typed_fields["provider_adapter"] or "").strip()
+    webhook_endpoint_version = (typed_fields["webhook_endpoint_version"] or "v1").strip() or "v1"
+    signing_secret_ref = typed_fields["signing_secret_ref"] or None
+    dns_evidence_class = typed_fields["dns_evidence_class"] or None
+    dns_evidence_hash = typed_fields["dns_evidence_hash"] or None
     environment = _get_environment()
 
     if not domain:
@@ -260,6 +298,7 @@ async def _post_connector_domain(request: Request) -> Response:
 
     trace_id: str | None = None
     import re as _re  # noqa: PLC0415
+
     raw_trace = request.headers.get("X-Trace-Id", "").strip()
     if raw_trace and _re.fullmatch(r"[0-9a-f]{32}", raw_trace):
         trace_id = raw_trace
@@ -288,21 +327,23 @@ async def _post_connector_domain(request: Request) -> Response:
                 idempotency_key=idempotency_key,
                 host_context={},
                 trace_id=trace_id,
+                dns_evidence_hash=dns_evidence_hash,
             )
             conn.commit()
     except OperationIdempotencyConflict:
         return JSONResponse(
             {
                 "code": "conflict",
-                "message": (
-                    "Idempotency-Key already bound to a different domain config request"
-                ),
+                "message": ("Idempotency-Key already bound to a different domain config request"),
             },
             status_code=409,
         )
-    except ConnectorDomainConflict as exc:
+    except ConnectorDomainConflict:
         return JSONResponse(
-            {"code": "domain_conflict", "message": str(exc)},
+            {
+                "code": "domain_conflict",
+                "message": "Domain configuration conflicts with an existing binding",
+            },
             status_code=409,
         )
     except ConnectorDomainValidationError as exc:
@@ -310,15 +351,16 @@ async def _post_connector_domain(request: Request) -> Response:
             {"code": "validation_error", "message": str(exc)},
             status_code=422,
         )
-    except ConnectorDomainUnavailable as exc:
+    except ConnectorDomainUnavailable:
         return JSONResponse(
-            {"code": "installation_unavailable", "message": str(exc)},
+            {
+                "code": "installation_unavailable",
+                "message": "Connector installation is not available for domain configuration",
+            },
             status_code=409,
         )
     except Exception as exc:
-        logger.error(
-            "connector_domain_api: POST error cn=%s: %s", connector_name, exc
-        )
+        logger.error("connector_domain_api: POST error cn=%s: %s", connector_name, exc)
         return JSONResponse(
             {"code": "server_error", "message": "Domain configure failed"},
             status_code=500,

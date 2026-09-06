@@ -49,19 +49,41 @@ GITHUB_OWNER / GITHUB_REPO for local dev.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+from pathlib import Path
 
 import httpx
 from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-# Module-level FastMCP instance -- the public surface the loader mounts.
-# The core does: mcp.mount(loaded.connector_module.mcp_app, namespace=loaded.name)
+# Module-level FastMCP instance, kept as the conformance surface (AD-1 envelope,
+# validated by server/tests/conformance/test_envelope.py). Since AD-42 the core
+# no longer mounts it: execution uses the Datastream-parameterized core tools.
 mcp_app = FastMCP("github")
 
 GITHUB_API_BASE = "https://api.github.com"
+
+# ---------------------------------------------------------------------------
+# Provider error taxonomy (README step 4). The map lives in manifest.json --
+# core NEVER hardcodes provider vocabulary (AD-2 / HG-1). Cached, meta-ads
+# pattern.
+# ---------------------------------------------------------------------------
+
+_ERROR_MAP: dict[str, str] | None = None
+
+
+def _load_error_map() -> dict[str, str]:
+    """Return the manifest's ``error_map`` (status:code -> canonical class), cached."""
+    global _ERROR_MAP
+    if _ERROR_MAP is None:
+        manifest_path = Path(__file__).parent / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        _ERROR_MAP = manifest.get("error_map") or {}
+    return _ERROR_MAP
+
 
 # ---------------------------------------------------------------------------
 # GitHub API helpers
@@ -245,7 +267,10 @@ def pull(
     return {
         "profile_id": profile_id,
         "rows_written": rows_written,
+        "row_count": rows_written,
         "pull_id": pull_id,
+        "date_from": date_from,
+        "date_to": date_to,
     }
 
 
@@ -275,13 +300,18 @@ def _pull_releases(
         )
     if resp.status_code != 200:
         # Story 25.2: canonical typed error; provider payload preserved.
+        # The manifest error_map is the THIRD argument (README step 4): without
+        # it a 404 on a private repository stays `unclassified` -- retried
+        # forever, and mute about the missing access.
         from core.pull_errors import classify_http_error  # noqa: PLC0415
 
         try:
             _body = resp.json()
         except Exception:
             _body = resp.text
-        raise classify_http_error(resp.status_code, _body)
+        raise classify_http_error(
+            resp.status_code, _body, _load_error_map()
+        )
 
     rows_written = 0
     for release in resp.json():
@@ -332,13 +362,18 @@ def _pull_deployments(
         )
     if resp.status_code != 200:
         # Story 25.2: canonical typed error; provider payload preserved.
+        # The manifest error_map is the THIRD argument (README step 4): without
+        # it a 404 on a private repository stays `unclassified` -- retried
+        # forever, and mute about the missing access.
         from core.pull_errors import classify_http_error  # noqa: PLC0415
 
         try:
             _body = resp.json()
         except Exception:
             _body = resp.text
-        raise classify_http_error(resp.status_code, _body)
+        raise classify_http_error(
+            resp.status_code, _body, _load_error_map()
+        )
 
     rows_written = 0
     for deployment in resp.json():

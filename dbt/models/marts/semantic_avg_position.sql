@@ -8,18 +8,22 @@
 
 {% set dims = ["page", "country", "device"] %}
 {% for dim in dims %}
+{#- Story 58.5, arbitrage 1: the same named bucket as the fact table, so the
+    weighted position of a row with no country is readable rather than filed under
+    a NULL nobody can group on. -#}
+{%- set dim_value = country_bucket('country', 'country_source') if dim == 'country' else dim -%}
 SELECT
     project_id,
     date,
     'gsc'            AS connector,
     '{{ dim }}'      AS breakdown_dimension,
-    {{ dim }}        AS breakdown_value,
+    {{ dim_value }}  AS breakdown_value,
     SUM(average_position * impressions) / NULLIF(SUM(impressions), 0) AS average_position,
     SUM(impressions) AS impressions_weight,
     SUM(impressions) AS semantic_weight,
     MAX(pull_id)     AS pull_id,
     MAX(loaded_at)   AS loaded_at
 FROM {{ ref('stg_gsc_daily') }}
-GROUP BY project_id, date, {{ dim }}
+GROUP BY project_id, date, {{ dim_value }}
 {% if not loop.last %}UNION ALL{% endif %}
 {% endfor %}

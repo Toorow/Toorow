@@ -9,21 +9,21 @@
  * 0     → alpha plancher 0.10 (allumé mais faible, distinct du null).
  * max   → alpha 1.0.
  *
- * Aucune lib graphique externe (AD-11). Light + dark via MUI theme. Strings françaises (UX-DR10).
+ * Aucune lib graphique externe (AD-11). Light + dark via le thème partagé. Strings françaises (UX-DR10).
  */
 
 import { useMemo } from "react";
-import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
-import { useTheme, alpha } from "@mui/material/styles";
+
 import { getVizPalette } from "./vizTheme";
+import { NO_VALUE, formatMeasure } from "./viz/theme/formatters";
+import { Box, Typography, alpha, useTheme } from "@toorow/shell";
 
 export interface DotMatrixGroup {
   /** Libellé du groupe (ex. « September », « Octobre »). */
   label: string;
   /** Valeurs : un point par entrée. null = point éteint (donnée absente). */
   values: Array<number | null>;
-  /** Total affiché à droite du label (string directe ou number formaté fr-FR). */
+  /** Total shown to the right of the label (a raw string, or a formatted number). */
   total?: string | number;
 }
 
@@ -51,10 +51,7 @@ const ALPHA_MAX = 1.0;
 
 function formatTotal(total: string | number | undefined, unit?: string): string | undefined {
   if (total === undefined) return undefined;
-  if (typeof total === "number") {
-    const formatted = total.toLocaleString("fr-FR");
-    return unit ? `${formatted} ${unit}` : formatted;
-  }
+  if (typeof total === "number") return formatMeasure(total, unit);
   return total;
 }
 
@@ -125,11 +122,7 @@ export default function DotMatrix({
    */
   function dotTitle(group: DotMatrixGroup, i: number, value: number | null): string {
     const label = group.label;
-    const valStr = value === null
-      ? "—"
-      : unit
-        ? `${value.toLocaleString("fr-FR")} ${unit}`
-        : value.toLocaleString("fr-FR");
+    const valStr = value === null ? NO_VALUE : formatMeasure(value, unit);
     return `${label} · point ${i + 1} : ${valStr}`;
   }
 

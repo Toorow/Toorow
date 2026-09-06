@@ -15,6 +15,30 @@ from typing import Any
 import jsonschema
 from ulid import ULID
 
+from core.audit import declare_action
+from core.context_event_import import (
+    event_roles,
+    validate_event_declaration,
+)
+from core.object_kind_registry import (
+    REASON_LOOKUP_FAILED,
+    EntityDesignationIssue,
+    entity_designations,
+    fetch_entity_type_lookup,
+    validate_entity_designations,
+)
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12) : declarees ICI, a cote du code qui les ecrit, et non
+# dans `core/audit.py`. Ce fichier etait un carrefour -- 43 editions de 29
+# sujets depuis juin, dont 34 n'ajoutaient qu'une constante -- et 45 % des
+# actions reellement ecrites en production n'y etaient meme pas declarees,
+# parce que la liste etait trop loin pour valoir le detour. `write_audit_row`
+# refuse desormais une action que personne n'a declaree.
+ACTION_DATASTREAM_MAPPING_VERSIONED = declare_action("datastream.mapping.versioned")
+
+
 _MAPPING_SCHEMA_PATH = Path(__file__).parent / "schemas" / "datastream-field-mapping.schema.json"
 _OSSIE_SCHEMA_PATH = Path(__file__).parent / "schemas" / "ossie-0.1.1-profile.schema.json"
 _DEFAULT_CONFIDENCE_THRESHOLD = 0.75
@@ -131,7 +155,7 @@ def compute_source_schema_hash(fields: list[dict[str, Any]]) -> str:
     return _sha256(_canonical_json(sorted_minimal))
 
 
-def _physical_type_class(physical_type: str, kind: str) -> str:
+def physical_type_class(physical_type: str, kind: str) -> str:
     """Classify a physical type into numeric/date/string/unknown.
 
     Recognition is by explicit type or kind; anything else is `unknown` so the
@@ -151,7 +175,13 @@ def _physical_type_class(physical_type: str, kind: str) -> str:
     return "unknown"
 
 
-def _date_granularity(physical_type: str) -> str:
+#: `mdm_common_keys` compares the physical types implementing one common-key
+#: component against each other. It reads THIS classifier rather than typing a
+#: second vocabulary that would drift from this one.
+_physical_type_class = physical_type_class
+
+
+def date_granularity(physical_type: str) -> str:
     """Return the date granularity bucket for a date field."""
     pt = (physical_type or "").strip().lower()
     if pt in _INSTANT_DATE_TYPES:
@@ -159,6 +189,12 @@ def _date_granularity(physical_type: str) -> str:
     if pt in _DAY_DATE_TYPES:
         return "day"
     return "unspecified"
+
+
+#: `multi_source_plan` compares the date granularity of the two columns
+#: implementing one common-key component. It reads THIS function rather than
+#: typing a second table of date types that would drift from this one.
+_date_granularity = date_granularity
 
 
 def _derive_confidence(
@@ -242,6 +278,33 @@ def normalize_mapping(mapping: dict[str, Any]) -> tuple[dict[str, Any], str]:
     return normalized, content_hash
 
 
+#: The aggregations `datastream-field-mapping.schema.json` accepts on a
+#: suggestion. Connector manifests describe the SOURCE's own aggregation, whose
+#: vocabulary is deliberately wider, and the two sets are not the same contract.
+_MAPPING_AGGREGATIONS = frozenset({"none", "sum", "avg", "min", "max", "count", "custom"})
+
+
+def _mapping_aggregation(source_aggregation: str) -> tuple[str, str | None]:
+    """Translate a source aggregation into the mapping vocabulary, losing nothing.
+
+    Measured across the 38 connector manifests on 2026-07-30, 14 of 453 declared
+    fields aggregate as `impression_weighted` (10) or `latest` (4) -- both real
+    source semantics, neither in the mapping enum. Passing them through made
+    `normalize_mapping` reject the whole mapping on a schema violation, so every
+    report profile containing one of those fields was unmappable.
+
+    `custom` is the escape the schema already declares for exactly this. The
+    source term is kept in `evidence` rather than dropped: `custom` alone would
+    say "not one of the standard six" without ever saying which, and the
+    non-additivity that makes `impression_weighted` matter is carried separately
+    by `non_additive`.
+    """
+    aggregation = str(source_aggregation or "none")
+    if aggregation in _MAPPING_AGGREGATIONS:
+        return aggregation, None
+    return "custom", f"source_aggregation:{aggregation}"
+
+
 def profile_fields(
     *,
     field_records: list[dict[str, Any]],
@@ -271,6 +334,20 @@ def profile_fields(
         canonical_target = item.get("canonical_target")
         aggregation = item.get("aggregation", "none")
         non_additive = bool(item.get("non_additive", False))
+        # Story 69.2 (AD-4): the CANONICAL vocabulary overrules the caller here.
+        # `non_additive` used to come from the profiler alone, so a file column
+        # literally named `ctr` or `average_position` could be declared additive
+        # and be SUMMED into the mart -- a sum of rates, which is not a smaller
+        # number but a false one. `dim_metric.csv` already declares which names
+        # are ratios, and `is_non_additive` is the same read the dbt gate does.
+        # A caller may raise the flag; it may not lower it.
+        if not non_additive:
+            from core.report_dictionary import is_non_additive  # noqa: PLC0415
+
+            for candidate in (item.get("canonical_target"), field_id):
+                if candidate and is_non_additive(str(candidate)):
+                    non_additive = True
+                    break
 
         type_class = _physical_type_class(physical_type, kind)
 
@@ -372,6 +449,10 @@ def profile_fields(
             binding_status = "blocking"
             blocking_reason = f"target_field_not_found:{canonical_target}"
 
+        mapping_aggregation, aggregation_evidence = _mapping_aggregation(aggregation)
+        if aggregation_evidence:
+            evidence = [*evidence, aggregation_evidence]
+
         fields_mapping.append(
             {
                 "field_id": field_id,
@@ -385,7 +466,7 @@ def profile_fields(
                 },
                 "suggestion": {
                     "semantic_role": semantic_role,
-                    "aggregation": aggregation,
+                    "aggregation": mapping_aggregation,
                     "non_additive": non_additive,
                     "currency": currency,
                     "sensitivity": sensitivity,
@@ -667,6 +748,60 @@ def _version_dict(row: tuple[Any, ...]) -> dict[str, Any]:
     return result
 
 
+def _pin_primary_date(conn: Any, project_id: str, normalized_payload: dict[str, Any]) -> bool:
+    """Pin every `primary_date` field to the visible canonical `date`, unless already pinned.
+
+    THE PRIMARY DATE IS THE CANONICAL DATE, BY CONSTRUCTION (2026-09-05). A column
+    the profile recognised as `primary_date` means one thing in every flow of
+    every project, and the product pins it itself -- a person may only re-point
+    it. Measured 2026-09-04 on the reference project: ten flows carry `date`,
+    none of the published mappings pinned it, and the crossing waited on ten
+    identical human gestures. Jean: « les champs date sont forcément et
+    obligatoirement épinglables ». The Project's own `date` wins over the
+    platform's when both exist. Fail-soft: an unreadable registry pins nothing,
+    and the resolution that follows says so per binding. Returns whether a pin
+    was added.
+    """
+    candidates = [
+        f
+        for f in normalized_payload.get("fields", [])
+        if isinstance(f, dict)
+        and (f.get("suggestion") or {}).get("semantic_role") == "primary_date"
+        and (f.get("binding") or {}).get("status") != "excluded"
+        and not (f.get("binding") or {}).get("mdm_target")
+    ]
+    if not candidates:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SAVEPOINT sp_primary_date_pin")
+            cur.execute(
+                """
+                SELECT id FROM app.mdm_canonical_fields
+                 WHERE canonical_name = 'date' AND concept_kind = 'dimension'
+                   AND status = 'active'
+                   AND (project_id = %s OR project_id IS NULL)
+                 ORDER BY (project_id IS NULL), id
+                 LIMIT 1
+                """,
+                (project_id,),
+            )
+            row = cur.fetchone()
+            cur.execute("RELEASE SAVEPOINT sp_primary_date_pin")
+    except Exception:  # noqa: BLE001 -- the registry decides; unreadable means no pin
+        try:
+            with conn.cursor() as cur:
+                cur.execute("ROLLBACK TO SAVEPOINT sp_primary_date_pin")
+        except Exception:  # noqa: BLE001
+            pass
+        return False
+    if row is None:
+        return False
+    for field in candidates:
+        field.setdefault("binding", {})["mdm_target"] = str(row[0])
+    return True
+
+
 def save_field_mapping(
     *,
     datastream_id: str,
@@ -677,14 +812,35 @@ def save_field_mapping(
     conn: Any,
     dataset_name: str = "default_dataset",
     trace_id: str | None = None,
+    pinned_plan_version_id: str | None = None,
+    advance_pointer: bool = True,
+    commit: bool = True,
 ) -> dict[str, Any]:
-    """Append one immutable mapping version and update current_mapping_version_id pointer."""
+    """Append one immutable mapping version, optionally without activating it."""
 
     if not idempotency_key.strip():
         raise ValueError("Idempotency-Key is required")
     idempotency_hash = _sha256(idempotency_key)
 
     normalized_payload, content_hash = normalize_mapping(mapping_payload)
+    # The pin is part of the version, so the hash is the hash of what is stored:
+    # normalised again after it, never before.
+    if _pin_primary_date(conn, project_id, normalized_payload):
+        normalized_payload, content_hash = normalize_mapping(normalized_payload)
+
+    # Story 60.6: joins and splits are refused HERE, before a version exists.
+    #
+    # The structural half is the JSON schema's (two sources minimum, two targets
+    # minimum, one pattern per split). What the schema cannot see is the payload
+    # around the declaration: a source column this mapping does not carry, a
+    # source somebody excluded, a pattern that does not compile, or two rules
+    # claiming one concept. `csv_excel_import` already refuses the last one --
+    # `dispatch_mapping_collision` -- but it refuses it while landing rows, which
+    # is after the fact. Refusing at the append is what makes it "before the
+    # import" (story 60.6, Refuse).
+    from core.column_treatments import normalize_treatments  # noqa: PLC0415
+
+    normalize_treatments(normalized_payload)
 
     # Registry resolution (read-only). Each binding that names an mdm_target must
     # resolve to a LIVE, IN-SCOPE row of app.mdm_canonical_fields (platform-scoped
@@ -700,6 +856,10 @@ def save_field_mapping(
         if (b := f.get("binding") or {}).get("mdm_target")
     }
     resolved_registry: dict[str, str] = {}
+    # Story 68.2: the same read also yields each canonical field's object_kind
+    # (migration 241), which the designation validation below needs to refuse a
+    # column that answers "which object" twice (AC5). Read-only, like the rest.
+    mdm_object_kinds: dict[str, Any] = {}
     registry_lookup_failed = False
     if mdm_targets:
         try:
@@ -707,15 +867,16 @@ def save_field_mapping(
                 cur.execute("SAVEPOINT sp_mdm_registry")
                 cur.execute(
                     """
-                    SELECT id, status, project_id
+                    SELECT id, status, project_id, object_kind
                     FROM app.mdm_canonical_fields
                     WHERE id = ANY(%s) AND (project_id IS NULL OR project_id = %s)
                     """,
                     (list(mdm_targets), project_id),
                 )
-                for row_id, status, _proj in cur.fetchall():
+                for row_id, status, _proj, object_kind in cur.fetchall():
                     if status == "active":
                         resolved_registry[row_id] = status
+                    mdm_object_kinds[row_id] = object_kind
                 cur.execute("RELEASE SAVEPOINT sp_mdm_registry")
         except Exception:
             registry_lookup_failed = True
@@ -724,6 +885,76 @@ def save_field_mapping(
                     cur.execute("ROLLBACK TO SAVEPOINT sp_mdm_registry")
             except Exception:
                 pass
+
+    # Entity designations (Story 68.2), validated through the SAME fail-closed
+    # posture as the mdm_target resolution above: the lookup reads the registry
+    # Story 68.1 writes and writes NOTHING itself (the Epic-13 boundary stands);
+    # a designation that cannot be honored marks its binding `blocking` with a
+    # stable reason; an unreadable registry blocks every designating binding
+    # rather than passing. The version is born non-executable, never repaired
+    # in place -- mappings are immutable, so the repair is a new declaration.
+    designation_issues: dict[str, EntityDesignationIssue] = {}
+    designated_kinds = {
+        kind for _field_id, kind in entity_designations(normalized_payload)
+    }
+    if designated_kinds:
+        declared_types: dict[str, Any] | None = None
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SAVEPOINT sp_entity_types")
+                declared_types = fetch_entity_type_lookup(
+                    conn, project_id=project_id, object_kinds=sorted(designated_kinds)
+                )
+                cur.execute("RELEASE SAVEPOINT sp_entity_types")
+        except Exception:
+            declared_types = None
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("ROLLBACK TO SAVEPOINT sp_entity_types")
+            except Exception:
+                pass
+        if declared_types is None:
+            for field_id, kind in entity_designations(normalized_payload):
+                designation_issues.setdefault(
+                    field_id,
+                    EntityDesignationIssue(
+                        field_id=field_id,
+                        object_kind=kind,
+                        reason=REASON_LOOKUP_FAILED,
+                        message=(
+                            "the entity type registry could not be read, so this "
+                            "designation cannot be verified -- retry rather than "
+                            "publishing an unverified key"
+                        ),
+                    ),
+                )
+        else:
+            for issue in validate_entity_designations(
+                normalized_payload,
+                declared_types=declared_types,
+                mdm_object_kinds=mdm_object_kinds,
+            ):
+                designation_issues.setdefault(issue.field_id, issue)
+
+    # Event roles (Story 68.4), validated at append like the designation above
+    # -- and PURELY: the event vocabulary is a repo catalogue, not a
+    # project-scoped table, so nothing here reads the database and nothing can
+    # drift between this check and the import. A broken declaration marks its
+    # column blocking; a declaration missing a required role has no column to
+    # blame, so it blocks the columns that DID declare a role -- the version is
+    # born non-executable either way, which is the only state that stops it.
+    event_issues: dict[str, str] = {}
+    event_declaration_issues = validate_event_declaration(normalized_payload)
+    if event_declaration_issues:
+        declared_event_fields = [
+            field_id for field_id, _role, _target in event_roles(normalized_payload)
+        ]
+        for issue in event_declaration_issues:
+            if issue.field_id:
+                event_issues.setdefault(issue.field_id, issue.reason)
+            else:
+                for field_id in declared_event_fields:
+                    event_issues.setdefault(field_id, issue.reason)
 
     # Apply registry resolution to each binding.
     blocking_count = 0
@@ -736,6 +967,18 @@ def save_field_mapping(
                 if binding.get("status") not in ("excluded",):
                     binding["status"] = "blocking"
                     binding["blocking_reason"] = "register_or_pick_canonical_field"
+
+        designation_issue = designation_issues.get(f.get("field_id"))
+        if designation_issue is not None and binding.get("status") not in ("excluded",):
+            binding["status"] = "blocking"
+            binding["blocking_reason"] = (
+                f"{designation_issue.reason}:{designation_issue.object_kind}"
+            )
+
+        event_issue = event_issues.get(f.get("field_id"))
+        if event_issue is not None and binding.get("status") not in ("excluded",):
+            binding["status"] = "blocking"
+            binding["blocking_reason"] = event_issue
 
         if binding.get("status") == "blocking":
             blocking_count += 1
@@ -762,7 +1005,7 @@ def save_field_mapping(
             if datastream_row is None:
                 raise DatastreamMappingNotFound("Datastream not found")
 
-            plan_version_id = datastream_row[1]
+            plan_version_id = pinned_plan_version_id or datastream_row[1]
             previous_mapping_version_id = datastream_row[2]
             if not plan_version_id:
                 raise DatastreamMappingUnavailable("Datastream has no current plan version")
@@ -863,13 +1106,12 @@ def save_field_mapping(
                 """
                 UPDATE app.datastreams
                 SET current_mapping_version_id = %s
-                WHERE id = %s AND project_id = %s
+                WHERE id = %s AND project_id = %s AND %s
                 """,
-                (mapping_id, datastream_id, project_id),
+                (mapping_id, datastream_id, project_id, advance_pointer),
             )
 
         from core.audit import (  # noqa: PLC0415
-            ACTION_DATASTREAM_MAPPING_VERSIONED,
             insert_audit_row,
         )
 
@@ -892,7 +1134,8 @@ def save_field_mapping(
                 "trace_id": trace_id,
             },
         )
-        conn.commit()
+        if commit:
+            conn.commit()
     except (DatastreamMappingConflict, DatastreamMappingNotFound, DatastreamMappingUnavailable):
         conn.rollback()
         raise

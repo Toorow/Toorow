@@ -16,7 +16,16 @@ import type { Row } from "../types";
 export type Granularity = "day" | "week" | "month";
 
 /** The ADDITIVE metrics present in P0/P1 data. Non-additive metrics throw. */
-const ADDITIVE_METRICS = new Set(["sessions", "active_users", "conversions"]);
+const ADDITIVE_METRICS = new Set([
+  "sessions",
+  "active_users",
+  "conversions",
+  // Additive per the canonical vocabulary (dbt/seeds/dim_metric.csv:
+  // screen_page_views,true,sum). The real server emission carries it (pages
+  // profile, Epic 10) and aggregateRows sees EVERY row — omitting it crashed
+  // the widget on real data while the synthetic fixture masked it (C15-bis).
+  "screen_page_views",
+]);
 
 /**
  * AD-4: only additive metrics are stored; summing day-grain rows is correct

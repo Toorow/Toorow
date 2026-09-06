@@ -7,7 +7,7 @@
  * shows a designed French fallback instead of a blank page.
  */
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { Box, Button, Typography } from "@mui/material";
+import { Button, EmptyState } from "./ui";
 
 interface Props {
   children: ReactNode;
@@ -40,21 +40,22 @@ export default class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <Box sx={{ p: 6, textAlign: "center", color: "text.secondary" }}>
-          <Typography variant="h6" sx={{ mb: 1, color: "text.primary" }}>
-            Something went wrong in this section.
-          </Typography>
-          <Typography variant="body2" sx={{ mb: 3 }}>
-            {this.state.message || "Unexpected error."}
-          </Typography>
-          <Button
-            variant="text"
-            color="primary"
-            onClick={() => this.setState({ hasError: false, message: "" })}
-          >
-            Retry
-          </Button>
-        </Box>
+        // `EmptyState` already IS this shape — centred, a title at h3, a muted
+        // description, an action underneath. The MUI version rebuilt it out of a
+        // padded Box and two Typography variants, which is the reinvention this
+        // library exists to stop.
+        <EmptyState
+          title="Something went wrong in this section."
+          description={this.state.message || "Unexpected error."}
+          action={
+            <Button
+              variant="ghost"
+              onClick={() => this.setState({ hasError: false, message: "" })}
+            >
+              Retry
+            </Button>
+          }
+        />
       );
     }
     return this.props.children;

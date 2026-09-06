@@ -66,7 +66,8 @@ class TestActionCodeConstants:
 
 class TestStrictAuditInsert:
     def test_insert_audit_row_uses_existing_transaction_and_propagates(self):
-        from core.audit import ACTION_DATASTREAM_INTENT_VERSIONED, insert_audit_row
+        from core.audit import insert_audit_row  # noqa: PLC0415
+        from core.datastream_intents import ACTION_DATASTREAM_INTENT_VERSIONED  # noqa: PLC0415
 
         conn = MagicMock()
         cur = MagicMock()
@@ -274,7 +275,7 @@ class TestQueryAuditLogOrdering:
             ("created_at",),
         ]
         # Simulate DB returning as (id, identity, action, provider_account,
-        #                          connection_ref, metadata, created_at)
+        #                          connection_ref, outcome, trace_id, resource, created_at)
         mock_cursor.fetchall.return_value = [
             (
                 row["id"],
@@ -297,7 +298,7 @@ class TestQueryAuditLogOrdering:
 
         with patch("core.audit.psycopg", create=True) as mock_psycopg:
             mock_psycopg.connect.return_value = mock_conn
-            result = query_audit_log()
+            result = query_audit_log(project_id="proj_a")
 
         assert len(result) == 3
         # Newest first
@@ -347,8 +348,8 @@ class TestRowsToCsv:
         assert data_fields[2] == "connection.created"
         assert data_fields[3] == "google-analytics"
 
-    def test_csv_metadata_json_serialised(self):
-        """CSV metadata column must be JSON-serialised for non-None values."""
+    def test_csv_resource_json_serialised(self):
+        """CSV resource column must be JSON-serialised for non-None values."""
         rows = [
             {
                 "id": "audit_02",
@@ -356,7 +357,7 @@ class TestRowsToCsv:
                 "action": "pull.triggered",
                 "provider_account": "google-analytics",
                 "connection_ref": _FAKE_CONN_REF,
-                "metadata": {"batch_id": "batch_123"},
+                "resource": {"batch_id": "batch_123"},
                 "created_at": "2026-07-11T10:00:00+00:00",
             }
         ]
@@ -424,11 +425,16 @@ class TestAuditIntegration:
             action=ACTION_CONNECTION_CREATED,
             provider_account="google-analytics",
             connection_ref=self._SEED_CONN_REF,
-            metadata={"test": "story-2-6-roundtrip"},
+            metadata={
+                "project_id": "integ-test-project",
+                "resource": {"test": "story-2-6-roundtrip"},
+            },
         )
 
         # Query back -- filter to this specific connection_ref to avoid noise
-        rows = query_audit_log(connection_ref=self._SEED_CONN_REF)
+        rows = query_audit_log(
+            project_id="integ-test-project", connection_ref=self._SEED_CONN_REF
+        )
         assert len(rows) >= 1, "Expected at least one row after write"
 
         # Find our row (newest-first, may be more than one from prior runs)
@@ -439,7 +445,7 @@ class TestAuditIntegration:
         assert row["action"] == ACTION_CONNECTION_CREATED
         assert row["provider_account"] == "google-analytics"
         assert row["connection_ref"] == self._SEED_CONN_REF
-        assert row["metadata"] == {"test": "story-2-6-roundtrip"}
+        assert row["resource"] == {"test": "story-2-6-roundtrip"}
         assert isinstance(row["created_at"], str)
         # created_at must be ISO-8601
         from datetime import datetime
@@ -447,7 +453,16 @@ class TestAuditIntegration:
         datetime.fromisoformat(row["created_at"])  # raises if malformed
 
     def test_csv_export_endpoint(self):
-        """T7.5: GET /api/audit?format=csv returns text/csv with correct header."""
+        """T7.5: GET /api/audit?format=csv returns text/csv with correct header.
+
+        THE SCOPE IS PART OF THE REQUEST, and it is not a detail of this test.
+        `/api/audit` became project-scoped in `cc88a7f5` (2026-07-27): it answers
+        422 `project_id is required` without a scope and 404 for a project the
+        identity cannot see, the existence-hiding shape `governance.md` records
+        for `GET /api/procedures` next to it. That commit added the scope to the
+        JSON sibling below and not to this one, so the CSV half kept asking the
+        pre-scope question and only ever ran when Postgres was absent.
+        """
         from core.main import build_asgi_app
         from starlette.testclient import TestClient
 
@@ -463,7 +478,11 @@ class TestAuditIntegration:
         client = TestClient(app, raise_server_exceptions=True)
         resp = client.get(
             "/api/audit",
-            params={"format": "csv", "connection_ref": self._SEED_CONN_REF},
+            params={
+                "format": "csv",
+                "project_id": "integ-test-project",
+                "connection_ref": self._SEED_CONN_REF,
+            },
         )
         assert resp.status_code == 200
         assert "text/csv" in resp.headers.get("content-type", "")
@@ -471,6 +490,23 @@ class TestAuditIntegration:
         assert len(lines) >= 1, "Expected at least a header row"
         header = lines[0].split(",")
         assert header == AUDIT_CSV_COLUMNS
+
+    def test_export_without_a_scope_is_refused(self):
+        """The scope is required in BOTH formats, so neither can drift back.
+
+        This is the half `cc88a7f5` left unheld: with no test on the refusal, the
+        CSV export could ask for the whole platform again and only a live database
+        would notice.
+        """
+        from core.main import build_asgi_app
+        from starlette.testclient import TestClient
+
+        app = build_asgi_app()
+        client = TestClient(app, raise_server_exceptions=True)
+        for fmt in ("csv", "json"):
+            resp = client.get("/api/audit", params={"format": fmt})
+            assert resp.status_code == 422, fmt
+            assert resp.json()["code"] == "invalid_param", fmt
 
     def test_json_endpoint_returns_rows_and_count(self):
         """GET /api/audit returns JSON with 'rows' list and 'count' integer."""
@@ -481,7 +517,10 @@ class TestAuditIntegration:
         client = TestClient(app, raise_server_exceptions=True)
         resp = client.get(
             "/api/audit",
-            params={"connection_ref": self._SEED_CONN_REF},
+            params={
+                "project_id": "integ-test-project",
+                "connection_ref": self._SEED_CONN_REF,
+            },
         )
         assert resp.status_code == 200
         body = resp.json()

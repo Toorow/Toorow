@@ -1,0 +1,11 @@
+canonical_metric,connector,revenue_role,landed_tax_posture,transaction_count_metric,measured_fee_metric,source_field_note
+revenue,shopify,SALES,TAX_INCLUSIVE,orders_count,,manifest total_price->revenue; includes line items discounts shipping taxes tips
+revenue,woocommerce,SALES,TAX_INCLUSIVE,orders_count,,manifest total->revenue; order total includes tax when the store charges tax
+revenue,stripe,SALES,TAX_INCLUSIVE,transaction_count,fees,manifest amount->revenue; charge amount is what the customer paid
+revenue,square,SALES,TAX_INCLUSIVE,transaction_count,fees,manifest amount->revenue; payment amount is what the customer paid
+revenue,adjust,SALES,UNDECLARED,,,in-app SDK revenue; store-net vs gross is not knowable from the feed
+ad_revenue,adjust,ATTRIBUTED,UNDECLARED,,,"ad monetisation revenue; claimed, never a ROAS numerator"
+all_revenue,adjust,ATTRIBUTED,UNDECLARED,,,"SDK aggregate; claimed, never a ROAS numerator"
+attributed_revenue,klaviyo,ATTRIBUTED,UNDECLARED,,,"channel-claimed (KEEP_SEPARATE, Epic 27 invariant 4)"
+conversion_value,cm360,ATTRIBUTED,UNDECLARED,,,Floodlight-claimed conversion value; campaign grain
+target_revenue,google-sheets,PLAN,UNDECLARED,,,"a plan value, never actuals"

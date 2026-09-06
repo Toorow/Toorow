@@ -10,10 +10,18 @@ Guarded par MEDIAPLAN_ALERTS_ENABLED (défaut "true" -- peu risqué, lecture seu
 Règles métier actées (spike 22-0 §5, décision 6) :
   - Seuils asymétriques configurables par projet :
       mediaplan_overrun_threshold        : pace > seuil -> alerte ROUGE "Dépassement budgétaire"
-      mediaplan_underdelivery_threshold  : pace < seuil -> alerte JAUNE "Sous-livraison"
+      mediaplan_underdelivery_threshold  : pace < seuil -> alerte JAUNE "Under-delivery"
   - Défauts documentés : +10 % et -10 % (jamais en dur dans le code -- lus depuis prefs).
   - Deux kind distincts : metric='mediaplan_pace_overrun' et 'mediaplan_pace_underdelivery'.
   - JAMAIS d'alerte sur is_plan_only, pace NULL, ou allocated_to_date = 0.
+  - JAMAIS d'alerte sur une ligne dont l'argent n'a pas pu être établi (story 61.4,
+    AI-266). Une ligne dont un jour n'a pas de taux de change portait un
+    `actual_to_date` amputé de ce jour -- `SUM()` saute les NULL -- donc un pace
+    négatif, donc un `mediaplan_pace_underdelivery` qui accusait une campagne
+    d'avoir sous-livré alors qu'il manquait un TAUX. Le mart ne produit plus ce
+    pace, et la garde ci-dessous refuse en plus toute ligne qui porte
+    `actual_withheld` ou un `money_gap_code` : une alerte fausse est pire qu'une
+    alerte absente, parce qu'elle consomme la confiance accordée à la suivante.
   - Évaluation PAR PLAN (jamais inter-plans) ; chaque alerte cite plan_version_id + formule.
   - Changer le seuil éteint/allume au run suivant (pas d'état persistant : ON CONFLICT DO NOTHING).
 
@@ -304,6 +312,22 @@ def _evaluate_rows(
             )
             continue
 
+        # --- L'ARGENT N'A PAS PU ÊTRE ÉTABLI : ON N'ACCUSE PERSONNE (61.4) ---
+        # Le mart met déjà `pace` à NULL dans ce cas, donc la garde au-dessus
+        # suffirait aujourd'hui. Elle est ici quand même, et ce n'est pas de la
+        # redondance décorative : c'est la SEULE garde de cette classe qui reste
+        # vraie si un mart futur, ou un autre entrepôt, produit un pace à côté
+        # d'une lacune monétaire. Le coût d'un faux `underdelivery` se paie en
+        # confiance, pas en calcul.
+        withheld = row.get("actual_withheld")
+        gap_code = row.get("money_gap_code")
+        if withheld or gap_code:
+            logger.debug(
+                "mediaplan_alerts: skip_money_gap plan=%s level=%s key=%s gap=%s withheld=%s",
+                plan_id, level, _row_key(row, level), gap_code, withheld,
+            )
+            continue
+
         allocated = row.get("allocated_to_date")
         if allocated is None or float(allocated) == 0.0:
             logger.debug(
@@ -321,8 +345,8 @@ def _evaluate_rows(
             # E1-F-3 : clé de dédup sûre pour des row_key longs (pas de collision).
             metric_key = _build_metric_key(KIND_OVERRUN, plan_id, level, row_key)
             message_fr = (
-                f"Dépassement budgétaire : {row_label} "
-                f"(pace {pace_float:+.1%}, seuil {overrun_thr:+.1%})"
+                f"Budget overrun: {row_label} "
+                f"(pace {pace_float:+.1%}, threshold {overrun_thr:+.1%})"
             )
             metadata = {
                 "kind": KIND_OVERRUN,
@@ -336,6 +360,11 @@ def _evaluate_rows(
                 "formula": PACE_FORMULA,
                 "allocated_to_date": float(allocated),
                 "actual_to_date": row.get("actual_to_date"),
+                # Story 61.4: un montant sans devise n'est pas un montant.
+                # `currency` est la devise UNIQUE de la ligne, ou None quand
+                # le mart n'a pas pu en nommer une -- jamais celle du plan
+                # posée sur une dépense convertie ailleurs.
+                "currency": row.get("currency"),
                 # E1-F-4 : date de référence effective du chiffre (AD-9 provenance).
                 "as_of_day": as_of_day,
             }
@@ -375,8 +404,8 @@ def _evaluate_rows(
             # E1-F-3 : clé de dédup sûre pour des row_key longs (pas de collision).
             metric_key = _build_metric_key(KIND_UNDERDELIVERY, plan_id, level, row_key)
             message_fr = (
-                f"Sous-livraison : {row_label} "
-                f"(pace {pace_float:+.1%}, seuil {underdelivery_thr:+.1%})"
+                f"Under-delivery : {row_label} "
+                f"(pace {pace_float:+.1%}, threshold {underdelivery_thr:+.1%})"
             )
             metadata = {
                 "kind": KIND_UNDERDELIVERY,
@@ -390,6 +419,11 @@ def _evaluate_rows(
                 "formula": PACE_FORMULA,
                 "allocated_to_date": float(allocated),
                 "actual_to_date": row.get("actual_to_date"),
+                # Story 61.4: un montant sans devise n'est pas un montant.
+                # `currency` est la devise UNIQUE de la ligne, ou None quand
+                # le mart n'a pas pu en nommer une -- jamais celle du plan
+                # posée sur une dépense convertie ailleurs.
+                "currency": row.get("currency"),
                 # E1-F-4 : date de référence effective du chiffre (AD-9 provenance).
                 "as_of_day": as_of_day,
             }
@@ -727,4 +761,4 @@ def format_mediaplan_alert_line(firing: dict) -> str:
     obs = float(firing.get("observed_value") or 0)
     thr = float(firing.get("threshold") or 0)
     # Pas d'emoji dans le log stdout (AD-2 : ASCII-only) ; emoji ok dans le message
-    return f"Alerte pacing mediaplan : {msg} (pace {obs:+.1%}, seuil {thr:+.1%})."
+    return f"Media plan pacing alert: {msg} (pace {obs:+.1%}, threshold {thr:+.1%})."

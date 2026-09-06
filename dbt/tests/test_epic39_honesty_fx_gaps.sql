@@ -19,7 +19,7 @@ WITH gbp_row AS (
         f.date,
         f.connector,
         f.source_currency,
-        CAST(f.value_decimal AS DOUBLE) AS source_amount
+        CAST(f.value_decimal AS {{ toorow_float_type() }}) AS source_amount
     FROM {{ ref('epic39_validation_fixture') }} f
     WHERE f.scenario = 'honesty_missing_fx_pair'
 ),
@@ -46,13 +46,16 @@ joined AS (
 -- CARDINALITY GUARD: the uncovered-pair row must exist, else this proves nothing.
 cardinality_guard AS (
     SELECT
-        CAST(NULL AS VARCHAR) AS project_id,
+        CAST(NULL AS {{ toorow_string_type() }}) AS project_id,
         CAST(NULL AS DATE) AS date,
-        CAST(NULL AS VARCHAR) AS source_currency,
-        CAST(NULL AS DOUBLE) AS seed_rate,
-        CAST(NULL AS DOUBLE) AS converted_amount,
+        CAST(NULL AS {{ toorow_string_type() }}) AS source_currency,
+        CAST(NULL AS {{ toorow_float_type() }}) AS seed_rate,
+        CAST(NULL AS {{ toorow_float_type() }}) AS converted_amount,
         'CARDINALITY_FAIL: honesty_missing_fx_pair (GBP) row absent -- seed not run or fixture emptied'
             AS failure_reason
+    -- BigQuery refuses a WHERE with no FROM; DuckDB allows it. One constant row,
+    -- accepted by both, keeps this guard a guard on either engine.
+    FROM (SELECT 1) AS one_row
     WHERE (SELECT COUNT(*) FROM gbp_row) = 0
 ),
 -- FABRICATION VIOLATION: for the uncovered pair, the seed rate MUST be NULL (no pair) and the

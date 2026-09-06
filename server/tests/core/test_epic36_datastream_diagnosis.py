@@ -405,6 +405,16 @@ def test_support_disclosure_commits_audit_first_and_returns_audit_event_id(monke
     import core.db as core_db
 
     monkeypatch.setattr(core_db, "get_connection", fake_conn)
+    # THIS TEST MEASURES THE ORDER OF THE AUDIT, NOT THE ACQUISITION. Since
+    # 2026-08-21 `_support_disclose` acquires through
+    # `core.db.request_connection`, and that seam commits its OWN access context
+    # at acquisition (`install_access_context`) -- twice here, once per
+    # connection. Letting those two commits into `order` would make the sequence
+    # read `commit, prepare, commit, commit, confirm` and this file would be
+    # asserting the shape of the seam instead of the invariant it exists for.
+    # The acquisition IS measured, against a real Postgres, in
+    # `tests/core/test_mcp_tools_request_connection_rls_pg.py`.
+    monkeypatch.setattr(core_db, "install_access_context", lambda conn, identity: None)
 
     def fake_prepare(conn, **kwargs):
         order.append("prepare")

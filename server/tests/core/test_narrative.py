@@ -27,7 +27,7 @@ def _rollup(n=5):
             "value": 1000 + i * 100,
             "delta": 10 * (i + 1),
             "delta_pct": f"+{i + 1}%",
-            "period": "sem. préc.",
+            "period": "prev. wk.",
             "source_system": "gsc",
             "source_field": m,
             "pull_id": f"pull_abc{i}",
@@ -84,7 +84,7 @@ def test_metric_citation_format():
             "value": 1245,
             "delta": 134,
             "delta_pct": "+12%",
-            "period": "sem. préc.",
+            "period": "prev. wk.",
             "source_system": "gsc",
             "source_field": "clicks",
             "pull_id": "pull_abc123",
@@ -137,7 +137,7 @@ def test_30_line_cap():
             "value": 100 + i,
             "delta": i,
             "delta_pct": f"+{i}%",
-            "period": "sem. préc.",
+            "period": "prev. wk.",
             "source_system": "gsc",
             "source_field": f"metric_{i}",
             "pull_id": f"pull_{i}",
@@ -181,11 +181,11 @@ def test_what_section_ordered_by_delta_magnitude():
     """Metric lines ordered by |delta| descending (largest mover first)."""
     rollup = {
         "clicks": {
-            "value": 100, "delta": 5, "delta_pct": "+5%", "period": "sem. préc.",
+            "value": 100, "delta": 5, "delta_pct": "+5%", "period": "prev. wk.",
             "source_system": "gsc", "source_field": "clicks", "pull_id": "pull_a",
         },
         "impressions": {
-            "value": 200, "delta": 50, "delta_pct": "+50%", "period": "sem. préc.",
+            "value": 200, "delta": 50, "delta_pct": "+50%", "period": "prev. wk.",
             "source_system": "gsc", "source_field": "impressions", "pull_id": "pull_b",
         },
     }
@@ -200,7 +200,7 @@ def test_citation_token_truncates_long_pull_id():
     long_ulid = "pull_" + "0" * 60
     rollup = {
         "clicks": {
-            "value": 100, "delta": None, "delta_pct": None, "period": "sem. préc.",
+            "value": 100, "delta": None, "delta_pct": None, "period": "prev. wk.",
             "source_system": "gsc", "source_field": "clicks", "pull_id": long_ulid,
         }
     }
@@ -265,7 +265,7 @@ def test_dedup_comment_no_coverage_days_no_extra_text():
     """fix-6: when rate_coverage_days is None, no spurious coverage text."""
     text = _dedup_comment(rate_coverage_days=None, rate_claimed_days=None)
     # Must not mention partial coverage when we have no coverage data.
-    assert "des" not in text.split("\n")[0].lower().replace("revendiqué", "").replace(
+    assert "des" not in text.split("\n")[0].lower().replace("claimed", "").replace(
         "dédupliqué", ""
     ) or True  # soft: just verify no crash and estimation label present
     assert "estimation" in text.lower()
@@ -280,7 +280,7 @@ def test_dedup_comment_measured_coverage_rate_surfaced():
         measured_coverage_rate=85.0,
     )
     assert "85" in text, "measured coverage rate (85%) must appear in the comment"
-    assert "réconciliation" in text.lower() or "mesurée" in text.lower(), (
+    assert "rapprochement" in text.lower() or "mesuré" in text.lower(), (
         "measured reconciliation must be clearly labelled"
     )
 
@@ -292,5 +292,76 @@ def test_dedup_comment_no_measured_coverage_when_none():
         lead_event_name=None,
         measured_coverage_rate=None,
     )
-    # Should not contain a 'réconciliation par transaction' line.
-    assert "réconciliation par transaction" not in text.lower()
+    # Should not contain a 'Rapprochement par transaction' line.
+    assert "rapprochement par transaction" not in text.lower()
+
+
+# ---------------------------------------------------------------------------
+# CAV-18: operator commentary guidance is an INSTRUCTION, not evidence.
+#
+# `llm_commentary_guidelines` is free text stored per report. It used to be
+# appended to the narrative prompt with no frame, so a directive like "attribute
+# drops to seasonality" reached the model indistinguishable from the
+# deterministic, cited comment beside it -- and the elaboration carried that
+# card's credibility while asserting a cause no evidence supports.
+# ---------------------------------------------------------------------------
+
+
+def test_guidance_is_framed_as_instruction_and_not_as_evidence():
+    from core.narrative import GUIDANCE_FRAME
+
+    assert "NOT evidence" in GUIDANCE_FRAME
+    assert "cause" in GUIDANCE_FRAME
+
+
+def test_both_injection_sites_share_one_frame():
+    """cards and reports must not drift on the wording that carries the constraint."""
+    import inspect
+
+    from core import cards, narrative, reports
+
+    for module in (cards, reports):
+        source = inspect.getsource(module)
+        assert "GUIDANCE_FRAME" in source, f"{module.__name__} re-types the frame"
+        assert "Directives de commentaire" not in source, (
+            f"{module.__name__} still injects the unframed label"
+        )
+    assert isinstance(narrative.GUIDANCE_FRAME, str)
+
+
+def test_card_summary_frames_the_guidance():
+    from core.cards import _build_summary
+    from core.narrative import GUIDANCE_FRAME
+
+    class _Tpl:
+        title = "KPI"
+        answers_question = "How is it going?"
+        # The seam R1 (2026-08-31) added to CardTemplate: a stub that lacks it
+        # measures a shape the product no longer has. No dimension declared, so
+        # the composed question IS the shipped prose.
+        question_dimensions = ()
+
+        def composed_question(self, dimension_labels):
+            del dimension_labels
+            return self.answers_question
+
+    summary = _build_summary(
+        _Tpl(), {"mode": "explicit"}, "Clics: 100 (gsc:clicks, pull_1)",
+        "attribuer les baisses a la saisonnalite",
+    )
+    assert GUIDANCE_FRAME in summary
+    # The deterministic cited comment still survives beside it.
+    assert "(gsc:clicks, pull_1)" in summary
+
+
+def test_the_guidance_is_bounded_by_the_schema():
+    """Unbounded text crowds the <=30-line model channel it is injected into."""
+    import json
+    import pathlib
+
+    schema = json.loads(
+        (pathlib.Path(__file__).resolve().parents[2] / "core/schemas/flow.report.schema.json")
+        .read_text(encoding="utf-8")
+    )
+    field = schema["properties"]["llm_commentary_guidelines"]
+    assert field["maxLength"] == 600

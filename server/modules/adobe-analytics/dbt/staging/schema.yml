@@ -1,25 +1,29 @@
 version: 2
 sources:
   - name: raw_adobe_analytics
-    schema: main
+    schema: "{{ var('raw_schema', 'main') }}"  # 24.4 AC2: org_<wslug>_raw injected by orchestrator, 'main' without var (bit-identique)
     tables:
       - name: raw_adobe_analytics_daily
 models:
   - name: stg_adobe_analytics_daily
     description: Adobe Analytics values at full report-suite/component/segment grain.
     tests:
-      - dbt_utils.unique_combination_of_columns:
-          combination_of_columns:
-            - project_id
-            - report_profile
-            - global_company_id
-            - rsid
-            - date
-            - dimension
-            - item_id
-            - parent_item_id
-            - segment_ids
-            - metric
+      # Grain uniqueness (AI-05) -- pattern tiktok-ads / linkedin-ads.
+      # This was `dbt_utils.unique_combination_of_columns`, which has NEVER run:
+      # the repo declares no `dbt/packages.yml`, so the test failed compilation
+      # with `'dbt_utils' is undefined` every single build (AI-162, 2026-08-04).
+      # COALESCE on every nullable grain column is deliberate: `a || NULL` is NULL
+      # in DuckDB and `unique` ignores NULLs, so a bare `||` key would pass by
+      # being absent -- the same silent pass the package test was meant to catch.
+      - unique:
+          name: stg_adobe_analytics_daily_grain_unique
+          arguments:
+            column_name: >
+              project_id || '|' || COALESCE(report_profile, '') || '|' ||
+              COALESCE(global_company_id, '') || '|' || rsid || '|' || date || '|' ||
+              COALESCE(dimension, '') || '|' || COALESCE(item_id, '') || '|' ||
+              COALESCE(parent_item_id, '') || '|' || COALESCE(segment_ids, '') || '|' ||
+              metric
     columns:
       - name: rsid
         tests: [not_null]

@@ -56,7 +56,7 @@ async def _generate_schema_context(request: Request) -> Response:
     authorized, identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
-            {"code": "unauthorized", "message": "Authentification requise"},
+            {"code": "unauthorized", "message": "Authentication required"},
             status_code=401,
         )
 
@@ -68,7 +68,7 @@ async def _generate_schema_context(request: Request) -> Response:
     project_id = (body.get("project_id") or "").strip()
     if not project_id:
         return JSONResponse(
-            {"code": "invalid_param", "message": "project_id requis"}, status_code=422
+            {"code": "invalid_param", "message": "project_id is required"}, status_code=422
         )
 
     raw_allowlist = body.get("allowlist")
@@ -76,7 +76,7 @@ async def _generate_schema_context(request: Request) -> Response:
     if raw_allowlist is not None:
         if not isinstance(raw_allowlist, list):
             return JSONResponse(
-                {"code": "invalid_param", "message": "allowlist doit être une liste"},
+                {"code": "invalid_param", "message": "allowlist must be a list"},
                 status_code=422,
             )
         allowlist = [str(x) for x in raw_allowlist]
@@ -94,7 +94,7 @@ async def _generate_schema_context(request: Request) -> Response:
                     project_id,
                 )
                 return JSONResponse(
-                    {"code": "forbidden", "message": "Accès administrateur requis"},
+                    {"code": "forbidden", "message": "Administrator access required"},
                     status_code=403,
                 )
 
@@ -111,7 +111,7 @@ async def _generate_schema_context(request: Request) -> Response:
     except Exception as exc:
         logger.warning("schema_context_api: generate error: %s", exc)
         return JSONResponse(
-            {"code": "db_error", "message": "Erreur lors de la génération du contexte de schéma"},
+            {"code": "db_error", "message": "Failed to generate schema context"},
             status_code=500,
         )
 

@@ -95,7 +95,6 @@ def test_catalog_pull_builds_dimensions_and_metrics_from_selection(
 ):
     """selection {sessions,conversions | date,device_category,country} builds a
     runReport carrying exactly those api-name dimensions + metrics."""
-    monkeypatch.setenv("GA4_PROPERTY_ID", "TEST123")
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "cat.duckdb"))
 
@@ -139,7 +138,6 @@ def test_catalog_pull_chunks_wide_selection_and_merges_rows(
     """A selection wider than the 10-metric ceiling issues >1 runReport; the
     per-chunk rows MERGE on the (date, breakdown-value) grain key so the SAME
     grain's metrics from different chunks collapse into one series set."""
-    monkeypatch.setenv("GA4_PROPERTY_ID", "TEST123")
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     db_path = str(tmp_path / "cat_chunk.duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", db_path)
@@ -207,7 +205,6 @@ def test_catalog_pull_refuses_realtime_dimension_before_api(
 ):
     """A realtime-only dimension (minute) is refused with invalid_request BEFORE any
     HTTP call — the declared incompatibility the TIME section map cannot express."""
-    monkeypatch.setenv("GA4_PROPERTY_ID", "TEST123")
     from core.pull_errors import InvalidRequestError
 
     selection = _selection(["sessions"], ["date", "minute"], catalog)
@@ -234,7 +231,6 @@ def test_catalog_pull_none_selection_uses_tier_core_default(
 ):
     """A None selection resolves the catalog tier-core default and still pulls
     (the default is wide -> it chunks; we only assert it runs and lands rows)."""
-    monkeypatch.setenv("GA4_PROPERTY_ID", "TEST123")
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "cat_def.duckdb"))
 
@@ -293,7 +289,6 @@ def test_catalog_daily_dispatch_resolves_pull_catalog_daily():
 def test_ad22_legacy_standard_pull_byte_identical(connector, tmp_path, monkeypatch):
     """AD-22: the legacy standard_daily pull lands byte-identical rows on a shared
     fixture — catalog_driven did not perturb the exact_bundle path or its raw table."""
-    monkeypatch.setenv("GA4_PROPERTY_ID", "TEST123")
     monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
     db_path = str(tmp_path / "cat_ad22.duckdb")
     monkeypatch.setenv("TOOROW_DUCKDB_PATH", db_path)

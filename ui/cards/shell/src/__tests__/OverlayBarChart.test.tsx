@@ -7,9 +7,10 @@
 
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { ThemeProvider, createTheme } from "@mui/material/styles";
+
 import OverlayBarChart from "../OverlayBarChart";
 import type { OverlayBarEntry } from "../OverlayBarChart";
+import { ThemeProvider, createTheme } from "@toorow/shell";
 
 // ---------------------------------------------------------------------------
 // Fixture
@@ -200,13 +201,13 @@ describe("OverlayBarChart — couleurs dérivées de l'accent (AD-11)", () => {
     );
 
     // Les barres actual doivent avoir fill = accent = rgb(200,50,100)
-    // MUI peut recompiler la couleur mais les composantes 200, 50, 100 doivent apparaître.
+    // La couleur peut être recomposée mais les composantes 200, 50, 100 doivent apparaître.
     const actualBars = screen.getAllByTestId("overlay-bar-actual");
     expect(actualBars.length).toBeGreaterThan(0);
 
     // Le fill du premier rect actual doit contenir les valeurs RGB de l'accent.
     const fill = actualBars[0]!.getAttribute("fill") ?? "";
-    // fill = palette.primary.main = "rgb(200, 50, 100)" (ou équivalent résolu par MUI)
+    // fill = palette.primary.main = "rgb(200, 50, 100)" (ou son équivalent résolu)
     expect(fill).toContain("200");
     expect(fill).toContain("50");
     expect(fill).toContain("100");

@@ -7,10 +7,8 @@
  * Zero server round-trip (AD-10).
  */
 
-import ToggleButton from "@mui/material/ToggleButton";
-import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
-
 /** French display labels for known metrics. */
+import { ToggleButton, ToggleButtonGroup } from "@toorow/shell";
 export const METRIC_DISPLAY_LABELS: Record<string, string> = {
   sessions: "Sessions",
   active_users: "Utilisateurs actifs",

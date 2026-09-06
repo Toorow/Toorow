@@ -19,6 +19,8 @@ from decimal import Decimal
 
 import pytest
 
+from tests.conftest import purge_fixture_project
+
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
@@ -381,6 +383,145 @@ def test_build_alignment_unknown_plan(monkeypatch):
 
 
 # ===========================================================================
+# Offline -- AI-260: the client value table reaches this served read
+# ===========================================================================
+
+
+def _two_campaign_setup(monkeypatch):
+    plan = {"id": "p1", "project_id": "proj-1", "lines": [_line("l1", "Placement X", "100.00")]}
+    mappings = {
+        "plan_id": "p1",
+        "lines": [
+            {"line_key": "l1", "mappings": [
+                {"connector": "c1", "campaign_ref": "camp-A",
+                 "split_weight": "0.500000", "status": "active"},
+                {"connector": "c1", "campaign_ref": "camp-B",
+                 "split_weight": "0.500000", "status": "active"}]},
+        ],
+    }
+    _patch(monkeypatch, plan=plan, mappings=mappings)
+
+    def _spend_fn(project_id, start, end):
+        return [
+            {"connector": "c1", "campaign_ref": "camp-A", "spend": 80.0},
+            {"connector": "c1", "campaign_ref": "camp-B", "spend": 20.0},
+        ]
+
+    return _spend_fn
+
+
+def _resolution(state, **overrides):
+    from core import value_table_resolution as vtr
+
+    base = {
+        "state": state,
+        "project_id": "proj-1",
+        "connector": "c1",
+        "source_field": paa.ACTUAL_SOURCE_FIELD,
+    }
+    base.update(overrides)
+    return vtr.ValueTableResolution(**base)
+
+
+def test_value_table_wins_on_its_field_and_does_not_merge_with_052(monkeypatch):
+    """AI_238_PRECEDENCE, applied on a served read. camp-A is named by the
+    client's table and takes ITS canonical -- not 052's, which answers something
+    else for the same pair. camp-B is NOT named by the table: it stays
+    source-named even though 052 would conform it, because on the assigned field
+    the precedence is a precedence and not a merge."""
+    spend_fn = _two_campaign_setup(monkeypatch)
+    seen = {}
+
+    def _resolution_fn(conn, *, project_id, connector, source_field):
+        seen["key"] = (project_id, connector, source_field)
+        return _resolution("applied", table_id="vmt_1", table_name="Client vocabulary",
+                           pairs={"camp-A": "Placement X"})
+
+    out = paa.build_plan_actual_alignment(
+        "p1", dimension="placement", org_id="org-1",
+        campaign_spend_fn=spend_fn,
+        conform_fn=lambda c, s: "From 052",  # 052 would answer for BOTH campaigns
+        value_table_resolution_fn=_resolution_fn,
+    )
+    # The bridge was asked with the fact's own key and the read's exact field.
+    assert seen["key"] == ("proj-1", "c1", "campaign_id")
+    conformed = {c["axis_value"] for c in out["cells"] if c["conformed"]}
+    assert "Placement X" in conformed  # the table's canonical, plan+actual fused
+    assert "From 052" not in conformed  # 052 never answered on the assigned field
+    source_named = [c for c in out["cells"] if not c["conformed"]]
+    assert [c["axis_value"] for c in source_named] == ["camp-B"]
+    assert out["unconformed_count"] == 1
+    assert [entry["state"] for entry in out["value_tables"]] == ["applied"]
+    assert out["value_tables"][0]["table_name"] == "Client vocabulary"
+
+
+def test_value_table_ambiguity_is_a_readable_state_never_a_pick(monkeypatch):
+    """Two Datastreams of one connector disagreeing -> the values stay
+    source-named, the disagreement is NAMED in value_tables and notes, and
+    nothing raises. Never a 500, never a silent pick -- not even 052's."""
+    from core import value_table_resolution as vtr
+
+    spend_fn = _two_campaign_setup(monkeypatch)
+    ambiguous = _resolution(
+        "ambiguous",
+        reason=vtr.REASON_TABLES_DISAGREE,
+        datastreams=(
+            {"datastream_id": "ds_1", "datastream_name": "One",
+             "table_id": "vmt_1", "table_name": "Vocabulary A"},
+            {"datastream_id": "ds_2", "datastream_name": "Two",
+             "table_id": "vmt_2", "table_name": "Vocabulary B"},
+        ),
+    )
+    out = paa.build_plan_actual_alignment(
+        "p1", dimension="placement", org_id="org-1",
+        campaign_spend_fn=spend_fn,
+        conform_fn=lambda c, s: "From 052",  # would pick a store: must not run
+        value_table_resolution_fn=lambda conn, **_: ambiguous,
+    )
+    assert all(not c["conformed"] for c in out["cells"] if c["actual"] > 0)
+    assert out["value_tables"][0]["state"] == "ambiguous"
+    named = {(d["datastream_id"], d["table_id"])
+             for d in out["value_tables"][0]["datastreams"]}
+    assert named == {("ds_1", "vmt_1"), ("ds_2", "vmt_2")}
+    ambiguity_notes = [n for n in out["notes"] if "ambiguity" in n]
+    assert len(ambiguity_notes) == 1
+    assert "never a pick" in ambiguity_notes[0]
+
+
+def test_no_value_table_leaves_the_governed_store_in_charge(monkeypatch):
+    """state='none' -> exactly the pre-AI-260 behaviour: 052 conforms, and the
+    contract's value_tables list is empty (no table touched this read)."""
+    spend_fn = _two_campaign_setup(monkeypatch)
+    out = paa.build_plan_actual_alignment(
+        "p1", dimension="placement", org_id="org-1",
+        campaign_spend_fn=spend_fn,
+        conform_fn=lambda c, s: "Placement X",
+        value_table_resolution_fn=lambda conn, **_: _resolution(
+            "none", reason="no_assignment_on_field"),
+    )
+    assert all(c["conformed"] for c in out["cells"])
+    assert out["value_tables"] == []
+    assert not any("value table" in n for n in out["notes"])
+
+
+def test_an_unavailable_resolution_falls_back_to_052_and_says_so(monkeypatch):
+    """An outage is not 'no table': 052 still answers (suppressing it over a
+    question that could not be asked would degrade the read on unknowable
+    information), and the outage is NAMED in the contract."""
+    spend_fn = _two_campaign_setup(monkeypatch)
+    out = paa.build_plan_actual_alignment(
+        "p1", dimension="placement", org_id="org-1",
+        campaign_spend_fn=spend_fn,
+        conform_fn=lambda c, s: "Placement X",
+        value_table_resolution_fn=lambda conn, **_: _resolution(
+            "unavailable", reason="store unreadable: RuntimeError"),
+    )
+    assert all(c["conformed"] for c in out["cells"])
+    assert out["value_tables"][0]["state"] == "unavailable"
+    assert any("unavailable" in n for n in out["notes"])
+
+
+# ===========================================================================
 # Live-Postgres (opt-in)
 # ===========================================================================
 
@@ -424,9 +565,8 @@ def _seed_org_project(conn) -> tuple[str, str]:
         )
         cur.execute(
             """
-            INSERT INTO app.projects
-                (id, org_id, name, slug, status, currency, timezone, created_by)
-            VALUES (%s, %s, %s, %s, 'active', 'EUR', 'Europe/Paris', 'system')
+            INSERT INTO app.projects (id, org_id, name, slug, status, created_by)
+            VALUES (%s, %s, %s, %s, 'active', 'system')
             """,
             (project_id, org_id, "Bridge Test", project_id),
         )
@@ -437,10 +577,32 @@ def _seed_org_project(conn) -> tuple[str, str]:
 def _drop(conn, org_id: str, project_id: str) -> None:
     with conn.cursor() as cur:
         cur.execute("ALTER TABLE app.media_plan_versions DISABLE TRIGGER USER")
-        try:
+        # Same fixture-only bypass as the versions line above: guard triggers
+        # (rightly) refuse deleting a published version's allocations and an
+        # append-only audit, and this teardown erases the whole fixture project.
+        # The audit's RGPD hatch (098) cannot be used instead: the live function
+        # body is 049's unconditional one where 049 was applied after 098.
+        cur.execute("ALTER TABLE app.plan_allocation_daily DISABLE TRIGGER USER")
+        cur.execute("ALTER TABLE app.metric_semantics_audit DISABLE TRIGGER USER")
+        cur.execute("ALTER TABLE app.audit_log DISABLE TRIGGER USER")
+        try:  # noqa: SIM105 -- the except ROLLS BACK, see below
             cur.execute(
                 "DELETE FROM app.plan_line_mappings WHERE plan_id IN "
                 "(SELECT id FROM app.media_plans WHERE project_id = %s)",
+                (project_id,),
+            )
+            # mediaplan_store materialises a daily allocation per line
+            # (mediaplan_store.py:547, migration 040 FK ON DELETE RESTRICT), so
+            # the allocations go before the lines they reference. Measured
+            # red on 2026-08-17 on pre-AI-260 code: this teardown, not the read.
+            cur.execute(
+                """
+                DELETE FROM app.plan_allocation_daily WHERE line_id IN (
+                    SELECT l.id FROM app.media_plan_lines l
+                    JOIN app.media_plan_versions v ON v.id = l.version_id
+                    JOIN app.media_plans p ON p.id = v.plan_id WHERE p.project_id = %s
+                )
+                """,
                 (project_id,),
             )
             cur.execute(
@@ -465,11 +627,60 @@ def _drop(conn, org_id: str, project_id: str) -> None:
             cur.execute(
                 "DELETE FROM app.metric_semantics_audit WHERE org_id = %s", (org_id,)
             )
+            # app.operations holds its audit event in ON DELETE RESTRICT
+            # (060:121) and operations/operation_outbox reference EACH OTHER:
+            # any suite that ran a governed mutation before this one leaves
+            # rows that refuse the global audit delete below (measured
+            # 2026-08-18, cross-suite contamination on the shared disposable
+            # cluster). Null the outbox pointer, then sweep the cycle.
+            cur.execute(
+                """
+                UPDATE app.operations SET outbox_event_id = NULL
+                WHERE audit_event_id IN
+                    (SELECT id FROM app.audit_log WHERE identity IN ('tester', 'system'))
+                """
+            )
+            cur.execute(
+                """
+                DELETE FROM app.operation_outbox ob USING app.operations o
+                WHERE ob.operation_id = o.id AND o.audit_event_id IN
+                    (SELECT id FROM app.audit_log WHERE identity IN ('tester', 'system'))
+                """
+            )
+            cur.execute(
+                """
+                DELETE FROM app.operations WHERE audit_event_id IN
+                    (SELECT id FROM app.audit_log WHERE identity IN ('tester', 'system'))
+                """
+            )
             cur.execute("DELETE FROM app.audit_log WHERE identity IN ('tester', 'system')")
-            cur.execute("DELETE FROM app.projects WHERE id = %s", (project_id,))
-            cur.execute("DELETE FROM app.organizations WHERE id = %s", (org_id,))
-        finally:
-            cur.execute("ALTER TABLE app.media_plan_versions ENABLE TRIGGER USER")
+            # AI-291: le graphe prend le relais si une table gouvernee
+            # ajoutee depuis retient le projet en ON DELETE RESTRICT.
+            purge_fixture_project(cur.connection, project_id)
+            # The org side has its own governed satellites (mdm_business_domains
+            # holds it in ON DELETE RESTRICT): walk the repository's own eraser
+            # rather than a hand-written DELETE list, exactly like the 60.1
+            # fixture teardown does.
+            from tests.conftest import purge_fixture_org
+
+            purge_fixture_org(cur.connection, org_id)
+        except Exception:
+            # A failed statement leaves this transaction ABORTED: the ENABLE
+            # statements a `finally` would issue are refused, the DISABLEs roll
+            # back with the transaction anyway, but the ACCESS EXCLUSIVE locks
+            # they took are held until rollback -- and an open aborted
+            # connection blocks every other teardown on the cluster (measured
+            # 2026-08-17: the conftest scrub waited on exactly that for
+            # minutes). Roll back, THEN let the failure speak.
+            conn.rollback()
+            raise
+        # The purge leaves deferred trigger events queued, and ALTER TABLE
+        # refuses to run while any are pending: fire them now.
+        cur.execute("SET CONSTRAINTS ALL IMMEDIATE")
+        cur.execute("ALTER TABLE app.audit_log ENABLE TRIGGER USER")
+        cur.execute("ALTER TABLE app.metric_semantics_audit ENABLE TRIGGER USER")
+        cur.execute("ALTER TABLE app.plan_allocation_daily ENABLE TRIGGER USER")
+        cur.execute("ALTER TABLE app.media_plan_versions ENABLE TRIGGER USER")
     conn.commit()
 
 
@@ -565,3 +776,49 @@ def test_live_alignment_uses_confirmed_project_override(monkeypatch):
     finally:
         _drop(conn, org_id, project_id)
         conn.close()
+
+
+def test_the_matrix_is_a_kept_orphan_and_its_successor_is_named() -> None:
+    """AD-43, applied to the Python plan-versus-actual matrix (2026-08-17 audit).
+
+    THE MIRROR OF THE 61.3 GUARD. `test_plan_mapping_suggest`'s twin asserts that
+    an engine HAS a production importer, so the day it loses one the suite says
+    so. This one asserts the opposite and for the same purpose: this engine has
+    NONE, the card 27.6 its output contract was written for was never built, and
+    the reading production actually serves is the dbt cascade
+    `plan_vs_actual_daily` + `plan_pacing_by_*` that `core/cards.py` reads.
+
+    So the module is kept rather than deleted -- two ratified pages still cite
+    it, and `governance.md:826-828` even calls it the "only LIVE render-time
+    caller of conform_value", which this measurement contradicts. Amending a
+    ratified page is an arbitration, not a repair. What this test buys meanwhile
+    is that the absence is NOISY: wire a caller and this goes red, so the engine
+    can be remounted deliberately but never by accident.
+
+    AN IMPORT, NOT A MENTION. Several files NAME the module in a comment; what is
+    measured is whether anything IMPORTS it.
+    """
+    import pathlib
+    import re
+
+    imports = re.compile(
+        r"^\s*(?:from\s+[\w.]*\bplan_actual_alignment\b|"
+        r"import\s+[\w.]*\bplan_actual_alignment\b|"
+        r"from\s+core\s+import\s+[^\n]*\bplan_actual_alignment\b)",
+        re.MULTILINE,
+    )
+    server_root = pathlib.Path(__file__).resolve().parents[2]
+    importers = sorted(
+        path.relative_to(server_root).as_posix()
+        for path in server_root.rglob("*.py")
+        if path.name != "plan_actual_alignment.py"
+        and imports.search(path.read_text(encoding="utf-8", errors="replace"))
+    )
+
+    assert [path for path in importers if not path.startswith("tests/")] == [], (
+        "plan_actual_alignment has gained a production importer. That is allowed, "
+        "but not silently: the module header calls it a kept orphan whose "
+        "successor is the dbt pacing cascade, and divergence D-4 (window-total "
+        "ventilation here, daily-bounded in the mart) is still unreconciled. "
+        f"Reconcile D-4 and rewrite the header before turning this over: {importers}"
+    )

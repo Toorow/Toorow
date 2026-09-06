@@ -11,10 +11,10 @@
  */
 
 import React, { useMemo } from "react";
-import { useTheme, alpha } from "@mui/material/styles";
-import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
+
 import { getVizPalette } from "./vizTheme";
+import { NBSP, formatCompact } from "./viz/theme/formatters";
+import { Box, Typography, alpha, useTheme } from "@toorow/shell";
 
 // ---------------------------------------------------------------------------
 // Types publics
@@ -79,18 +79,15 @@ const PROJ_ALPHA = 0.22;
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Formate une valeur en fr-FR compact avec unité facultative. */
+/**
+ * The abbreviated value, on the Render's pinned formatter (story 76-8): the
+ * k / M / B steps are `formatCompact`'s own, and the unit is never welded to the
+ * digits (« 1.2k€ » does not read).
+ */
 function fmtValue(v: number, unit?: string): string {
-  const abs = Math.abs(v);
-  let s: string;
-  if (abs >= 1_000_000) {
-    s = (v / 1_000_000).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " M";
-  } else if (abs >= 1_000) {
-    s = (v / 1_000).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " k";
-  } else {
-    s = v.toLocaleString("fr-FR");
-  }
-  return unit ? `${s}${unit}` : s;
+  const body = formatCompact(v);
+  const trimmed = unit?.trim();
+  return trimmed ? `${body}${NBSP}${trimmed}` : body;
 }
 
 /**

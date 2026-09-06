@@ -4,11 +4,11 @@ This gate is the AD-19 / NFR13 non-regression wall. It is LOCAL and runs BEFORE 
 (never a CI job -- project convention: local-test-before-deploy). The gate:
 
   1. Runs the full corpus through ``run_evals.run()`` (inheriting 14.2 determinism);
-  2. Compares every per-question accuracy + citations verdict against the committed
+  2. Compares every per-question accuracy + citations + adherence verdict against the committed
      ``baseline.json`` (loaded from ``server/tests/evals/baseline.json`` by default);
   3. Prints an ASCII-only report (AI-03) naming each regressed question;
-  4. Exits NON-ZERO on any regression; exits zero on zero regressions or on
-     ``--update-baseline`` (explicit approval gesture).
+  4. Exits NON-ZERO on regressions or unavailable required evidence; exits zero
+     only on a verified pass or ``--update-baseline`` (explicit approval gesture).
 
 BASELINE WRITE DISCIPLINE (critical -- leçon 14.2):
   The baseline is NEVER written automatically by the gate.  Only an explicit
@@ -17,8 +17,9 @@ BASELINE WRITE DISCIPLINE (critical -- leçon 14.2):
   dedicated PR/commit with a review note explaining the score change.
 
 REGRESSION vs PROGRESSION vs SKIP (per story contract):
-  * REGRESSION  -- a question whose accuracy or citations was PASS in the baseline and is
-                   now FAIL.  Also fired when the summary accuracy_score or citation_score
+  * REGRESSION  -- a question whose accuracy, citations or adherence was PASS in the baseline and is
+                   now FAIL.  Also fired when the summary accuracy_score, citation_score or
+                   adherence_score
                    drops strictly below the baseline value.  Causes exit != 0.
   * PROGRESSION -- a question that was FAIL (or N/A / skipped / unavailable) in the
                    baseline and is now PASS.  REPORTED but non-blocking; the baseline
@@ -99,22 +100,23 @@ FAIL = R.FAIL        # "FAIL"
 NA = R.NA            # "N/A"
 SKIPPED = R.SKIPPED  # "skipped"
 UNAVAILABLE = R.UNAVAILABLE  # "unavailable"
+UNVERIFIABLE = "UNVERIFIABLE"
 
-# Dimensions scored by the gate (accuracy + citations only; adherence is
-# unavailable offline and is not baselined for now).
-_SCORED_DIMS = ("accuracy", "citations")
+# CAP-16 dimensions. Unavailable evidence stays explicit and is never baselined as PASS.
+_SCORED_DIMS = ("accuracy", "citations", "adherence")
+BASELINE_SCHEMA_VERSION = 2
 
 # ---------------------------------------------------------------------------
 # Baseline I/O -- pure functions (importable, no side effects unless writing).
 # ---------------------------------------------------------------------------
 
+
 def build_baseline(artifact: dict) -> dict:
     """Extract a stable, sorted, deterministic baseline dict from a run artifact.
 
     The baseline captures:
-      * per_question: {id -> {accuracy, citations}} -- the accepted verdicts;
-      * summary: {accuracy_score, citation_score, accuracy_tallies,
-                   citations_tallies} -- the accepted aggregated scores.
+      * per_question: {id -> {accuracy, citations, adherence}} -- accepted verdicts;
+      * summary: scores and tallies for accuracy, citations and adherence.
 
     Only the dimensions that the gate enforces are included. The result is
     deterministic (sorted by id) so ``baseline.json`` diffs are readable in PRs.
@@ -131,7 +133,7 @@ def build_baseline(artifact: dict) -> dict:
     per_question_sorted = dict(sorted(per_question.items()))
 
     return {
-        "schema_version": 1,
+        "schema_version": BASELINE_SCHEMA_VERSION,
         "corpus_meta": {
             "schema_version": artifact.get("corpus", {}).get("schema_version"),
             "as_of_anchor": artifact.get("corpus", {}).get("as_of_anchor"),
@@ -142,9 +144,41 @@ def build_baseline(artifact: dict) -> dict:
             "citation_score": s.get("citation_score"),
             "accuracy_tallies": s.get("accuracy"),
             "citations_tallies": s.get("citations"),
+            "adherence_score": s.get("adherence_score"),
+            "adherence_tallies": s.get("adherence"),
         },
         "per_question": per_question_sorted,
     }
+
+
+def _validate_baseline(data: Any, *, label: str = "baseline") -> dict:
+    if not isinstance(data, dict) or "per_question" not in data:
+        raise ValueError(f"Baseline at {label} is malformed (missing 'per_question').")
+    if data.get("schema_version") != BASELINE_SCHEMA_VERSION:
+        raise ValueError(
+            f"Baseline at {label} uses schema_version={data.get('schema_version')!r}; "
+            f"expected {BASELINE_SCHEMA_VERSION}. Regenerate it explicitly with "
+            "--update-baseline so adherence is part of the contract."
+        )
+    per_question = data.get("per_question")
+    summary = data.get("summary")
+    if not isinstance(per_question, dict) or not isinstance(summary, dict):
+        raise ValueError(f"Baseline at {label} is malformed (invalid summary or questions).")
+    missing_summary = {"adherence_score", "adherence_tallies"} - summary.keys()
+    if missing_summary:
+        raise ValueError(f"Baseline at {label} is malformed (missing adherence summary fields).")
+    for question_id, verdicts in per_question.items():
+        if not isinstance(verdicts, dict):
+            raise ValueError(
+                f"Baseline at {label} is malformed ({question_id!r} is not an object)."
+            )
+        missing_dims = set(_SCORED_DIMS) - verdicts.keys()
+        if missing_dims:
+            raise ValueError(
+                f"Baseline at {label} is malformed ({question_id!r} misses "
+                f"{', '.join(sorted(missing_dims))})."
+            )
+    return data
 
 
 def load_baseline(path: Path) -> dict:
@@ -157,10 +191,7 @@ def load_baseline(path: Path) -> dict:
             "python scripts/eval_gate.py --update-baseline"
         )
     raw = path.read_text(encoding="utf-8")
-    data = json.loads(raw)
-    if not isinstance(data, dict) or "per_question" not in data:
-        raise ValueError(f"Baseline at {path} is malformed (missing 'per_question').")
-    return data
+    return _validate_baseline(json.loads(raw), label=str(path))
 
 
 def write_baseline(path: Path, artifact: dict) -> dict:
@@ -182,6 +213,7 @@ def write_baseline(path: Path, artifact: dict) -> dict:
 # Regression comparison -- pure function (no I/O, no DB, no seam).
 # ---------------------------------------------------------------------------
 
+
 def compare_to_baseline(artifact: dict, baseline: dict) -> dict:
     """Compare a run artifact against a baseline. Returns a result dict:
 
@@ -198,25 +230,30 @@ def compare_to_baseline(artifact: dict, baseline: dict) -> dict:
            "message": str}
       ],
       "new_questions": [str],   # ids in current run not in baseline
-      "verdict": "PASS" | "FAIL",
+      "verdict": "PASS" | "FAIL" | "UNVERIFIABLE",
       "score_regression": bool,
     }
 
     Classification rules (per story contract):
       * REGRESSION  (hard, verdict=FAIL):
-          - A question was PASS in the baseline and is now FAIL (accuracy or citations).
-          - summary accuracy_score or citation_score drops strictly below the baseline.
+          - A question was PASS in the baseline and is now FAIL (accuracy, citations or adherence).
+          - summary accuracy_score, citation_score or adherence_score drops strictly
+            below the baseline.
       * SKIP WAS PASS (non-blocking WARNING):
           - A question whose baseline verdict was PASS but current accuracy is 'skipped'.
           - We CANNOT call this a regression because the seam may be offline.
           - Printed as a warning so the developer knows to re-run with seam live.
       * PROGRESSION (non-blocking INFO):
+      * UNVERIFIABLE (non-green):
+          - Evidence that was PASS in the baseline is now unavailable.
+          - The CLI exits 2 so an evidence outage cannot be mistaken for success.
           - A question was FAIL (or any non-PASS) in the baseline and is now PASS.
       * MISSING (non-blocking WARNING):
           - A question id in baseline not present in current run (corpus evolved).
       * NEW (non-blocking INFO):
           - A question id in current run not in baseline.
     """
+    _validate_baseline(baseline)
     bl_per_q: dict[str, dict] = baseline.get("per_question", {})
     bl_summary: dict[str, Any] = baseline.get("summary", {})
     current_results: list[dict] = artifact.get("results", [])
@@ -227,14 +264,17 @@ def compare_to_baseline(artifact: dict, baseline: dict) -> dict:
     progressions: list[dict] = []
     warnings: list[dict] = []
     new_questions: list[str] = []
+    evidence_unverifiable = False
 
     # -- Per-question comparison --
     for q_id, bl_verdicts in sorted(bl_per_q.items()):
         if q_id not in current_by_id:
-            warnings.append({
+            warnings.append(
+                {
                 "kind": "missing_from_run",
                 "message": f"{q_id}: in baseline but absent from current run (corpus change?)",
-            })
+                }
+            )
             continue
 
         rec = current_by_id[q_id]
@@ -244,36 +284,46 @@ def compare_to_baseline(artifact: dict, baseline: dict) -> dict:
             bl_v = bl_verdicts.get(dim)
             now_v = rec.get(dim)
 
-            # SKIP WAS PASS: seam offline -> non-blocking warning, never a hard regression.
-            if now_v == SKIPPED and bl_v == PASS:
-                warnings.append({
-                    "kind": "skip_was_pass",
+            # Missing runtime evidence is not a regression, but it is never a clean pass.
+            if now_v in {SKIPPED, UNAVAILABLE} and bl_v == PASS:
+                if now_v == UNAVAILABLE:
+                    evidence_unverifiable = True
+                evidence_label = "skipped" if now_v == SKIPPED else "unavailable"
+                warning_kind = "skip_was_pass" if now_v == SKIPPED else "evidence_unavailable"
+                warnings.append(
+                    {
+                    "kind": warning_kind,
                     "message": (
-                        f"{q_id} [{dim}]: baseline=PASS but now=skipped "
-                        "(replay seam offline -- re-run with seam live before shipping)"
+                        f"{q_id} [{dim}]: baseline=PASS but now={evidence_label} "
+                        "(re-run with the evaluation seam live before shipping)"
                     ),
-                })
+                    }
+                )
                 continue
 
             # REGRESSION: PASS -> FAIL.
             if bl_v == PASS and now_v == FAIL:
-                regressions.append({
+                regressions.append(
+                    {
                     "id": q_id,
                     "dim": dim,
                     "baseline_verdict": bl_v,
                     "now_verdict": now_v,
                     "trace_id": trace_id,
-                })
+                    }
+                )
                 continue
 
             # PROGRESSION: non-PASS in baseline, now PASS.
             if bl_v != PASS and now_v == PASS:
-                progressions.append({
+                progressions.append(
+                    {
                     "id": q_id,
                     "dim": dim,
                     "baseline_verdict": bl_v,
                     "now_verdict": now_v,
-                })
+                    }
+                )
 
     # -- New questions (in current run, not in baseline) --
     for q_id in current_by_id:
@@ -291,7 +341,11 @@ def compare_to_baseline(artifact: dict, baseline: dict) -> dict:
     bl_ids = set(bl_per_q.keys())
     known_records = [r for r in current_results if r["id"] in bl_ids]
 
-    for dim, score_key in (("accuracy", "accuracy_score"), ("citations", "citation_score")):
+    for dim, score_key in (
+        ("accuracy", "accuracy_score"),
+        ("citations", "citation_score"),
+        ("adherence", "adherence_score"),
+    ):
         bl_score = bl_summary.get(score_key)
         if bl_score is None:
             continue  # no baseline score to compare against
@@ -305,34 +359,50 @@ def compare_to_baseline(artifact: dict, baseline: dict) -> dict:
         # accuracy -- a broad seam outage that skips the would-fail questions must not read as
         # a clean 100%. Surface it (non-blocking, consistent with the skip-non-blocking rule);
         # the developer must re-run with the seam live before trusting the score.
-        n_skipped_was_pass = sum(
+        n_unverifiable_was_pass = sum(
             1
             for r in known_records
-            if r.get(dim) == SKIPPED and bl_per_q.get(r["id"], {}).get(dim) == PASS
+            if r.get(dim) in {SKIPPED, UNAVAILABLE} and bl_per_q.get(r["id"], {}).get(dim) == PASS
         )
-        if n_skipped_was_pass:
-            warnings.append({
+        has_unavailable_was_pass = any(
+            r.get(dim) == UNAVAILABLE and bl_per_q.get(r["id"], {}).get(dim) == PASS
+            for r in known_records
+        )
+        if n_unverifiable_was_pass:
+            warnings.append(
+                {
                 "kind": "score_unverifiable",
                 "message": (
                     f"{score_key} computed over a REDUCED denominator ({scored} scored): "
-                    f"{n_skipped_was_pass} baseline-PASS question(s) skipped (seam offline?) "
+                    f"{n_unverifiable_was_pass} baseline-PASS question(s) skipped or unavailable "
                     "-- the score is NOT a clean pass; re-run with the seam live"
                 ),
-            })
+                }
+            )
+        if has_unavailable_was_pass:
+            # A reduced denominator cannot prove a score drop or a clean pass.
+            continue
         if now_score is None:
             continue  # cannot score (all skipped/N/A) -- skip the check
         # Use a tiny epsilon to avoid float noise causing a false alarm.
         if now_score < bl_score - 1e-9:
             score_regression = True
-            warnings.append({
+            warnings.append(
+                {
                 "kind": "score_drop",
                 "message": (
                     f"{score_key} dropped: baseline={bl_score:.4f} now={now_score:.4f} "
                     f"(delta {now_score - bl_score:+.4f}) -- this is a score regression"
                 ),
-            })
+                }
+            )
 
-    verdict = FAIL if (regressions or score_regression) else PASS
+    if regressions or score_regression:
+        verdict = FAIL
+    elif evidence_unverifiable:
+        verdict = UNVERIFIABLE
+    else:
+        verdict = PASS
     return {
         "regressions": regressions,
         "progressions": progressions,
@@ -414,13 +484,11 @@ def render_gate_report(artifact: dict, comparison: dict) -> str:
     if prog:
         lines.append("-" * 68)
         lines.append(
-            f"PROGRESSIONS ({len(prog)}) -- non-blocking "
-            "(run --update-baseline to lock in):"
+            f"PROGRESSIONS ({len(prog)}) -- non-blocking (run --update-baseline to lock in):"
         )
         for p in prog:
             lines.append(
-                f"  + {p['id']}  [{p['dim']}]"
-                f"  was={p['baseline_verdict']}  now={p['now_verdict']}"
+                f"  + {p['id']}  [{p['dim']}]  was={p['baseline_verdict']}  now={p['now_verdict']}"
             )
 
     # New questions.
@@ -434,6 +502,8 @@ def render_gate_report(artifact: dict, comparison: dict) -> str:
     lines.append("=" * 68)
     if comparison_verdict == PASS:
         lines.append("GATE: PASS -- no regressions detected.")
+    elif comparison_verdict == UNVERIFIABLE:
+        lines.append("GATE: UNVERIFIABLE -- required evidence is unavailable.")
     else:
         lines.append("GATE: FAIL -- regressions detected (see above). Fix before deploying.")
     lines.append("=" * 68)
@@ -446,6 +516,7 @@ def render_gate_report(artifact: dict, comparison: dict) -> str:
 # ---------------------------------------------------------------------------
 # CLI.
 # ---------------------------------------------------------------------------
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
@@ -520,7 +591,11 @@ def main(argv: list[str] | None = None) -> int:
     comparison = compare_to_baseline(artifact, baseline)
     print(render_gate_report(artifact, comparison))
 
-    return 0 if comparison["verdict"] == PASS else 1
+    if comparison["verdict"] == PASS:
+        return 0
+    if comparison["verdict"] == FAIL:
+        return 1
+    return 2
 
 
 if __name__ == "__main__":

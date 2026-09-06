@@ -1,5 +1,7 @@
+import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 // Admin console Vite config (Story 2.4, T2.2).
 //
@@ -11,7 +13,7 @@ import react from "@vitejs/plugin-react";
 // Run `pnpm --filter @toorow/admin dev` for hot-reload (port 5174).
 // Build: `pnpm --filter @toorow/admin build` then serve via mcp-server /admin.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   // The console is served at the ROOT of app.toorow.com (Firebase Hosting, with
   // `**` rewritten to /index.html). It must therefore be an ABSOLUTE base.
   //
@@ -25,10 +27,24 @@ export default defineConfig({
   // `/overview` and `/create-org` rendered, `/p/default/overview` did not. Every
   // real application route lives at that depth, so every deep link and every
   // page refresh inside the app was broken.
-  base: "/",
+  // `@/*` -> `src/*`, the alias `tsconfig.json` and `components.json` declare
+  // and every shadcn file imports through. The production build resolved it on
+  // its own (rolldown reads tsconfig paths); the DEV SERVER DID NOT, so every
+  // component in `src/components/ui/` failed to load with "Failed to resolve
+  // import @/lib/cn" and the library had never once rendered in a browser.
+  // Declared here so both do the same thing.
+  resolve: {
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
+  },
+  css: {
+    transformer: "lightningcss",
+  },
   build: {
     outDir: "dist",
     target: "esnext",
+    cssMinify: "lightningcss",
     sourcemap: false,
   },
   server: {

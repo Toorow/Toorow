@@ -30,7 +30,9 @@ def _db_context(pref_row=None):
     """
     conn = MagicMock()
     cursor = MagicMock()
-    cursor.fetchone.return_value = pref_row
+    # The strict Datastream guard first proves the route's id/project pair;
+    # the projection handler then reads the governed preference row.
+    cursor.fetchone.side_effect = [(1,), pref_row]
     cursor.__enter__ = MagicMock(return_value=cursor)
     cursor.__exit__ = MagicMock(return_value=False)
     conn.cursor = MagicMock(return_value=cursor)

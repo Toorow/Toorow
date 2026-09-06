@@ -56,6 +56,12 @@ from core.external_bq_registration import (  # noqa: E402
     object_ref,
 )
 
+from tests.support.statement_router import (  # noqa: E402
+    StatementInventory,
+    UnknownStatement,
+    describe,
+)
+
 _EXTERNAL_OBJECT = {
     "project": "acme-analytics",
     "dataset": "warehouse",
@@ -331,6 +337,46 @@ def test_exclude_external_bq_dispatch_filters_only_external_bq():
 # ---------------------------------------------------------------------------
 
 
+# EVERY STATEMENT `observe_and_register` ISSUES, named. Three of them used to
+# fall into an `else` that answered `None` with the PREVIOUS statement's
+# description: the `app.datastreams` FOR UPDATE pointer lock, the idempotency
+# lookup and the active-execution probe -- the two reads whose `None` IS the
+# decision `create_execution` takes ("no prior execution for this key", "nothing
+# active blocks the mint"). The fake was giving the right answer for no reason,
+# and a rewrite of either query would have kept giving it (AI-317).
+#
+# `release_savepoint` is declared BEFORE `savepoint`: declaration order is first
+# match wins, and `RELEASE SAVEPOINT sp_create_execution` contains the other's
+# fragment whole.
+_REGISTRATION = StatementInventory(
+    "_FakeCursor (observe_and_register)",
+    prior_observation=("from app.external_bq_observations", "verdict = 'ok'"),
+    observation_insert="insert into app.external_bq_observations",
+    audit_insert="insert into app.audit_log",
+    datastream_lock=("from app.datastreams", "for update"),
+    execution_by_idempotency_key=(
+        "from app.datastream_executions",
+        "where datastream_id = %s and idempotency_key_hash = %s",
+    ),
+    active_execution=("from app.datastream_executions", "state = any(%s)"),
+    execution_insert="insert into app.datastream_executions",
+    execution_by_id=(
+        "from app.datastream_executions",
+        "where id = %s and project_id = %s",
+    ),
+    release_savepoint="release savepoint sp_create_execution",
+    savepoint="savepoint sp_create_execution",
+)
+
+# The statements that genuinely return NO RESULT SET. `description = None` is
+# what psycopg reserves for exactly those; everywhere else it is DERIVED from
+# the statement rather than restated here, so a moved projection cannot keep
+# agreeing with a column list nothing reads.
+_NO_RESULT_SET = frozenset(
+    {"audit_insert", "execution_insert", "savepoint", "release_savepoint"}
+)
+
+
 class _FakeCursor:
     def __init__(self, conn):
         self._conn = conn
@@ -347,43 +393,44 @@ class _FakeCursor:
     def execute(self, sql, params=None):
         s = " ".join(sql.split())
         self._conn.executed.append(s)
-        if "FROM app.external_bq_observations" in s and "verdict = 'ok'" in s:
-            # Last committed observation lookup (unchanged-noop check).
-            self.description = [("content_hash",), ("schema_hash",), ("watermark",), ("row_count",)]
-            self._result = self._conn.prior_observation
-        elif s.startswith("INSERT INTO app.external_bq_observations"):
-            self.description = [
-                ("id",), ("datastream_id",), ("project_id",), ("verdict",),
-                ("execution_id",), ("observed_at",),
-            ]
-            # Capture the verdict written (params order matches the INSERT).
-            self._conn.recorded_verdicts.append(params[13])
-            self._result = ("ebqo_x", params[1], params[2], params[13], params[16], None)
-        elif s.startswith("SAVEPOINT") or s.startswith("RELEASE") or s.startswith("ROLLBACK"):
-            self._result = None
-        elif s.startswith("INSERT INTO app.datastream_executions"):
-            self._conn.execution_inserts += 1
-            self.rowcount = 1
-            self._result = None
-        elif "FROM app.datastream_executions" in s and "WHERE id = %s AND project_id" in s:
-            # _fetch_execution after the insert -> full row.
-            self.description = [
-                ("id",), ("datastream_id",), ("project_id",), ("plan_version_id",),
-                ("mapping_version_id",), ("projection_plan_ref",), ("state",),
-                ("state_changed_at",), ("content_hash",), ("row_count",),
-                ("error_code",), ("error_detail",), ("idempotency_key_hash",),
-                ("created_by",), ("created_at",), ("updated_at",),
-            ]
-            self._result = (
-                "dse_minted", self._conn.datastream_id, self._conn.project_id,
-                "dsp_x", "dmap_x", {}, "created", None, None, None, None, None,
-                None, "actor", None, None,
-            )
-        elif "INSERT INTO app.audit_log" in s:
-            self.rowcount = 1
-            self._result = None
-        else:
-            self._result = None
+        statement = _REGISTRATION.match(s)
+        self.description = None if statement in _NO_RESULT_SET else describe(s)
+        match statement:
+            case "prior_observation":
+                # Last committed observation lookup (unchanged-noop check).
+                self._result = self._conn.prior_observation
+            case "observation_insert":
+                # Capture the verdict written (params order matches the INSERT).
+                self._conn.recorded_verdicts.append(params[13])
+                self._result = ("ebqo_x", params[1], params[2], params[13], params[16], None)
+            case "audit_insert":
+                self.rowcount = 1
+                self._result = None
+            case "datastream_lock":
+                # `SELECT 1 ... FOR UPDATE`: the row exists, and the product
+                # fetches it only to impose the ordering (12.12 M2).
+                self._result = (1,)
+            case "execution_by_idempotency_key":
+                # No execution was ever created under this idempotency key.
+                self._result = None
+            case "active_execution":
+                # No non-terminal execution blocks the mint.
+                self._result = None
+            case "execution_insert":
+                self._conn.execution_inserts += 1
+                self.rowcount = 1
+                self._result = None
+            case "execution_by_id":
+                # _fetch_execution after the insert -> full row.
+                self._result = (
+                    "dse_minted", self._conn.datastream_id, self._conn.project_id,
+                    "dsp_x", "dmap_x", {}, "created", None, None, None, None, None,
+                    None, "actor", None, None,
+                )
+            case "savepoint" | "release_savepoint":
+                self._result = None
+            case _:  # pragma: no cover - a name added to the inventory, unanswered
+                raise _REGISTRATION.unknown(s)
 
     def fetchone(self):
         return self._result
@@ -407,6 +454,26 @@ class _FakeConn:
 
     def rollback(self):
         pass
+
+
+def test_the_fake_refuses_a_statement_it_was_never_taught():
+    """AI-317: an unrecognised statement must NAME itself, not answer no rows.
+
+    The old `else` answered `None` and left the previous statement's
+    `description` in place -- which is exactly the shape of "no prior execution
+    under this key" and "no active execution blocks the mint", the two answers
+    `create_execution` reads as a decision. A moved query would have gone on
+    producing them.
+    """
+    cursor = _FakeCursor(_FakeConn())
+    with pytest.raises(UnknownStatement) as raised:
+        cursor.execute(
+            "SELECT published_execution_id FROM app.datastreams "
+            "WHERE id = %s AND project_id = %s"
+        )
+    message = str(raised.value)
+    assert "published_execution_id" in message
+    assert "execution_by_idempotency_key" in message
 
 
 def _probe(**overrides):

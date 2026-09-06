@@ -1,42 +1,22 @@
 [
   {
-    "campaign_id": "23851234500010001",
-    "metric": "cost",
-    "total": 6920.699999999995
-  },
-  {
-    "campaign_id": "23851234500010001",
-    "metric": "impressions",
-    "total": 1446000.0
-  },
-  {
-    "campaign_id": "23851234500010002",
-    "metric": "cost",
-    "total": 3267.8399999999997
-  },
-  {
-    "campaign_id": "23851234500010002",
-    "metric": "impressions",
-    "total": 361200.0
-  },
-  {
     "campaign_id": "923851234500010001",
     "metric": "cost",
-    "total": 6228.8784
+    "total": 5541.796
   },
   {
     "campaign_id": "923851234500010001",
     "metric": "impressions",
-    "total": 1301400.0
+    "total": 1253200.0
   },
   {
     "campaign_id": "923851234500010002",
     "metric": "cost",
-    "total": 2941.056
+    "total": 2616.6400000000003
   },
   {
     "campaign_id": "923851234500010002",
     "metric": "impressions",
-    "total": 325080.0
+    "total": 313040.0
   }
 ]

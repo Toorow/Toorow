@@ -7,7 +7,7 @@ Familles de tests :
       - une connexion ``auth_path='google_direct'`` est servie par le service
         Google direct (source resolue asseree -- AI-56, pas seulement absence
         d'erreur) ;
-      - une connexion ``auth_path='nango'`` (ou aucune ligne / DB indisponible)
+      - une connexion ``auth_path='nango'`` (ou aucune ligne / DB unavailable)
         reste servie par Nango (non-regression : le chemin async Nango est appele).
 
   (b) REFRESH :
@@ -472,11 +472,19 @@ def test_google_direct_health_ok_stale_revoked():
     assert isinstance(h_ok, ConnectionHealth)
     assert h_ok.status == "ok"
 
-    # stale : dans le skew (refresh du), blob present
-    h_stale = google_direct_health(_resolved(expiry=now + timedelta(seconds=60)), now=now)
-    assert h_stale.status == "stale"
+    # ok : dans le skew, et meme LARGEMENT EXPIRE. Un jeton d'acces Google vit
+    # une heure et se reforge du refresh token a chaque appel : son expiration
+    # est l'etat NORMAL entre deux usages, pas une degradation. L'ambre lue
+    # dessus rendait toute autorisation google_direct ambre en permanence --
+    # mesure du 2026-08-11, l'assistant proposait « ... -- stale » sur
+    # l'autorisation par laquelle un preview venait de tirer de vraies donnees.
+    h_due = google_direct_health(_resolved(expiry=now + timedelta(seconds=60)), now=now)
+    assert h_due.status == "ok"
+    h_expired = google_direct_health(_resolved(expiry=now - timedelta(hours=3)), now=now)
+    assert h_expired.status == "ok", "un refresh du n'est pas une panne"
 
-    # stale : blob present mais expiry inconnue (refresh du, pas revoked)
+    # stale : blob present mais expiry inconnue -- la, on ne sait rien, et ne
+    # rien savoir se dit.
     h_unknown = google_direct_health(_resolved(expiry=None, has_token_blob=True), now=now)
     assert h_unknown.status == "stale"
 
@@ -747,7 +755,7 @@ def test_no_realistic_token_plaintext_in_delivered_files():
         re.compile(r"eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}"),
     ]
     for path in delivered:
-        assert path.exists(), f"fichier de story manquant : {path}"
+        assert path.exists(), f"fichier de story missing : {path}"
         text = path.read_text(encoding="utf-8")
         for pat in forbidden:
             assert pat.search(text) is None, (

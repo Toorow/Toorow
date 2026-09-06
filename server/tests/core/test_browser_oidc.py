@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -26,6 +27,9 @@ def _configure_oidc(monkeypatch) -> None:
     monkeypatch.setenv("TOOROW_OIDC_SESSION_SECRET", "s" * 32)
     monkeypatch.setenv("TOOROW_OIDC_COOKIE_SECURE", "0")
     monkeypatch.setenv("TOOROW_OIDC_PROVIDER_NAME", "Example SSO")
+    # This file exercises the pure OIDC protocol. The live revocation probe is
+    # owned by test_session_revocation_pg.py and fails closed without its DB.
+    monkeypatch.setenv("TOOROW_SESSION_REVOCATION_ENABLED", "0")
 
 
 def _metadata() -> dict[str, object]:
@@ -46,12 +50,15 @@ def _request(
     method: str = "GET",
     cookie: str = "",
     origin: str | None = None,
+    bearer: str = "",
 ) -> Request:
     headers: list[tuple[bytes, bytes]] = []
     if cookie:
         headers.append((b"cookie", cookie.encode()))
     if origin:
         headers.append((b"origin", origin.encode()))
+    if bearer:
+        headers.append((b"authorization", f"Bearer {bearer}".encode()))
     return Request(
         {
             "type": "http",
@@ -266,6 +273,11 @@ def test_cookie_authenticated_mutations_require_exact_origin(monkeypatch):
     from core import browser_oidc
 
     _configure_oidc(monkeypatch)
+    # This test is about ORIGIN and nothing else, so it keeps its no-database
+    # shape: 67-15d added a live revocation probe to `get_browser_session`, and
+    # the switch exists precisely so a pure unit test can keep exercising the
+    # seam. The probe itself is proved in `test_session_revocation_pg.py`.
+    monkeypatch.setenv("TOOROW_SESSION_REVOCATION_ENABLED", "0")
     settings = browser_oidc._load_oidc_settings()
     ticket = browser_oidc._seal(
         settings,
@@ -273,6 +285,11 @@ def test_cookie_authenticated_mutations_require_exact_origin(monkeypatch):
             "iss": settings.issuer,
             "sub": "subject",
             "exp": int(time.time()) + 600,
+            # 67-15d: a ticket that names itself (`sid`) and dates itself
+            # (`iat`) is the only kind a revocation can point at, so the seam
+            # refuses one without them.
+            "iat": int(time.time()),
+            "sid": "s" * 32,
             "claims": {},
         },
     )
@@ -323,7 +340,6 @@ def test_shared_api_auth_returns_canonical_person_for_all_modules(monkeypatch):
     from core import api_auth, db
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
-    monkeypatch.setenv("TOOROW_CANONICAL_IDENTITY_ENABLED", "1")
     principal = api_auth.ResolvedPrincipal(
         person_id="person_canonical",
         issuer="https://issuer.example",
@@ -331,18 +347,31 @@ def test_shared_api_auth_returns_canonical_person_for_all_modules(monkeypatch):
         verified_email="person@example.com",
         display_name="Person Example",
     )
-    resolver = AsyncMock(return_value=(True, principal))
-    monkeypatch.setattr(api_auth, "authenticate_canonical_principal", resolver)
+    # Since 2026-08-30 a Bearer token is VERIFIED without the database and
+    # BOUND to its person with it; a request carrying nothing is refused before
+    # a connection is opened. The two seams are the test's doubles.
+    credential = api_auth.VerifiedCredential(
+        issuer="https://issuer.example",
+        subject="oidc-subject",
+        verified_email="person@example.com",
+        claims={"sub": "oidc-subject"},
+    )
+    verifier = AsyncMock(return_value=credential)
+    monkeypatch.setattr(api_auth, "verify_bearer_credential", verifier)
+    binder = MagicMock(return_value=(True, principal))
+    monkeypatch.setattr(api_auth, "bind_verified_credential", binder)
     conn = MagicMock()
     connection_context = MagicMock()
     connection_context.__enter__.return_value = conn
     connection_context.__exit__.return_value = False
     monkeypatch.setattr(db, "get_connection", lambda: connection_context)
 
-    result = asyncio.run(api_auth.authenticate_api_request(_request()))
+    result = asyncio.run(api_auth.authenticate_api_request(_request(bearer="opaque-token")))
 
     assert result == (True, "person_canonical")
-    resolver.assert_awaited_once()
+    verifier.assert_awaited_once()
+    binder.assert_called_once_with(credential, conn)
+    conn.commit.assert_called_once()
     conn.commit.assert_called_once_with()
 
 
@@ -361,3 +390,111 @@ def test_public_oidc_client_must_be_explicitly_advertised(monkeypatch):
         match="public client",
     ):
         asyncio.run(browser_oidc._exchange_code(settings, metadata, code="code", verifier="v" * 43))
+
+
+# ---------------------------------------------------------------------------
+# Le client id OAuth voyage a l'EXECUTION (2026-08-04)
+#
+# Il etait lu au BUILD par la console (`VITE_GOOGLE_CLIENT_ID`). Un bundle
+# construit sans lui a deploye un ecran de connexion qui ne pouvait pas aboutir,
+# et le defaut n'apparaissait que dans le navigateur, en production. Aucun
+# controle serveur ne pouvait l'attraper : le serveur n'etait jamais interroge.
+# ---------------------------------------------------------------------------
+
+
+def test_google_gis_serves_the_client_id_the_browser_needs(monkeypatch):
+    from core import browser_oidc
+
+    monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
+    monkeypatch.setenv("TOOROW_BROWSER_AUTH_MODE", "google_gis")
+    monkeypatch.setenv("TOOROW_DEPLOYMENT_MODE", "hosted")
+    monkeypatch.setenv("TOOROW_OIDC_CLIENT_ID", "example-client-id.apps.googleusercontent.com")
+    monkeypatch.delenv("TOOROW_JWT_AUDIENCE", raising=False)
+
+    response = asyncio.run(browser_oidc.browser_auth_config(_request()))
+    body = json.loads(response.body)
+
+    assert response.status_code == 200
+    assert body["mode"] == "google_gis"
+    # C'est CE champ qui rend la connexion possible sans variable de build.
+    assert body["client_id"] == "example-client-id.apps.googleusercontent.com"
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_a_missing_client_id_is_NAMED_instead_of_silently_absent(monkeypatch):
+    """Le mode reste `google_gis` : l'operateur l'a bien choisi.
+
+    Ce qui manque est nomme, pour que la console cesse d'accuser son propre
+    build d'une valeur que le serveur n'a jamais eue.
+    """
+    from core import browser_oidc
+
+    monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
+    monkeypatch.setenv("TOOROW_BROWSER_AUTH_MODE", "google_gis")
+    monkeypatch.setenv("TOOROW_DEPLOYMENT_MODE", "hosted")
+    monkeypatch.delenv("TOOROW_OIDC_CLIENT_ID", raising=False)
+    monkeypatch.delenv("TOOROW_JWT_AUDIENCE", raising=False)
+
+    body = json.loads(asyncio.run(browser_oidc.browser_auth_config(_request())).body)
+
+    assert body["mode"] == "google_gis"
+    assert "client_id" not in body
+    assert body["reason"] == "oidc_client_id_missing"
+
+
+def test_the_client_secret_is_NEVER_disclosed(monkeypatch):
+    """La moitie publique voyage, la moitie secrete jamais.
+
+    C'est la seule raison pour laquelle servir le client id est acceptable :
+    la page le transmet deja a Google. Si ce test tombe, la justification du
+    changement tombe avec lui.
+    """
+    from core import browser_oidc
+
+    monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
+    monkeypatch.setenv("TOOROW_BROWSER_AUTH_MODE", "google_gis")
+    monkeypatch.setenv("TOOROW_DEPLOYMENT_MODE", "hosted")
+    monkeypatch.setenv("TOOROW_OIDC_CLIENT_ID", "example-client-id.apps.googleusercontent.com")
+    monkeypatch.setenv("TOOROW_OIDC_CLIENT_SECRET", "shhh-not-in-any-response")
+
+    raw = asyncio.run(browser_oidc.browser_auth_config(_request())).body
+
+    assert b"shhh-not-in-any-response" not in raw
+    assert b"client_secret" not in raw
+
+
+def test_the_audience_supplies_the_client_id_when_no_override_is_set(monkeypatch):
+    """En `google_gis` les deux valeurs sont la MEME par definition du mode.
+
+    Le navigateur se connecte avec le client X ; le serveur n'accepte que les
+    jetons dont le `aud` vaut X. Mesure du 2026-08-04 : la production ne pose
+    que `TOOROW_JWT_AUDIENCE`, et une premiere version de ce correctif -- qui ne
+    lisait que `TOOROW_OIDC_CLIENT_ID` -- a ete deployee puis constatee
+    inoperante. Ce test est ce qui aurait du l'attraper avant le deploiement.
+    """
+    from core import browser_oidc
+
+    monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
+    monkeypatch.setenv("TOOROW_BROWSER_AUTH_MODE", "google_gis")
+    monkeypatch.setenv("TOOROW_DEPLOYMENT_MODE", "hosted")
+    monkeypatch.delenv("TOOROW_OIDC_CLIENT_ID", raising=False)
+    monkeypatch.setenv("TOOROW_JWT_AUDIENCE", "audience-is-the-client.apps.googleusercontent.com")
+
+    body = json.loads(asyncio.run(browser_oidc.browser_auth_config(_request())).body)
+
+    assert body["client_id"] == "audience-is-the-client.apps.googleusercontent.com"
+    assert "reason" not in body
+
+
+def test_an_explicit_client_id_wins_over_the_audience(monkeypatch):
+    from core import browser_oidc
+
+    monkeypatch.setenv("TOOROW_AUTH_MODE", "oauth")
+    monkeypatch.setenv("TOOROW_BROWSER_AUTH_MODE", "google_gis")
+    monkeypatch.setenv("TOOROW_DEPLOYMENT_MODE", "hosted")
+    monkeypatch.setenv("TOOROW_OIDC_CLIENT_ID", "explicit.apps.googleusercontent.com")
+    monkeypatch.setenv("TOOROW_JWT_AUDIENCE", "audience.apps.googleusercontent.com")
+
+    body = json.loads(asyncio.run(browser_oidc.browser_auth_config(_request())).body)
+
+    assert body["client_id"] == "explicit.apps.googleusercontent.com"

@@ -21,12 +21,9 @@
  */
 
 import { useState } from "react";
-import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
-import TextField from "@mui/material/TextField";
-import Typography from "@mui/material/Typography";
-import Stack from "@mui/material/Stack";
+
 import { callServerTool } from "@toorow/shell";
+import { Box, Button, Stack, TextField, Typography } from "@toorow/shell";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -37,10 +34,32 @@ export interface CardFeedbackBarProps {
   projectId: string;
   /** OTel trace_id depuis meta.trace_id. */
   traceId: string | null;
-  /** Référence du rapport, ex : "card:kpi:2026-07-13". */
+  /**
+   * Référence du rapport, ex : "card:kpi:2026-07-13".
+   *
+   * PLUS ENVOYEE SUR LE FIL depuis l'amendement du 2026-08-30 de
+   * `docs/product-architecture/mcp-tool-surface.md` : `submit_feedback` lie la
+   * référence enregistrée à la Result sur laquelle le serveur a frappé le
+   * handle, et refuse (`result_handle_names_another_result`) toute référence qui
+   * la contredit. Un `report_ref` vide est « la direction la plus forte » que
+   * l'outil documente : c'est le grant qui nomme le sujet, pas le widget. La
+   * prop reste parce que les shells la passent et qu'elle sert d'étiquette
+   * locale ; elle ne franchit plus le fil.
+   */
   reportRef: string;
-  /** Module, ex : "card-kpi". */
+  /** Module, ex : "card-kpi". Envoyé sous le nom de paramètre `connector`. */
   module: string;
+  /**
+   * Le `result_handle` frappé par le serveur, lu dans le `_meta` du résultat
+   * d'outil (`toorow.result.result_handle`) et transmis tel quel.
+   *
+   * REQUIS PAR LE SERVEUR. Un avis est un append, et `submit_feedback` refuse
+   * un append que l'appelant peut faire sur sa seule parole
+   * (`core.app_observation_handle`). Sans handle l'envoi est refusé en nommant
+   * le geste — c'est l'état délibéré décrit par la clause 19 tant qu'aucun
+   * producteur ne frappe de grant pour les cartes.
+   */
+  handle?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -50,8 +69,8 @@ export interface CardFeedbackBarProps {
 export default function CardFeedbackBar({
   projectId,
   traceId,
-  reportRef,
   module,
+  handle,
 }: CardFeedbackBarProps) {
   const [selectedRating, setSelectedRating] = useState<1 | -1 | null>(null);
   const [comment, setComment] = useState("");
@@ -69,13 +88,21 @@ export default function CardFeedbackBar({
       // isError) signifie un échec réel et affiche l'état d'erreur (F-11,
       // enfin atteignable). Chemin legacy : postMessage fire-and-forget qui
       // résout immédiatement — confirmation optimiste inchangée.
+      // LES NOMS D'ARGUMENTS SONT CEUX DU SCHEMA DE L'OUTIL, mesurés et non
+      // supposés : `submit_feedback` déclare
+      // {comment, connector, handle, project_id, rating, report_ref, trace_id}
+      // avec `additionalProperties: false`. Cette barre envoyait `module`, que
+      // le schéma refuse — chaque avis de carte était donc rejeté à la
+      // frontière avant même d'atteindre la règle du handle.
       await callServerTool("submit_feedback", {
         project_id: projectId,
         rating: selectedRating,
         trace_id: traceId ?? null,
         comment: comment.trim() || "",
-        report_ref: reportRef,
-        module,
+        // Vide : c'est le grant qui nomme la Result observée (voir `reportRef`).
+        report_ref: "",
+        connector: module,
+        handle: handle ?? "",
       });
       setSubmitted(true);
     } catch {
@@ -101,7 +128,7 @@ export default function CardFeedbackBar({
     return (
       <Box data-testid="card-feedback-error">
         <Typography variant="caption" color="error.main">
-          Erreur lors de l'envoi. Veuillez réessayer.
+          Your feedback was not sent. Try again.
         </Typography>
         <Button
           size="small"
@@ -125,7 +152,7 @@ export default function CardFeedbackBar({
         useFlexGap
       >
         <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-          Cette carte vous a été utile ?
+          Was this card useful?
         </Typography>
         <Button
           size="small"
@@ -157,14 +184,11 @@ export default function CardFeedbackBar({
           value={comment}
           onChange={(e) => setComment(e.target.value)}
           disabled={submitting}
-          slotProps={{
-            input: {
-              // @ts-expect-error -- data-testid forwarded via slotProps in MUI v9
-              "data-testid": "card-feedback-comment",
-              "aria-label": "Commentaire optionnel",
-            },
-          }}
-          sx={{ flex: "1 1 120px", minWidth: 80, "& .MuiInputBase-input": { py: 0.4, fontSize: "0.7rem" } }}
+          // AD-35: the field IS the input now, so the test id and label sit on it
+          // directly — `slotProps` existed only to reach inside MUI's wrapper.
+          data-testid="card-feedback-comment"
+          aria-label="Commentaire optionnel"
+          sx={{ flex: "1 1 120px", minWidth: 80, fontSize: "0.7rem" }}
         />
         <Button
           size="small"

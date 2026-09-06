@@ -161,6 +161,18 @@ class TestThresholdBreachFiresRow:
         sql = call_args[0]
         assert "INSERT INTO app.alert_firings" in sql
 
+        # AI-306 CLASS: the ROW carries the project and the metric it is about.
+        # Both columns used to be omitted, so every firing took the DEFAULTS --
+        # `project_id = 'default'` and `metric = ''`. `fetch_recent_alert_firings`
+        # reads both off the DEFINITION join and so never saw it; the readers that
+        # trust the row did: delivery joins destinations on `f.project_id`, and a
+        # breach of `proj1` routed only to destinations of a project called
+        # 'default'.
+        assert "project_id" in sql
+        params = call_args[1]
+        assert "proj1" in params, "the firing must carry its own project"
+        assert "cost" in params, "the firing must carry its own metric"
+
 
 class TestNoBreachNoFiring:
     """test_no_breach_no_firing (AC9 item 2)."""

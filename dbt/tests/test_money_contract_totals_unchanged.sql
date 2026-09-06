@@ -3,8 +3,10 @@
 -- The no-drift proof: the money contract (adapter declaration + canonical-micros read
 -- helper + micros-aware semantic views) introduces NO /1e6 (and no other rescale) on any
 -- currently-emitted wired money row. Every wired money component today is native_unit=
--- 'decimal' (revenue/cost/refund_amount/… land decimal into fact_daily_kpi via the incumbent
--- AD-6 FX-at-staging), so the read helper's /1e6 branch is NEVER taken and fact_daily_kpi
+-- 'decimal' (revenue/cost/refund_amount/… land decimal into fact_daily_kpi: staging keeps the
+-- immutable source-currency DECIMAL amount and the mart converts it ONCE through
+-- fx_convert_at_read — FX-at-read, Story 39.10 repaired by 48.3, NOT the retired
+-- FX-at-staging), so the read helper's /1e6 branch is NEVER taken and fact_daily_kpi
 -- stays bit-identical. Story 39.2 does NOT rewrite fact_daily_kpi.sql nor any incumbent
 -- staging, so bit-identity holds BY CONSTRUCTION — this test PROVES it structurally.
 --
@@ -33,7 +35,12 @@ mart_revenue AS (
       AND metric IN (SELECT canonical_metric FROM decimal_money)
 ),
 staging_revenue AS (
-    SELECT project_id, date, SUM(CAST(revenue AS DOUBLE)) AS staged_value
+    -- DECIMAL, not DOUBLE (repaired 2026-08-04, twin of the same line in
+    -- test_epic39_totals_bit_identical.sql). Story 48.3 made the mart side exact;
+    -- summing DOUBLE here forced it back through a float and manufactured a
+    -- 2.3e-13 drift on 41 days against a threshold of exactly 0. Both sides exact
+    -- => the threshold can stay at 0, which is what makes this test worth having.
+    SELECT project_id, date, SUM(CAST(revenue AS {{ toorow_decimal_type(38, 9) }})) AS staged_value
     FROM {{ ref('stg_shopify_orders_daily') }}
     GROUP BY project_id, date
 )

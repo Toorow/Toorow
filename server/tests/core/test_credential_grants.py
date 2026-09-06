@@ -41,9 +41,22 @@ _AUTH = ("core.admin_api._check_auth", (True, "tester@example.com"))
 
 
 def _post(credential_id: str, body: dict, **path) -> MagicMock:
+    """A credential POST with REAL headers.
+
+    A bare `MagicMock()` answers `headers.get("Idempotency-Key")` with another
+    MagicMock -- truthy, and `.strip()` on it returns a MagicMock too. So the
+    guard that refuses a request without the header sees one, the mock travels
+    into the durable-operation layer, and the route answers **500**. The test
+    then reads "the endpoint is broken" from a request no client would ever send.
+
+    `_create_account_grant` is one of the 23 routes that refuse a missing
+    `Idempotency-Key` -- the same header whose omission made the console's Expose
+    button answer 422 on every click (AI-188). This helper predates the guard.
+    """
     req = MagicMock()
     req.path_params = {"credential_id": credential_id, **path}
     req.body = AsyncMock(return_value=json.dumps(body).encode())
+    req.headers = {"Idempotency-Key": f"test-{uuid.uuid4().hex[:12]}"}
     return req
 
 
@@ -86,22 +99,47 @@ def _setup_chain(suffix: str) -> dict:
                 "VALUES (%s, %s, %s, %s, %s, 'tester@example.com')",
                 (cred, "google-analytics", f"nango-{suffix}", proj, org_a),
             )
+            # ENROL THE ACTOR. This fixture created two organizations and put
+            # nobody in either, then called manage-gated routes and expected them
+            # to work -- which they did, under the *default-open-until-enrolled*
+            # rule of Epic 21: an org with zero members treated any caller as its
+            # owner. Story 46.4 removed that rule (see
+            # `test_org_enforcement.py::test_zero_members_opens_nothing`), so the
+            # seed now has to say who may act, and `_enforce_org_manage` answers
+            # 403 rather than silently promoting a passer-by.
+            cur.execute(
+                "INSERT INTO app.org_members (id, org_id, identity, role, status, joined_at) "
+                "VALUES (%s, %s, 'tester@example.com', 'owner', 'active', NOW())",
+                (f"omem_{uuid.uuid4().hex[:12]}", org_a),
+            )
         conn.commit()
     return {"org_a": org_a, "org_b": org_b, "proj": proj, "cred": cred}
 
 
 def _teardown_chain(ids: dict) -> None:
+    """Erase through the product's own purge, not by hand.
+
+    This deleted `connection_ref`, then `projects`, then `organizations` -- three
+    tables out of the 177 the tenant tree actually spans. It was refused by
+    `project_capabilities_project_id_fkey` (RESTRICT) the moment a test gave the
+    project a capability row, and since the refusal happens in a `finally`, every
+    later test in the module inherited the poisoned transaction. Seven failures
+    from one teardown, all of them reading as defects of the code under test.
+
+    `test_org_enforcement.py::_drop_org` met this exact defect and fixed it the
+    same way; the reasoning in its docstring applies verbatim. `purge_org_tree`
+    is the ONE function that knows the whole tree, and it is what
+    `DELETE /api/organizations` runs -- so a teardown built on it also exercises
+    the deletion path a user actually takes, instead of a private one that can go
+    green while the real one is broken.
+    """
     from core.db import get_connection
 
+    from tests.conftest import purge_fixture_org
+
     with get_connection() as conn:
-        with conn.cursor() as cur:
-            # connection_ref delete cascades credential_accounts + grants.
-            cur.execute("DELETE FROM app.connection_ref WHERE id = %s", (ids["cred"],))
-            cur.execute("DELETE FROM app.projects WHERE id = %s", (ids["proj"],))
-            cur.execute(
-                "DELETE FROM app.organizations WHERE id IN (%s, %s)",
-                (ids["org_a"], ids["org_b"]),
-            )
+        for org in (ids["org_a"], ids["org_b"]):
+            purge_fixture_org(conn, org)
         conn.commit()
 
 
@@ -112,7 +150,7 @@ def _teardown_chain(ids: dict) -> None:
 
 @pytest.mark.anyio
 async def test_register_account_requires_external_id_422():
-    from core.admin_api import _register_credential_account
+    from core.credential_accounts_api import _register_credential_account  # noqa: PLC0415
 
     with patch(_AUTH[0], return_value=_AUTH[1]):
         resp = await _register_credential_account(_post("conn_x", {"label": "no id"}))
@@ -121,7 +159,7 @@ async def test_register_account_requires_external_id_422():
 
 @pytest.mark.anyio
 async def test_create_grant_requires_grantee_org_422():
-    from core.admin_api import _create_account_grant
+    from core.credential_accounts_api import _create_account_grant  # noqa: PLC0415
 
     with patch(_AUTH[0], return_value=_AUTH[1]):
         resp = await _create_account_grant(
@@ -132,7 +170,7 @@ async def test_create_grant_requires_grantee_org_422():
 
 @pytest.mark.anyio
 async def test_list_accounts_requires_auth_401():
-    from core.admin_api import _list_credential_accounts
+    from core.credential_accounts_api import _list_credential_accounts  # noqa: PLC0415
 
     with patch(_AUTH[0], return_value=(False, "")):
         resp = await _list_credential_accounts(_get("conn_x"))
@@ -147,7 +185,7 @@ async def test_list_accounts_requires_auth_401():
 @pg_available
 @pytest.mark.anyio
 async def test_expose_one_account_and_list_grants():
-    from core.admin_api import (
+    from core.credential_accounts_api import (  # noqa: PLC0415
         _create_account_grant,
         _list_credential_grants,
         _register_credential_account,
@@ -181,7 +219,7 @@ async def test_expose_one_account_and_list_grants():
 @pg_available
 @pytest.mark.anyio
 async def test_grant_on_unregistered_account_404():
-    from core.admin_api import _create_account_grant
+    from core.credential_accounts_api import _create_account_grant  # noqa: PLC0415
 
     suffix = uuid.uuid4().hex[:8]
     ids = _setup_chain(suffix)
@@ -202,7 +240,10 @@ async def test_grant_on_unregistered_account_404():
 @pg_available
 @pytest.mark.anyio
 async def test_grant_to_missing_org_404_and_duplicate_409():
-    from core.admin_api import _create_account_grant, _register_credential_account
+    from core.credential_accounts_api import (  # noqa: PLC0415
+        _create_account_grant,
+        _register_credential_account,
+    )
 
     suffix = uuid.uuid4().hex[:8]
     ids = _setup_chain(suffix)
@@ -231,7 +272,7 @@ async def test_grant_to_missing_org_404_and_duplicate_409():
 @pg_available
 @pytest.mark.anyio
 async def test_revoke_grant_offboarding():
-    from core.admin_api import (
+    from core.credential_accounts_api import (  # noqa: PLC0415
         _create_account_grant,
         _list_credential_grants,
         _register_credential_account,
@@ -299,18 +340,34 @@ def test_grant_fk_rejects_whole_or_absent_credential():
 
 
 @pg_available
-def test_owner_org_backfill_idempotent():
-    """AC5: owner_org_id backfills from the project's org and re-runs cleanly."""
+def test_the_legacy_null_owner_org_can_no_longer_exist():
+    """The backfill this tested has nothing left to repair, and cannot have.
+
+    AC5 shipped a backfill -- `UPDATE connection_ref SET owner_org_id = p.org_id
+    ... WHERE cr.owner_org_id IS NULL` -- for credentials created before the owner
+    org existed. `connection_ref.owner_org_id` is now NOT NULL **and** carries
+    `fk_connection_ref_owner_org` to `app.organizations`, so no row can be in the
+    state the backfill repairs.
+
+    The test could not be left as it was: forced by the NOT NULL, an earlier
+    session replaced the intended `NULL` with the literal `'org_test_fixture'`,
+    which makes the backfill's `WHERE ... IS NULL` match nothing. It then asserted
+    the row had been rewritten to the test's own org and failed comparing
+    `'org_test_fixture'` to `'org_bf_...'`. The premise had been edited out from
+    under the assertion -- the same way three tests in
+    `test_org_enforcement.py` were.
+
+    Inverted rather than deleted: what retired the backfill is the constraint, so
+    the constraint is what gets asserted. If it is ever relaxed, this fails and
+    the backfill becomes a live question again.
+    """
+    import psycopg
     from core.db import get_connection
 
     suffix = uuid.uuid4().hex[:8]
     org = f"org_bf_{suffix}"
     proj = f"proj_bf_{suffix}"
     cred = f"conn_bf_{suffix}"
-    backfill = (
-        "UPDATE app.connection_ref cr SET owner_org_id = p.org_id "
-        "FROM app.projects p WHERE cr.project_id = p.id AND cr.owner_org_id IS NULL"
-    )
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
@@ -324,29 +381,34 @@ def test_owner_org_backfill_idempotent():
                     "VALUES (%s, %s, %s, 'system', %s)",
                     (proj, "BFP", f"bfp-{suffix}", org),
                 )
-                # connection_ref with owner_org_id LEFT NULL (legacy shape).
-                cur.execute(
-                    "INSERT INTO app.connection_ref "
-                    "(id, provider, nango_connection_id, project_id, owner_org_id, owner_identity) "
-                    "VALUES (%s, %s, %s, %s, 'org_test_fixture', 'tester@example.com')",
-                    (cred, "google-analytics", f"nango-{suffix}", proj),
-                )
             conn.commit()
-            with conn.cursor() as cur:
-                cur.execute(backfill)
-                cur.execute(backfill)  # second run must be a no-op
-            conn.commit()
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT owner_org_id FROM app.connection_ref WHERE id = %s", (cred,)
-                )
-                assert cur.fetchone()[0] == org
+            # The legacy shape: a credential with no owner organization.
+            with pytest.raises(psycopg.errors.NotNullViolation):
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO app.connection_ref "
+                        "(id, provider, nango_connection_id, project_id, owner_org_id, "
+                        " owner_identity) "
+                        "VALUES (%s, %s, %s, %s, NULL, 'tester@example.com')",
+                        (cred, "google-analytics", f"nango-{suffix}", proj),
+                    )
+            conn.rollback()
+            # And it cannot point at an organization that does not exist either.
+            with pytest.raises(psycopg.errors.ForeignKeyViolation):
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO app.connection_ref "
+                        "(id, provider, nango_connection_id, project_id, owner_org_id, "
+                        " owner_identity) "
+                        "VALUES (%s, %s, %s, %s, 'org_does_not_exist', 'tester@example.com')",
+                        (cred, "google-analytics", f"nango-{suffix}", proj),
+                    )
+            conn.rollback()
     finally:
+        from tests.conftest import purge_fixture_org  # noqa: PLC0415
+
         with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM app.connection_ref WHERE id = %s", (cred,))
-                cur.execute("DELETE FROM app.projects WHERE id = %s", (proj,))
-                cur.execute("DELETE FROM app.organizations WHERE id = %s", (org,))
+            purge_fixture_org(conn, org)
             conn.commit()
 
 
@@ -355,7 +417,7 @@ def test_owner_org_backfill_idempotent():
 async def test_list_accounts_scoped_to_owner_org_members():
     """Reads scoping: once the credential's owner org is enrolled (>=1 active
     member), a member lists its accounts (200) but a stranger gets 404."""
-    from core.admin_api import _list_credential_accounts
+    from core.credential_accounts_api import _list_credential_accounts  # noqa: PLC0415
     from core.db import get_connection
 
     suffix = uuid.uuid4().hex[:8]

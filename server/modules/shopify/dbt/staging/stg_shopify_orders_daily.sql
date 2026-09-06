@@ -25,9 +25,12 @@
 --   - revenue_source_value / refund_source_value: raw amounts in the order currency
 --     (preserved for reconciliation).
 --   - revenue_source_currency: order currency from raw column (default 'EUR' for seed).
---   - revenue / refund_amount: normalized to project canonical_currency (EUR by default)
---     via fx_rates seed. Normalization happens ONCE, here in dbt staging (AD-6).
---   When from_currency = to_currency (EUR->EUR), rate = 1.0 -- no conversion.
+--   - revenue / refund_amount: the SAME source-currency amounts, converted at read.
+--   NOTHING IS NORMALIZED HERE, and the two lines above that said otherwise were
+--   read as fact for one epic. Story 39.10 moved the conversion to the READ
+--   ([[fx-locus-read-not-staging]]): this model preserves the source-currency
+--   amount and CARRIES the rate provenance beside it; `fx_convert_at_read` in the
+--   mart is what converts, once, and it can be re-derived after a policy change.
 
 WITH raw AS (
     SELECT *
@@ -53,28 +56,64 @@ SELECT
     -- Staging preserves immutable source-currency amounts; conversion happens ONCE at read.
     COALESCE(raw.revenue, 0.0)                         AS revenue,
     COALESCE(raw.refund_amount, 0.0)                   AS refund_amount,
-    -- FX provenance columns for read-time conversion
-    fx.rate                                            AS fx_rate,
-    fx.valid_from                                      AS fx_as_of_date,
-    'seed'                                             AS fx_source,
-    'fixed'                                            AS fx_tier,
+    -- FX evidence, emitted by ONE macro since the Story 67.13 cutover: the
+    -- governed POSED rate is asked first and the seed below is the fallback,
+    -- and a refusal (an unanswerable condition, a tie) serves no rate at all.
+    -- `fx_as_of_date` is still the day the rate was QUOTED or DECLARED, never
+    -- the day its window opens -- story 58.7's repair, carried into both arms.
+    {{ toorow_fx_evidence_columns() }}
     raw.orders_count,
     raw.pull_id,
     raw.loaded_at,
     raw.project_id
 FROM raw
 -- dim_project supplies canonical_currency per project (AD-6/FR4).
--- COALESCE to 'EUR' when the project row is missing so seeds and tests still pass.
+-- Story 48.3: NO 'EUR' fallback. A Project that has not confirmed a reporting
+-- currency joins no rate, so fx_rate stays NULL, fx_convert_at_read yields NULL and
+-- fx_gap_code says why -- instead of a source-currency amount being summed into a
+-- EUR total as though a dollar were a euro.
 LEFT JOIN {{ ref('dim_project') }} dp
     ON dp.project_id = raw.project_id
 -- Story 13.2: FX conflict resolution override (AD-6). Shopify uses revenue_source_currency.
 -- target_field = 'revenue' (the canonical field name for Shopify revenue in the dictionary).
-LEFT JOIN {{ source('mirror', 'fx_conflict_resolutions') }} fx_res
+LEFT JOIN {{ toorow_source_or_empty('mirror', 'fx_source_currency_bindings', [
+        ['project_id', 'string'],
+        ['target_field', 'string'],
+        ['source_module', 'string'],
+        ['resolved_source_currency', 'string'],
+    ]) }} fx_res
     ON fx_res.project_id   = raw.project_id
    AND fx_res.target_field = 'revenue'
    AND fx_res.source_module = 'shopify'
 -- FX validity window: raw.date is a VARCHAR ISO string (F-06) -- cast for the DATE seed columns.
+-- ==========================================================================
+-- Story 67.13 -- THE GOVERNED RATE IS ASKED FIRST; the seed below is the
+-- FALLBACK. Step 4 of the cutover ratified in
+-- docs/product-architecture/capabilities/currency-fx.md ("Arbitration,
+-- 2026-08-21 -- the read path"), applied to all thirteen staging models in one
+-- change because a partial cutover would leave one Project reading the governed
+-- store for one connector and the seed for another: two rate authorities inside
+-- one total, which is worse than the one wrong authority it replaces.
+--
+-- The conversion LOCUS does not move. The source currency still stays here and
+-- `fx_convert_at_read` still converts once, in the mart. What moves is only
+-- where the RATE comes from.
+--
+-- AT MOST ONE ROW: `toorow_fx_posed_resolution` returns disjoint half-open
+-- segments per (project, pair), the winner already chosen by specificity, a tie
+-- already REFUSED and an unanswerable condition already named. No QUALIFY and no
+-- grain key are needed here, and a plain LEFT JOIN cannot pick a row where the
+-- application engine refuses.
+--
+-- WORDING A (decided 2026-08-22): the declared window governs, retroactively.
+-- Nothing below reads when a rate was posted.
+LEFT JOIN {{ toorow_fx_posed_resolution('shopify') }} fxp
+    ON  fxp.project_id     = raw.project_id
+   AND fxp.base_currency  = COALESCE(fx_res.resolved_source_currency, raw.revenue_source_currency)
+   AND fxp.quote_currency = dp.canonical_currency
+   AND CAST(raw.date AS DATE) >= fxp.seg_from
+   AND CAST(raw.date AS DATE) <  fxp.seg_until
 LEFT JOIN {{ ref('fx_rates') }} fx
     ON fx.from_currency = COALESCE(fx_res.resolved_source_currency, raw.revenue_source_currency)
-   AND fx.to_currency   = COALESCE(dp.canonical_currency, 'EUR')
+   AND fx.to_currency   = dp.canonical_currency
    AND CAST(raw.date AS DATE) BETWEEN fx.valid_from AND fx.valid_to

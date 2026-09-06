@@ -12,10 +12,10 @@
  * État vide designé : quand entries est vide.
  */
 
-import { useTheme, alpha } from "@mui/material/styles";
-import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
 import { getVizPalette } from "./vizTheme";
+import { verdictColor, verdictTone } from "./verdictTone";
+import { NBSP, formatMeasure, formatValue } from "./viz/theme/formatters";
+import { Box, Typography, alpha, useTheme } from "@toorow/shell";
 
 export interface BarChartEntry {
   /** Libellé de la catégorie (ex: "Organique", "Payant"). */
@@ -30,6 +30,18 @@ export interface BarChartEntry {
    * Absent for non-mover bars → flat ACCENT color (unchanged).
    */
   direction?: "up" | "down";
+  /**
+   * THE SIGNED VALUE, for when `value` was made absolute to size the bar.
+   *
+   * `CardComposition` passes `Math.abs(b.value)` as `value` so the bar is sized
+   * by magnitude (F-1) — and the label, which rebuilt its sign with
+   * `v > 0 ? "+" : ""`, could therefore only ever write a plus. Measured on
+   * 2026-09-05 on `card-keywords`: « chaussettes de randonnée », whose fixture
+   * carries `-3.8`, printed « +3,8 » IN RED above « +3,2 » in green. Two numbers
+   * identical but for their sign, two opposite colours, and the sign that
+   * explained them lost on the way to the screen.
+   */
+  signedValue?: number;
 }
 
 export interface BarChartProps {
@@ -117,36 +129,45 @@ export default function BarChart({
   );
 
   /**
-   * barColor — resolves the fill color for a simple (non-grouped) bar entry.
+   * barColor — the fill of a simple (non-grouped) bar.
    *
-   * Movers direction semantics (semanticDirection present AND entry.direction set):
-   *   The server emits direction="up" to mean "gained positions" (GOOD) and direction="down"
-   *   to mean "lost positions" (BAD). This convention holds for both "up_good" and "down_good"
-   *   binding semantics — the per-entry direction already encodes good/bad as up/down, so:
-   *     up   → success token (green)
-   *     down → error token (red)
-   *   "down_good" on the binding means the underlying metric (position) is better when lower,
-   *   but the server converts that so a positive position delta = rank improvement = up = GOOD.
+   * THE VERDICT IS NOT DECIDED HERE, and that is the repair of 2026-09-05. This
+   * function used to read `entry.direction` alone — a field the server sets —
+   * while the legend beneath the chart stated the convention of
+   * `semanticDirection`. On `card-keywords` (binding `down_good`, average
+   * position) they disagreed on screen: `+3.2` green above `-3.8` red, under a
+   * legend reading "falling is favourable". The verdict now comes from
+   * `verdictTone(signed change, semanticDirection)`, the ONE function every
+   * primitive shares, so the paint and the sentence cannot part company.
    *
-   * Default (no direction, or semanticDirection absent/neutral): ACCENT (flat, unchanged).
+   * `entry.direction` survives as the caller's stated movement when no signed
+   * value reached the entry; it can no longer overrule the convention.
    */
-  function barColor(_idx: number, key?: string, entryDirection?: "up" | "down"): string {
+  function barColor(entry: BarChartEntry, key?: string): string {
     if (key && groupColors?.[key]) return groupColors[key];
     if (key && groupKeys) {
       const ki = groupKeys.indexOf(key);
       return viz.categorical[ki % viz.categorical.length] ?? viz.accent;
     }
-    // Direction-aware coloring for movers bar (F-1 + F-3 fix).
-    if (entryDirection && semanticDirection && semanticDirection !== "neutral") {
-      return entryDirection === "up"
-        ? theme.palette.success.main
-        : theme.palette.error.main;
-    }
-    return viz.accent;
+    return verdictColor(theme, verdictTone(signedChange(entry), semanticDirection), viz.accent);
+  }
+
+  /**
+   * The movement of one bar, signed in the METRIC'S own units.
+   *
+   * `CardComposition` passes `Math.abs(value)` so the bar is sized by magnitude
+   * (F-1) and the signed figure in `signedValue`; an entry that carries only
+   * `direction` states its movement without a number, and `±1` is enough for a
+   * verdict that only reads the sign.
+   */
+  function signedChange(entry: BarChartEntry): number | null {
+    if (entry.signedValue !== undefined) return entry.signedValue;
+    if (entry.direction) return entry.direction === "up" ? 1 : -1;
+    return entry.value ?? null;
   }
 
   function fmt(v: number) {
-    return v.toLocaleString("fr-FR") + (unit ? ` ${unit}` : "");
+    return formatMeasure(v, unit);
   }
 
   if (variant === "horizontal") {
@@ -158,9 +179,15 @@ export default function BarChart({
         aria-label={ariaLabel}
         sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}
       >
-        {sliced.map((entry, ei) => (
+        {sliced.map((entry) => (
           <Box
             key={entry.label}
+            // The verdict is published on the row so a test can read WHAT the
+            // colour says rather than which hex it landed on — the bars said one
+            // thing and the legend the opposite until story 76-8 round 2.
+            data-testid="bar-chart-row"
+            data-label={entry.label}
+            data-verdict={verdictTone(signedChange(entry), semanticDirection)}
             sx={{
               display: "grid",
               gridTemplateColumns: "minmax(88px, 28%) 1fr auto",
@@ -195,7 +222,7 @@ export default function BarChart({
                           left: 0,
                           width: `${pct}%`,
                           height: 8,
-                          bgcolor: barColor(ei, k),
+                          bgcolor: barColor(entry, k),
                           borderRadius: "0 999px 999px 0",
                         }}
                       />
@@ -213,7 +240,7 @@ export default function BarChart({
                         sx={{
                           width: `${pct}%`,
                           height: "100%",
-                          bgcolor: barColor(ei, undefined, entry.direction),
+                          bgcolor: barColor(entry),
                           borderRadius: "0 999px 999px 0",
                         }}
                       />
@@ -231,9 +258,12 @@ export default function BarChart({
                     .join(" / ")
                 : (() => {
                     const v = entry.value ?? 0;
-                    // For direction-aware movers, show signed label (+4 / -3).
+                    // For direction-aware movers, show the SIGNED label (+4 / -3),
+                    // taken from `signedValue` when the width used |value|.
                     if (entry.direction && semanticDirection && semanticDirection !== "neutral") {
-                      return `${v > 0 ? "+" : ""}${v.toLocaleString("fr-FR")}${unit ? ` ${unit}` : ""}`;
+                      const signed = entry.signedValue ?? v;
+                      const body = formatValue(signed, { signed: true });
+                      return unit ? `${body}${NBSP}${unit}` : body;
                     }
                     return fmt(v);
                   })()}
@@ -284,7 +314,7 @@ export default function BarChart({
                 width={BAR_W}
                 height={barH}
                 rx={4}
-                fill={barColor(ei)}
+                fill={barColor(entry)}
               />
               {/* Value label above bar */}
               <text
@@ -295,7 +325,7 @@ export default function BarChart({
                 style={{ fontVariantNumeric: "lining-nums tabular-nums" }}
                 fill={theme.palette.text.secondary}
               >
-                {v.toLocaleString("fr-FR")}
+                {formatValue(v)}
               </text>
             </g>
           );

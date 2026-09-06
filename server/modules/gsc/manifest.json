@@ -1,1087 +1,1147 @@
 {
-    "schema_version": "1.2",
-    "name": "gsc",
-    "display_name": "Google Search Console",
-    "public_catalog": {
-        "visibility": "public",
-        "category": "analytics_product",
-        "onboarding_modes": [
-            "connector_pull"
-        ],
-        "verification": {
-            "status": "blocked",
-            "reason_code": "live_evidence_not_ratified",
-            "follow_up": "Ratify and run the independent connector evidence contract."
-        }
-    },
-    "auth_type": "google_direct",
-    "module_kind": "kpi",
-    "report_profiles": [
-        {
-            "id": "page_daily",
-            "display_name": "Performance par page (quotidienne)",
-            "metrics": [
-                "clicks",
-                "impressions",
-                "average_position"
-            ],
-            "dimensions": [
-                "date",
-                "page"
-            ],
-            "extraction_capabilities": {
-                "row_limit": 25000,
-                "filters_supported": true,
-                "regex_filters": true,
-                "realtime": false
-            },
-            "extraction_path": "custom_pull"
-        },
-        {
-            "id": "country_daily",
-            "display_name": "Performance par pays (quotidienne)",
-            "metrics": [
-                "clicks",
-                "impressions",
-                "average_position"
-            ],
-            "dimensions": [
-                "date",
-                "country"
-            ],
-            "extraction_capabilities": {
-                "row_limit": 25000,
-                "filters_supported": true,
-                "regex_filters": true,
-                "realtime": false
-            },
-            "extraction_path": "custom_pull"
-        },
-        {
-            "id": "device_daily",
-            "display_name": "Performance par appareil (quotidienne)",
-            "metrics": [
-                "clicks",
-                "impressions",
-                "average_position"
-            ],
-            "dimensions": [
-                "date",
-                "device"
-            ],
-            "extraction_capabilities": {
-                "row_limit": 25000,
-                "filters_supported": true,
-                "regex_filters": true,
-                "realtime": false
-            },
-            "extraction_path": "custom_pull"
-        },
-        {
-            "id": "query_page_daily",
-            "display_name": "Cannibalisation requête x page (quotidienne)",
-            "metrics": [
-                "clicks",
-                "impressions",
-                "average_position"
-            ],
-            "dimensions": [
-                "date",
-                "query",
-                "page"
-            ],
-            "extraction_capabilities": {
-                "row_limit": 25000,
-                "filters_supported": true,
-                "regex_filters": true,
-                "realtime": false
-            },
-            "extraction_path": "custom_pull"
-        },
-        {
-            "id": "discover_daily",
-            "display_name": "Discover par page (quotidienne)",
-            "search_type": "discover",
-            "metrics": [
-                "clicks",
-                "impressions"
-            ],
-            "dimensions": [
-                "date",
-                "page"
-            ],
-            "extraction_capabilities": {
-                "row_limit": 25000,
-                "filters_supported": true,
-                "regex_filters": true,
-                "realtime": false
-            },
-            "extraction_path": "custom_pull"
-        },
-        {
-            "id": "google_news_daily",
-            "display_name": "Google Actualités par page (quotidienne)",
-            "search_type": "googleNews",
-            "metrics": [
-                "clicks",
-                "impressions"
-            ],
-            "dimensions": [
-                "date",
-                "page"
-            ],
-            "extraction_capabilities": {
-                "row_limit": 25000,
-                "filters_supported": true,
-                "regex_filters": true,
-                "realtime": false
-            },
-            "extraction_path": "custom_pull"
-        },
-        {
-            "id": "news_daily",
-            "display_name": "Onglet Actualités par page (quotidienne)",
-            "search_type": "news",
-            "metrics": [
-                "clicks",
-                "impressions",
-                "average_position"
-            ],
-            "dimensions": [
-                "date",
-                "page"
-            ],
-            "extraction_capabilities": {
-                "row_limit": 25000,
-                "filters_supported": true,
-                "regex_filters": true,
-                "realtime": false
-            },
-            "extraction_path": "custom_pull"
-        },
-        {
-            "id": "image_daily",
-            "display_name": "Recherche d'images par page (quotidienne)",
-            "search_type": "image",
-            "metrics": [
-                "clicks",
-                "impressions",
-                "average_position"
-            ],
-            "dimensions": [
-                "date",
-                "page"
-            ],
-            "extraction_capabilities": {
-                "row_limit": 25000,
-                "filters_supported": true,
-                "regex_filters": true,
-                "realtime": false
-            },
-            "extraction_path": "custom_pull"
-        },
-        {
-            "id": "video_daily",
-            "display_name": "Recherche de vidéos par page (quotidienne)",
-            "search_type": "video",
-            "metrics": [
-                "clicks",
-                "impressions",
-                "average_position"
-            ],
-            "dimensions": [
-                "date",
-                "page"
-            ],
-            "extraction_capabilities": {
-                "row_limit": 25000,
-                "filters_supported": true,
-                "regex_filters": true,
-                "realtime": false
-            },
-            "extraction_path": "custom_pull"
-        },
-        {
-            "id": "search_appearance_daily",
-            "display_name": "Apparence dans les résultats (quotidienne)",
-            "search_type": "web",
-            "metrics": [
-                "clicks",
-                "impressions",
-                "average_position"
-            ],
-            "dimensions": [
-                "date",
-                "search_appearance"
-            ],
-            "extraction_capabilities": {
-                "row_limit": 25000,
-                "filters_supported": true,
-                "regex_filters": false,
-                "realtime": false,
-                "note": "L'API interdit de grouper searchAppearance avec d'autres dimensions ; le grain quotidien est reconstruit par une requête mono-jour par date."
-            },
-            "extraction_path": "custom_pull"
-        },
-        {
-            "id": "catalog_daily",
-            "display_name": "Catalog-driven (daily)",
-            "metrics": [
-                "clicks",
-                "impressions",
-                "average_position"
-            ],
-            "dimensions": [
-                "date",
-                "page",
-                "country",
-                "device",
-                "query",
-                "search_type",
-                "search_appearance"
-            ],
-            "extraction_capabilities": {
-                "row_limit": 25000,
-                "filters_supported": true,
-                "realtime": false
-            },
-            "extraction_path": "custom_pull"
-        }
+  "schema_version": "1.2",
+  "name": "gsc",
+  "display_name": "Google Search Console",
+  "business_domain": "marketing",
+  "public_catalog": {
+    "visibility": "public",
+    "category": "analytics_product",
+    "onboarding_modes": [
+      "connector_pull"
     ],
-    "canonical_metric_mapping": {
-        "clicks": "clicks",
-        "impressions": "impressions",
-        "average_position": {
-            "canonical": "average_position",
-            "aggregation_rule": "impression_weighted",
-            "non_additive": true
-        }
-    },
-    "canonical_dimension_mapping": {
-        "page": "page",
-        "country": "country",
-        "device": "device",
-        "query": "query",
-        "searchAppearance": "search_appearance",
-        "search_type": "search_type",
-        "hour": "hour"
-    },
-    "error_map": {},
-    "_error_map_note": "Google Search Console uses standard HTTP status codes only (no provider-specific numeric subcodes in the error payload). The pure-HTTP taxonomy in classify_http_error already covers all actionable classes: 401 -> auth_expired, 403 -> permission_denied, 400 -> invalid_request, 5xx -> provider_transient. No provider-code refinements are needed. This was confirmed against https://developers.google.com/webmaster-tools/v1/searchanalytics/query (2026-07-21): the error body shape is a Google API Error object { error: { code, message, errors[] } } with no application-level subcode equivalent to Meta's error.code/subcode.",
-    "account_topology": {
-        "_comment": "Story 25.7 (AC4): GSC topology is a single flat level — the token's reachable sites (GSC properties). The reporting entity (selection_level) is the SITE (a searchanalytics.query call targets sites/{siteUrl}/searchAnalytics/query). discover_accounts calls the Webmasters API sites.list endpoint to enumerate what the token can access. Core owns selection/access-check/trial/backfill. Replaces the GSC_SITE_URL env-var pattern (deprecated at 25.7 rollout; see ROLLOUT_NOTES.md — existing behaviour not removed, env-var fallback in _resolve_site_url remains functional until core topology is wired).",
-        "levels": [
-            {
-                "id": "site",
-                "label": "Site (GSC property)"
-            }
-        ],
-        "selection_level": "site",
-        "discovery": {
-            "callable": "discover_accounts"
-        }
-    },
-    "quota": {
-        "window_seconds": 100,
-        "budget_points": 1200,
-        "read_cost": 1,
-        "write_cost": 1
-    },
-    "widget_ref": "ui://core/daily-report",
-    "source_capabilities": {
-        "contract_version": "1",
-        "field_discovery": {
-            "mode": "static",
-            "allowed_targets": []
-        },
-        "fields": [
-            {
-                "field_id": "clicks",
-                "source_field": "clicks",
-                "kind": "metric",
-                "physical_type": "integer",
-                "description": "clicks exposed by Google Search Console.",
-                "semantic_hints": [
-                    "engagement",
-                    "count"
-                ],
-                "canonical_target": "clicks",
-                "aggregation": "sum",
-                "non_additive": false
-            },
-            {
-                "field_id": "impressions",
-                "source_field": "impressions",
-                "kind": "metric",
-                "physical_type": "integer",
-                "description": "impressions exposed by Google Search Console.",
-                "semantic_hints": [
-                    "engagement",
-                    "count"
-                ],
-                "canonical_target": "impressions",
-                "aggregation": "sum",
-                "non_additive": false
-            },
-            {
-                "field_id": "average_position",
-                "source_field": "average_position",
-                "kind": "metric",
-                "physical_type": "decimal",
-                "description": "average position exposed by Google Search Console.",
-                "semantic_hints": [
-                    "seo",
-                    "non_additive"
-                ],
-                "canonical_target": "average_position",
-                "aggregation": "impression_weighted",
-                "non_additive": true
-            },
-            {
-                "field_id": "date",
-                "source_field": "date",
-                "kind": "dimension",
-                "physical_type": "date",
-                "description": "date exposed by Google Search Console.",
-                "semantic_hints": [
-                    "date"
-                ],
-                "canonical_target": "date",
-                "aggregation": "none",
-                "non_additive": false
-            },
-            {
-                "field_id": "page",
-                "source_field": "page",
-                "kind": "dimension",
-                "physical_type": "string",
-                "description": "page exposed by Google Search Console.",
-                "semantic_hints": [
-                    "content"
-                ],
-                "canonical_target": "page",
-                "aggregation": "none",
-                "non_additive": false
-            },
-            {
-                "field_id": "country",
-                "source_field": "country",
-                "kind": "dimension",
-                "physical_type": "string",
-                "description": "country exposed by Google Search Console.",
-                "semantic_hints": [
-                    "geography"
-                ],
-                "canonical_target": "country",
-                "aggregation": "none",
-                "non_additive": false
-            },
-            {
-                "field_id": "device",
-                "source_field": "device",
-                "kind": "dimension",
-                "physical_type": "string",
-                "description": "device exposed by Google Search Console.",
-                "semantic_hints": [
-                    "device"
-                ],
-                "canonical_target": "device",
-                "aggregation": "none",
-                "non_additive": false
-            },
-            {
-                "field_id": "query",
-                "source_field": "query",
-                "kind": "dimension",
-                "physical_type": "string",
-                "description": "query exposed by Google Search Console.",
-                "semantic_hints": [
-                    "content"
-                ],
-                "canonical_target": "query",
-                "aggregation": "none",
-                "non_additive": false
-            },
-            {
-                "field_id": "search_type",
-                "source_field": "type",
-                "kind": "dimension",
-                "physical_type": "string",
-                "description": "GSC search surface (API 'type' request parameter): web, image, video, news, discover, googleNews. Stamped on every raw row.",
-                "semantic_hints": [
-                    "seo",
-                    "surface"
-                ],
-                "canonical_target": "search_type",
-                "aggregation": "none",
-                "non_additive": false
-            },
-            {
-                "field_id": "search_appearance",
-                "source_field": "searchAppearance",
-                "kind": "dimension",
-                "physical_type": "string",
-                "description": "searchAppearance exposed by Google Search Console (rich results, AMP, ...). Cannot be grouped with other API dimensions; daily grain reconstructed per-day.",
-                "semantic_hints": [
-                    "seo",
-                    "appearance"
-                ],
-                "canonical_target": "search_appearance",
-                "aggregation": "none",
-                "non_additive": false
-            },
-            {
-                "field_id": "hour",
-                "source_field": "hour",
-                "kind": "dimension",
-                "physical_type": "string",
-                "description": "hour exposed by Google Search Console (ISO-8601 timestamp keys; requires dataState=hourly_all; partial data). Ad-hoc pulls only — excluded from daily staging.",
-                "semantic_hints": [
-                    "time"
-                ],
-                "canonical_target": "hour",
-                "aggregation": "none",
-                "non_additive": false
-            }
-        ],
-        "reports": [
-            {
-                "id": "page_daily",
-                "selection_mode": "exact_bundle",
-                "availability": {
-                    "status": "selectable"
-                },
-                "dispatch": {
-                    "callable": "pull_page_daily"
-                },
-                "metrics": [
-                    "clicks",
-                    "impressions",
-                    "average_position"
-                ],
-                "dimensions": [
-                    "date",
-                    "page"
-                ],
-                "supported_grains": [
-                    [
-                        "date",
-                        "page"
-                    ]
-                ],
-                "compatibility": [],
-                "filters": [
-                    {
-                        "field_id": "date",
-                        "operators": [
-                            "gte",
-                            "lte"
-                        ]
-                    }
-                ],
-                "pagination": {
-                    "mode": "offset",
-                    "completeness": "bounded",
-                    "max_pages": 40,
-                    "row_limit": 25000,
-                    "truncation_signal": "logged"
-                },
-                "quota_cost": {
-                    "read_points": 1,
-                    "unit": "request"
-                },
-                "incremental": {
-                    "mode": "date_window",
-                    "cursor_field": null
-                },
-                "cadence": {
-                    "minimum_interval_minutes": 1440,
-                    "supported_modes": [
-                        "manual",
-                        "daily"
-                    ]
-                }
-            },
-            {
-                "id": "country_daily",
-                "selection_mode": "exact_bundle",
-                "availability": {
-                    "status": "selectable"
-                },
-                "dispatch": {
-                    "callable": "pull_country_daily"
-                },
-                "metrics": [
-                    "clicks",
-                    "impressions",
-                    "average_position"
-                ],
-                "dimensions": [
-                    "date",
-                    "country"
-                ],
-                "supported_grains": [
-                    [
-                        "date",
-                        "country"
-                    ]
-                ],
-                "compatibility": [],
-                "filters": [
-                    {
-                        "field_id": "date",
-                        "operators": [
-                            "gte",
-                            "lte"
-                        ]
-                    }
-                ],
-                "pagination": {
-                    "mode": "offset",
-                    "completeness": "bounded",
-                    "max_pages": 40,
-                    "row_limit": 25000,
-                    "truncation_signal": "logged"
-                },
-                "quota_cost": {
-                    "read_points": 1,
-                    "unit": "request"
-                },
-                "incremental": {
-                    "mode": "date_window",
-                    "cursor_field": null
-                },
-                "cadence": {
-                    "minimum_interval_minutes": 1440,
-                    "supported_modes": [
-                        "manual",
-                        "daily"
-                    ]
-                }
-            },
-            {
-                "id": "device_daily",
-                "selection_mode": "exact_bundle",
-                "availability": {
-                    "status": "selectable"
-                },
-                "dispatch": {
-                    "callable": "pull_device_daily"
-                },
-                "metrics": [
-                    "clicks",
-                    "impressions",
-                    "average_position"
-                ],
-                "dimensions": [
-                    "date",
-                    "device"
-                ],
-                "supported_grains": [
-                    [
-                        "date",
-                        "device"
-                    ]
-                ],
-                "compatibility": [],
-                "filters": [
-                    {
-                        "field_id": "date",
-                        "operators": [
-                            "gte",
-                            "lte"
-                        ]
-                    }
-                ],
-                "pagination": {
-                    "mode": "offset",
-                    "completeness": "bounded",
-                    "max_pages": 40,
-                    "row_limit": 25000,
-                    "truncation_signal": "logged"
-                },
-                "quota_cost": {
-                    "read_points": 1,
-                    "unit": "request"
-                },
-                "incremental": {
-                    "mode": "date_window",
-                    "cursor_field": null
-                },
-                "cadence": {
-                    "minimum_interval_minutes": 1440,
-                    "supported_modes": [
-                        "manual",
-                        "daily"
-                    ]
-                }
-            },
-            {
-                "id": "query_page_daily",
-                "selection_mode": "exact_bundle",
-                "availability": {
-                    "status": "selectable"
-                },
-                "metrics": [
-                    "clicks",
-                    "impressions",
-                    "average_position"
-                ],
-                "dimensions": [
-                    "date",
-                    "query",
-                    "page"
-                ],
-                "supported_grains": [
-                    [
-                        "date",
-                        "query",
-                        "page"
-                    ]
-                ],
-                "compatibility": [],
-                "filters": [
-                    {
-                        "field_id": "date",
-                        "operators": [
-                            "gte",
-                            "lte"
-                        ]
-                    }
-                ],
-                "pagination": {
-                    "mode": "offset",
-                    "completeness": "bounded",
-                    "max_pages": 40,
-                    "row_limit": 25000,
-                    "truncation_signal": "logged"
-                },
-                "quota_cost": {
-                    "read_points": 1,
-                    "unit": "request"
-                },
-                "incremental": {
-                    "mode": "date_window",
-                    "cursor_field": null
-                },
-                "cadence": {
-                    "minimum_interval_minutes": 1440,
-                    "supported_modes": [
-                        "manual",
-                        "daily"
-                    ]
-                },
-                "dispatch": {
-                    "callable": "pull_query_page_daily"
-                }
-            },
-            {
-                "id": "discover_daily",
-                "selection_mode": "exact_bundle",
-                "availability": {
-                    "status": "selectable"
-                },
-                "metrics": [
-                    "clicks",
-                    "impressions"
-                ],
-                "dimensions": [
-                    "date",
-                    "page"
-                ],
-                "supported_grains": [
-                    [
-                        "date",
-                        "page"
-                    ]
-                ],
-                "compatibility": [],
-                "filters": [
-                    {
-                        "field_id": "date",
-                        "operators": [
-                            "gte",
-                            "lte"
-                        ]
-                    }
-                ],
-                "pagination": {
-                    "mode": "offset",
-                    "completeness": "bounded",
-                    "max_pages": 40,
-                    "row_limit": 25000,
-                    "truncation_signal": "logged"
-                },
-                "quota_cost": {
-                    "read_points": 1,
-                    "unit": "request"
-                },
-                "incremental": {
-                    "mode": "date_window",
-                    "cursor_field": null
-                },
-                "cadence": {
-                    "minimum_interval_minutes": 1440,
-                    "supported_modes": [
-                        "manual",
-                        "daily"
-                    ]
-                },
-                "dispatch": {
-                    "callable": "pull_discover_daily"
-                }
-            },
-            {
-                "id": "google_news_daily",
-                "selection_mode": "exact_bundle",
-                "availability": {
-                    "status": "selectable"
-                },
-                "metrics": [
-                    "clicks",
-                    "impressions"
-                ],
-                "dimensions": [
-                    "date",
-                    "page"
-                ],
-                "supported_grains": [
-                    [
-                        "date",
-                        "page"
-                    ]
-                ],
-                "compatibility": [],
-                "filters": [
-                    {
-                        "field_id": "date",
-                        "operators": [
-                            "gte",
-                            "lte"
-                        ]
-                    }
-                ],
-                "pagination": {
-                    "mode": "offset",
-                    "completeness": "bounded",
-                    "max_pages": 40,
-                    "row_limit": 25000,
-                    "truncation_signal": "logged"
-                },
-                "quota_cost": {
-                    "read_points": 1,
-                    "unit": "request"
-                },
-                "incremental": {
-                    "mode": "date_window",
-                    "cursor_field": null
-                },
-                "cadence": {
-                    "minimum_interval_minutes": 1440,
-                    "supported_modes": [
-                        "manual",
-                        "daily"
-                    ]
-                },
-                "dispatch": {
-                    "callable": "pull_google_news_daily"
-                }
-            },
-            {
-                "id": "news_daily",
-                "selection_mode": "exact_bundle",
-                "availability": {
-                    "status": "selectable"
-                },
-                "metrics": [
-                    "clicks",
-                    "impressions",
-                    "average_position"
-                ],
-                "dimensions": [
-                    "date",
-                    "page"
-                ],
-                "supported_grains": [
-                    [
-                        "date",
-                        "page"
-                    ]
-                ],
-                "compatibility": [],
-                "filters": [
-                    {
-                        "field_id": "date",
-                        "operators": [
-                            "gte",
-                            "lte"
-                        ]
-                    }
-                ],
-                "pagination": {
-                    "mode": "offset",
-                    "completeness": "bounded",
-                    "max_pages": 40,
-                    "row_limit": 25000,
-                    "truncation_signal": "logged"
-                },
-                "quota_cost": {
-                    "read_points": 1,
-                    "unit": "request"
-                },
-                "incremental": {
-                    "mode": "date_window",
-                    "cursor_field": null
-                },
-                "cadence": {
-                    "minimum_interval_minutes": 1440,
-                    "supported_modes": [
-                        "manual",
-                        "daily"
-                    ]
-                },
-                "dispatch": {
-                    "callable": "pull_news_daily"
-                }
-            },
-            {
-                "id": "image_daily",
-                "selection_mode": "exact_bundle",
-                "availability": {
-                    "status": "selectable"
-                },
-                "metrics": [
-                    "clicks",
-                    "impressions",
-                    "average_position"
-                ],
-                "dimensions": [
-                    "date",
-                    "page"
-                ],
-                "supported_grains": [
-                    [
-                        "date",
-                        "page"
-                    ]
-                ],
-                "compatibility": [],
-                "filters": [
-                    {
-                        "field_id": "date",
-                        "operators": [
-                            "gte",
-                            "lte"
-                        ]
-                    }
-                ],
-                "pagination": {
-                    "mode": "offset",
-                    "completeness": "bounded",
-                    "max_pages": 40,
-                    "row_limit": 25000,
-                    "truncation_signal": "logged"
-                },
-                "quota_cost": {
-                    "read_points": 1,
-                    "unit": "request"
-                },
-                "incremental": {
-                    "mode": "date_window",
-                    "cursor_field": null
-                },
-                "cadence": {
-                    "minimum_interval_minutes": 1440,
-                    "supported_modes": [
-                        "manual",
-                        "daily"
-                    ]
-                },
-                "dispatch": {
-                    "callable": "pull_image_daily"
-                }
-            },
-            {
-                "id": "video_daily",
-                "selection_mode": "exact_bundle",
-                "availability": {
-                    "status": "selectable"
-                },
-                "metrics": [
-                    "clicks",
-                    "impressions",
-                    "average_position"
-                ],
-                "dimensions": [
-                    "date",
-                    "page"
-                ],
-                "supported_grains": [
-                    [
-                        "date",
-                        "page"
-                    ]
-                ],
-                "compatibility": [],
-                "filters": [
-                    {
-                        "field_id": "date",
-                        "operators": [
-                            "gte",
-                            "lte"
-                        ]
-                    }
-                ],
-                "pagination": {
-                    "mode": "offset",
-                    "completeness": "bounded",
-                    "max_pages": 40,
-                    "row_limit": 25000,
-                    "truncation_signal": "logged"
-                },
-                "quota_cost": {
-                    "read_points": 1,
-                    "unit": "request"
-                },
-                "incremental": {
-                    "mode": "date_window",
-                    "cursor_field": null
-                },
-                "cadence": {
-                    "minimum_interval_minutes": 1440,
-                    "supported_modes": [
-                        "manual",
-                        "daily"
-                    ]
-                },
-                "dispatch": {
-                    "callable": "pull_video_daily"
-                }
-            },
-            {
-                "id": "search_appearance_daily",
-                "selection_mode": "exact_bundle",
-                "availability": {
-                    "status": "selectable"
-                },
-                "metrics": [
-                    "clicks",
-                    "impressions",
-                    "average_position"
-                ],
-                "dimensions": [
-                    "date",
-                    "search_appearance"
-                ],
-                "supported_grains": [
-                    [
-                        "date",
-                        "search_appearance"
-                    ]
-                ],
-                "compatibility": [],
-                "filters": [
-                    {
-                        "field_id": "date",
-                        "operators": [
-                            "gte",
-                            "lte"
-                        ]
-                    }
-                ],
-                "pagination": {
-                    "mode": "offset",
-                    "completeness": "bounded",
-                    "max_pages": 40,
-                    "row_limit": 25000,
-                    "truncation_signal": "logged"
-                },
-                "quota_cost": {
-                    "read_points": 1,
-                    "unit": "request_per_day"
-                },
-                "incremental": {
-                    "mode": "date_window",
-                    "cursor_field": null
-                },
-                "cadence": {
-                    "minimum_interval_minutes": 1440,
-                    "supported_modes": [
-                        "manual",
-                        "daily"
-                    ]
-                },
-                "dispatch": {
-                    "callable": "pull_search_appearance_daily"
-                }
-            },
-            {
-                "id": "catalog_daily",
-                "selection_mode": "catalog_driven",
-                "availability": {
-                    "status": "selectable"
-                },
-                "dispatch": {
-                    "callable": "pull_catalog_daily"
-                },
-                "pagination": {
-                    "mode": "offset",
-                    "completeness": "bounded",
-                    "max_pages": 40,
-                    "row_limit": 25000,
-                    "truncation_signal": "logged"
-                },
-                "quota_cost": {
-                    "read_points": 1,
-                    "unit": "request"
-                },
-                "incremental": {
-                    "mode": "date_window",
-                    "cursor_field": null
-                },
-                "cadence": {
-                    "minimum_interval_minutes": 1440,
-                    "supported_modes": [
-                        "manual",
-                        "daily"
-                    ]
-                },
-                "supported_grains": [
-                    [
-                        "date",
-                        "page",
-                        "country",
-                        "device",
-                        "query",
-                        "search_type",
-                        "search_appearance"
-                    ]
-                ],
-                "metrics": [
-                    "clicks",
-                    "impressions",
-                    "average_position"
-                ],
-                "dimensions": [
-                    "date",
-                    "page",
-                    "country",
-                    "device",
-                    "query",
-                    "search_type",
-                    "search_appearance"
-                ],
-                "compatibility": [],
-                "filters": [
-                    {
-                        "field_id": "date",
-                        "operators": [
-                            "gte",
-                            "lte"
-                        ]
-                    }
-                ]
-            }
-        ]
+    "verification": {
+      "status": "blocked",
+      "reason_code": "live_evidence_not_ratified",
+      "follow_up": "Ratify and run the independent connector evidence contract."
     }
+  },
+  "auth_type": "google_direct",
+  "auth": {
+    "type": "google_direct",
+    "auth_path": "google_direct",
+    "scopes": [
+      "https://www.googleapis.com/auth/webmasters.readonly"
+    ],
+    "_note": "AD-21 : la porte d'entree de ce connecteur EST ce scope. Un module auth_type='google_direct' que le consentement ne demande pas est installe et inatteignable -- c'est AI-94, mesure le 2026-07-31 sur l'artefact de production. La declaration ci-dessous est confrontee a GOOGLE_STACK_SCOPES par tests/conformance/test_google_consent.py."
+  },
+  "module_kind": "kpi",
+  "report_profiles": [
+    {
+      "id": "page_daily",
+      "raw_relation": "raw_gsc_daily",
+      "staging_relation": "stg_gsc_daily",
+      "display_name": "Page performance (daily)",
+      "metrics": [
+        "clicks",
+        "impressions",
+        "average_position"
+      ],
+      "dimensions": [
+        "date",
+        "page"
+      ],
+      "extraction_capabilities": {
+        "row_limit": 25000,
+        "filters_supported": true,
+        "regex_filters": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull"
+    },
+    {
+      "id": "country_daily",
+      "raw_relation": "raw_gsc_daily",
+      "staging_relation": "stg_gsc_daily",
+      "display_name": "Country performance (daily)",
+      "metrics": [
+        "clicks",
+        "impressions",
+        "average_position"
+      ],
+      "dimensions": [
+        "date",
+        "country"
+      ],
+      "extraction_capabilities": {
+        "row_limit": 25000,
+        "filters_supported": true,
+        "regex_filters": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull"
+    },
+    {
+      "id": "device_daily",
+      "raw_relation": "raw_gsc_daily",
+      "staging_relation": "stg_gsc_daily",
+      "display_name": "Device performance (daily)",
+      "metrics": [
+        "clicks",
+        "impressions",
+        "average_position"
+      ],
+      "dimensions": [
+        "date",
+        "device"
+      ],
+      "extraction_capabilities": {
+        "row_limit": 25000,
+        "filters_supported": true,
+        "regex_filters": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull"
+    },
+    {
+      "id": "query_page_daily",
+      "raw_relation": "raw_gsc_daily",
+      "staging_relation": "stg_gsc_query_page_daily",
+      "display_name": "Query x page cannibalisation (daily)",
+      "metrics": [
+        "clicks",
+        "impressions",
+        "average_position"
+      ],
+      "dimensions": [
+        "date",
+        "query",
+        "page"
+      ],
+      "extraction_capabilities": {
+        "row_limit": 25000,
+        "filters_supported": true,
+        "regex_filters": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull"
+    },
+    {
+      "id": "discover_daily",
+      "raw_relation": "raw_gsc_daily",
+      "staging_relation": "stg_gsc_surface_daily",
+      "display_name": "Discover by page (daily)",
+      "search_type": "discover",
+      "metrics": [
+        "clicks",
+        "impressions"
+      ],
+      "dimensions": [
+        "date",
+        "page"
+      ],
+      "extraction_capabilities": {
+        "row_limit": 25000,
+        "filters_supported": true,
+        "regex_filters": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull"
+    },
+    {
+      "id": "google_news_daily",
+      "raw_relation": "raw_gsc_daily",
+      "staging_relation": "stg_gsc_surface_daily",
+      "display_name": "Google News by page (daily)",
+      "search_type": "googleNews",
+      "metrics": [
+        "clicks",
+        "impressions"
+      ],
+      "dimensions": [
+        "date",
+        "page"
+      ],
+      "extraction_capabilities": {
+        "row_limit": 25000,
+        "filters_supported": true,
+        "regex_filters": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull"
+    },
+    {
+      "id": "news_daily",
+      "raw_relation": "raw_gsc_daily",
+      "staging_relation": "stg_gsc_surface_daily",
+      "display_name": "News tab by page (daily)",
+      "search_type": "news",
+      "metrics": [
+        "clicks",
+        "impressions",
+        "average_position"
+      ],
+      "dimensions": [
+        "date",
+        "page"
+      ],
+      "extraction_capabilities": {
+        "row_limit": 25000,
+        "filters_supported": true,
+        "regex_filters": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull"
+    },
+    {
+      "id": "image_daily",
+      "raw_relation": "raw_gsc_daily",
+      "staging_relation": "stg_gsc_surface_daily",
+      "display_name": "Image search by page (daily)",
+      "search_type": "image",
+      "metrics": [
+        "clicks",
+        "impressions",
+        "average_position"
+      ],
+      "dimensions": [
+        "date",
+        "page"
+      ],
+      "extraction_capabilities": {
+        "row_limit": 25000,
+        "filters_supported": true,
+        "regex_filters": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull"
+    },
+    {
+      "id": "video_daily",
+      "raw_relation": "raw_gsc_daily",
+      "staging_relation": "stg_gsc_surface_daily",
+      "display_name": "Video search by page (daily)",
+      "search_type": "video",
+      "metrics": [
+        "clicks",
+        "impressions",
+        "average_position"
+      ],
+      "dimensions": [
+        "date",
+        "page"
+      ],
+      "extraction_capabilities": {
+        "row_limit": 25000,
+        "filters_supported": true,
+        "regex_filters": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull"
+    },
+    {
+      "id": "search_appearance_daily",
+      "raw_relation": "raw_gsc_daily",
+      "staging_relation": "stg_gsc_search_appearance_daily",
+      "display_name": "Search appearance (daily)",
+      "search_type": "web",
+      "metrics": [
+        "clicks",
+        "impressions",
+        "average_position"
+      ],
+      "dimensions": [
+        "date",
+        "search_appearance"
+      ],
+      "extraction_capabilities": {
+        "row_limit": 25000,
+        "filters_supported": true,
+        "regex_filters": false,
+        "realtime": false,
+        "note": "L'API interdit de grouper searchAppearance avec d'autres dimensions ; le grain quotidien est reconstruit par une requ\u00eate mono-jour par date."
+      },
+      "extraction_path": "custom_pull"
+    },
+    {
+      "id": "catalog_daily",
+      "raw_relation": "raw_gsc_daily",
+      "staging_relation": null,
+      "display_name": "Catalog-driven (daily)",
+      "metrics": [
+        "clicks",
+        "impressions",
+        "average_position"
+      ],
+      "dimensions": [
+        "date",
+        "page",
+        "country",
+        "device",
+        "query",
+        "search_type",
+        "search_appearance"
+      ],
+      "extraction_capabilities": {
+        "row_limit": 25000,
+        "filters_supported": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull"
+    }
+  ],
+  "canonical_metric_mapping": {
+    "clicks": "clicks",
+    "impressions": "impressions",
+    "average_position": {
+      "canonical": "average_position",
+      "aggregation_rule": "impression_weighted",
+      "non_additive": true
+    }
+  },
+  "canonical_dimension_mapping": {
+    "page": "page",
+    "country": "country",
+    "device": "device",
+    "query": "query",
+    "searchAppearance": "search_appearance",
+    "search_type": "search_type",
+    "hour": "hour"
+  },
+  "error_map": {
+    "401:authError": "auth_expired",
+    "401:required": "auth_expired",
+    "403:forbidden": "permission_denied",
+    "403:insufficientPermissions": "permission_denied",
+    "403:accessNotConfigured": "permission_denied",
+    "403:dailyLimitExceeded": "provider_transient",
+    "403:quotaExceeded": "provider_transient",
+    "403:rateLimitExceeded": "provider_transient",
+    "403:userRateLimitExceeded": "provider_transient",
+    "400:badRequest": "invalid_request",
+    "400:invalid": "invalid_request",
+    "400:invalidParameter": "invalid_request",
+    "404:notFound": "invalid_request",
+    "500:internalError": "provider_transient",
+    "503:backendError": "provider_transient"
+  },
+  "_error_map_note": "Codes are the reason strings of the standard Google API Console error envelope, which the Search Console API v1 (https://developers.google.com/webmaster-tools/v1/errors, endpoint https://developers.google.com/webmaster-tools/v1/searchanalytics/query) returns unchanged. SHAPE THE KEYS MATCH: { error: { code: <numeric http>, message, errors: [{ message, domain, reason: '<reason>' }] } }. core.pull_errors._extract_provider_codes yields errors[].reason before error.status and error.code, so every key here is written on errors[].reason. error.code is deliberately never keyed on -- it repeats the HTTP status and could only produce '401:401', which refines nothing (that was the reason this map stood empty until 2026-08-17). WHAT THE MAP CHANGES vs the pure-HTTP classification: the four 403 quota reasons (dailyLimitExceeded / quotaExceeded / rateLimitExceeded / userRateLimitExceeded) become provider_transient instead of permission_denied -- Google documents them as 'retry using exponential backoff', while permission_denied is retryable=False and told the operator to reconnect a credential that was never the problem; 404 notFound becomes invalid_request instead of unclassified, so a siteUrl that no longer resolves stops being replayed. No 429 key: HTTP 429 raises core.quota.RateLimitError in the connector (breaker path) and never reaches classify_http_error. No auth_revoked entry: Search Console answers a revoked grant with the same 401 authError as an expired token, so there is no code to key one on.",
+  "account_topology": {
+    "_comment": "Story 25.7 (AC4): GSC topology is a single flat level \u2014 the token's reachable sites (GSC properties). The reporting entity (selection_level) is the SITE (a searchanalytics.query call targets sites/{siteUrl}/searchAnalytics/query). discover_accounts calls the Webmasters API sites.list endpoint to enumerate what the token can access. Core owns selection/access-check/trial/backfill. Replaces the GSC_SITE_URL env-var pattern (removed 2026-07-31; see ROLLOUT_NOTES.md \u2014 _resolve_site_url now raises when no site was selected, an env-var being one property for the whole deployment).",
+    "levels": [
+      {
+        "id": "site",
+        "label": "Site (GSC property)"
+      }
+    ],
+    "selection_level": "site",
+    "discovery": {
+      "callable": "discover_accounts"
+    },
+    "pull_parameter": "site_url"
+  },
+  "quota": {
+    "window_seconds": 100,
+    "budget_points": 1200,
+    "read_cost": 1,
+    "write_cost": 1
+  },
+  "widget_ref": "ui://core/daily-report",
+  "source_capabilities": {
+    "contract_version": "1",
+    "field_discovery": {
+      "mode": "static",
+      "allowed_targets": []
+    },
+    "fields": [
+      {
+        "field_id": "clicks",
+        "source_field": "clicks",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "clicks exposed by Google Search Console.",
+        "semantic_hints": [
+          "engagement",
+          "count"
+        ],
+        "canonical_target": "clicks",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "impressions",
+        "source_field": "impressions",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "impressions exposed by Google Search Console.",
+        "semantic_hints": [
+          "engagement",
+          "count"
+        ],
+        "canonical_target": "impressions",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "average_position",
+        "source_field": "average_position",
+        "kind": "metric",
+        "physical_type": "decimal",
+        "description": "average position exposed by Google Search Console.",
+        "semantic_hints": [
+          "seo",
+          "non_additive"
+        ],
+        "canonical_target": "average_position",
+        "aggregation": "impression_weighted",
+        "non_additive": true
+      },
+      {
+        "field_id": "date",
+        "source_field": "date",
+        "kind": "dimension",
+        "physical_type": "date",
+        "description": "date exposed by Google Search Console.",
+        "semantic_hints": [
+          "date"
+        ],
+        "canonical_target": "date",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "page",
+        "source_field": "page",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "page exposed by Google Search Console.",
+        "semantic_hints": [
+          "content"
+        ],
+        "canonical_target": "page",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "country",
+        "source_field": "country",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "country exposed by Google Search Console.",
+        "semantic_hints": [
+          "geography"
+        ],
+        "canonical_target": "country",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "device",
+        "source_field": "device",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "device exposed by Google Search Console.",
+        "semantic_hints": [
+          "device"
+        ],
+        "canonical_target": "device",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "query",
+        "source_field": "query",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "query exposed by Google Search Console.",
+        "semantic_hints": [
+          "content"
+        ],
+        "canonical_target": "query",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "search_type",
+        "source_field": "type",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "GSC search surface (API 'type' request parameter): web, image, video, news, discover, googleNews. Stamped on every raw row.",
+        "semantic_hints": [
+          "seo",
+          "surface"
+        ],
+        "canonical_target": "search_type",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "search_appearance",
+        "source_field": "searchAppearance",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "searchAppearance exposed by Google Search Console (rich results, AMP, ...). Cannot be grouped with other API dimensions; daily grain reconstructed per-day.",
+        "semantic_hints": [
+          "seo",
+          "appearance"
+        ],
+        "canonical_target": "search_appearance",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "hour",
+        "source_field": "hour",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "hour exposed by Google Search Console (ISO-8601 timestamp keys; requires dataState=hourly_all; partial data). Ad-hoc pulls only \u2014 excluded from daily staging.",
+        "semantic_hints": [
+          "time"
+        ],
+        "canonical_target": "hour",
+        "aggregation": "none",
+        "non_additive": false
+      }
+    ],
+    "reports": [
+      {
+        "id": "page_daily",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "dispatch": {
+          "callable": "pull_page_daily"
+        },
+        "metrics": [
+          "clicks",
+          "impressions",
+          "average_position"
+        ],
+        "dimensions": [
+          "date",
+          "page"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "page"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "offset",
+          "completeness": "bounded",
+          "max_pages": 40,
+          "row_limit": 25000,
+          "truncation_signal": "logged"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "request"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "max_provider_backfill_days": 480
+      },
+      {
+        "id": "country_daily",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "dispatch": {
+          "callable": "pull_country_daily"
+        },
+        "metrics": [
+          "clicks",
+          "impressions",
+          "average_position"
+        ],
+        "dimensions": [
+          "date",
+          "country"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "country"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "offset",
+          "completeness": "bounded",
+          "max_pages": 40,
+          "row_limit": 25000,
+          "truncation_signal": "logged"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "request"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "max_provider_backfill_days": 480
+      },
+      {
+        "id": "device_daily",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "dispatch": {
+          "callable": "pull_device_daily"
+        },
+        "metrics": [
+          "clicks",
+          "impressions",
+          "average_position"
+        ],
+        "dimensions": [
+          "date",
+          "device"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "device"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "offset",
+          "completeness": "bounded",
+          "max_pages": 40,
+          "row_limit": 25000,
+          "truncation_signal": "logged"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "request"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "max_provider_backfill_days": 480
+      },
+      {
+        "id": "query_page_daily",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "metrics": [
+          "clicks",
+          "impressions",
+          "average_position"
+        ],
+        "dimensions": [
+          "date",
+          "query",
+          "page"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "query",
+            "page"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "offset",
+          "completeness": "bounded",
+          "max_pages": 40,
+          "row_limit": 25000,
+          "truncation_signal": "logged"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "request"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "dispatch": {
+          "callable": "pull_query_page_daily"
+        },
+        "max_provider_backfill_days": 480
+      },
+      {
+        "id": "discover_daily",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "metrics": [
+          "clicks",
+          "impressions"
+        ],
+        "dimensions": [
+          "date",
+          "page"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "page"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "offset",
+          "completeness": "bounded",
+          "max_pages": 40,
+          "row_limit": 25000,
+          "truncation_signal": "logged"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "request"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "dispatch": {
+          "callable": "pull_discover_daily"
+        },
+        "max_provider_backfill_days": 480
+      },
+      {
+        "id": "google_news_daily",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "metrics": [
+          "clicks",
+          "impressions"
+        ],
+        "dimensions": [
+          "date",
+          "page"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "page"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "offset",
+          "completeness": "bounded",
+          "max_pages": 40,
+          "row_limit": 25000,
+          "truncation_signal": "logged"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "request"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "dispatch": {
+          "callable": "pull_google_news_daily"
+        },
+        "max_provider_backfill_days": 480
+      },
+      {
+        "id": "news_daily",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "metrics": [
+          "clicks",
+          "impressions",
+          "average_position"
+        ],
+        "dimensions": [
+          "date",
+          "page"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "page"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "offset",
+          "completeness": "bounded",
+          "max_pages": 40,
+          "row_limit": 25000,
+          "truncation_signal": "logged"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "request"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "dispatch": {
+          "callable": "pull_news_daily"
+        },
+        "max_provider_backfill_days": 480
+      },
+      {
+        "id": "image_daily",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "metrics": [
+          "clicks",
+          "impressions",
+          "average_position"
+        ],
+        "dimensions": [
+          "date",
+          "page"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "page"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "offset",
+          "completeness": "bounded",
+          "max_pages": 40,
+          "row_limit": 25000,
+          "truncation_signal": "logged"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "request"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "dispatch": {
+          "callable": "pull_image_daily"
+        },
+        "max_provider_backfill_days": 480
+      },
+      {
+        "id": "video_daily",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "metrics": [
+          "clicks",
+          "impressions",
+          "average_position"
+        ],
+        "dimensions": [
+          "date",
+          "page"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "page"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "offset",
+          "completeness": "bounded",
+          "max_pages": 40,
+          "row_limit": 25000,
+          "truncation_signal": "logged"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "request"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "dispatch": {
+          "callable": "pull_video_daily"
+        },
+        "max_provider_backfill_days": 480
+      },
+      {
+        "id": "search_appearance_daily",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "metrics": [
+          "clicks",
+          "impressions",
+          "average_position"
+        ],
+        "dimensions": [
+          "date",
+          "search_appearance"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "search_appearance"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "offset",
+          "completeness": "bounded",
+          "max_pages": 40,
+          "row_limit": 25000,
+          "truncation_signal": "logged"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "request_per_day"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "dispatch": {
+          "callable": "pull_search_appearance_daily"
+        },
+        "max_provider_backfill_days": 480
+      },
+      {
+        "id": "catalog_daily",
+        "selection_mode": "catalog_driven",
+        "availability": {
+          "status": "selectable"
+        },
+        "dispatch": {
+          "callable": "pull_catalog_daily"
+        },
+        "pagination": {
+          "mode": "offset",
+          "completeness": "bounded",
+          "max_pages": 40,
+          "row_limit": 25000,
+          "truncation_signal": "logged"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "request"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "supported_grains": [
+          [
+            "date",
+            "page",
+            "country",
+            "device",
+            "query",
+            "search_type",
+            "search_appearance"
+          ]
+        ],
+        "metrics": [
+          "clicks",
+          "impressions",
+          "average_position"
+        ],
+        "dimensions": [
+          "date",
+          "page",
+          "country",
+          "device",
+          "query",
+          "search_type",
+          "search_appearance"
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "max_provider_backfill_days": 480
+      }
+    ]
+  },
+  "_max_provider_backfill_days_note": "480 days = the 16 months Search Console itself keeps (https://support.google.com/analytics/answer/10737381), counted at 30 days per month."
 }

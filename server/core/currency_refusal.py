@@ -19,8 +19,8 @@ the remaining values "happen to" agree (which would be a silent wrong sum in dis
 Design decisions:
   - PURE + STATELESS: no DB, no wall-clock, no randomness. Deterministic sorted output.
   - AD-2: ZERO connector/provider names. Currencies come from row provenance; the ISO
-    recognizer is the shared ``_VALID_CURRENCIES`` subset (conflict_resolutions.py) -- no
-    second currency list. The provisional money-name proxy in ``_is_monetary_metric`` is
+    recognizer is the governed vocabulary (``core.currency_vocabulary``) -- no second
+    currency list. The provisional money-name proxy in ``_is_monetary_metric`` is
     metric-DICTIONARY vocabulary (config), not provider vocabulary.
   - AD-9: a missing currency is a surfaced GAP, never a default (EUR/USD/anything).
   - 39.1 seam: ``_is_monetary_metric`` is the single choke point for "is this metric
@@ -50,13 +50,24 @@ _RESOLVABLE_VIA = "fx_conversion"
 
 
 # ---------------------------------------------------------------------------
-# ISO recognizer -- REUSE the shared subset (no second currency list, §A.4)
+# ISO recognizer -- REUSE the governed vocabulary (no second currency list, §A.4)
 # ---------------------------------------------------------------------------
-# Imported from conflict_resolutions (Epic 13's ISO subset). This is the ONLY currency
-# recognizer in the money stack: a code outside it is treated as unknown (fail-closed),
-# never silently accepted. Kept as a module-level import (no cycle: conflict_resolutions
-# does not import currency_refusal).
-from core.conflict_resolutions import _VALID_CURRENCIES  # noqa: E402,PLC0415
+# It used to import `_VALID_CURRENCIES` from conflict_resolutions: 30 codes written
+# by hand, "extended on demand". Story 48.3's `core.currency_vocabulary` is the
+# governed ISO 4217 version (immutable, content-hashed, projected into dbt by one
+# script), and it is now what both doors read.
+#
+# What that changes here, said plainly: a contribution denominated in a real
+# currency outside those 30 -- ARS, VND, NGN -- used to be UNKNOWN_CURRENCY_GAP,
+# "we cannot tell what this is". It was recognizable all along. It is now
+# recognized, and a sum mixing it with another currency is refused as what it is,
+# a CROSS_CURRENCY_REFUSAL. Fail-closed is unchanged for a code the vocabulary
+# does not carry.
+#
+# Non-tender codes (metals, fund and test codes) are recognized too, deliberately:
+# recognizing XAU and refusing to add it to EUR is honest, while calling it unknown
+# hides which of the two problems occurred.
+from core.currency_vocabulary import is_valid_currency  # noqa: E402,PLC0415
 
 # ---------------------------------------------------------------------------
 # 39.1 classifier seam -- _is_monetary_metric
@@ -130,15 +141,16 @@ def _monetary_name_proxy(metric: str) -> bool:
 def _normalize_currency(currency: object) -> str | None:
     """Return the upper-cased ISO code if *currency* is a recognized ISO-4217 code, else None.
 
-    Unknown (fail-closed, AD-9) when: None, non-string, empty/whitespace, or not in the
-    shared ISO subset. A code outside the known subset is unknown, NOT silently accepted.
+    Unknown (fail-closed, AD-9) when: None, non-string, empty/whitespace, or absent from
+    the governed vocabulary. A code the vocabulary does not carry is unknown, NOT
+    silently accepted.
     """
     if not isinstance(currency, str):
         return None
     normalized = currency.strip().upper()
     if not normalized:
         return None
-    if normalized not in _VALID_CURRENCIES:
+    if not is_valid_currency(normalized):
         return None
     return normalized
 
@@ -256,7 +268,7 @@ def check_monetary_aggregation(
         pair = " et ".join(distinct)
         message = (
             f"Refus d'agregation : la metrique '{metric}' combine des montants en {pair} "
-            f"sans conversion explicite. Sommer des devises differentes produirait un total "
+            f"without an explicit conversion. Summing different currencies would produce a total "
             f"faux ('choux et carottes'). Convertissez vers la devise de reporting avant "
             f"d'agreger."
         )

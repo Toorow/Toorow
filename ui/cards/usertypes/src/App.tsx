@@ -6,7 +6,7 @@
  *              + table(device breakdown) + comment.
  */
 
-import CardShell, { CardComposition } from "@toorow/card-shell";
+import CardShell, { CardComposition, variationConventions } from "@toorow/card-shell";
 import type { CardEnvelope } from "@toorow/card-shell";
 
 interface AppProps {
@@ -41,6 +41,8 @@ export default function App({ envelope, adminConsoleUrl = "/admin" }: AppProps) 
       metricDefinitions={data.metric_definitions}
       adminConsoleUrl={adminConsoleUrl}
       feedbackProps={feedbackProps}
+      // ONE placement for the variation legend: the card footer (arbitrage 5).
+      variationConventions={variationConventions(data.composition, data)}
     >
       <CardComposition blocks={blocks} data={data} />
     </CardShell>

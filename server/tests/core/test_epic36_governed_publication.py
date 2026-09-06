@@ -25,6 +25,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from core import publication_reviews_api  # AD-43 : le handler vit chez son sujet
 
 
 @pytest.fixture(autouse=True)
@@ -93,10 +94,31 @@ def test_governance_tools_register_and_validate_catalog_accepts_them():
 
     _register_all(_Recorder())
     decls = {d.name: d for d in mcp_profiles.registered_declarations()}
-    assert set(decls) == {"review_agent_change", "confirm_agent_change", "rollback_agent_change"}
+    # The inventory is EXACT, and that is the point: a tool added to this module
+    # without a decision about its effect and its ceremony fails here, by name.
+    # `publish_semantic_model_change` joined on 2026-08-25 (story 49.3) -- the
+    # Semantic Model change set is the same AD-27 ceremony on a different
+    # authority, so it lives on the same Governance door; its own path is proven
+    # in `test_semantic_model_mcp_door.py`.
+    assert set(decls) == {
+        "review_agent_change",
+        "confirm_agent_change",
+        "rollback_agent_change",
+        "publish_semantic_model_change",
+        # `list_semantic_metric_presets` joined on 2026-08-25 too (49.3): the READ
+        # that discovers what the confirmed write below adopts -- effect read,
+        # confirmation `none`, on the same Governance door.
+        "list_semantic_metric_presets",
+    }
     assert all(d.profile == "governance" for d in decls.values())
-    for name in ("confirm_agent_change", "rollback_agent_change"):
-        assert decls[name].effect == "write"
+    assert decls["list_semantic_metric_presets"].effect == "read"
+    assert decls["list_semantic_metric_presets"].confirmation_mode == "none"
+    for name in (
+        "confirm_agent_change",
+        "rollback_agent_change",
+        "publish_semantic_model_change",
+    ):
+        assert decls[name].effect == "confirmed_write"
         assert decls[name].confirmation_mode == "human"
     assert decls["review_agent_change"].effect == "read"
     assert decls["review_agent_change"].confirmation_mode == "none"
@@ -148,6 +170,8 @@ def test_governance_tools_visible_with_governance_opt_in(monkeypatch):
         "enabled_profiles": ["insights", "governance"],
         "endpoint_binding": "admin-endpoint",
         "workspace_evidence_hash": "a" * 64,
+        # 67-16: the grants are attested against the live capability-context row.
+        "attested_context_id": "mcpctx_TESTATTESTED",
     }
     monkeypatch.setattr(
         mcp_profiles, "_capability_context", lambda: ("user-1", {"host": "opaque"}, grants)
@@ -173,7 +197,7 @@ def test_direct_call_to_confirm_denied_without_opt_in(monkeypatch):
     context = SimpleNamespace(message=SimpleNamespace(name="confirm_agent_change"))
     with pytest.raises(Exception) as exc:
         asyncio.run(mw.on_call_tool(context, call_next))
-    assert "introuvable" in str(exc.value)
+    assert "Tool not found." in str(exc.value)
     call_next.assert_not_called()
 
 
@@ -635,9 +659,9 @@ def test_reconcile_uses_original_refs(monkeypatch):
 
 
 def test_governance_mcp_never_returns_the_raw_secret_key():
-    from pathlib import Path
+    from tests.conftest import SERVER_ROOT
 
-    src = Path("server/core/governance_mcp.py").read_text(encoding="utf-8")
+    src = (SERVER_ROOT / "core/governance_mcp.py").read_text(encoding="utf-8")
     # The review tool drops the secret; no handler places confirmation_secret into a
     # returned data dict.
     assert 'data["confirmation_secret"]' not in src
@@ -700,7 +724,6 @@ def _console_env(monkeypatch, *, identity="camille", org_id="org-1", allowed=Tru
 
     monkeypatch.setattr(db, "get_connection", get_connection)
     monkeypatch.setattr(admin_api, "_check_auth", _auth)
-    monkeypatch.setattr(project_access, "epic36_production_access_enabled", lambda: True)
     decision = SimpleNamespace(allowed=allowed, org_id=org_id)
     monkeypatch.setattr(
         project_access, "resolve_strict_resource_access", lambda *_a, **_k: decision
@@ -740,7 +763,7 @@ def test_console_prepare_returns_secret_to_manage_authority_human(monkeypatch):
     monkeypatch.setattr(gp, "prepare_publication_review", fake_prepare)
 
     response = asyncio.run(
-        admin_api._prepare_publication_review_console(
+        publication_reviews_api._prepare_publication_review_console(
             _console_request("POST", body={"proposal_id": "mprop_1"})
         )
     )
@@ -769,7 +792,7 @@ def test_console_prepare_denies_without_manage_and_hides_existence(monkeypatch):
     monkeypatch.setattr(gp, "prepare_publication_review", prepare)
 
     response = asyncio.run(
-        admin_api._prepare_publication_review_console(
+        publication_reviews_api._prepare_publication_review_console(
             _console_request("POST", body={"proposal_id": "mprop_1"})
         )
     )
@@ -805,7 +828,7 @@ def test_console_confirm_with_retrieved_secret_creates_one_operation(monkeypatch
     monkeypatch.setattr(gp, "confirm_and_publish", fake_confirm)
 
     response = asyncio.run(
-        admin_api._confirm_publication_review_console(
+        publication_reviews_api._confirm_publication_review_console(
             _console_request(
                 "POST",
                 path_params={"confirmation_id": "pubc_1"},
@@ -835,7 +858,7 @@ def test_console_confirm_requires_idempotency_key(monkeypatch):
     monkeypatch.setattr(gp, "confirm_and_publish", confirm)
 
     response = asyncio.run(
-        admin_api._confirm_publication_review_console(
+        publication_reviews_api._confirm_publication_review_console(
             _console_request(
                 "POST",
                 path_params={"confirmation_id": "pubc_1"},
@@ -868,7 +891,7 @@ def test_console_rollback_is_distinct_and_takes_no_secret(monkeypatch):
     monkeypatch.setattr(gp, "rollback_publication", fake_rollback)
 
     response = asyncio.run(
-        admin_api._rollback_publication_review_console(
+        publication_reviews_api._rollback_publication_review_console(
             _console_request(
                 "POST",
                 path_params={"confirmation_id": "pubc_1"},
@@ -925,9 +948,11 @@ def test_secret_never_appears_in_any_mcp_facing_output(monkeypatch):
 
 
 def test_migration_073_contains_publication_confirmation_contract():
-    from pathlib import Path
+    from tests.conftest import REPO_ROOT
 
-    sql = Path("infra/nango/migrations/073_governed_publication.sql").read_text(encoding="utf-8")
+    sql = (REPO_ROOT / "infra/nango/migrations/073_governed_publication.sql").read_text(
+        encoding="utf-8"
+    )
     assert "CREATE TABLE IF NOT EXISTS app.publication_confirmations" in sql
     assert "confirmation_reference_hash" in sql
     assert "reviewed_hashes" in sql

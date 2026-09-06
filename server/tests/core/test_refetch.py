@@ -24,6 +24,8 @@ from core.refetch import (
     windows_for_nightly_dispatch,
 )
 
+from tests.support.dispatch_rows import dispatch_row
+
 LADDER = {"nightly_days": 3, "weekly_days": 14, "monthly_days": 45}
 
 # Reference dates (checked against a 2026 calendar):
@@ -264,16 +266,16 @@ class TestSchedulerBranchPoint:
 
     def _ds_rows(self, date_window_days=None):
         return [
-            {
-                "ds_id": "ds_1",
-                "project_id": "proj_1",
-                "module_name": "neutral-module",
-                "refetch_days": 3,
-                "date_window_days": date_window_days,
-                "connection_ref_id": "conn_1",
-                "cr_status": "active",
-                "cr_enabled": True,
-            }
+            dispatch_row(
+                ds_id="ds_1",
+                project_id="proj_1",
+                module_name="neutral-module",
+                refetch_days=3,
+                date_window_days=date_window_days,
+                connection_ref_id="conn_1",
+                cr_status="active",
+                cr_enabled=True,
+            )
         ]
 
     def _mock_get_connection(self, rows):
@@ -321,7 +323,11 @@ class TestSchedulerBranchPoint:
         call = queue.enqueue_pull.call_args
         # refetch_days=3 legacy window: [yesterday-2, yesterday] -- unchanged.
         assert call.args == ("conn_1", "2026-07-18", "2026-07-20")
-        assert call.kwargs == {"requested_by": "scheduler", "datastream_id": "ds_1"}
+        # Story 63.1 adds `execution_id` -- the run the window belongs to. This
+        # test asserts the WINDOW, so it names the keywords it is about rather
+        # than freezing the whole signature.
+        assert call.kwargs["requested_by"] == "scheduler"
+        assert call.kwargs["datastream_id"] == "ds_1"
 
     def test_user_date_window_days_wider_than_ladder_wins(self):
         """Review 26.1 F-7 end-to-end at the dispatch: a per-datastream

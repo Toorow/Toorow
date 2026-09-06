@@ -9,7 +9,7 @@ sources:
       REVENDIQUEES par le canal Klaviyo (fenetres last-touch 5j clic/ouverture email
       par defaut -- AI-53 verifie le 2026-07-19). Ils ne sont JAMAIS sommes avec
       les conversions des regies ni le revenue Shopify/Stripe (AD-4, Story 15.8).
-    schema: main  # DuckDB default schema ; BigQuery: override via profiles.yml dataset
+    schema: "{{ var('raw_schema', 'main') }}"  # 24.4 AC2: org_<wslug>_raw injected by orchestrator, 'main' without var (bit-identique)
     tables:
       - name: raw_klaviyo_daily
         description: >

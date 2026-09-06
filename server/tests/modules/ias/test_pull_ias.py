@@ -335,10 +335,20 @@ def test_discover_accounts_401_raises_auth_expired(connector):
 # ---------------------------------------------------------------------------
 
 
-def test_manifest_error_map_empty_with_note():
+def test_manifest_error_map_is_filled_and_still_carries_its_note():
+    """The map was empty until 2026-08-17; the note outlived the emptiness.
+
+    IAS publishes no numeric codes, which is why this test once asserted an EMPTY
+    map. It publishes RFC 6749 OAuth codes though, and those are what the map now
+    keys on -- the distinction the empty map could not make is `invalid_grant`
+    (the grant is gone, reconnect) against every other 400 (do not retry, there is
+    nothing to reconnect).
+    """
     manifest = json.loads((_IAS_PATH.parent / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest.get("error_map") == {}
-    assert manifest.get("_error_map_note"), "empty error_map must carry a justifying note"
+    error_map = manifest.get("error_map")
+    assert error_map, "error_map is declared and must not be empty"
+    assert error_map["400:invalid_grant"] == "auth_revoked"
+    assert manifest.get("_error_map_note"), "the map must keep its justifying note"
 
 
 # ---------------------------------------------------------------------------

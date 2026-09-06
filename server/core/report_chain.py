@@ -11,7 +11,7 @@ Public API:
 
 REPORT_CHAIN_ROUTES: list[Route]  -- exported for orchestrator to wire into
     admin_api.router alongside DATAMODEL_ROUTES / FLOWS_ROUTES.
-    Route: GET /api/reports/{module}/{report_id}/chain?project_id=
+    Route: GET /api/reports/{connector}/{report_id}/chain?project_id=
 
 Chain document shape:
     {
@@ -54,9 +54,11 @@ Status semantics:
                           feeds it (actionable warning: configure a datastream).
     "not_in_dictionary"-- the metric name has no matching target_field (dictionary gap).
 
-The metric->target_field resolution uses NAME EQUALITY against app.target_fields.
-This is intentional: report metrics are expected to use canonical field names
-(same convention as manifests' canonical_metric_mapping values).
+The metric->target_field resolution uses NAME EQUALITY against the governed field
+catalogue -- the Semantic Model first, `app.target_fields` as the layer below
+(`core.governed_field_catalogue`). This is intentional: report metrics are
+expected to use canonical field names (same convention as manifests'
+canonical_metric_mapping values).
 
 Merge: uses flows.get_flow (kind='report') to get the merged (base+override) report
 doc -- as instructed in Story 8.9. This means overrides contributed via Story 8.7
@@ -151,8 +153,8 @@ def get_report_chain(
     metric_definitions: dict | None = merged_doc.get("metric_definitions") or None
     llm_guidelines: str | None = merged_doc.get("llm_commentary_guidelines") or None
 
-    # Fetch target_fields for all metric names in one query (name IN (...)).
-    target_fields_by_name = _fetch_target_fields(metrics_list, conn)
+    # Fetch the governed field of every metric name in one read.
+    target_fields_by_name = _fetch_target_fields(metrics_list, conn, project_id=project_id)
 
     # Fetch all datastreams + their mappings for this project (one join query).
     # Returns: {target_field_name -> list[datastream_row]}
@@ -177,16 +179,19 @@ def get_report_chain(
         if tf is None:
             # Metric name not found in data dictionary.
             status = "not_in_dictionary"
+            # The gesture that WORKS, not the one that used to. Adding a target
+            # field answers 409 `legacy_store_is_read_only` since 2026-08-25;
+            # a metric is declared in the Semantic Model and nowhere else.
             warnings.append(
-                f"La métrique « {metric} » n'est pas référencée dans le dictionnaire "
-                f"de données. Ajoutez-la comme champ cible pour activer le suivi complet."
+                f"Metric '{metric}' is not a governed field. Declare it as a "
+                f"Concept in the Semantic Model to enable full tracking."
             )
         elif not streams:
             status = "no_stream"
             tf_name = tf.get("display_name") or metric
             warnings.append(
-                f"Aucun flux actif n'alimente « {tf_name} » pour ce projet. "
-                f"Configurez un datastream et son mapping pour alimenter cette métrique."
+                f"No active Datastream feeds '{tf_name}' for this project. "
+                f"Configure a Datastream and its mapping to feed this metric."
             )
         else:
             status = "ok"
@@ -229,26 +234,33 @@ def get_report_chain(
 # ---------------------------------------------------------------------------
 
 
-def _fetch_target_fields(metric_names: list[str], conn) -> dict[str, dict]:
+def _fetch_target_fields(
+    metric_names: list[str], conn, *, project_id: str | None = None
+) -> dict[str, dict]:
     """Return a {name: field_dict} map for the given metric names.
 
-    Uses a single IN query. Fields missing from the dictionary are absent from
-    the result (the caller treats them as 'not_in_dictionary').
+    SEMANTIC MODEL FIRST since story 49.3's readers step. This used to be one
+    `SELECT ... FROM app.target_fields`, a store whose write doors answer 409
+    `legacy_store_is_read_only` since 2026-08-25: a metric a person declared in
+    the Concept workbench was reported `not_in_dictionary` by this chain, and the
+    warning told them to *"add it as a target field"* -- a gesture the product no
+    longer offers anywhere. `core.governed_field_catalogue.resolve` asks the
+    Semantic Model first and keeps the dictionary as the layer below, so a name
+    either store governs resolves and nothing that resolved before stops.
+
+    Fields missing from BOTH stores are absent from the result (the caller treats
+    them as 'not_in_dictionary').
     """
     if not metric_names:
         return {}
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT name, display_name, data_type, field_kind, measure
-            FROM app.target_fields
-            WHERE name = ANY(%s)
-              AND status = 'approved'
-            """,
-            (list(metric_names),),
-        )
-        cols = [d[0] for d in cur.description]
-        return {row[0]: dict(zip(cols, row)) for row in cur.fetchall()}
+    from core.governed_field_catalogue import resolve  # noqa: PLC0415
+
+    return resolve(
+        conn,
+        names=list(metric_names),
+        project_id=project_id,
+        approved_only=True,
+    )
 
 
 def _fetch_datastreams_by_target(
@@ -322,7 +334,7 @@ async def _check_auth(request: Request) -> tuple[bool, str]:
 
 
 async def _get_report_chain(request: Request) -> Response:
-    """GET /api/reports/{module}/{report_id}/chain?project_id=
+    """GET /api/reports/{connector}/{report_id}/chain?project_id=
 
     Returns the metrics -> target_fields -> datastreams chain for the report,
     scoped to the given project_id.
@@ -344,37 +356,56 @@ async def _get_report_chain(request: Request) -> Response:
     authorized, _identity = await _check_auth(request)
     if not authorized:
         return JSONResponse(
-            {"code": "unauthorized", "message": "Authentification requise"},
+            {
+                "code": "unauthorized",
+                "message": (
+                    "This request carries no signed-in identity. Sign in again, "
+                    "then re-run it."
+                ),
+            },
             status_code=401,
         )
 
-    module_name = request.path_params.get("module", "").strip()
+    module_name = request.path_params.get("connector", "").strip()
     report_id = request.path_params.get("report_id", "").strip()
     project_id = (request.query_params.get("project_id") or "").strip()
 
     if not project_id:
         return JSONResponse(
-            {"code": "missing_param", "message": "project_id est requis"},
+            {
+                "code": "missing_param",
+                "message": (
+                    "This request does not say which Project to read the chain in. "
+                    "Add `project_id` to the request and re-run it."
+                ),
+            },
             status_code=400,
         )
 
     if not module_name or not report_id:
         return JSONResponse(
-            {"code": "missing_param", "message": "module et report_id sont requis"},
+            {
+                "code": "missing_param",
+                "message": (
+                    "This request does not name both a connector and a report. "
+                    "Add the connector and the report identifier to the address, "
+                    "then re-run it."
+                ),
+            },
             status_code=400,
         )
 
     # AI-47: guard against a report literally named "chain" shadowing the /chain route.
-    # GET /api/reports/{module}/chain/chain would be the only safe way to fetch such a
+    # GET /api/reports/{connector}/chain/chain would be the only safe way to fetch such a
     # report; reject it here to avoid silent routing ambiguity.
     if report_id == "chain":
         return JSONResponse(
             {
                 "code": "reserved_id",
                 "message": (
-                    "L'identifiant de rapport 'chain' est réservé : il correspond au suffixe "
-                    "de la route /chain et ne peut pas être utilisé comme identifiant de rapport. "
-                    "Renommez le rapport pour éviter le conflit de routage."
+                    "The report identifier 'chain' is reserved: it matches the suffix "
+                    "of the /chain route and cannot be used as a report identifier. "
+                    "Rename the report to avoid the routing conflict."
                 ),
             },
             status_code=422,
@@ -397,11 +428,21 @@ async def _get_report_chain(request: Request) -> Response:
         with get_connection() as conn:
             # AD-5: verify project access before any data query.
             try:
-                from core.project_access import identity_has_project_access  # noqa: PLC0415
+                from core.project_access import identity_can_read_project  # noqa: PLC0415
 
-                if not identity_has_project_access(project_id, _identity or "", conn):
+                if not identity_can_read_project(project_id, _identity or "", conn):
+                    # NON-DISCLOSURE STAYS: the sentence never says whether the
+                    # Project exists elsewhere. It still names a gesture, because
+                    # "not found or access denied" leaves a reader with nothing.
                     return JSONResponse(
-                        {"code": "not_found", "message": "Projet introuvable ou accès refusé"},
+                        {
+                            "code": "not_found",
+                            "message": (
+                                "This Project is not readable under your sign-in. "
+                                "Choose a Project you have access to, or ask an "
+                                "administrator of this organisation to grant it."
+                            ),
+                        },
                         status_code=404,
                     )
             except Exception:
@@ -416,12 +457,23 @@ async def _get_report_chain(request: Request) -> Response:
                 loaded_modules=loaded_modules,
             )
     except Exception as exc:
+        # THE EXCEPTION GOES TO THE LOG, NEVER INTO THE SENTENCE. `Database error:
+        # <exc>` named the cause and no gesture, and handed a reader a driver
+        # message written for us -- `first-figure-path.md:141-151,206-208`. The
+        # `code` stays machine-readable so the log and the client still agree.
         logger.error(
             "report_chain: chain_error module=%s report=%s project=%s: %s",
             module_name, report_id, project_id, exc,
         )
         return JSONResponse(
-            {"code": "db_error", "message": f"Erreur de base de données : {exc}"},
+            {
+                "code": "db_error",
+                "message": (
+                    "This report's chain could not be read just now. Re-run the "
+                    "request in a moment, and if it keeps failing ask an "
+                    "administrator to read the server log for this report."
+                ),
+            },
             status_code=500,
         )
 
@@ -430,8 +482,9 @@ async def _get_report_chain(request: Request) -> Response:
             {
                 "code": "not_found",
                 "message": (
-                    f"Rapport '{module_name}/{report_id}' introuvable "
-                    "(vérifiez le module et l'identifiant du rapport)."
+                    f"No report '{module_name}/{report_id}' is published on this "
+                    "connector. Choose a report from the connector's report list, "
+                    "or check the identifier in the address."
                 ),
             },
             status_code=404,
@@ -446,7 +499,7 @@ async def _get_report_chain(request: Request) -> Response:
 
 REPORT_CHAIN_ROUTES: list[Route] = [
     Route(
-        "/api/reports/{module}/{report_id}/chain",
+        "/api/reports/{connector}/{report_id}/chain",
         endpoint=_get_report_chain,
         methods=["GET"],
     ),

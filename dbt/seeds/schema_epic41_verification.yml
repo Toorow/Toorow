@@ -1,0 +1,70 @@
+version: 2
+
+# Epic 41 / Story 41.4 seed properties.
+#
+# A NEW file rather than an edit to dbt/seeds/schema.yml or schema_epic41.yml, for the
+# same reason schema_fee_tax_verification.yml is new: dbt merges every YAML under
+# seed-paths, so a separate file costs nothing functionally and is what keeps the
+# "only NEW files" claim checkable with `git diff --name-only` (AC11). schema_epic41.yml
+# belongs to Story 41.3.
+
+seeds:
+  - name: epic41_verification_fixture
+    description: >
+      Story 41.4 pinned-arithmetic fixture for the CPM verification component.
+
+      IT PINS THE MACRO, NOT THE MODEL. Like epic41_cascade_fixture, this seed can NEVER
+      reach fact_daily_kpi (which UNIONs module STAGING, never seeds), so it cannot
+      perturb a production total -- and by the same token it cannot be joined to
+      fee_tax_verification_allocation. The tests therefore REPLAY fee_tax_cpm_micros over
+      these rows and compare to expected_verification_cost_micros; the MODEL assertions
+      run against the sibling seeder's feetax_dev_verif_* projects
+      (dbt/seeds/feetax/seed_fee_tax_verification.py).
+
+      What each row exists to prove:
+        * alloc_split_a / _b / _total -- the split is proportional to measured impressions
+          and the parts sum EXACTLY to the whole: 3086417500 + 1913582500 = 5000000000,
+          which is also (2000000/1000) x 2.50 EUR. ZERO ALLOCATION RESIDUE.
+        * half_up_even -- 999997 x 2500500 / 1000 = 2500492498.5, an EXACT HALF whose
+          integer part (...498) is EVEN. ROUND_HALF_UP gives 2500492499; server/core/
+          money.py's banker's rounding would give 2500492498. The two policies therefore
+          DISAGREE here, which is what makes the test discriminating rather than
+          decorative -- the documented divergence is PINNED, not discovered later.
+        * zero_base -- a real measured zero is a real zero cost, the only legitimate 0.
+        * width_guard -- the maximum in-range CPM over a 1e9 impression base: the
+          DECIMAL(28,0) x DECIMAL(10,3) -> DECIMAL(38,3) product stays exact at DuckDB's
+          38-digit ceiling and the result is inside BIGINT.
+        * cpm_out_of_range / cpm_negative -- the macro's FAIL-CLOSED guards return NULL
+          (blank expected value) rather than raising a cast error or pricing a negative
+          rate. The caller turns them into VERIFICATION_CPM_OUT_OF_RANGE.
+
+      Every count/micros column holds values above 2^31 and MUST therefore be BIGINT:
+      dbt-duckdb otherwise infers INT32 and fails loading a 13-digit value
+      (dbt/seeds/schema.yml lines 59-60). The rounding_note column deliberately spells
+      decimal widths with a hyphen -- "DECIMAL(28-0)" -- because a comma inside an
+      unquoted CSV field would split it into two columns.
+    config:
+      column_types:
+        measured_impressions: INT64
+        cpm_micros: INT64
+        expected_verification_cost_micros: INT64
+    columns:
+      - name: scenario
+        description: "Scenario key; unique within the fixture."
+        tests:
+          - not_null
+          - unique:
+              name: epic41_verification_fixture_scenario_unique
+      - name: measured_impressions
+        description: "The allocation base, an integer count."
+        tests: [not_null]
+      - name: cpm_micros
+        description: "The declared rate: cost per 1 000 base units, in integer micros."
+        tests: [not_null]
+      - name: expected_verification_cost_micros
+        description: >
+          The pinned answer in exact integer micros. BLANK (NULL) means the macro must
+          return NULL -- a fail-closed guard, never a 0 and never a raised cast.
+      - name: rounding_note
+        description: "Why the row exists; read it before changing a number."
+        tests: [not_null]

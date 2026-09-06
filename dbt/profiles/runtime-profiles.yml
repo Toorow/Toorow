@@ -1,0 +1,39 @@
+# dbt profile of the SERVED IMAGE (AI-166, 2026-08-17).
+#
+# Why this file exists under a name dbt does not look for: the file dbt DOES look
+# for, `dbt/profiles/profiles.yml`, is gitignored — the local DuckDB loop
+# regenerates it with an absolute path on a developer's machine, and shipping
+# that would point the service at a database that does not exist there. The
+# Dockerfile copies THIS file to `/app/dbt/profiles/profiles.yml`, which is the
+# path `scheduler._dbt_location_args` passes as `--profiles-dir`.
+#
+# It carries no secret, and must never carry one (ARCHITECTURE-SPINE
+# §Consistency: secrets only in Secret Manager / env):
+#   * the GCP project comes from the environment, the same two variables
+#     `core.raw_landing.resolve_warehouse_project` accepts, in the same order;
+#   * `method: oauth` makes dbt-bigquery use Application Default Credentials,
+#     which on Cloud Run is the runtime service account — the identity that
+#     already owns the raw datasets it will read.
+#
+# The default target is `bigquery` because this file only ever exists inside the
+# container, where `TOOROW_DB_MODE=bigquery` (set by infra/scripts/deploy.sh).
+
+connector:
+  target: bigquery
+  outputs:
+    bigquery:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('GCP_PROJECT', env_var('GOOGLE_CLOUD_PROJECT', '')) }}"
+      # Default dataset for nodes that name no schema of their own — in practice
+      # the shared seeds (dim_country, fx_rates, ...), which generate_schema_name
+      # deliberately keeps out of the per-project zones because they are
+      # reference tables shared by every project.
+      dataset: seeds_shared
+      location: EU
+      # One thread: this runs inside the serving container, beside request
+      # handling, at --min-instances=0 on a 10 EUR/month budget.
+      threads: 1
+      priority: batch
+      job_execution_timeout_seconds: 900
+      job_retries: 1

@@ -1,0 +1,24 @@
+[
+  {
+    "report_profile": "account_daily",
+    "date": "2026-07-30",
+    "account_id": "17841400000000000",
+    "account_reach": 842,
+    "account_profile_views": 91,
+    "_fixture_note": "Account reach is unique and must not become additive."
+  },
+  {
+    "report_profile": "media_performance",
+    "date": "2026-07-29",
+    "account_id": "17841400000000000",
+    "media_id": "18000000000000001",
+    "media_type": "VIDEO",
+    "media_product_type": "REELS",
+    "permalink": "https://www.instagram.com/reel/example/",
+    "caption": "Example Reel",
+    "published_at": "2026-07-29T18:30:00+0000",
+    "media_shares": 17,
+    "media_comments": 6,
+    "_fixture_note": "Media engagement is a current lifetime snapshot."
+  }
+]

@@ -20,5 +20,7 @@
 --   - non_additive_never_summed (this guard): allows average_position in the mart
 --     but ensures it is never SUMMED without weighting.
 {% test non_additive_never_summed(model, column_name) %}
-SELECT 1 WHERE 1 = 0
+-- BigQuery refuses a WHERE with no FROM; DuckDB allows it. One constant row,
+-- accepted by both, keeps this always-empty guard portable.
+SELECT 1 FROM (SELECT 1) AS one_row WHERE 1 = 0
 {% endtest %}

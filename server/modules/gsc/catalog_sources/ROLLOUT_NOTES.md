@@ -51,17 +51,15 @@ No provider-code refinements are available or needed. This is documented as `_er
 
 GSC topology is **single-level** (`selection_level: "site"`). The `discover_accounts` function (added in `connector.py`) calls `GET https://www.googleapis.com/webmasters/v3/sites` with a Bearer token (same token-acquisition pattern as `pull()` — `nango_client.get_fresh_token(connection_id, provider="gsc")`). It returns a flat list of `{"id": "<siteUrl>", "label": "<siteUrl>"}` objects. There is no parent account level — each GSC property (URL-prefix or domain property) is directly selectable.
 
-### GSC_SITE_URL deprecation (migration guide)
+### GSC_SITE_URL removal (migration guide)
 
-Prior to story 25.7, GSC pulls were configured via the `GSC_SITE_URL` environment variable, resolved in `_resolve_site_url()`. This env-var pattern is deprecated in favour of the core topology flow (account_topology.resolve_selected_account).
+Prior to story 25.7, GSC pulls were configured via the `GSC_SITE_URL` environment variable, resolved in `_resolve_site_url()`. That env-var fallback was **removed on 2026-07-31**: `_resolve_site_url` now raises when the operator's selection is missing, and the core topology flow (account_topology.resolve_selected_account) is the only path. An env-var is one value for the whole deployment, so every Datastream of every project pulled the same property — an isolation defect, not a convenience.
 
-**Migration steps (for operators):**
+**Migration steps (for operators), already effective:**
 1. Run the onboarding flow for the existing connection: `discover_accounts` will enumerate all verified sites the OAuth token can reach.
-2. Select the site that matches the current `GSC_SITE_URL` value.
-3. The core topology will store the selected `siteUrl` and pass it to pull functions at runtime.
-4. Once core topology is wired and the selected site is confirmed, remove `GSC_SITE_URL` from the environment.
-
-**No immediate action required.** The `_resolve_site_url` fallback remains in place and existing pull schedules continue to work until core topology is live. The env-var is not removed in this story.
+2. Select the site that matches the former `GSC_SITE_URL` value.
+3. The core topology stores the selected `siteUrl` and passes it to pull functions at runtime.
+4. `GSC_SITE_URL` can be removed from the environment — nothing reads it anymore.
 
 ## Orchestrator command block
 

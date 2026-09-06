@@ -1,7 +1,8 @@
 """Strava connector -- Clubs domain (competitive intelligence on clubs).
 
-Exposes a ``mcp_app: FastMCP`` instance the core loader mounts under the
-``strava`` namespace (AD-2). Built to the epic-25 industrial standard:
+Exposes a ``mcp_app: FastMCP`` instance as the conformance surface (AD-1
+envelope); since AD-42 the core no longer mounts it — execution uses the
+Datastream-parameterized core tools. Built to the epic-25 industrial standard:
 generated api_catalog.json (swagger transcription), status-keyed error_map
 (Strava publishes no stable sub-codes), declared single-level club topology.
 
@@ -53,7 +54,9 @@ from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-# Module-level FastMCP instance -- the public surface the loader mounts.
+# Module-level FastMCP instance, kept as the conformance surface (AD-1 envelope,
+# validated by server/tests/conformance/test_envelope.py). Since AD-42 the core
+# no longer mounts it: execution uses the Datastream-parameterized core tools.
 mcp_app = FastMCP("strava")
 
 # Base URL for the Strava API v3.
@@ -91,8 +94,26 @@ def _load_manifest() -> dict:
 
 
 def _load_error_map() -> dict:
-    """Return the manifest's ``error_map`` (HTTP-status keyed; see _error_map_note)."""
+    """Return the manifest's ``error_map`` (see _error_map_note).
+
+    Keys are ``"<status>:<Fault code>"``. The map's only reader is
+    core.pull_errors.classify_http_error; this module hands it over and never
+    looks a key up itself (AI-114). The Fault body is passed UNTOUCHED --
+    `_extract_provider_codes` reads `errors[].code` itself, so the payload kept
+    as evidence is the one Strava sent.
+    """
     return _load_manifest().get("error_map") or {}
+
+
+# AI-114 (2026-08-01) -- status-level judgment, NOT a provider refinement.
+# The former bare key "404" in manifest.error_map was DEAD: the map was handed
+# to core, core only ever looked up "<status>:<code>", so a 404 came out
+# `unclassified` -- retryable. A 404 on a club the athlete is supposed to belong
+# to is an access problem, not a transient unknown. NOTE THE ORDER: the
+# competitor_snapshot 404 is an EXPECTED, non-fatal "unreachable" outcome and is
+# handled by the CALLER before this function is ever reached, so this override
+# only ever sees the own-club case.
+_STATUS_OVERRIDES: dict[int, str] = {404: "permission_denied"}
 
 
 # ---------------------------------------------------------------------------
@@ -156,34 +177,37 @@ def transform(raw_rows: list[dict]) -> list[dict]:
 # Raw landing (wide, source-field column names -- dbt reads last-value).
 # ---------------------------------------------------------------------------
 
-_RAW_CREATE_DDL = """
-CREATE TABLE IF NOT EXISTS raw_strava_club_daily (
-    snapshot_date    VARCHAR,
-    club_id          VARCHAR,
-    club_name        VARCHAR,
-    sport_type       VARCHAR,
-    club_city        VARCHAR,
-    club_state       VARCHAR,
-    club_country     VARCHAR,
-    is_private       BOOLEAN,
-    is_verified      BOOLEAN,
-    club_url         VARCHAR,
-    is_own_club      BOOLEAN,
-    member_count     BIGINT,
-    following_count  BIGINT,
-    pull_id          VARCHAR,
-    loaded_at        VARCHAR,
-    project_id       VARCHAR
-)
-"""
+_RAW_TABLE = "raw_strava_club_daily"
 
-_RAW_INSERT_SQL = """
-INSERT INTO raw_strava_club_daily
-    (snapshot_date, club_id, club_name, sport_type, club_city, club_state,
-     club_country, is_private, is_verified, club_url, is_own_club,
-     member_count, following_count, pull_id, loaded_at, project_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-"""
+# THE RAW TABLE, DECLARED ONCE. `core.raw_landing` renders the DuckDB DDL and
+# INSERT from this list, and the BigQuery landing is handed the same list, so the
+# two backends cannot end up describing the same table differently.
+#
+# They did. The BigQuery branch called the first column `date`, while this table
+# and `stg_strava_club_daily.sql` both call it `snapshot_date` -- and the staging
+# model partitions its supersede on `snapshot_date`. Production runs
+# `TOOROW_DB_MODE=bigquery`, so the drifted copy was the live one.
+#
+# `tests/conformance/test_raw_table_has_one_declaration.py` compares this
+# declaration, the landing and the staging model on every run.
+_RAW_COLUMNS = [
+    ("snapshot_date", "STRING"),
+    ("club_id", "STRING"),
+    ("club_name", "STRING"),
+    ("sport_type", "STRING"),
+    ("club_city", "STRING"),
+    ("club_state", "STRING"),
+    ("club_country", "STRING"),
+    ("is_private", "BOOLEAN"),
+    ("is_verified", "BOOLEAN"),
+    ("club_url", "STRING"),
+    ("is_own_club", "BOOLEAN"),
+    ("member_count", "INTEGER"),
+    ("following_count", "INTEGER"),
+    ("pull_id", "STRING"),
+    ("loaded_at", "STRING"),
+    ("project_id", "STRING"),
+]
 
 
 def _to_int(value) -> int | None:
@@ -203,18 +227,13 @@ def _insert_raw_rows(
 ) -> int:
     """Insert canonical (post-transform) snapshot rows into raw_strava_club_daily."""
     db_mode = _get_db_mode()
-    if db_mode != "duckdb":
-        raise ValueError(
-            f"_insert_raw_rows: unsupported db_mode {db_mode!r} at P-dev "
-            "(BigQuery path not yet implemented)"
-        )
-    import duckdb  # noqa: PLC0415
+    if db_mode not in ("duckdb", "bigquery"):
+        raise ValueError(f"_insert_raw_rows: unsupported db_mode {db_mode!r}")
+    from core import warehouse_write  # noqa: PLC0415
 
     duckdb_path = _get_duckdb_path()
     loaded_at = datetime.now(tz=timezone.utc).isoformat().replace("+00:00", "Z")
 
-    con = duckdb.connect(duckdb_path)
-    con.execute(_RAW_CREATE_DDL)
     values = [
         (
             r.get("date", ""),
@@ -236,10 +255,32 @@ def _insert_raw_rows(
         )
         for r in rows
     ]
-    if values:
-        con.executemany(_RAW_INSERT_SQL, values)
-    con.close()
-    return len(values)
+    from core import raw_landing  # noqa: PLC0415 -- AD-2
+
+    if db_mode == "duckdb":
+        # OPENED HERE, not before the branch. The writer used to be opened -- and
+        # the DDL run -- unconditionally, so the BigQuery path leaked that
+        # connection on every pull and created the table twice, by two different
+        # mechanisms, inside one function.
+        con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
+        try:
+            con.execute(raw_landing.duckdb_ddl(_RAW_TABLE, _RAW_COLUMNS))
+            if values:
+                con.executemany(raw_landing.duckdb_insert(_RAW_TABLE, _RAW_COLUMNS), values)
+        finally:
+            con.close()
+        return len(values)
+    elif db_mode == "bigquery":
+        raw_landing.land_raw_rows(
+            _RAW_TABLE,
+            [raw_landing.row_from_values(_RAW_COLUMNS, v) for v in values],
+            columns=_RAW_COLUMNS,
+            project_id=project_id,
+            backend="bigquery",
+        )
+        return len(values)
+    else:
+        raise ValueError(f"_insert_raw_rows: unsupported db_mode {db_mode!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -290,9 +331,16 @@ def _raise_for_status(resp: httpx.Response, *, context: str) -> None:
             retry_after = None
         raise RateLimitError("strava", retry_after)
 
-    from core.pull_errors import classify_http_error  # noqa: PLC0415
+    from core import pull_errors  # noqa: PLC0415
 
-    raise classify_http_error(resp.status_code, body, _load_error_map())
+    override = pull_errors.error_for_class(
+        _STATUS_OVERRIDES.get(resp.status_code), resp.status_code, body
+    )
+    if override is not None:
+        raise override
+    raise pull_errors.classify_http_error(
+        resp.status_code, body, _load_error_map()
+    )
 
 
 def _fetch_club(client: httpx.Client, token: str, club_id: str) -> dict | None:
@@ -513,12 +561,12 @@ def discover_accounts(connection_id: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def _get_mart_table(db_mode: str) -> str:
+def _get_mart_table(db_mode: str, project_id: str | None) -> str:
     """Fully-qualified dedicated snapshot mart reference per engine."""
     if db_mode == "duckdb":
         from core import warehouse_tenancy  # noqa: PLC0415
 
-        return f"{warehouse_tenancy.mart_prefix(None)}fact_strava_club_snapshot"
+        return f"{warehouse_tenancy.mart_prefix(project_id)}fact_strava_club_snapshot"
     dataset = os.environ.get("BQ_MARTS_DATASET", "marts")
     gcp_project = os.environ.get("GCP_PROJECT", "")
     prefix = f"{gcp_project}.{dataset}" if gcp_project else dataset
@@ -551,7 +599,7 @@ def _query_mart(date_from: str, date_to: str, project_id: str) -> list[dict]:
 
     import duckdb  # noqa: PLC0415
 
-    table = _get_mart_table(db_mode)
+    table = _get_mart_table(db_mode, project_id)
     sql = _MART_QUERY.format(table=table)
     con = duckdb.connect(_get_duckdb_path(), read_only=True)
     try:

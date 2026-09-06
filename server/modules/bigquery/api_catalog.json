@@ -1,0 +1,71 @@
+{
+  "api_version": "v2 (jobs.query, tables.get, datasets.list)",
+  "catalog_version": "1",
+  "connector": "bigquery",
+  "exposure_policy": "catalog_driven",
+  "generated_at": "2026-07-30T00:00:00Z",
+  "sources": [
+    {
+      "kind": "official",
+      "url": "https://cloud.google.com/bigquery/docs/reference/rest/v2/jobs/query",
+      "fetched_at": "2026-07-30"
+    },
+    {
+      "kind": "official",
+      "url": "https://cloud.google.com/bigquery/docs/reference/rest/v2/tables/get",
+      "fetched_at": "2026-07-30"
+    }
+  ],
+  "fields": [
+    {
+      "description": "The day a replicated row belongs to, read from the operator-chosen date column of the source table.",
+      "exposure": "exposed",
+      "field_id": "date",
+      "kind": "dimension",
+      "physical_type": "date",
+      "section": "LANDING",
+      "source_field": "date",
+      "tier": "core"
+    },
+    {
+      "description": "The source column this value came from. A replicated table has as many metrics as it has numeric columns, so the column name travels as a dimension.",
+      "exposure": "exposed",
+      "field_id": "metric",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LANDING",
+      "source_field": "metric",
+      "tier": "core"
+    },
+    {
+      "description": "The numeric value replicated from the source column, stored raw (AD-4). Nothing is summed or averaged at landing.",
+      "exposure": "exposed",
+      "field_id": "value",
+      "kind": "metric",
+      "physical_type": "decimal",
+      "section": "LANDING",
+      "source_field": "value",
+      "tier": "core"
+    },
+    {
+      "description": "The name of the operator-chosen breakdown column, empty when no breakdown was selected.",
+      "exposure": "exposed",
+      "field_id": "breakdown_dimension",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LANDING",
+      "source_field": "breakdown_dimension",
+      "tier": "core"
+    },
+    {
+      "description": "The value of the breakdown column for this row, empty when no breakdown was selected.",
+      "exposure": "exposed",
+      "field_id": "breakdown_value",
+      "kind": "dimension",
+      "physical_type": "string",
+      "section": "LANDING",
+      "source_field": "breakdown_value",
+      "tier": "core"
+    }
+  ]
+}

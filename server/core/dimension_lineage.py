@@ -200,6 +200,7 @@ def extract_plan_field_uses(
     *,
     manifest_index: dict[str, dict[str, str]],
     canonical_dimension: str,
+    field_bindings: dict[tuple[str, str, str], str] | None = None,
 ) -> tuple[list[PlanFieldUse], list[dict]]:
     """Join PLAN x MANIFEST for one dimension (PURE). Returns (uses, gaps).
 
@@ -249,8 +250,13 @@ def extract_plan_field_uses(
             )
             continue
 
-        fields = manifest_index.get(connector)
-        if not fields:
+        bindings = field_bindings or {}
+        fields = manifest_index.get(connector) or {}
+        # The schema level is unavailable only when NEITHER authority can
+        # answer. A project whose connector ships no mapping but whose people
+        # confirmed bindings has an answer, and reporting a gap there would
+        # hide the decision they took.
+        if not fields and not any(key[0] == connector for key in bindings):
             gaps.append(
                 {
                     **base_gap,
@@ -260,7 +266,23 @@ def extract_plan_field_uses(
             )
             continue
 
-        matched = [f for f in sorted(set(dimensions)) if fields.get(f) == canonical_dimension]
+        # 27.8 -- A CONFIRMED CLIENT BINDING IS EXECUTABLE, AND IT WINS.
+        # The manifest is a shipped claim about a field the provider's own
+        # words settle; `app.dimension_field_bindings` is how a field the
+        # evidence leaves open reaches a dimension at all -- a proposal
+        # quoting the provider, confirmed by a person, scoped to their
+        # project. Until today `resolve_field_bindings` had no production
+        # caller: a client could confirm a binding and nothing downstream
+        # changed. The binding is keyed at REPORT grain, finer than the
+        # manifest's (connector, field), so it also lets one field mean one
+        # thing in one report and another elsewhere -- which is the whole
+        # reason 27.9 keeps the report in the key.
+        matched = [
+            f
+            for f in sorted(set(dimensions))
+            if bindings.get((connector, report_id, f), fields.get(f))
+            == canonical_dimension
+        ]
         for source_field in matched:
             uses.append(
                 PlanFieldUse(
@@ -396,6 +418,76 @@ def _empty_mapping_summary() -> dict:
 # ---------------------------------------------------------------------------
 
 
+#: The three scopes a client label can be stored at, most specific LAST. The console
+#: door writes ORG and PROJECT; PLATFORM ships with the seeds and is read-only there.
+LABEL_SCOPES = ("PLATFORM", "ORG", "PROJECT")
+
+
+def labels_by_scope(rows) -> dict[str, dict | None]:
+    """Reduce raw label rows to {scope -> that scope's OWN stored label} (PURE).
+
+    THE CASCADE ANSWERS ONE QUESTION AND THIS ANSWERS ANOTHER. `reduce_labels_by_
+    specificity` says what a READER sees: the most specific scope wins and the rest
+    are invisible. A person about to name a dimension is not a reader -- they are
+    about to WRITE at one exact scope, and the word already stored there is what
+    the field must start from. Serving only the winner made the panel propose a
+    DERIVED word over an organization's chosen one the moment a project overrode
+    it (governance.md, "a scope that already carries a name pre-fills anything but
+    that name"), which is the opposite of naming.
+
+    Every declared scope is a key, `None` where nothing is stored there -- so
+    "nobody named it here" and "this scope was not looked at" are not the same
+    answer. Rows without a non-empty label are ignored, exactly as the reducer
+    beside it ignores them.
+    """
+    by_scope: dict[str, dict | None] = dict.fromkeys(LABEL_SCOPES)
+    for row in rows:
+        scope = row.get("scope_level")
+        label = row.get("display_label")
+        if scope not in by_scope or not label or not str(label).strip():
+            continue
+        if by_scope[scope] is None:
+            by_scope[scope] = {
+                "display_label": label,
+                "description": row.get("description"),
+                "scope_level": scope,
+            }
+    return by_scope
+
+
+def resolve_label_from_scopes(canonical_dimension: str, scope_labels: dict) -> dict:
+    """The word in FORCE, derived from the per-scope answer above (PURE).
+
+    Same shape and same contract as `dimension_conformance.resolve_dimension_label`:
+    `label_source` is 'client' when a stored row won the cascade PROJECT > ORG >
+    PLATFORM, and 'fallback_identifier' when nothing is stored anywhere -- the
+    stable identifier stands in and SAYS it is standing in. Deriving it here rather
+    than asking the store again is what keeps one screen to one answer.
+    """
+    from core.dimension_conformance import (  # noqa: PLC0415
+        LABEL_SOURCE_CLIENT,
+        LABEL_SOURCE_FALLBACK,
+    )
+
+    for scope in reversed(LABEL_SCOPES):  # most specific first
+        entry = (scope_labels or {}).get(scope)
+        if entry and entry.get("display_label"):
+            return {
+                "canonical_dimension": canonical_dimension,
+                "display_label": entry.get("display_label"),
+                "description": entry.get("description"),
+                "scope_level": scope,
+                "label_source": LABEL_SOURCE_CLIENT,
+            }
+    return {
+        "canonical_dimension": canonical_dimension,
+        "display_label": canonical_dimension,
+        "description": None,
+        "scope_level": None,
+        "label_source": LABEL_SOURCE_FALLBACK,
+    }
+
+
 def build_fed_by(
     *,
     canonical_dimension: str,
@@ -405,6 +497,7 @@ def build_fed_by(
     mapping_rows,
     project_id: str | None = None,
     org_id: str | None = None,
+    scope_labels: dict | None = None,
 ) -> dict:
     """Assemble the "fed-by" read model (PURE).
 
@@ -461,6 +554,11 @@ def build_fed_by(
         "display_label": label.get("display_label"),
         "label_scope": label.get("scope_level"),
         "label_source": label.get("label_source"),
+        # What each scope stores IN ITS OWN RIGHT, winner and non-winner alike. The
+        # keys above say what a reader sees; this says what a writer would rename.
+        "scope_labels": (
+            scope_labels if scope_labels is not None else dict.fromkeys(LABEL_SCOPES)
+        ),
         "scope": {"project_id": project_id, "org_id": org_id},
         "fed_by": entries,
         "gaps": all_gaps,
@@ -514,6 +612,28 @@ def load_project_plan_rows(project_id: str) -> list[dict]:
     return rows
 
 
+def _confirmed_field_bindings(
+    *, org_id: str | None, project_id: str | None
+) -> dict[tuple[str, str, str], str]:
+    """The client's CONFIRMED field bindings, or {} when they cannot be read.
+
+    Fail-soft, like the value and plan levels above: a binding store that is
+    down means the manifest answer alone is served, never a refusal and never
+    an invented mapping.
+    """
+    try:
+        from core.language_dimensions import resolve_field_bindings  # noqa: PLC0415
+
+        return resolve_field_bindings(org_id=org_id, project_id=project_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "dimension_lineage: confirmed-binding load failed project=%s: %s",
+            project_id,
+            exc,
+        )
+        return {}
+
+
 def get_fed_by(
     *,
     canonical_dimension: str,
@@ -528,14 +648,23 @@ def get_fed_by(
     """
     from core.dimension_conformance import (  # noqa: PLC0415
         _load_conformance_rows,
+        _load_label_rows,
         _project_org_id,
-        resolve_dimension_label,
     )
 
     org_id = _project_org_id(project_id)
-    label = resolve_dimension_label(
-        canonical_dimension, org_id=org_id, project_id=project_id
+    # ONE read of the label store, and the word in force is DERIVED from the
+    # per-scope answer rather than resolved a second time. Two resolutions on one
+    # screen are two answers free to disagree, which is the clause this envelope
+    # already holds for the winner.
+    scope_labels = labels_by_scope(
+        _load_label_rows(
+            org_id=org_id,
+            project_id=project_id,
+            canonical_dimension=canonical_dimension,
+        )
     )
+    label = resolve_label_from_scopes(canonical_dimension, scope_labels)
     try:
         mapping_rows = _load_conformance_rows(
             canonical_dimension=canonical_dimension, org_id=org_id, project_id=project_id
@@ -561,6 +690,9 @@ def get_fed_by(
         plan_rows,
         manifest_index=manifest_index,
         canonical_dimension=canonical_dimension,
+        field_bindings=_confirmed_field_bindings(
+            org_id=org_id, project_id=project_id
+        ),
     )
     return build_fed_by(
         canonical_dimension=canonical_dimension,
@@ -570,6 +702,7 @@ def get_fed_by(
         mapping_rows=mapping_rows,
         project_id=project_id,
         org_id=org_id,
+        scope_labels=scope_labels,
     )
 
 
@@ -643,3 +776,96 @@ def decorate_envelope_with_labels(envelope: dict, label_map: dict[str, dict]) ->
     meta["dimension_labels"] = label_map
     decorated["meta"] = meta
     return decorated
+
+
+# ===========================================================================
+# Story 27.9 -- THE READING PATH.
+#
+# `resolve_label_map` and `decorate_envelope_with_labels` shipped on 2026-07-25
+# with no production caller: the migration gave the label a place to live and
+# nothing ever read it. A label stored and never read renames nothing, which is
+# the whole point of the story: the client reads their own word, the stable
+# identifier stays underneath and never appears. The rule is written in
+# docs/product-architecture/governance.md, "A client label reaches every surface
+# that shows the number".
+# ===========================================================================
+
+
+#: The canonical vocabulary, per modules directory. CACHED ON PURPOSE: before this
+#: key existed the manifest index was read by a governance screen, occasionally;
+#: `resolve_report_dimension_labels` runs on EVERY report, and rereading 38 JSON
+#: files to answer "is this column a dimension" would put an avoidable cost on the
+#: one path a person waits on. The shipped tree does not change while the process
+#: runs, and a caller passing its own directory gets its own entry.
+_VOCABULARY_CACHE: dict[str, frozenset[str]] = {}
+
+
+def known_canonical_dimensions(modules_dir=None) -> set[str]:
+    """Every canonical dimension name the shipped manifests declare a target for.
+
+    Derived, never listed: a connector that conforms a new dimension tomorrow makes
+    that dimension labellable without an edit here.
+    """
+    base = Path(modules_dir) if modules_dir is not None else _default_modules_dir()
+    key = str(base)
+    cached = _VOCABULARY_CACHE.get(key)
+    if cached is None:
+        index = read_manifest_dimension_mappings(base)
+        cached = frozenset(
+            target for fields in index.values() for target in fields.values()
+        )
+        _VOCABULARY_CACHE[key] = cached
+    return set(cached)
+
+
+def dimensions_in_rows(rows, modules_dir=None) -> list[str]:
+    """The canonical dimensions actually present in *rows*, sorted.
+
+    A report labels what it SHOWS. Resolving the whole vocabulary on every read
+    would put a hundred names a reader never sees into the envelope.
+    """
+    known = known_canonical_dimensions(modules_dir)
+    present: set[str] = set()
+    for row in rows or ():
+        if isinstance(row, dict):
+            present.update(key for key in row if key in known)
+    return sorted(present)
+
+
+def _org_of_project(project_id: str | None) -> str | None:
+    """The organization owning *project_id*, or None. Never raises."""
+    if not project_id:
+        return None
+    try:
+        from core.db import get_connection  # noqa: PLC0415
+
+        with get_connection() as conn, conn.cursor() as cur:
+            # `app.projects` keys on `id`. This query said `project_id`, which does
+            # not exist, so the lookup raised `UndefinedColumn` on EVERY report,
+            # the handler below turned it into a warning, and every dimension fell
+            # back to its stable identifier -- the exact outcome
+            # `governance.md` ("A client label reaches every surface that shows
+            # the number") forbids. Same defect and same silence as
+            # `branding._BRANDING_SQL`, found in the same run (2026-08-23).
+            cur.execute("SELECT org_id FROM app.projects WHERE id = %s", (project_id,))
+            row = cur.fetchone()
+    except Exception as exc:  # noqa: BLE001 -- a label never takes a report down
+        logger.warning("dimension_lineage: org lookup failed for %s: %s", project_id, exc)
+        return None
+    return str(row[0]) if row and row[0] else None
+
+
+def resolve_report_dimension_labels(project_id: str | None, rows) -> dict[str, dict]:
+    """The label map for the dimensions THIS report shows. Never raises, never empty-lies.
+
+    Same posture as `branding.resolve_org_branding`, and for the same reason: a
+    report's number is the answer, the label is how it is read. A store that cannot
+    be reached returns the fallback map -- every dimension named by its stable
+    identifier with `label_source` saying so -- and the report is served.
+    """
+    dimensions = dimensions_in_rows(rows)
+    if not dimensions:
+        return {}
+    return resolve_label_map(
+        dimensions, org_id=_org_of_project(project_id), project_id=project_id
+    )

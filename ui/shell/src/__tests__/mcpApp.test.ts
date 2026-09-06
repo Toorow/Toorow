@@ -25,6 +25,8 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   connectMcpApp,
   callServerTool,
+  APP_PAYLOAD_META_KEY,
+  rehydrateEnvelope,
   readInjectedEnvelope,
   __resetMcpAppForTests,
   type McpToolResultParams,
@@ -131,6 +133,18 @@ describe("mcpApp -- SDK connected path", () => {
     expect(listenerRegisteredAtConnectTime).toBe(true);
   });
 
+  it("replays a result emitted synchronously during connect to the first subscriber", async () => {
+    const app = makeMockApp();
+    app.connect.mockImplementation(async () => {
+      app.emitToolResult({ content: [], structuredContent: ENVELOPE });
+    });
+    const handle = connectMcpApp({ createApp: () => app });
+    const received = vi.fn();
+    handle.onToolResult(received);
+    await handle.ready;
+    expect(received).toHaveBeenCalledWith(ENVELOPE, undefined);
+  });
+
   it("toolresult structuredContent feeds onToolResult subscribers", async () => {
     const app = makeMockApp();
     const handle = connectMcpApp({ createApp: () => app });
@@ -160,6 +174,35 @@ describe("mcpApp -- SDK connected path", () => {
     expect(cb).not.toHaveBeenCalled();
   });
 
+  it("delivers inbound isError without structuredContent on the same transport", async () => {
+    const app = makeMockApp();
+    const handle = connectMcpApp({ createApp: () => app });
+    const normal = vi.fn();
+    const failed = vi.fn();
+    handle.onToolResult(normal);
+    handle.onToolResultError(failed);
+    await handle.ready;
+
+    app.emitToolResult({
+      isError: true,
+      content: [{ type: "text", text: "The pinned runtime is unavailable." }],
+    });
+
+    expect(failed).toHaveBeenCalledOnce();
+    expect(failed).toHaveBeenCalledWith({ message: "The pinned runtime is unavailable." });
+    expect(normal).not.toHaveBeenCalled();
+  });
+
+  it("onToolResultError returns an unsubscribe function", async () => {
+    const app = makeMockApp();
+    const handle = connectMcpApp({ createApp: () => app });
+    const failed = vi.fn();
+    handle.onToolResultError(failed)();
+    await handle.ready;
+    app.emitToolResult({ isError: true, content: [] });
+    expect(failed).not.toHaveBeenCalled();
+  });
+
   it("onToolResult returns an unsubscribe function", async () => {
     const app = makeMockApp();
     const handle = connectMcpApp({ createApp: () => app });
@@ -173,11 +216,14 @@ describe("mcpApp -- SDK connected path", () => {
   });
 
   it("callServerTool routes through the SDK with CallToolRequest params", async () => {
-    const app = makeMockApp();
+    const toolResult = { content: [], structuredContent: { ok: true } } as McpToolResultParams;
+    const app = makeMockApp({ callResult: toolResult });
     const handle = connectMcpApp({ createApp: () => app });
     await handle.ready;
 
-    await handle.callServerTool("submit_feedback", { rating: 1 });
+    await expect(
+      handle.callServerTool("submit_feedback", { rating: 1 }),
+    ).resolves.toBe(toolResult);
 
     expect(app.callServerTool).toHaveBeenCalledTimes(1);
     expect(app.callServerTool).toHaveBeenCalledWith({
@@ -268,7 +314,10 @@ describe("mcpApp -- legacy fallback path", () => {
     );
 
     expect(handle.mode).toBe("pending");
-    expect(cb).toHaveBeenCalledWith(ENVELOPE);
+    // Story 50.6: subscribers now receive the (envelope, meta) PAIR. A result
+    // with no `_meta` still notifies -- with `meta` undefined -- rather than
+    // being dropped, which is what keeps every pre-50.6 widget working.
+    expect(cb).toHaveBeenCalledWith(ENVELOPE, undefined);
   });
 
   it("ignores malformed payloads (no schema_version)", async () => {
@@ -298,7 +347,9 @@ describe("mcpApp -- legacy fallback path", () => {
     const handle = connectMcpApp({ createApp: () => app });
     await handle.ready;
 
-    await handle.callServerTool("submit_feedback", { rating: 1 });
+    await expect(
+      handle.callServerTool("submit_feedback", { rating: 1 }),
+    ).resolves.toBeNull();
 
     expect(postMessageMock).toHaveBeenCalledTimes(1);
     const [payload] = postMessageMock.mock.calls[0];
@@ -319,7 +370,7 @@ describe("mcpApp -- legacy fallback path", () => {
 
     await expect(
       handle.callServerTool("submit_feedback", { rating: 1 }),
-    ).resolves.toBeUndefined();
+    ).resolves.toBeNull();
   });
 
   it("module-level callServerTool without any connection uses the legacy channel", async () => {
@@ -327,7 +378,9 @@ describe("mcpApp -- legacy fallback path", () => {
     mockWindowParent(postMessageMock);
 
     // No connectMcpApp() call: Vitest/Storybook component-test situation.
-    await callServerTool("submit_feedback", { rating: -1 });
+    await expect(
+      callServerTool("submit_feedback", { rating: -1 }),
+    ).resolves.toBeNull();
 
     expect(postMessageMock).toHaveBeenCalledTimes(1);
     const [payload] = postMessageMock.mock.calls[0];
@@ -353,6 +406,25 @@ describe("mcpApp -- readInjectedEnvelope", () => {
   it("returns null when the global has no data payload", () => {
     window.__MCP_STRUCTURED_CONTENT__ = { schema_version: "1.0" };
     expect(readInjectedEnvelope()).toBeNull();
+  });
+});
+
+describe("mcpApp -- typed render payload coexistence", () => {
+  it("rehydrates only the nested moved map and leaves render_input untouched", () => {
+    const renderInput = { result: { id: "qr_EXAMPLE" } };
+    const envelope = {
+      schema_version: 1,
+      data: { rows: { withheld: "moved_to_app_channel", bytes: 10 } },
+    };
+    const rehydrated = rehydrateEnvelope(envelope, {
+      [APP_PAYLOAD_META_KEY]: {
+        schema_version: 1,
+        kind: "render",
+        render_input: renderInput,
+        moved: { rows: [{ value: 7 }] },
+      },
+    });
+    expect(rehydrated.data).toEqual({ rows: [{ value: 7 }] });
   });
 });
 

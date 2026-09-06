@@ -4,12 +4,51 @@ Tests:
   - test_run_due_briefings_idempotent
   - test_run_due_briefings_project_isolated
   - test_run_due_briefings_failure_isolation
+  - test_the_fakes_refuse_a_statement_they_were_never_taught
 
 These tests exercise _build_project_briefing directly with fake DB connections
 to avoid importing core.db (which requires psycopg/libpq).
 """
 
 from __future__ import annotations
+
+import pytest
+
+from tests.support.statement_router import StatementInventory, UnknownStatement, describe
+
+# ---------------------------------------------------------------------------
+# The statements `_build_project_briefing` puts through the connection it is
+# HANDED. Four fakes in this file each recognized the same two of them -- the
+# idempotency SELECT and the INSERT -- and answered everything else with no
+# rows and no `description` attribute at all.
+#
+# The three alert reads landed in that silence. The scheduler fetches business,
+# anomaly and mediaplan firings through the very connection these tests supply
+# (scheduler.py:447, 451, 455), and each of those readers asks the cursor for
+# `cur.description` (business_alerts.py:519, anomaly_alerts.py:687,
+# mediaplan_alerts.py:711). The old fakes had no such attribute, the
+# `AttributeError` was swallowed by each reader's own `except Exception`, and
+# every run of every test in this file built a briefing over "this project has
+# no alert" -- a state the test never chose (AI-317).
+#
+# Declaration order is match order. The three firing reads share one relation,
+# so each fragment names what separates it from the other two rather than being
+# widened until it swallows them.
+# ---------------------------------------------------------------------------
+_BRIEFING = StatementInventory(
+    "the briefing fakes",
+    existing_briefing=("select id", "from app.morning_briefings"),
+    briefing_write="insert into app.morning_briefings",
+    business_firings=("from app.alert_firings f", "join app.alert_definitions d"),
+    anomaly_firings=("from app.alert_firings", "type = 'anomaly'"),
+    mediaplan_firings=("from app.alert_firings", "where type = %s"),
+)
+
+# The window these tests run in holds no firing -- a real state of the product,
+# not a fabricated row. What the fakes must NOT keep doing is answer it without
+# the `description` psycopg would report, because the product reads that first.
+_FIRING_READS = ("business_firings", "anomaly_firings", "mediaplan_firings")
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -28,8 +67,22 @@ def _make_fake_insights():
 
 
 def _fake_build_briefing(project_id, briefing_date, alert_firings, rollup,
-                          context_events, nightly_run_id):
-    """A pure stub that always returns a valid insights dict."""
+                          context_events, nightly_run_id, detector_readiness=None,
+                          context_events_unavailable=None):
+    """A pure stub that always returns a valid insights dict.
+
+    `detector_readiness` is here because the real `build_briefing` has taken it
+    since Story 53.8 and the scheduler now passes it (CAV-13). A double that does
+    not accept what the caller sends fails on the ARGUMENT rather than on the
+    behaviour it was written to check -- which is what happened when the wiring
+    landed, and why the default is `None`: it keeps the stub honest about the
+    signature without making these tests about readiness.
+
+    `context_events_unavailable` is here for the same reason since AI-344: the
+    scheduler passes it on every call, whether or not the window could be read.
+    What it CARRIES is checked against the real builder in
+    `test_briefing_context_unavailable.py`.
+    """
     return _make_fake_insights()
 
 
@@ -39,17 +92,22 @@ class _FakeCursor:
     def __init__(self, existing_row=None):
         self._existing_row = existing_row
         self._results = []
+        self.description = None
         self.insert_count = [0]
 
     def execute(self, sql, params=None):
-        sql_upper = sql.strip().upper()
-        if "FROM APP.MORNING_BRIEFINGS" in sql_upper and "SELECT ID" in sql_upper:
+        statement = _BRIEFING.match(sql)
+        if statement == "existing_briefing":
             self._results = [self._existing_row] if self._existing_row else []
-        elif "INSERT INTO APP.MORNING_BRIEFINGS" in sql_upper:
+            self.description = describe(sql)
+        elif statement == "briefing_write":
             self.insert_count[0] += 1
             self._results = []
-        else:
+            self.description = None  # an INSERT with no RETURNING reports none
+        else:  # the three firing reads -- no firing in the window
+            assert statement in _FIRING_READS
             self._results = []
+            self.description = describe(sql)
 
     def fetchone(self):
         return self._results[0] if self._results else None
@@ -103,17 +161,22 @@ def test_run_due_briefings_idempotent():
         def __init__(self, _insert_count):
             self._insert_count = _insert_count
             self._results = []
+            self.description = None
 
         def execute(self, sql, params=None):
-            sql_upper = sql.strip().upper()
-            if "FROM APP.MORNING_BRIEFINGS" in sql_upper and "SELECT ID" in sql_upper:
+            statement = _BRIEFING.match(sql)
+            if statement == "existing_briefing":
                 # Row exists after first insert
                 self._results = [("brief_abc",)] if self._insert_count[0] > 0 else []
-            elif "INSERT INTO APP.MORNING_BRIEFINGS" in sql_upper:
+                self.description = describe(sql)
+            elif statement == "briefing_write":
                 self._insert_count[0] += 1
                 self._results = []
+                self.description = None
             else:
+                assert statement in _FIRING_READS
                 self._results = []
+                self.description = describe(sql)
 
         def fetchone(self):
             return self._results[0] if self._results else None
@@ -178,18 +241,23 @@ def test_run_due_briefings_project_isolated():
     class PerProjectCursor:
         def __init__(self):
             self._results = []
+            self.description = None
 
         def execute(self, sql, params=None):
-            sql_upper = sql.strip().upper()
-            if "FROM APP.MORNING_BRIEFINGS" in sql_upper and "SELECT ID" in sql_upper:
+            statement = _BRIEFING.match(sql)
+            if statement == "existing_briefing":
                 self._results = []  # no existing row
-            elif "INSERT INTO APP.MORNING_BRIEFINGS" in sql_upper:
+                self.description = describe(sql)
+            elif statement == "briefing_write":
                 insert_count[0] += 1
                 if params:
                     inserted_projects.append(params[1])  # project_id is 2nd param
                 self._results = []
+                self.description = None
             else:
+                assert statement in _FIRING_READS
                 self._results = []
+                self.description = describe(sql)
 
         def fetchone(self):
             return self._results[0] if self._results else None
@@ -248,7 +316,8 @@ def test_run_due_briefings_failure_isolation(monkeypatch):
     built_projects: list[str] = []
 
     def build_briefing_raising(project_id, briefing_date, alert_firings, rollup,
-                                context_events, nightly_run_id):
+                                context_events, nightly_run_id, detector_readiness=None,
+                                context_events_unavailable=None):
         if project_id == "proj_fail":
             raise RuntimeError("Simulated failure for proj_fail")
         built_projects.append(project_id)
@@ -259,18 +328,21 @@ def test_run_due_briefings_failure_isolation(monkeypatch):
     class FakeCursor:
         def __init__(self):
             self._results = []
+            self.description = None
 
         def execute(self, sql, params=None):
-            sql_upper = sql.strip().upper()
-            if "DISTINCT PROJECT_ID" in sql_upper:
-                self._results = [("proj_fail",), ("proj_ok",)]
-            elif "FROM APP.MORNING_BRIEFINGS" in sql_upper and "SELECT ID" in sql_upper:
+            statement = _BRIEFING.match(sql)
+            if statement == "existing_briefing":
                 self._results = []
-            elif "INSERT INTO APP.MORNING_BRIEFINGS" in sql_upper:
+                self.description = describe(sql)
+            elif statement == "briefing_write":
                 insert_count[0] += 1
                 self._results = []
+                self.description = None
             else:
+                assert statement in _FIRING_READS
                 self._results = []
+                self.description = describe(sql)
 
         def fetchone(self):
             return self._results[0] if self._results else None
@@ -299,7 +371,13 @@ def test_run_due_briefings_failure_isolation(monkeypatch):
 
     from core import scheduler as sched
 
-    # Override _run_due_briefings to use our fakes
+    # Override _run_due_briefings to use our fakes.
+    #
+    # The project list is hard-coded here, so `SELECT DISTINCT project_id FROM
+    # app.connection_ref` (scheduler.py:357) never reaches the cursor. The old
+    # fake carried a branch for it that nothing could ever take; it is not in
+    # the inventory, so the day this test drives the real `_run_due_briefings`
+    # the fake will say so by name instead of answering two invented projects.
     def fake_run_due_briefings(nightly_run_id: str) -> None:
         """Reproduce _run_due_briefings logic with mocked DB."""
         project_ids = ["proj_fail", "proj_ok"]
@@ -334,3 +412,28 @@ def test_run_due_briefings_failure_isolation(monkeypatch):
     assert insert_count[0] == 1, (
         f"Expected 1 insert (proj_ok only), got {insert_count[0]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# test_the_fakes_refuse_a_statement_they_were_never_taught
+# ---------------------------------------------------------------------------
+
+def test_the_fakes_refuse_a_statement_they_were_never_taught():
+    """AI-317: a briefing query that moved must not read like "no briefing".
+
+    The four fakes in this file share ONE inventory, so this holds for all of
+    them: a statement that is not in it comes back named, carrying the statement
+    itself and the neighbours the fake does know, instead of an empty result the
+    caller reads as a project with nothing to report.
+    """
+    cursor = _FakeCursor()
+
+    with pytest.raises(UnknownStatement) as raised:
+        cursor.execute(
+            "SELECT id FROM app.evening_briefings WHERE project_id = %s",
+            ("proj_alpha",),
+        )
+
+    message = str(raised.value)
+    assert "app.evening_briefings" in message, message
+    assert "existing_briefing" in message, message

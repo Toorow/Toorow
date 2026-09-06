@@ -240,7 +240,7 @@ describe("OrgDangerZone — blocked", () => {
       await screen.findByText("This organization cannot be deleted yet"),
     ).toBeInTheDocument();
     expect(screen.getByText("2 datastreams are still running.")).toBeInTheDocument();
-    expect(screen.getByText("active_datastream")).toBeInTheDocument();
+    expect(screen.getByText("Active datastream")).toBeInTheDocument();
     expect(
       screen.getByText("An invoice is still open for this organization."),
     ).toBeInTheDocument();
@@ -298,16 +298,24 @@ describe("OrgDangerZone — preview failure", () => {
 describe("AccountSettings — preview", () => {
   it("shows the identity, the memberships and what is retained", async () => {
     const calls = stubFetch(() => resp(200, ACCOUNT_PREVIEW));
-    render(<AccountSettings onDeleted={vi.fn()} />);
+    render(<AccountSettings section="actions" onDeleted={vi.fn()} />);
 
+    // Story 46.4 made the account page three URL-backed sections; erasure lives
+    // in `actions`. The page title follows the ratified global-scope naming.
+    // Everything below this line is the SAFETY contract and is unchanged.
     expect(
-      screen.getByRole("heading", { name: "Your account", level: 1 }),
+      screen.getByRole("heading", { name: "User Account", level: 1 }),
     ).toBeInTheDocument();
-    expect(calls).toHaveLength(0);
+    // What this pins is that the DESTRUCTIVE preview is not fetched until asked
+    // for. The `actions` section reads nothing at all on mount; Profile and
+    // Authorizations do their own plain reads, which must never be confused
+    // with the deletion preview.
+    const previewCalls = () => calls.filter((c) => c.url.includes("deletion-preview"));
+    expect(previewCalls()).toHaveLength(0);
 
     await openZone(/Delete my account/);
 
-    expect(calls[0].url).toBe("/api/me/deletion-preview");
+    expect(previewCalls()[0].url).toBe("/api/me/deletion-preview");
     const identity = await screen.findByRole("list", { name: "Account identity" });
     expect(identity).toHaveTextContent("jean@example.com");
     expect(identity).toHaveTextContent("user_42");
@@ -321,7 +329,7 @@ describe("AccountSettings — preview", () => {
 
   it("keeps the delete button disabled until the email matches exactly", async () => {
     stubFetch(() => resp(200, ACCOUNT_PREVIEW));
-    render(<AccountSettings onDeleted={vi.fn()} />);
+    render(<AccountSettings section="actions" onDeleted={vi.fn()} />);
     await openZone(/Delete my account/);
 
     const button = await screen.findByRole("button", {
@@ -338,7 +346,7 @@ describe("AccountSettings — preview", () => {
 
   it("reports the failure instead of an empty account when the preview fails", async () => {
     stubFetch(() => resp(401, { code: "unauthenticated", message: "Missing bearer token" }));
-    render(<AccountSettings onDeleted={vi.fn()} />);
+    render(<AccountSettings section="actions" onDeleted={vi.fn()} />);
     await openZone(/Delete my account/);
 
     const alert = await screen.findByRole("alert");
@@ -367,7 +375,7 @@ describe("AccountSettings — sole owner", () => {
         sole_owner_of: [{ org_id: "org_acme", org_name: "Acme Media" }],
       }),
     );
-    render(<AccountSettings onDeleted={vi.fn()} />);
+    render(<AccountSettings section="actions" onDeleted={vi.fn()} />);
     await openZone(/Delete my account/);
 
     expect(
@@ -398,7 +406,7 @@ describe("AccountSettings — sole owner", () => {
       }
       return resp(200, ACCOUNT_PREVIEW);
     });
-    render(<AccountSettings onDeleted={onDeleted} />);
+    render(<AccountSettings section="actions" onDeleted={onDeleted} />);
     await openZone(/Delete my account/);
 
     await userEvent.type(
@@ -429,7 +437,7 @@ describe("AccountSettings — erasure", () => {
         : resp(200, ACCOUNT_PREVIEW),
     );
     const onDeleted = vi.fn();
-    render(<AccountSettings onDeleted={onDeleted} />);
+    render(<AccountSettings section="actions" onDeleted={onDeleted} />);
     await openZone(/Delete my account/);
 
     await userEvent.type(

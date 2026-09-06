@@ -1,0 +1,1 @@
+"""Instagram Insights connector tests."""

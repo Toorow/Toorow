@@ -17,6 +17,15 @@ STRICTLY PASSIVE / READ-ONLY. This module NEVER mutates anything:
     transaction, anti-course lock, Sum=1.0 validation and audit). It NEVER calls
     set_line_mappings itself and emits no INSERT/UPDATE/DELETE.
 
+STORY 61.3 GAVE IT ITS FIRST PRODUCTION CALLER, four epics after it was written.
+``core/datastream_workbench_api.py`` reaches it from the ``Placements`` tab of the
+Datastream Workbench, connector-scoped, on an explicit gesture -- never on a tab load,
+because the sweep is lines x campaigns and nobody should pay it who did not ask. Three
+things were added for that: the ``connector`` parameter below, the level travelling on
+the ``entries`` payload (so it survives the delete+insert of set_line_mappings), and the
+threshold and window travelling on the output (so an empty answer can say over what it
+looked). The algorithm itself was not touched.
+
 Design mirrors dimension_conformance.py / mediaplan_mapping.py: ``from __future__ import
 annotations``, module logger, lazy core.* imports inside the I/O functions, pure
 functions kept apart from I/O so the invariants are testable without Postgres.
@@ -206,8 +215,18 @@ def propose_set_line_mappings_payload(
 ) -> dict[str, list[dict]]:
     """Group suggestions by line_key into the ``entries`` payload of set_line_mappings.
 
-    Output shape: ``{line_key -> [{connector, campaign_ref}, ...]}`` -- EXACTLY the
-    ``entries`` list mediaplan_mapping.set_line_mappings consumes per line_key.
+    Output shape: ``{line_key -> [{connector, campaign_ref, match_method,
+    match_score}, ...]}`` -- EXACTLY the ``entries`` list
+    mediaplan_mapping.set_line_mappings consumes per line_key.
+
+    THE LEVEL TRAVELS -- story 61.3, arbitrage A6. Until that story these entries
+    carried ``{connector, campaign_ref}`` and nothing else, so ``method`` and
+    ``score`` died at the exact moment a person validated: the suggestion knew a
+    match was a 0.89 resemblance, and the row that came out of the validation knew
+    only that a match existed. They are on the entry now, and
+    ``set_line_mappings`` re-inserts them alongside the pair -- which matters
+    twice, because that function REPLACES a line's whole set, so a level that did
+    not travel would also be erased by the next write on the same line.
 
     split_weight is OMITTED by default: we invent no weight. set_line_mappings applies
     the implicit regime -- equirepartition 1/N PER CAMPAIGN (compute_default_splits,
@@ -222,13 +241,15 @@ def propose_set_line_mappings_payload(
 
     Deterministic: line_keys and their entries are emitted in sorted order.
     """
-    # Group by line_key, de-duplicating (connector, campaign_ref) within a line.
-    by_line: dict[str, list[tuple[str, str]]] = {}
+    # Group by line_key, de-duplicating (connector, campaign_ref) within a line and
+    # KEEPING the level of the pair that got there first. `suggest_line_mappings`
+    # emits at most one suggestion per (line_key, connector, campaign_ref) -- one
+    # stage decides each pair -- so "the first" and "the only" are the same row
+    # here; the de-duplication guards a caller that concatenated two runs.
+    by_line: dict[str, dict[tuple[str, str], tuple[str, float]]] = {}
     for sug in suggestions:
-        pairs = by_line.setdefault(sug.line_key, [])
-        key = (sug.connector, sug.campaign_ref)
-        if key not in pairs:
-            pairs.append(key)
+        pairs = by_line.setdefault(sug.line_key, {})
+        pairs.setdefault((sug.connector, sug.campaign_ref), (sug.method, sug.score))
 
     proposed_weights: dict[tuple[str, str], dict[str, str]] = {}
     if include_default_weights:
@@ -247,7 +268,13 @@ def propose_set_line_mappings_payload(
     for line_key in sorted(by_line):
         entries: list[dict] = []
         for connector, campaign_ref in sorted(by_line[line_key]):
-            entry: dict = {"connector": connector, "campaign_ref": campaign_ref}
+            method, score = by_line[line_key][(connector, campaign_ref)]
+            entry: dict = {
+                "connector": connector,
+                "campaign_ref": campaign_ref,
+                "match_method": method,
+                "match_score": score,
+            }
             if include_default_weights:
                 entry["proposed_split_weight"] = proposed_weights[
                     (connector, campaign_ref)
@@ -301,6 +328,7 @@ def _actuals_from_warehouse(
 def suggest_line_mappings_for_plan(
     plan_id: str,
     *,
+    connector: str | None = None,
     actuals_by_connector: dict[str, list[str]] | None = None,
     campaign_spend_fn=None,
     similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
@@ -313,10 +341,25 @@ def suggest_line_mappings_for_plan(
     warehouse helper over the plan window (``campaign_spend_fn``, default
     warehouse.query_campaign_spend). Returns:
 
-        {plan_id, window: {start, end} | None,
+        {plan_id, project_id, connector, window: {start, end} | None,
+         similarity_threshold,
          suggestions: [LineMappingSuggestion-as-dict, ...],
-         payload_by_line_key: {line_key -> [{connector, campaign_ref}, ...]},
+         payload_by_line_key: {line_key -> [{connector, campaign_ref, match_method,
+                               match_score}, ...]},
          notes: [...]}
+
+    ``connector`` SCOPES THE CANDIDATES -- story 61.3, arbitrage A7. The whole
+    reach of the surface that asks for these suggestions is one connector, read
+    from ``app.datastreams`` by its caller; without this filter the sweep would
+    return candidates from connectors that surface cannot show, and a person would
+    be offered a match they have no way to look at. It is applied to the caller's
+    own dictionary as well as to the warehouse read, so no path reaches the
+    payload around it. The PURE ``suggest_line_mappings`` is untouched: it stays a
+    function of what it is given.
+
+    ``similarity_threshold`` and ``window`` TRAVEL ON THE OUTPUT, because an empty
+    result is a measurement and a measurement that cannot say over what it looked
+    is an assertion.
 
     NO write. Unknown plan / inactive version -> empty suggestions + an honest note.
     WarehouseUnavailable PROPAGATES (never a fake empty perimeter -- AD-9).
@@ -356,6 +399,17 @@ def suggest_line_mappings_for_plan(
             actuals_by_connector = {}
             notes.append("no window to read real campaigns from")
 
+    if connector is not None:
+        kept = {connector: list(actuals_by_connector.get(connector) or [])}
+        if not kept[connector]:
+            # An honest note rather than a silent empty set: "this connector
+            # reported no campaign over this window" and "we did not look at this
+            # connector" would otherwise render identically.
+            notes.append(
+                "no campaign of the requested connector was reported over the plan window"
+            )
+        actuals_by_connector = kept
+
     suggestions = suggest_line_mappings(
         lines,
         actuals_by_connector,
@@ -366,7 +420,10 @@ def suggest_line_mappings_for_plan(
 
     return {
         "plan_id": str(plan_id),
+        "project_id": project_id,
+        "connector": connector,
         "window": window,
+        "similarity_threshold": similarity_threshold,
         "suggestions": [
             {
                 "line_key": s.line_key,

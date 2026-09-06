@@ -47,6 +47,27 @@ _EDGE_ROW_PROJ_B = (
     "related", "proj_B", "user_b", "2026-07-18T09:00:00Z",
 )
 
+#: One row of `app.context_relationships` in the column order
+#: `context_relationships._HEAD_COLUMNS` names -- the authority behind
+#: `_EDGE_ROW_PROJ_A`. Story 49-6 AC5.
+_RELATION_ROW = (
+    "crel_01J0000000000000000000AA",  # id
+    "org_1",                           # org_id
+    "proj_A",                          # project_id
+    "topic",                           # source_type
+    "top_01",                          # source_id
+    "topic",                           # target_type
+    "top_02",                          # target_id
+    "relates_to",                      # relationship_kind
+    "active",                          # status
+    "console",                         # provenance
+    "edge_A001",                       # projection_edge_id
+    "crelv_01J0000000000000000000BB",  # current_version_id
+    "user_a",                          # created_by
+    "2026-07-20T10:00:00Z",            # created_at
+    "2026-07-20T10:00:00Z",            # updated_at
+)
+
 
 def _make_mock_conn():
     conn = MagicMock()
@@ -129,12 +150,16 @@ def test_create_graph_edge_201():
 
     conn, cur = _make_mock_conn()
 
-    # _node_exists_in_scope calls: one for from_id, one for to_id → both True
-    # create INSERT RETURNING → the edge row
+    # STORY 49-6 AC5: the door calls `context_relationships.create_relationship`,
+    # which reads more before it writes -- and every one of those reads is the
+    # authority doing something the old door did not do at all.
     cur.fetchone.side_effect = [
-        (1,),  # from_id topic exists
-        (1,),  # to_id topic exists
-        _EDGE_ROW_PROJ_A,  # INSERT RETURNING
+        (1,),               # source topic exists, asked of context_store's owner
+        (1,),               # target topic exists
+        ("org_1",),         # the organization, DERIVED from the project graph
+        None,               # no live relation already joins these two this way
+        None,               # nothing occupies the projection's endpoint tuple
+        _EDGE_ROW_PROJ_A,   # the projection INSERT ... RETURNING
     ]
     cur.description = _EDGE_COLS
 
@@ -151,7 +176,7 @@ def test_create_graph_edge_201():
                 "from_type": "topic",
                 "to_id": "top_02",
                 "to_type": "topic",
-                "edge_type": "related",
+                "edge_type": "relates_to",
             },
         )
 
@@ -181,14 +206,14 @@ def test_create_graph_edge_invalid_from_type_422():
                 "from_type": "invalid_type",  # <-- not in enum
                 "to_id": "top_02",
                 "to_type": "topic",
-                "edge_type": "related",
+                "edge_type": "relates_to",
             },
         )
 
     assert resp.status_code == 422
     data = resp.json()
     assert data["code"] == "invalid_param"
-    assert "invalide" in data["message"]
+    assert "Invalid" in data["message"]
 
 
 def test_create_graph_edge_platform_write_denied_by_default(monkeypatch):
@@ -215,7 +240,7 @@ def test_create_graph_edge_platform_write_denied_by_default(monkeypatch):
                 "from_type": "topic",
                 "to_id": "proc_p01",
                 "to_type": "procedure",
-                "edge_type": "related",
+                "edge_type": "relates_to",
             },
         )
 
@@ -244,7 +269,7 @@ def test_create_graph_edge_cross_project_no_membership_404_audit():
                 "from_type": "topic",
                 "to_id": "top_y",
                 "to_type": "topic",
-                "edge_type": "related",
+                "edge_type": "relates_to",
             },
         )
 
@@ -264,10 +289,15 @@ def test_delete_graph_edge_204():
     client = TestClient(app)
 
     conn, cur = _make_mock_conn()
-    # get_graph_edge call + delete RETURNING
+    # STORY 49-6 AC5: a retirement is a SUPERSEDE. The route still reads the edge
+    # first (so a cross-scope attempt is audited without disclosure), then finds
+    # the relation the edge projects and retires THAT -- the projection row is
+    # deleted, the relation and its version history are not.
     cur.fetchone.side_effect = [
-        _EDGE_ROW_PROJ_A,   # get_graph_edge
-        ("edge_A001",),     # DELETE RETURNING
+        _EDGE_ROW_PROJ_A,   # get_graph_edge -- the scope check reads it unfiltered
+        _RELATION_ROW,      # find_by_projection_edge
+        _RELATION_ROW,      # supersede_relationship's own scoped read
+        (2,),               # the next version number
     ]
     cur.description = _EDGE_COLS
 
@@ -644,3 +674,230 @@ def test_delete_graph_edge_cross_project_404_audit():
     assert resp.json()["code"] == "not_found"
     mock_audit.assert_called_once()
     assert mock_audit.call_args.kwargs["action"] == "access_denied"
+
+
+# ---------------------------------------------------------------------------
+# Live finding A1 (2026-08-05): disabled-auth local mode (`make dev`)
+# ---------------------------------------------------------------------------
+
+
+def test_list_graph_edges_disabled_auth_keeps_the_local_developer_workflow(monkeypatch):
+    """Under `make dev` the graph endpoints answered 404 while every other
+    context surface answered -- two seams, two truths. The anonymous developer
+    identity must pass `_check_project_role` WITHOUT the strict resolver ever
+    running (it would deny on `production_identity_required`)."""
+    monkeypatch.setenv("TOOROW_AUTH_MODE", "disabled")
+
+    app = build_asgi_app()
+    client = TestClient(app)
+
+    conn, cur = _make_mock_conn()
+    cur.fetchall.return_value = [_EDGE_ROW_PROJ_A, _EDGE_ROW_PLATFORM]
+    cur.description = _EDGE_COLS
+
+    with (
+        patch("core.admin_api._check_auth", return_value=(True, "anonymous")),
+        patch(
+            "core.project_access.identity_has_project_role",
+            side_effect=AssertionError("strict resolver must not run in disabled dev mode"),
+        ),
+        patch("core.db.get_connection", return_value=conn),
+    ):
+        resp = client.get("/api/context/graph/edges?project_id=proj_A")
+
+    assert resp.status_code == 200
+    ids = {e["id"] for e in resp.json()["edges"]}
+    assert "edge_A001" in ids
+
+
+def test_get_graph_disabled_auth_returns_the_bundle(monkeypatch):
+    """Same bypass on the one-bundle read: the Knowledge Graph screen was
+    broken in the default local config because this route 404'd."""
+    monkeypatch.setenv("TOOROW_AUTH_MODE", "disabled")
+
+    app = build_asgi_app()
+    client = TestClient(app)
+
+    conn, cur = _make_mock_conn()
+    cur.fetchall.side_effect = [[], [], [], []]
+
+    def _description_by_query(sql, *_a, **_k):
+        if "app.context_topics" in sql:
+            cur.description = _TOPIC_COLS
+        elif "app.procedures" in sql:
+            cur.description = _PROC_COLS
+        elif "app.schema_context" in sql:
+            cur.description = _SCHEMA_DOC_COLS
+        elif "app.context_graph" in sql:
+            cur.description = _EDGE_COLS
+
+    cur.execute.side_effect = _description_by_query
+
+    with (
+        patch("core.admin_api._check_auth", return_value=(True, "anonymous")),
+        patch(
+            "core.project_access.identity_has_project_role",
+            side_effect=AssertionError("strict resolver must not run in disabled dev mode"),
+        ),
+        patch("core.db.get_connection", return_value=conn),
+    ):
+        resp = client.get("/api/context/graph?project_id=proj_A")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["nodes"] == []
+    assert data["edges"] == []
+
+
+def test_create_graph_edge_rejects_an_edge_type_outside_the_vocabulary():
+    """Live finding F2 (2026-08-05): any string was accepted as edge_type
+    (`relation_invalide_xyz` -> 201), so the graph accumulated one vocabulary
+    per caller. The canonical set is the console's EDGE_TYPE_SUGGESTIONS plus
+    the business projection's "applies-to"."""
+    app = build_asgi_app()
+    client = TestClient(app)
+
+    conn, cur = _make_mock_conn()
+
+    with (
+        patch("core.admin_api._check_auth", return_value=(True, "user_a")),
+        patch("core.project_access.identity_has_project_role", return_value=True),
+        patch("core.db.get_connection", return_value=conn),
+    ):
+        resp = client.post(
+            "/api/context/graph/edges",
+            json={
+                "project_id": "proj_A",
+                "from_type": "topic",
+                "from_id": "top_01",
+                "to_type": "topic",
+                "to_id": "top_02",
+                "edge_type": "relation_invalide_xyz",
+            },
+        )
+
+    assert resp.status_code == 422
+    # STORY 49-6 AC5: the vocabulary is the authority's, so the CODE is now the
+    # named refusal rather than the generic one -- a caller can branch on it,
+    # where `invalid_param` said only "something in your body". Same 422, same
+    # vocabulary in the sentence.
+    assert resp.json()["code"] == "unknown_relationship_kind"
+    assert "relates_to" in resp.json()["message"]
+
+
+# ---------------------------------------------------------------------------
+# Live finding F3 (2026-08-07): the scope of a write travels in the query
+# ---------------------------------------------------------------------------
+
+
+def test_create_graph_edge_reads_the_scope_from_the_query_like_every_other_route():
+    """`POST /graph/edges?project_id=proj_A` read the scope from the BODY only,
+    so the query was ignored, the edge became PLATFORM-scoped, and the
+    deny-by-default platform gate answered 404 "Project not found" on a project
+    the caller owns. Every other context route reads `?project_id=`."""
+    app = build_asgi_app()
+    client = TestClient(app)
+
+    conn, cur = _make_mock_conn()
+
+    with (
+        patch("core.admin_api._check_auth", return_value=(True, "user_a")),
+        patch("core.project_access.identity_has_project_role", return_value=True),
+        patch("core.db.get_connection", return_value=conn),
+        # STORY 49-6 AC5: the door's writer is the AUTHORITY, so that is what is
+        # patched. `projection` is the legacy row the authority wrote in the
+        # same transaction -- the payload this route serialises.
+        patch(
+            "core.context_relationships.create_relationship",
+            return_value={
+                "id": "crel_new",
+                "project_id": "proj_A",
+                "projection_edge_id": "edge_new",
+                "projection": {"id": "edge_new", "project_id": "proj_A"},
+            },
+        ) as create_mock,
+    ):
+        resp = client.post(
+            "/api/context/graph/edges?project_id=proj_A",
+            json={
+                "from_type": "topic",
+                "from_id": "top_01",
+                "to_type": "topic",
+                "to_id": "top_02",
+                "edge_type": "relates_to",
+            },
+        )
+
+    assert resp.status_code == 201
+    assert create_mock.call_args.kwargs["project_id"] == "proj_A"
+
+
+def test_create_graph_edge_refuses_a_body_scope_that_contradicts_the_query():
+    """The body may REPEAT the scope; it may not redirect it. Same rule and
+    same non-disclosing 404 as `_body_project_scope` on topics/procedures."""
+    app = build_asgi_app()
+    client = TestClient(app)
+
+    conn, cur = _make_mock_conn()
+
+    with (
+        patch("core.admin_api._check_auth", return_value=(True, "user_a")),
+        patch("core.project_access.identity_has_project_role", return_value=True),
+        patch("core.db.get_connection", return_value=conn),
+        patch("core.context_relationships.create_relationship") as create_mock,
+        patch("core.context_api.write_audit_row") as mock_audit,
+    ):
+        resp = client.post(
+            "/api/context/graph/edges?project_id=proj_A",
+            json={
+                "project_id": "proj_B",
+                "from_type": "topic",
+                "from_id": "top_01",
+                "to_type": "topic",
+                "to_id": "top_02",
+                "edge_type": "relates_to",
+            },
+        )
+
+    assert resp.status_code == 404
+    assert resp.json()["code"] == "not_found"
+    create_mock.assert_not_called()
+    mock_audit.assert_called_once()
+
+
+def test_create_graph_edge_keeps_the_platform_scope_when_no_project_is_named():
+    """An ABSENT project_id still means the PLATFORM scope here -- unlike
+    topics, where it is a 422. Harmonizing WHERE the scope is read must not
+    silently make it required and delete the platform-edge path."""
+    app = build_asgi_app()
+    client = TestClient(app)
+
+    conn, cur = _make_mock_conn()
+
+    with (
+        patch("core.admin_api._check_auth", return_value=(True, "platform@example.com")),
+        patch("core.context_api.check_platform_write_authorized", return_value=True),
+        patch("core.db.get_connection", return_value=conn),
+        patch(
+            "core.context_relationships.create_relationship",
+            return_value={
+                "id": "crel_p",
+                "project_id": None,
+                "projection_edge_id": "edge_p",
+                "projection": {"id": "edge_p", "project_id": None},
+            },
+        ) as create_mock,
+    ):
+        resp = client.post(
+            "/api/context/graph/edges",
+            json={
+                "from_type": "topic",
+                "from_id": "top_p01",
+                "to_type": "procedure",
+                "to_id": "proc_p01",
+                "edge_type": "relates_to",
+            },
+        )
+
+    assert resp.status_code == 201
+    assert create_mock.call_args.kwargs["project_id"] is None

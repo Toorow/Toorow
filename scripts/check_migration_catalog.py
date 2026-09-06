@@ -44,10 +44,72 @@ def _validate_manifest(directory: Path, files: list[Path], errors: list[str]) ->
         if MIGRATION_NAME.fullmatch(path.name)
     ]
     if entries != expected:
-        errors.append(
-            "migration manifest drift: run "
-            "python scripts/check_migration_catalog.py --write-manifest only for reviewed SQL"
+        errors.append(_describe_manifest_drift(entries, expected))
+
+
+def _describe_manifest_drift(entries: list, expected: list[dict]) -> str:
+    """Say WHICH drift this is, because the two have opposite remedies.
+
+    THE MESSAGE USED TO BE ONE SENTENCE for both cases -- "run --write-manifest only
+    for reviewed SQL" -- and that cost a real misdiagnosis on 2026-08-17: a NEW,
+    unlisted migration reported the same words as a CHANGED one, the reader looked for
+    checksum drift, measured it with a raw-byte checksum instead of
+    :func:`canonical_checksum`, and concluded that 31 already-applied migrations had
+    drifted. None had. `--write-manifest` would then have re-stamped 31 applied
+    migrations and left the manifest permanently at odds with the production ledger,
+    which stores the ORIGINAL checksum -- the "never re-edit an applied migration" rule,
+    one level up.
+
+    So the two are named apart:
+
+    * an unlisted or removed FILE is bookkeeping. `--write-manifest` is exactly right.
+    * a CHANGED checksum on a file already in the manifest is the dangerous one. It may
+      be a legitimate pre-application edit, and it may be an edit to something already
+      applied somewhere -- and only the ledger can tell which, so the message sends the
+      reader there first instead of offering the rewrite.
+
+    Line endings are NOT a cause and cannot be: :func:`canonical_checksum` normalises
+    them, and ``apply_migrations`` writes the ledger with the same function. A CRLF
+    working tree on Windows is invisible to both, which is why chasing it is wasted work.
+    """
+
+    listed = {entry.get("filename") for entry in entries if isinstance(entry, dict)}
+    on_disk = {entry["filename"] for entry in expected}
+    unlisted = sorted(on_disk - listed)
+    removed = sorted(listed - on_disk)
+
+    by_name = {entry["filename"]: entry["sha256"] for entry in expected}
+    changed = sorted(
+        entry["filename"]
+        for entry in entries
+        if isinstance(entry, dict)
+        and entry.get("filename") in by_name
+        and entry.get("sha256") != by_name[entry["filename"]]
+    )
+
+    parts: list[str] = []
+    if unlisted:
+        parts.append(f"migration(s) on disk and absent from the manifest: {unlisted}")
+    if removed:
+        parts.append(f"manifest entry(ies) whose file is gone: {removed}")
+    if changed:
+        parts.append(
+            f"CHECKSUM CHANGED on already-listed migration(s): {changed} -- do NOT "
+            "re-stamp these before checking the ledger "
+            "(SELECT identifier, checksum FROM toorow_meta.schema_migrations). An "
+            "applied migration is never re-edited; correct it with the next one"
         )
+    if not parts:
+        # Same names and same checksums, different ORDER or shape. Worth saying so:
+        # the reader would otherwise hunt for a difference that is not in the values.
+        parts.append("manifest entries are out of order or carry unexpected keys")
+
+    remedy = (
+        "run python scripts/check_migration_catalog.py --write-manifest"
+        if not changed
+        else "resolve the changed checksum(s) first; --write-manifest would hide the change"
+    )
+    return "migration manifest drift: " + "; ".join(parts) + f". Then {remedy}."
 
 
 def validate_catalog(directory: Path, *, verify_manifest: bool = False) -> list[Path]:

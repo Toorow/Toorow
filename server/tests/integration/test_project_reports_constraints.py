@@ -13,6 +13,8 @@ import uuid
 
 import pytest
 
+from tests.conftest import purge_fixture_project
+
 pytestmark = pytest.mark.skipif(
     not os.environ.get("TEST_POSTGRES_DSN"),
     reason="TEST_POSTGRES_DSN not set — live Postgres constraint test skipped",
@@ -66,5 +68,7 @@ def test_unique_constraint_enforced(live_postgres):
             cur.execute(
                 "DELETE FROM app.project_reports WHERE project_id = %s", (project_id,)
             )
-            cur.execute("DELETE FROM app.projects WHERE id = %s", (project_id,))
+            # AI-291: le graphe prend le relais si une table gouvernee
+            # ajoutee depuis retient le projet en ON DELETE RESTRICT.
+            purge_fixture_project(cur.connection, project_id)
         conn.commit()

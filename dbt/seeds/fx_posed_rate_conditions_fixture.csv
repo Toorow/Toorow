@@ -1,0 +1,5 @@
+observation_id,condition_key,condition_value
+fxo_SPEC_META01,connector,meta-ads
+fxo_TIE_META001,connector,meta-ads
+fxo_TIE_META002,connector,meta-ads
+fxo_UNRES_CTRY1,country,FR

@@ -1,496 +1,576 @@
-/**
- * ProjectMapping — faithful React port of the validated Project mapping mockup.
- *
- * Source of visual truth:
- *   _bmad-output/planning-artifacts/ux-designs/ux-connector-2026-07-23/
- *     mockups/project-mapping.html   (+ workflow-surfaces.css)
- *
- * The project-level concept-consumption surface: canonical concepts, the
- * datastreams that "use" each one (overlapping provider-logo stacks + count),
- * coverage state (mapped / needs-review / conflict), conflict count, and last
- * update — plus a summary strip, a segmented view switch (Concept consumption /
- * Coverage matrix / Relationships), Kind/Status filters and a concept search.
- *
- * The application shell (ApplicationShell.tsx) already renders the frame, sidebar,
- * topbar, and <main>. This component renders ONLY the page content that lives
- * inside <main>: the page header, summary strip, and the mapping panel.
- *
- * Styling: application.css (global, via the shell) for shell/layout classes +
- * project-mapping.css for the mapping-surface classes. Colors come exclusively
- * from the application.css CSS variables for every brand/semantic value; numbers
- * use Geist tabular via those classes.
- *
- * ── Data ──────────────────────────────────────────────────────────────────────
- * The one clean, real map is GET /api/datamodel/fields, which returns
- * TargetField[] with: name (canonical id), display_name, field_kind
- * (metric|dimension), used_by_count (a SCALAR "used by N flux" count), and an
- * optional status (draft|approved). Those map to: Canonical concept, Kind, the
- * "N Datastreams" count, and the summary "Canonical concepts / dimensions vs
- * metrics" tallies.
- *
- * Everything the mockup shows that the API does NOT expose is a mockup literal,
- * flagged with // TODO(api): the per-provider logo STACK (which providers feed a
- * concept), the coverage STATE (fully mapped / needs review / conflict), the
- * conflict COUNT, and the "Updated" date. See the GAP LIST in the port report.
- *
- * The page renders finished with no backend: when the fetch fails or is pending,
- * it falls back to the mockup's five literal rows so the surface is never blank.
- */
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import MdmConflictResolutionDialog from "../../governance/MdmConflictResolutionDialog";
+import { apiFetch } from "../../lib/apiFetch";
+import {
+  Badge,
+  Button,
+  Metric,
+  PageHeader,
+  Panel,
+  PanelHeader,
+  Status,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  TableScroll,
+} from "../../ui";
 import "../application.css";
-import "./project-mapping.css";
 
-// ---------------------------------------------------------------------------
-// API shape (subset of DataModelPage's TargetField)
-// ---------------------------------------------------------------------------
+/** The codes this screen can close itself; the others name their own lever. */
+const RESOLVABLE_HERE = new Set(["CURRENCY_CONFLICT", "CURRENCY_GAP", "MEASURE_NULL"]);
+
+type ConflictSeverity = "advisory" | "blocking";
+type FieldKind = "metric" | "dimension";
 
 interface TargetField {
   name: string;
-  display_name: string;
-  field_kind: "metric" | "dimension";
-  used_by_count: number;
-  status?: "draft" | "approved";
+  displayName: string;
+  kind: FieldKind;
+  usedByCount: number;
 }
 
-// ---------------------------------------------------------------------------
-// View row model — the fields the mapping table needs to render one concept.
-// ---------------------------------------------------------------------------
-
-type Coverage = "success" | "warning" | "error";
-type Provider = "meta" | "google-ads" | "google-analytics" | "google-sheets";
-
-interface ConceptRow {
-  name: string; // display name, e.g. "Primary date"
-  mono: string; // canonical id, mono font, e.g. "mdm_…DATE"
-  kind: "Dimension" | "Metric";
-  /** Provider logo stack — TODO(api): not exposed by /api/datamodel/fields. */
-  providers: Provider[];
-  count: number; // "N Datastreams" — REAL from used_by_count when available
-  countNote: string; // TODO(api): human note ("All active flows")
-  coverage: Coverage; // TODO(api): coverage state
-  coverageLabel: string;
-  conflict: Coverage; // TODO(api): conflict state
-  conflictLabel: string;
-  updated: string; // TODO(api): last mapping update date
-  icon: JSX.Element; // per-concept glyph (mockup literal)
+export interface ConflictEvidence {
+  fieldName: string;
+  fieldLabel: string;
+  code: string;
+  message: string;
+  affectedStreams: string[];
+  severity: ConflictSeverity;
+  /** The Connectors a currency binds to. The wire says `resolutions_by_module`;
+   *  `module_name` is the legacy spelling of Connector (glossary.md), and a
+   *  retired noun does not travel from the wire into what a person reads. */
+  connectors: string[];
+  /** Connector -> the source currency already bound, when one is. */
+  resolvedByConnector: Record<string, string | null>;
 }
 
-// ---------------------------------------------------------------------------
-// Concept glyphs (faithful to the mockup's inline <svg> per row)
-// ---------------------------------------------------------------------------
-
-const ICON = {
-  date: (
-    <svg viewBox="0 0 24 24">
-      <path d="M5 5h14v14H5zM8 9h8M8 13h5" />
-    </svg>
-  ),
-  spend: (
-    <svg viewBox="0 0 24 24">
-      <path d="M5 18V9m5 9V5m5 13v-6m5 6H3" />
-    </svg>
-  ),
-  revenue: (
-    <svg viewBox="0 0 24 24">
-      <path d="M4 19h16M7 16l4-5 3 2 4-7" />
-    </svg>
-  ),
-  campaign: (
-    <svg viewBox="0 0 24 24">
-      <path d="M4 6h16M4 12h12M4 18h8" />
-    </svg>
-  ),
-  roas: (
-    <svg viewBox="0 0 24 24">
-      <path d="M6 18L18 6M8 7h.01M16 17h.01" />
-    </svg>
-  ),
-} as const;
-
-const GENERIC_ICON = (
-  <svg viewBox="0 0 24 24">
-    <path d="M5 5h14v14H5zM8 9h8M8 13h5" />
-  </svg>
-);
-
-// ---------------------------------------------------------------------------
-// Provider logo — real asset via <img src="/connectors/xxx.svg">.
-// ---------------------------------------------------------------------------
-
-const PROVIDER_LABEL: Record<Provider, string> = {
-  meta: "Meta",
-  "google-ads": "Google Ads",
-  "google-analytics": "Google Analytics",
-  "google-sheets": "Google Sheets",
-};
-
-function ProviderLogo({ provider }: { provider: Provider }) {
-  return (
-    <span className="provider-logo">
-      {/* Real provider asset; never hand-drawn. */}
-      <img src={`/connectors/${provider}.svg`} alt={PROVIDER_LABEL[provider]} />
-    </span>
-  );
+interface MappingEvidence {
+  fields: TargetField[];
+  conflicts: ConflictEvidence[];
 }
 
-// ---------------------------------------------------------------------------
-// Mockup literal rows — the validated source of truth, used verbatim as the
-// fallback and as the template the API rows are merged into.
-// TODO(api): providers[], countNote, coverage, conflict, updated are literals.
-// ---------------------------------------------------------------------------
+type MappingState =
+  | { status: "loading"; projectId: string }
+  | { status: "ready"; projectId: string; evidence: MappingEvidence }
+  | { status: "empty"; projectId: string }
+  | { status: "unconfigured"; projectId: string }
+  | { status: "denied"; projectId: string }
+  | { status: "error"; projectId: string }
+  | { status: "schema_error"; projectId: string };
 
-const MOCK_ROWS: ConceptRow[] = [
-  {
-    name: "Primary date",
-    mono: "mdm_…DATE",
-    kind: "Dimension",
-    providers: ["meta", "google-ads", "google-analytics", "google-sheets"],
-    count: 7,
-    countNote: "All active flows",
-    coverage: "success",
-    coverageLabel: "Fully mapped",
-    conflict: "success",
-    conflictLabel: "None",
-    updated: "22 Jul",
-    icon: ICON.date,
-  },
-  {
-    name: "Media spend",
-    mono: "mdm_…MEDIA_SPEND",
-    kind: "Metric",
-    providers: ["meta", "google-ads", "google-sheets"],
-    count: 4,
-    countNote: "Spend + Forecast & plan",
-    coverage: "success",
-    coverageLabel: "Fully mapped",
-    conflict: "success",
-    conflictLabel: "None",
-    updated: "21 Jul",
-    icon: ICON.spend,
-  },
-  {
-    name: "Revenue",
-    mono: "mdm_…REVENUE",
-    kind: "Metric",
-    providers: ["google-analytics", "google-sheets"],
-    count: 2,
-    countNote: "GA4 + Media plan",
-    coverage: "error",
-    coverageLabel: "Conflict",
-    conflict: "error",
-    conflictLabel: "1 blocking",
-    updated: "20 Jul",
-    icon: ICON.revenue,
-  },
-  {
-    name: "Campaign",
-    mono: "mdm_…CAMPAIGN",
-    kind: "Dimension",
-    providers: ["meta", "google-ads", "google-analytics"],
-    count: 5,
-    countNote: "3 providers",
-    coverage: "success",
-    coverageLabel: "Fully mapped",
-    conflict: "success",
-    conflictLabel: "None",
-    updated: "19 Jul",
-    icon: ICON.campaign,
-  },
-  {
-    name: "ROAS",
-    mono: "mdm_…ROAS",
-    kind: "Metric",
-    providers: ["meta", "google-ads"],
-    count: 3,
-    countNote: "2 providers",
-    coverage: "warning",
-    coverageLabel: "Needs review",
-    conflict: "success",
-    conflictLabel: "None",
-    updated: "18 Jul",
-    icon: ICON.roas,
-  },
-];
+type FailureKind = "unconfigured" | "denied" | "error" | "schema_error";
 
-// Summary-strip literals. TODO(api): coverage/conflict tallies are not exposed
-// by /api/datamodel/fields (only used_by_count). Overridden with real totals
-// where the API supplies them (canonical concepts + dimension/metric split).
-const MOCK_SUMMARY = {
-  concepts: 42,
-  dimensions: 28,
-  metrics: 14,
-  fullyCovered: 38,
-  partial: 3,
-  conflicts: 1,
-};
+export class MappingReadFailure extends Error {
+  kind: FailureKind;
 
-// ---------------------------------------------------------------------------
-// Fetch
-// ---------------------------------------------------------------------------
-
-async function fetchFields(projectId: string): Promise<TargetField[]> {
-  const params = new URLSearchParams();
-  if (projectId) params.set("project_id", projectId);
-  const resp = await fetch(`/api/datamodel/fields?${params.toString()}`, {
-    headers: { Authorization: `Bearer ${localStorage.getItem("api_token") || ""}` },
-  });
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-  return (await resp.json()) as TargetField[];
-}
-
-/** Epic 42: set of canonical field names that currently have an MDM conflict
- *  (currency/timezone/measure). Empty on any error so coverage stays literal. */
-async function fetchConflictFields(projectId: string): Promise<Set<string>> {
-  try {
-    const resp = await fetch(`/api/mdm/conflicts?project_id=${encodeURIComponent(projectId)}`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem("api_token") || ""}` },
-    });
-    if (!resp.ok) return new Set();
-    const data = (await resp.json()) as
-      | Array<{ field?: { name?: string }; target_field?: string }>
-      | { conflicts?: Array<{ field?: { name?: string }; target_field?: string }> };
-    const items = Array.isArray(data) ? data : (data.conflicts ?? []);
-    const out = new Set<string>();
-    for (const it of items) {
-      const n = it.field?.name || it.target_field;
-      if (n) out.add(n);
-    }
-    return out;
-  } catch {
-    return new Set();
+  constructor(kind: FailureKind) {
+    super(kind);
+    this.name = "MappingReadFailure";
+    this.kind = kind;
   }
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+const UNCONFIGURED_CODES = new Set([
+  "not_configured",
+  "unconfigured",
+  "capability_unavailable",
+  "unsupported",
+]);
+
+const READ_TIMEOUT_MS = 15_000;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function readErrorCode(value: unknown): string {
+  if (!isRecord(value) || typeof value.code !== "string") return "";
+  return value.code.trim().toLowerCase();
+}
+
+function failureForResponse(status: number, body: unknown): MappingReadFailure {
+  if (status === 401 || status === 403 || status === 404) {
+    return new MappingReadFailure("denied");
+  }
+  const code = readErrorCode(body);
+  if (UNCONFIGURED_CODES.has(code) || status === 501) {
+    return new MappingReadFailure("unconfigured");
+  }
+  return new MappingReadFailure("error");
+}
+
+async function readJson(path: string, signal: AbortSignal): Promise<unknown> {
+  let response: Response;
+  try {
+    response = await apiFetch(path, { method: "GET", cache: "no-store", signal });
+  } catch {
+    throw new MappingReadFailure("error");
+  }
+
+  let body: unknown = null;
+  try {
+    body = await response.json();
+  } catch {
+    if (response.ok) throw new MappingReadFailure("schema_error");
+  }
+
+  if (!response.ok) throw failureForResponse(response.status, body);
+  return body;
+}
+
+function parseFields(value: unknown): TargetField[] {
+  if (!Array.isArray(value)) throw new MappingReadFailure("schema_error");
+  return value.map((item) => {
+    if (
+      !isRecord(item) ||
+      !nonEmptyString(item.name) ||
+      !nonEmptyString(item.display_name) ||
+      (item.field_kind !== "metric" && item.field_kind !== "dimension") ||
+      typeof item.used_by_count !== "number" ||
+      !Number.isSafeInteger(item.used_by_count) ||
+      item.used_by_count < 0
+    ) {
+      throw new MappingReadFailure("schema_error");
+    }
+    return {
+      name: item.name,
+      displayName: item.display_name,
+      kind: item.field_kind,
+      usedByCount: item.used_by_count,
+    };
+  });
+}
+
+export function parseConflicts(value: unknown): ConflictEvidence[] {
+  if (!Array.isArray(value)) throw new MappingReadFailure("schema_error");
+  return value.map((item) => {
+    if (!isRecord(item) || !isRecord(item.field) || !isRecord(item.conflict)) {
+      throw new MappingReadFailure("schema_error");
+    }
+    const affectedStreams = item.conflict.affected_streams;
+    const rawSeverity = item.conflict.severity;
+    if (
+      !nonEmptyString(item.field.name) ||
+      !nonEmptyString(item.conflict.code) ||
+      !nonEmptyString(item.conflict.message) ||
+      !Array.isArray(affectedStreams) ||
+      !affectedStreams.every(nonEmptyString) ||
+      (rawSeverity !== undefined &&
+        rawSeverity !== "advisory" &&
+        rawSeverity !== "refusal")
+    ) {
+      throw new MappingReadFailure("schema_error");
+    }
+    // The server already answers, per currency conflict, which Connectors report
+    // this field and which of them already has a currency bound. The page read
+    // it and dropped it, so the only screen that knows a conflict exists could
+    // not name what would close it. The wire key keeps its legacy spelling; the
+    // reading does not carry it any further.
+    const wire = isRecord(item.resolutions_by_module) ? item.resolutions_by_module : {};
+    const resolvedByConnector: Record<string, string | null> = {};
+    for (const [connector, resolution] of Object.entries(wire)) {
+      resolvedByConnector[connector] = isRecord(resolution)
+        ? typeof resolution.resolved_source_currency === "string"
+          ? resolution.resolved_source_currency
+          : null
+        : null;
+    }
+    return {
+      fieldName: item.field.name,
+      fieldLabel: nonEmptyString(item.field.display_name)
+        ? item.field.display_name
+        : item.field.name,
+      code: item.conflict.code,
+      message: item.conflict.message,
+      affectedStreams: [...affectedStreams],
+      severity: rawSeverity === "advisory" ? "advisory" : "blocking",
+      connectors: Object.keys(resolvedByConnector),
+      resolvedByConnector,
+    };
+  });
+}
+
+function selectFailure(
+  results: PromiseSettledResult<unknown>[],
+): MappingReadFailure | null {
+  const failures = results
+    .filter(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    )
+    .map((result) =>
+      result.reason instanceof MappingReadFailure
+        ? result.reason
+        : new MappingReadFailure("error"),
+    );
+  const priority: Record<FailureKind, number> = {
+    denied: 4,
+    schema_error: 3,
+    unconfigured: 2,
+    error: 1,
+  };
+  return failures.sort((left, right) => priority[right.kind] - priority[left.kind])[0] ?? null;
+}
+
+async function loadMappingEvidence(
+  projectId: string,
+  signal: AbortSignal,
+): Promise<MappingEvidence> {
+  const scope = encodeURIComponent(projectId);
+  const results = await Promise.allSettled([
+    readJson(`/api/datamodel/fields?project_id=${scope}`, signal),
+    readJson(`/api/mdm/conflicts?project_id=${scope}`, signal),
+  ]);
+  const failure = selectFailure(results);
+  if (failure) throw failure;
+  const [fieldResult, conflictResult] = results as [
+    PromiseFulfilledResult<unknown>,
+    PromiseFulfilledResult<unknown>,
+  ];
+  const fieldBody = fieldResult.value;
+  const conflictBody = conflictResult.value;
+  const fields = parseFields(fieldBody);
+  const conflicts = parseConflicts(conflictBody);
+  const fieldNames = new Set(fields.map((field) => field.name));
+  if (conflicts.some((conflict) => !fieldNames.has(conflict.fieldName))) {
+    throw new MappingReadFailure("schema_error");
+  }
+  return { fields, conflicts };
+}
+
+function initialState(projectId: string): MappingState {
+  return projectId
+    ? { status: "loading", projectId }
+    : { status: "unconfigured", projectId };
+}
+
+function displayKind(kind: FieldKind): string {
+  return kind === "metric" ? "Metric" : "Dimension";
+}
+
+/** A business number — the numeric face with lining tabular figures (the
+ *  legacy `.number` helper, spelled in utilities). */
+const NUMBER = "font-numeric [font-variant-numeric:lining-nums_tabular-nums]";
+
+/** The state box, shared by every non-ready branch. Failure states tint the
+ *  border toward the error tone (the sheet's `--denied/--error/--schema_error`
+ *  modifiers, one rule for all three). */
+const STATE_BOX =
+  "grid min-h-[220px] place-content-center justify-items-start gap-2.25 rounded-large border border-divider-base bg-surface-light p-8";
+const STATE_BOX_FAILED =
+  "border-[color-mix(in_srgb,var(--color-error)_35%,var(--color-divider-base))]";
+const STATE_TITLE = "m-0 font-display text-h2 font-semibold";
+const STATE_DETAIL = "m-0 max-w-[62ch] leading-[1.55] text-text-secondary";
+
+function StatePanel({
+  state,
+  onRetry,
+}: {
+  state: Exclude<MappingState, { status: "ready" }>;
+  onRetry: () => void;
+}) {
+  if (state.status === "loading") {
+    return (
+      <section className={STATE_BOX} role="status" aria-label="Loading project mapping evidence">
+        <h2 className={STATE_TITLE}>Loading project mapping</h2>
+        <p className={STATE_DETAIL}>Checking the authorized concepts and conflict evidence for this project.</p>
+      </section>
+    );
+  }
+
+  const copy = {
+    empty: {
+      title: "No mapped concepts yet",
+      detail: "This project returned no canonical concepts. Configure mapping through a governed Datastream workflow.",
+    },
+    unconfigured: {
+      title: "Project mapping is not configured",
+      detail: "Select an active project with mapping capability before loading governance evidence.",
+    },
+    denied: {
+      title: "Project mapping unavailable",
+      detail: "Choose a project you are authorized to view. No project evidence has been disclosed.",
+    },
+    error: {
+      title: "Project mapping could not be loaded",
+      detail: "The authorized read is temporarily unavailable. Retry without substituting local values.",
+    },
+    schema_error: {
+      title: "Mapping response could not be verified",
+      detail: "The server response did not match the required evidence contract. Retry after the service is repaired.",
+    },
+  } as const;
+  const content = copy[state.status];
+  const retryable = state.status === "error" || state.status === "schema_error";
+  const failed = state.status === "denied" || retryable;
+  return (
+    <section
+      className={failed ? `${STATE_BOX} ${STATE_BOX_FAILED}` : STATE_BOX}
+      role={failed ? "alert" : "status"}
+      data-testid={`mapping-${state.status}`}
+    >
+      <h2 className={STATE_TITLE}>{content.title}</h2>
+      <p className={STATE_DETAIL}>{content.detail}</p>
+      {retryable ? (
+        <Button className="mt-1" type="button" variant="secondary" onClick={onRetry}>
+          Retry
+        </Button>
+      ) : null}
+    </section>
+  );
+}
 
 interface ProjectMappingProps {
   projectId?: string;
-  /** Drill-down to field-level mapping for one concept (mockup footer CTA). */
-  onOpenConcept?: (conceptName: string) => void;
 }
 
-export default function ProjectMapping({
-  projectId = "default",
-  onOpenConcept,
-}: ProjectMappingProps) {
-  const [fields, setFields] = useState<TargetField[] | null>(null);
-  const [conflictFields, setConflictFields] = useState<Set<string>>(new Set());
+export default function ProjectMapping({ projectId }: ProjectMappingProps) {
+  const scope = projectId?.trim() ?? "";
+  const [retryKey, setRetryKey] = useState(0);
+  const [state, setState] = useState<MappingState>(() => initialState(scope));
 
   useEffect(() => {
+    if (!scope) {
+      setState({ status: "unconfigured", projectId: scope });
+      return;
+    }
+
     let cancelled = false;
-    fetchFields(projectId)
-      .then((data) => {
-        if (!cancelled) setFields(data);
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), READ_TIMEOUT_MS);
+    setState({ status: "loading", projectId: scope });
+    void loadMappingEvidence(scope, controller.signal)
+      .then((evidence) => {
+        if (cancelled) return;
+        setState(
+          evidence.fields.length === 0
+            ? { status: "empty", projectId: scope }
+            : { status: "ready", projectId: scope, evidence },
+        );
       })
-      .catch(() => {
-        // Non-fatal: fall back to the validated mockup literals.
-        if (!cancelled) setFields(null);
-      });
-    fetchConflictFields(projectId).then((s) => {
-      if (!cancelled) setConflictFields(s);
-    });
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        const status =
+          error instanceof MappingReadFailure ? error.kind : "error";
+        setState({ status, projectId: scope });
+      })
+      .finally(() => window.clearTimeout(timeoutId));
     return () => {
       cancelled = true;
+      controller.abort();
+      window.clearTimeout(timeoutId);
     };
-  }, [projectId]);
+  }, [scope, retryKey]);
 
-  // Merge real API values (concept name, kind, used-by count) onto the mockup
-  // row template so the surface still renders finished with no backend.
-  const rows: ConceptRow[] = useMemo(() => {
-    if (!fields || fields.length === 0) return MOCK_ROWS;
-    return fields.slice(0, MOCK_ROWS.length).map((f, i) => {
-      const template = MOCK_ROWS[i % MOCK_ROWS.length];
-      const mono = f.name || template.mono;
-      const hasConflict = conflictFields.has(mono);
-      return {
-        ...template,
-        // REAL from /api/datamodel/fields:
-        name: f.display_name || template.name,
-        mono,
-        kind: f.field_kind === "metric" ? "Metric" : "Dimension",
-        count: f.used_by_count ?? template.count,
-        // REAL from /api/mdm/conflicts:
-        conflict: hasConflict ? "error" : "success",
-        conflictLabel: hasConflict ? "1 blocking" : "None",
-        // TODO(api): providers / coverage state / updated stay literal.
-      };
-    });
-  }, [fields, conflictFields]);
+  const visibleState = state.projectId === scope ? state : initialState(scope);
+  const retry = useCallback(() => setRetryKey((value) => value + 1), []);
+  const [resolving, setResolving] = useState<ConflictEvidence | null>(null);
 
-  // Summary — real canonical-concept + dimension/metric tallies when the API
-  // answers; the rest (coverage / conflict counts) stay mockup literals.
-  const summary = useMemo(() => {
-    if (!fields || fields.length === 0) return MOCK_SUMMARY;
-    return {
-      concepts: fields.length, // REAL
-      dimensions: fields.filter((f) => f.field_kind === "dimension").length, // REAL
-      metrics: fields.filter((f) => f.field_kind === "metric").length, // REAL
-      fullyCovered: MOCK_SUMMARY.fullyCovered, // TODO(api): coverage tally
-      partial: MOCK_SUMMARY.partial, // TODO(api): partial tally
-      conflicts: conflictFields.size, // REAL from /api/mdm/conflicts
-    };
-  }, [fields, conflictFields]);
+  const conflictByField = useMemo(() => {
+    const grouped = new Map<string, ConflictEvidence[]>();
+    if (visibleState.status !== "ready") return grouped;
+    for (const conflict of visibleState.evidence.conflicts) {
+      const current = grouped.get(conflict.fieldName) ?? [];
+      current.push(conflict);
+      grouped.set(conflict.fieldName, current);
+    }
+    return grouped;
+  }, [visibleState]);
+
+  const unavailableReason =
+    "Unavailable until an exact governed command and object route are exposed by the server.";
 
   return (
-    <div className="workflow-main">
-      <div className="page-header">
-        <div>
-          <h1>Project mapping</h1>
-          <p>
-            See which Datastreams consume each canonical concept and where coverage or
-            conflicts remain.
-          </p>
-        </div>
-        <div className="header-actions">
-          {/* TODO(api): conflict-resolution flow */}
-          <button className="secondary-button">Resolve conflict</button>
-          {/* TODO(api): add-concept flow */}
-          <button className="primary-button">+ Add concept</button>
-        </div>
-      </div>
+    <div>
+      <PageHeader
+        className="mb-3"
+        title="Project mapping"
+        description="Authorized canonical concepts, consumer counts, and conflict evidence for the active project."
+        actions={
+          <Button type="button" disabled title={unavailableReason} aria-describedby="mapping-action-reason">
+            + Add concept
+          </Button>
+        }
+      />
+      <p
+        className="m-0 mb-4.5 rounded-lg border border-divider-base bg-surface-subtle px-3.25 py-2.5 text-caption text-text-secondary"
+        id="mapping-action-reason"
+        role="note"
+      >
+        Add and open-evidence actions are disabled: {unavailableReason}
+      </p>
 
-      <section className="mapping-summary">
-        <div>
-          <span>Canonical concepts</span>
-          <strong>{summary.concepts}</strong>
-          <small>
-            {summary.dimensions} dimensions · {summary.metrics} metrics
-          </small>
-        </div>
-        <div>
-          <span>Fully covered</span>
-          {/* TODO(api): coverage state not exposed by /api/datamodel/fields */}
-          <strong>{summary.fullyCovered}</strong>
-          <small>Across active Datastreams</small>
-        </div>
-        <div>
-          <span>Partial</span>
-          {/* TODO(api): partial-coverage tally */}
-          <strong>{summary.partial}</strong>
-          <small>Missing in at least one flow</small>
-        </div>
-        <div>
-          <span>Conflicts</span>
-          {/* TODO(api): conflict tally — see /api/mdm/conflicts (MdmConflictsPage) */}
-          <strong style={{ color: "var(--error)" }}>{summary.conflicts}</strong>
-          <small>Currency binding</small>
-        </div>
-      </section>
+      {visibleState.status !== "ready" ? (
+        <StatePanel state={visibleState} onRetry={retry} />
+      ) : (
+        <MappingReady
+          evidence={visibleState.evidence}
+          conflictByField={conflictByField}
+          unavailableReason={unavailableReason}
+          onResolve={setResolving}
+        />
+      )}
 
-      <section className="mapping-panel">
-        <div className="mapping-toolbar">
-          {/* TODO(api): view switch — only "Concept consumption" has a backing
-              list today; Coverage matrix + Relationships have no API/logic. */}
-          <div className="segmented">
-            <button className="segment active">Concept consumption</button>
-            <button className="segment">Coverage matrix</button>
-            <button className="segment">Relationships</button>
-          </div>
-          <div className="mapping-filters">
-            {/* TODO(api): Kind filter wiring (kind param exists on the API) */}
-            <button className="selector">Kind: All</button>
-            {/* TODO(api): Status filter — coverage status not in the API */}
-            <button className="selector">Status: All</button>
-            {/* TODO(api): concept search wiring */}
-            <div className="field-control mapping-search">Search concepts</div>
-          </div>
-        </div>
-
-        <div
-          className="table-scroll"
-          tabIndex={0}
-          aria-label="Scrollable project mapping table"
-        >
-          <table className="concept-table">
-            <thead>
-              <tr>
-                <th style={{ width: "25%" }}>Canonical concept</th>
-                <th style={{ width: "12%" }}>Kind</th>
-                <th style={{ width: "25%" }}>Used by</th>
-                <th style={{ width: "17%" }}>Coverage</th>
-                <th style={{ width: "13%" }}>Conflicts</th>
-                <th>Updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.mono}>
-                  <td>
-                    <div className="concept-name">
-                      <span className="concept-icon">{row.icon ?? GENERIC_ICON}</span>
-                      <div>
-                        <strong>{row.name}</strong>
-                        <small className="event">{row.mono}</small>
-                      </div>
-                    </div>
-                  </td>
-                  <td>
-                    <span className="kind-label">{row.kind}</span>
-                  </td>
-                  <td>
-                    <div className="consumer-cell">
-                      <div className="logo-stack">
-                        {/* TODO(api): which providers feed a concept is not
-                            exposed by /api/datamodel/fields (scalar count only). */}
-                        {row.providers.map((p) => (
-                          <ProviderLogo key={p} provider={p} />
-                        ))}
-                      </div>
-                      <div>
-                        <strong>
-                          <span className="number">{row.count}</span> Datastreams
-                        </strong>
-                        <small>{row.countNote}</small>
-                      </div>
-                    </div>
-                  </td>
-                  <td>
-                    {/* TODO(api): coverage state literal */}
-                    <span className={`signal-label ${row.coverage}`}>
-                      <span className="signal-mark" />
-                      {row.coverageLabel}
-                    </span>
-                  </td>
-                  <td>
-                    {/* TODO(api): conflict state literal */}
-                    <span className={`signal-label ${row.conflict}`}>
-                      <span className="signal-mark" />
-                      {row.conflictLabel}
-                    </span>
-                  </td>
-                  {/* TODO(api): last mapping-update date literal */}
-                  <td className="number">{row.updated}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="mapping-footer">
-          <span>
-            Showing {rows.length} of{" "}
-            <span className="number">{summary.concepts}</span> canonical concepts
-          </span>
-          {/* Drill-down CTA: select a Datastream count to inspect field-level
-              mapping. TODO(api): no field-level-by-concept endpoint today. */}
-          <strong
-            role="button"
-            tabIndex={0}
-            style={{ cursor: onOpenConcept ? "pointer" : "default" }}
-            onClick={() => onOpenConcept?.(rows[0]?.mono ?? "")}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onOpenConcept?.(rows[0]?.mono ?? "");
-              }
-            }}
-          >
-            Select a Datastream count to inspect field-level mapping →
-          </strong>
-        </div>
-      </section>
+      {/* The resolution happens HERE, on the screen that says the conflict
+          exists. Until this mount, `Resolve conflict` was a disabled button
+          whose reason read "until an exact governed command and object route are
+          exposed by the server" — and both routes had been served since story
+          13.2. A refusal that names a deployment state instead of a gesture is
+          the defect; this one named a state that was not even true. */}
+      <MdmConflictResolutionDialog
+        open={resolving !== null}
+        projectId={scope}
+        conflict={resolving}
+        onClose={() => setResolving(null)}
+        onResolved={retry}
+      />
     </div>
+  );
+}
+
+function MappingReady({
+  evidence,
+  conflictByField,
+  unavailableReason,
+  onResolve,
+}: {
+  evidence: MappingEvidence;
+  conflictByField: Map<string, ConflictEvidence[]>;
+  unavailableReason: string;
+  onResolve: (conflict: ConflictEvidence) => void;
+}) {
+  const dimensions = evidence.fields.filter((field) => field.kind === "dimension").length;
+  const metrics = evidence.fields.filter((field) => field.kind === "metric").length;
+  return (
+    <>
+      {/* The 1px gaps over a divider-toned ground draw the cell hairlines in
+          both the 4-column and the wrapped 2-column layout with one rule. */}
+      <section
+        aria-label="Verified mapping summary"
+        className="mb-4.5 grid grid-cols-4 gap-px overflow-hidden rounded-large border border-divider-base bg-divider-base max-[1320px]:grid-cols-2"
+      >
+        <div className="bg-surface-light"><Metric label="Canonical concepts" value={evidence.fields.length} hint="Server-provided concepts" /></div>
+        <div className="bg-surface-light"><Metric label="Dimensions" value={dimensions} hint="Verified field kind" /></div>
+        <div className="bg-surface-light"><Metric label="Metrics" value={metrics} hint="Verified field kind" /></div>
+        <div className="bg-surface-light"><Metric label="Conflicts" value={evidence.conflicts.length} hint="Joined conflict records" /></div>
+      </section>
+
+      <Panel flush>
+        <PanelHeader
+          title="Concept consumption"
+          description="Only evidence available from the current authorized reads is shown."
+        />
+        <TableScroll label="Scrollable project mapping table">
+          <Table className="min-w-[920px] table-fixed">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[29%]">Canonical concept</TableHead>
+                <TableHead className="w-[13%]">Kind</TableHead>
+                <TableHead className="w-[16%]">Used by</TableHead>
+                <TableHead className="w-[20%]">Conflicts</TableHead>
+                <TableHead className="w-[22%]">Evidence</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {evidence.fields.map((field) => {
+                const conflicts = conflictByField.get(field.name) ?? [];
+                const blockingCount = conflicts.filter(
+                  (conflict) => conflict.severity === "blocking",
+                ).length;
+                const advisoryCount = conflicts.length - blockingCount;
+                const summary = [
+                  blockingCount > 0 ? `${blockingCount} blocking` : null,
+                  advisoryCount > 0 ? `${advisoryCount} advisory` : null,
+                ]
+                  .filter(Boolean)
+                  .join(", ");
+                return (
+                  <TableRow key={field.name}>
+                    <TableCell>
+                      <div className="min-w-0">
+                        <strong className="block">{field.displayName}</strong>
+                        <small className="mt-0.5 block font-mono text-caption text-text-secondary">{field.name}</small>
+                      </div>
+                    </TableCell>
+                    <TableCell><Badge outline>{displayKind(field.kind)}</Badge></TableCell>
+                    <TableCell><strong className={NUMBER}>{field.usedByCount}</strong> Datastreams</TableCell>
+                    <TableCell>
+                      {conflicts.length > 0 ? (
+                        <details
+                          className="min-w-[210px]"
+                          aria-label={`Conflict evidence for ${field.displayName}`}
+                        >
+                          <summary className="cursor-pointer marker:text-text-secondary">
+                            <Status tone={blockingCount > 0 ? "error" : "warning"}>{summary}</Status>
+                          </summary>
+                          <div className="mt-2.5 grid gap-2 rounded-control border border-divider-base bg-background-light p-2.5">
+                            {conflicts.map((conflict, index) => (
+                              <section
+                                className={`border-l-[3px] pl-2.25 ${
+                                  conflict.severity === "advisory" ? "border-l-warning" : "border-l-error"
+                                }`}
+                                key={`${conflict.code}-${index}`}
+                                aria-label={`${conflict.severity} conflict ${conflict.code}`}
+                              >
+                                <p className="mb-1 leading-[1.45]">
+                                  <strong>{conflict.severity === "advisory" ? "Advisory" : "Blocking"}</strong>{" "}
+                                  <code className="[overflow-wrap:anywhere]">{conflict.code}</code>
+                                </p>
+                                <p className="mb-1 leading-[1.45]">{conflict.message}</p>
+                                <p className="mb-1 leading-[1.45]">Affected Datastreams</p>
+                                {conflict.affectedStreams.length > 0 ? (
+                                  <ul className="mb-1 pl-5">
+                                    {conflict.affectedStreams.map((stream) => (
+                                      <li key={stream}><code className="[overflow-wrap:anywhere]">{stream}</code></li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <p className="mb-1 leading-[1.45]">None identified by the server.</p>
+                                )}
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  onClick={() => onResolve(conflict)}
+                                >
+                                  {RESOLVABLE_HERE.has(conflict.code) ? "Resolve" : "What resolves this"}
+                                </Button>
+                              </section>
+                            ))}
+                          </div>
+                        </details>
+                      ) : (
+                        <span title="Verified by the conflict read">
+                          <Status tone="success">None (verified)</Status>
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled
+                        title={unavailableReason}
+                        aria-label={`Open evidence for ${field.displayName} unavailable: exact object route is not exposed`}
+                      >
+                        Open evidence
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </TableScroll>
+        <div className="flex min-h-11 items-center justify-between gap-4.5 border-t border-divider-base bg-background-light px-4 text-caption text-text-secondary max-[1320px]:flex-col max-[1320px]:items-start max-[1320px]:py-2.5">
+          <span><span className={NUMBER}>{evidence.fields.length}</span> verified concepts</span>
+          <span>Provider, coverage, mapping-state, and update evidence are unavailable from this read contract.</span>
+        </div>
+      </Panel>
+    </>
   );
 }

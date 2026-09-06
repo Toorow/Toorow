@@ -84,18 +84,32 @@ COLUMNS = [
     "cost_source_currency",
 ]
 
+# AI-213 (2026-08-17, AI-66 motif): seed corpus anchor. This generator had NO
+# end_date seam at all and computed `date.today() - 1`, so its corpus was
+# machine-day-local by construction -- the mart and the evals fixtures were
+# underivable. Same env seam as google-analytics; the default is the shared
+# corpus anchor (2026-07-19), which IS the last emitted day (no -1: the anchor
+# already names the last complete day).
+DEFAULT_SEED_END_DATE: date = date.fromisoformat(
+    os.environ.get("TOOROW_SEED_END_DATE", "2026-07-19")
+)
+
 
 def generate_rows(
-    days: int = 30, project_id: str = "default", currency: str = "USD"
+    days: int = 30,
+    end_date: date | None = None,
+    project_id: str = "default",
+    currency: str = "USD",
 ) -> list[dict]:
     """Return deterministic campaign-grain Meta rows for the last *days* days.
 
     Each row is stamped data_level='CAMPAIGN' (F-1). This is the retro-compatible
     default the story-3.6 loader used; for the three-grain coexistence seed (the
     double-count reconciliation case) use generate_multigrain_rows().
+    end_date defaults to DEFAULT_SEED_END_DATE (AI-213: anchored, never today).
     """
     rows: list[dict] = []
-    end = date.today() - timedelta(days=1)
+    end = end_date if end_date is not None else DEFAULT_SEED_END_DATE
     for offset in range(days):
         d = (end - timedelta(days=offset)).isoformat()
         for c in _CAMPAIGNS:
@@ -112,7 +126,10 @@ def generate_rows(
 
 
 def generate_multigrain_rows(
-    days: int = 30, project_id: str = "default", currency: str = "USD"
+    days: int = 30,
+    end_date: date | None = None,
+    project_id: str = "default",
+    currency: str = "USD",
 ) -> list[dict]:
     """Return the THREE grains (campaign / adset / creative daily) COEXISTING in one set.
 
@@ -123,7 +140,7 @@ def generate_multigrain_rows(
     Each grain is stamped its data_level so the mart reads only its own rows.
     """
     rows: list[dict] = []
-    end = date.today() - timedelta(days=1)
+    end = end_date if end_date is not None else DEFAULT_SEED_END_DATE
     for offset in range(days):
         d = (end - timedelta(days=offset)).isoformat()
         for c in _CAMPAIGNS:

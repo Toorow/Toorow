@@ -1,0 +1,12 @@
+{
+  "content_hash": "ed12a6395a6b865589ded13297eca3bff9492b5a89af47353478dbbb6f4e2503",
+  "effective_date": "2026-07-30",
+  "entry_count": 173,
+  "generated_from": "app.master_data_vocabulary_versions",
+  "note": "Generated projection. Governance owns the runtime vocabulary; editing this file by hand makes the warehouse disagree with the pinned version.",
+  "source_authority": "ISO 4217",
+  "source_reference": "https://www.iso.org/iso-4217-currency-codes.html",
+  "source_version": "2026-07",
+  "vocabulary_key": "currency",
+  "vocabulary_version_id": "mdvoc_01KYSRQK7H0JZBF5FB4WGG54WY"
+}

@@ -293,33 +293,90 @@ class TestStartNightlyScheduler:
 
 
 class TestInternalDispatchEndpoint:
-    def test_internal_dispatch_endpoint_returns_404_for_local_backend(self):
-        """QUEUE_BACKEND=local -> POST /internal/... returns 404."""
+    """The Cloud Scheduler trigger, under the AD-36 contract (story 56.5).
+
+    TWO ASSERTIONS CHANGED HERE, AND BOTH WERE DELIBERATE CHANGES OF INTENT --
+    not tests bent to fit new code:
+
+      * the endpoint used to answer 404 unless QUEUE_BACKEND=cloud_tasks. That
+        coupled two independent things -- who carries the CLOCK, and how a job is
+        DELIVERED -- and made the endpoint untestable in the very mode a
+        deployment starts in. Cloud Scheduler is the right trigger either way.
+      * it used to require the shared secret AND a user Bearer token. Cloud
+        Scheduler carries no Bearer token: it is the platform calling itself. The
+        conjunction would have answered 401 to every scheduled run.
+    """
+
+    def test_the_clock_endpoint_is_reachable_whatever_the_queue_backend(self):
+        """The 404 gate is gone: the clock does not depend on the delivery mode.
+
+        AI-127 CHANGED WHAT THIS TEST HAD TO DO, without changing what it means.
+        It used to call unauthorized and read the status directly, because the
+        only 404 the route could produce was the QUEUE_BACKEND gate. Now an
+        unauthorized caller ALSO gets 404 -- so calling that way would leave the
+        assertion unable to tell "the backend hid the route" from "you were
+        refused", and it would pass for the wrong reason the day the gate came
+        back. The caller is therefore authorized the way the platform actually
+        is, by the shared secret, and the 404 recovers its single meaning.
+        """
         with patch.dict(os.environ, {
             "QUEUE_BACKEND": "local",
+            "INTERNAL_ENDPOINTS_REQUIRE_HEADER": "s3cret",
             "SCHEDULER_ENABLED": "false",
             "HEALTH_POLLER_ENABLED": "false",
             "QUEUE_WORKER_ENABLED": "false",
-        }):
+        }), patch("core.scheduler.dispatch_nightly", return_value=[]):
             from core.main import build_asgi_app
             from starlette.testclient import TestClient
 
             app = build_asgi_app()
             client = TestClient(app, raise_server_exceptions=False)
-            response = client.post("/internal/scheduler/dispatch-nightly")
+            response = client.post(
+                "/internal/scheduler/dispatch-nightly",
+                headers={"X-Internal-Auth": "s3cret"},
+            )
 
-        assert response.status_code == 404
+        assert response.status_code != 404, "the local backend no longer hides the clock"
+        assert response.status_code == 200
 
-    def test_internal_dispatch_endpoint_returns_200_for_cloud_tasks_backend(self):
-        """QUEUE_BACKEND=cloud_tasks -> POST /internal/... calls dispatch_nightly, 200."""
-        mock_jobs = [{"job_id": "job_1", "pull_id": "pull_1", "state": "queued"}]
-
+    def test_the_platform_calls_it_with_the_shared_secret_and_no_user_token(self):
         with patch.dict(os.environ, {
+            "QUEUE_BACKEND": "cloud_tasks",
+            "INTERNAL_ENDPOINTS_REQUIRE_HEADER": "s3cret",
+            "SCHEDULER_ENABLED": "false",
+            "HEALTH_POLLER_ENABLED": "false",
+            "QUEUE_WORKER_ENABLED": "false",
+        }), patch("core.scheduler.run_nightly_steps") as run_nightly:
+            from core.main import build_asgi_app
+            from starlette.testclient import TestClient
+
+            app = build_asgi_app()
+            client = TestClient(app, raise_server_exceptions=False)
+            response = client.post(
+                "/internal/scheduler/dispatch-nightly",
+                headers={"X-Internal-Auth": "s3cret"},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ran"] == "nightly_steps"
+        run_nightly.assert_called_once()
+
+    def test_push_mode_without_a_secret_answers_503_so_the_run_comes_back(self):
+        """A misconfiguration must not read like a broken scheduler.
+
+        Without the secret no task and no scheduled call can ever authenticate.
+        503 makes the caller retry once an operator sets it; 401 would look like
+        a permissions bug and the run would be lost.
+        """
+        env = {
             "QUEUE_BACKEND": "cloud_tasks",
             "SCHEDULER_ENABLED": "false",
             "HEALTH_POLLER_ENABLED": "false",
             "QUEUE_WORKER_ENABLED": "false",
-        }), patch("core.scheduler.dispatch_nightly", return_value=mock_jobs):
+        }
+        with patch.dict(os.environ, env):
+            os.environ.pop("INTERNAL_ENDPOINTS_REQUIRE_HEADER", None)
             from core.main import build_asgi_app
             from starlette.testclient import TestClient
 
@@ -327,11 +384,7 @@ class TestInternalDispatchEndpoint:
             client = TestClient(app, raise_server_exceptions=False)
             response = client.post("/internal/scheduler/dispatch-nightly")
 
-        assert response.status_code == 200
-        data = response.json()
-        assert "jobs" in data
-        assert len(data["jobs"]) == 1
-        assert data["jobs"][0]["job_id"] == "job_1"
+        assert response.status_code == 503
 
 
 # ---------------------------------------------------------------------------
@@ -339,9 +392,19 @@ class TestInternalDispatchEndpoint:
 # ---------------------------------------------------------------------------
 
 # Column names returned by the datastreams SELECT in _dispatch_nightly_datastreams.
+# The gate columns are here because the SELECT really projects them: since
+# 2026-08-12 the dispatcher asks `datastream_dispatch.gate_refusal` the same
+# question the manual door asks, and that guard answers `row_incomplete` for a
+# column nobody showed it rather than waving the row through.
 _DS_COLS = [
     "ds_id", "project_id", "module_name", "refetch_days", "date_window_days",
     "connection_ref_id", "cr_status", "cr_enabled",
+    # `archived_at` joins the projection 2026-08-18: `gate_refusal` reads the
+    # column the soft archive really writes, and answers `row_incomplete` for a
+    # key the double did not project rather than letting it pass.
+    "enabled", "lifecycle_state", "archived_at", "source_kind",
+    "current_plan_version_id", "current_mapping_version_id",
+    "module_enabled", "project_status",
 ]
 
 _AS_OF = date(2026, 7, 14)  # yields yesterday = 2026-07-13
@@ -403,11 +466,22 @@ def _ds_row(
     connection_ref_id: str = "conn_001",
     cr_status: str = "active",
     cr_enabled: bool = True,
+    enabled: bool = True,
+    lifecycle_state: str = "active",
+    archived_at: str | None = None,
+    source_kind: str = "connector_pull",
+    current_plan_version_id: str = "dsp_001",
+    current_mapping_version_id: str = "dsm_001",
+    module_enabled: bool | None = True,
+    project_status: str = "active",
 ) -> tuple:
     """Build a fake datastream row tuple matching _DS_COLS order."""
     return (
         ds_id, project_id, module_name, refetch_days, date_window_days,
         connection_ref_id, cr_status, cr_enabled,
+        enabled, lifecycle_state, archived_at, source_kind,
+        current_plan_version_id, current_mapping_version_id,
+        module_enabled, project_status,
     )
 
 
@@ -428,20 +502,100 @@ class TestDateWindowDaysDispatch:
 
         class _FakeQueue:
             @staticmethod
-            def enqueue_pull(conn_id, date_from, date_to, *, requested_by, datastream_id):
+            # Story 63.1: `execution_id` is part of the real signature (the run
+            # this window belongs to). A double that omitted it made the dispatch
+            # swallow a TypeError and enqueue NOTHING -- the AI-97 divergence
+            # again, one layer up.
+            #
+            # AND IT HAPPENED A THIRD TIME, 2026-08-17. AI-301 added `module_name`
+            # to the real `enqueue_pull` -- the module the caller already resolved,
+            # because the gate inside used to re-read it on an RLS-armed connection
+            # that could not see the row -- and this double kept the old shape. Four
+            # tests went red saying `enqueued_calls == []`, which reads as "the
+            # dispatch decided not to enqueue" and is not what happened: it raised
+            # TypeError and swallowed it.
+            #
+            # `**kwargs` is deliberate now. A double that enumerates the keywords of
+            # a signature it does not own re-breaks on every legitimate addition,
+            # and each time the failure lies about its cause. What this test is
+            # about is the WINDOW, so it captures the window and lets the rest pass
+            # through -- and `test_the_fake_queue_matches_the_real_signature` below
+            # holds the conformance the enumeration was pretending to hold.
+            def enqueue_pull(
+                conn_id, date_from, date_to, *, requested_by, datastream_id,
+                execution_id=None, **kwargs,
+            ):
                 enqueued_calls.append({
                     "conn_id": conn_id,
                     "date_from": date_from,
                     "date_to": date_to,
                     "ds_id": datastream_id,
+                    "execution_id": execution_id,
+                    **kwargs,
                 })
                 return {"job_id": "j", "pull_id": "p", "state": "queued"}
+
+        # Exposed so the conformance test below can introspect the very double the
+        # dispatch was handed, rather than a copy of it that could drift apart.
+        type(self)._captured_double = _FakeQueue.enqueue_pull
 
         fake_db = _make_ds_fake_db(ds_rows)
         jobs, count = _dispatch_nightly_datastreams(
             as_of, "scheduler", _FakeQueue, fake_db
         )
         return enqueued_calls, jobs, count
+
+    def test_the_fake_queue_accepts_every_keyword_the_dispatch_sends(self):
+        """The conformance the enumerated signature was pretending to hold.
+
+        THREE TIMES NOW, the same failure: the real `enqueue_pull` gains a
+        keyword, this double does not, the dispatch raises TypeError and swallows
+        it, and the tests report `enqueued_calls == []` -- which reads as a
+        DECISION not to enqueue and is nothing of the sort. AI-97 the first time,
+        Story 63.1's `execution_id` the second, AI-301's `module_name` the third.
+
+        So the double stops enumerating and this test binds it to the subject
+        instead: every keyword-or-positional parameter of the real module-level
+        `enqueue_pull` must be acceptable here. It fails on the addition, at the
+        line that explains it, instead of four windows away.
+        """
+        import inspect
+
+        from core import queue as real_queue
+
+        real = inspect.signature(real_queue.enqueue_pull)
+        calls, _jobs, count = self._run_dispatch(
+            [_ds_row(date_window_days=7, refetch_days=3)]
+        )
+
+        # The dispatch enqueued: had the double refused a keyword, the TypeError
+        # would have been swallowed and this list would be empty.
+        assert count == 1
+        assert len(calls) == 1, (
+            "the dispatch enqueued nothing. Before reading this as a decision, "
+            "check the double's signature against `core.queue.enqueue_pull`: a "
+            "refused keyword raises TypeError inside the dispatch, which swallows "
+            "it and reports an empty list -- three times so far."
+        )
+
+        # And the double must be able to ACCEPT every keyword the real function
+        # declares, not merely the ones today's caller happens to send.
+        every_keyword = {
+            name: None
+            for name, p in real.parameters.items()
+            if p.kind is inspect.Parameter.KEYWORD_ONLY
+        }
+        every_keyword.setdefault("requested_by", "x")
+        every_keyword.setdefault("datastream_id", "ds")
+        double = type(self)._captured_double
+        try:
+            inspect.signature(double).bind("c", "2026-01-01", "2026-01-02", **every_keyword)
+        except TypeError as exc:
+            raise AssertionError(
+                f"the capturing double cannot accept the real signature: {exc}. "
+                "Add **kwargs rather than enumerating -- an enumeration re-breaks "
+                "on every legitimate addition and lies about why."
+            ) from None
 
     def test_date_window_days_set_uses_that_window(self):
         """date_window_days=14 -> pull window is 14 days ending yesterday.

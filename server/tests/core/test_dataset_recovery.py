@@ -39,6 +39,11 @@ from core.dataset_recovery import (  # noqa: E402
     rollback_dataset,
 )
 
+from tests.support.statement_router import (  # noqa: E402
+    StatementInventory,
+    UnknownStatement,
+)
+
 _HASH_A = "a" * 64
 _HASH_B = "b" * 64
 
@@ -192,18 +197,29 @@ def test_recoverable_data_actions_do_not_require_owner_floor():
 
 
 class _RoleConn:
-    """A conn whose only job is to satisfy identity_has_project_role via monkeypatch."""
+    """A conn whose only job is to satisfy the access resolver via monkeypatch.
+
+    Story 46.4 left `enforce_owner_floor` with a single gate,
+    `resolve_strict_resource_access`; patching the retired
+    `identity_has_project_role` here silently patched nothing and the real
+    resolver ran against this connection, whose cursor refuses on purpose.
+    """
 
     def cursor(self):  # pragma: no cover - not reached (resolver is patched)
-        raise AssertionError("role resolver should be patched, not the cursor")
+        raise AssertionError("access resolver should be patched, not the cursor")
+
+
+class _Decision:
+    def __init__(self, allowed: bool):
+        self.allowed = allowed
+        self.reason = "owner_floor" if allowed else "insufficient_capability"
 
 
 def test_owner_floor_allows_owner(monkeypatch):
     import core.project_access as pa
     from core import dataset_recovery
 
-    monkeypatch.setattr(pa, "epic36_production_access_enabled", lambda **_: False)
-    monkeypatch.setattr(pa, "identity_has_project_role", lambda *a, **k: True)
+    monkeypatch.setattr(pa, "resolve_strict_resource_access", lambda *a, **k: _Decision(True))
     # No raise == allowed.
     dataset_recovery.enforce_owner_floor(
         _RoleConn(),
@@ -217,8 +233,7 @@ def test_owner_floor_rejects_non_owner(monkeypatch):
     import core.project_access as pa
     from core import dataset_recovery
 
-    monkeypatch.setattr(pa, "epic36_production_access_enabled", lambda **_: False)
-    monkeypatch.setattr(pa, "identity_has_project_role", lambda *a, **k: False)
+    monkeypatch.setattr(pa, "resolve_strict_resource_access", lambda *a, **k: _Decision(False))
     with pytest.raises(OwnerFloorRequired) as exc:
         dataset_recovery.enforce_owner_floor(
             _RoleConn(),
@@ -232,6 +247,35 @@ def test_owner_floor_rejects_non_owner(monkeypatch):
 # ---------------------------------------------------------------------------
 # Scripted fake connection for the rollback / preflight orchestration.
 # ---------------------------------------------------------------------------
+
+# THE THIRTEEN STATEMENTS THE ROLLBACK ACT MAKES, in the order the fake answers
+# them. Written out because the `else` below used to answer every OTHER statement
+# with `fetchone() is None` -- the exact signal for "there is no such row", which
+# this act turns into a refusal. A moved query and an absent target were the same
+# result (AI-317).
+_ROLLBACK = StatementInventory(
+    "_FakeCursor",
+    pointer_lock=("select current_published_execution_id", "for update"),
+    pointer_and_key="current_published_execution_id, append_stable_key",
+    active_execution_probe="state = any(%s)",
+    thresholds="max_row_count_delta_pct, allow_empty_publication, rollback_window_hours",
+    rollback_target=(
+        "from app.datastream_publication_log",
+        "effective_deadline",
+        "execution_id = %s",
+    ),
+    pointer_published_at=(
+        "select published_at from app.datastream_publication_log",
+        "execution_id = %s",
+    ),
+    latest_retained_prior="select execution_id from app.datastream_publication_log",
+    prior_row_count="select row_count from app.datastream_executions",
+    target_versions="select plan_version_id, mapping_version_id, content_hash, row_count",
+    pointer_swap="update app.datastreams set current_published_execution_id",
+    publication_log_insert="insert into app.datastream_publication_log",
+    outbox_insert="insert into app.datastream_outbox",
+    audit_log="insert into app.audit_log",
+)
 
 
 class _FakeCursor:
@@ -250,21 +294,39 @@ class _FakeCursor:
     def execute(self, sql, params=None):
         self._conn.executed.append((sql, params))
         s = " ".join(sql.split())
-        if "SELECT current_published_execution_id" in s and "FOR UPDATE" in s:
-            self._result = (self._conn.current_pointer,)
-        elif "current_published_execution_id, append_stable_key" in s:
+        # AI-317: recognition happens ONCE, in `_ROLLBACK`. The branches below
+        # dispatch on the NAME it returns, so the fragments live in one place --
+        # and a statement none of them can name stops here with the SQL in the
+        # message, instead of falling to an `else` that answered `fetchone() is
+        # None`, which this act reads as "no such row" and turns into its
+        # "nothing to roll back to" refusal.
+        self._result = None
+        self.rowcount = 1
+        statement = _ROLLBACK.match(s)
+        if statement == "pointer_lock":
+            # Three columns since the trial guard moved INSIDE the act: the
+            # pointer, plus `enabled` and `org_id`, all read under the same
+            # lock. `enabled` defaults TRUE here because every rollback in this
+            # file rolls a RUNNING Datastream back -- an act that changes no
+            # count and therefore never asks the allowance anything. The
+            # stopped-then-restored journey is the pg-gated test in
+            # tests/integration/test_trial_limit_rollback_journey_pg.py.
+            self._result = (
+                self._conn.current_pointer,
+                self._conn.enabled,
+                self._conn.org_id,
+            )
+        elif statement == "pointer_and_key":
             self._result = (self._conn.current_pointer, self._conn.append_stable_key)
-        elif "state = ANY(%s)" in s:  # active-execution concurrency probe
+        elif statement == "active_execution_probe":
             self._result = (self._conn.active_execution,) if self._conn.active_execution else None
-        elif "max_row_count_delta_pct, allow_empty_publication, rollback_window_hours" in s:
+        elif statement == "thresholds":
             self._result = (
                 self._conn.max_delta,
                 self._conn.allow_empty,
                 self._conn.rollback_window_hours,
             )
-        elif "FROM app.datastream_publication_log" in s and "effective_deadline" in s and (
-            "execution_id = %s" in s
-        ):
+        elif statement == "rollback_target":
             # _load_rollback_target -- 8 columns:
             #   execution_id, retained, rollback_deadline(stored), published_at,
             #   effective_deadline, expired, content_hash, row_count
@@ -279,41 +341,31 @@ class _FakeCursor:
                 t["content_hash"],
                 t["row_count"],
             ) if t else None
-        elif (
-            "SELECT published_at FROM app.datastream_publication_log" in s
-            and "execution_id = %s" in s
-        ):
+        elif statement == "pointer_published_at":
             # _current_pointer_published_at (the monotonic anchor for the default
             # resolver). Return a fixed instant; the fake's latest_prior is authoritative.
             self._result = (self._conn.current_pointer_published_at,)
-        elif "SELECT execution_id FROM app.datastream_publication_log" in s:
+        elif statement == "latest_retained_prior":
             # _latest_retained_prior (default target resolution, monotonic)
             self._result = (
                 (self._conn.latest_prior,) if self._conn.latest_prior else None
             )
-        elif "SELECT row_count FROM app.datastream_executions" in s:
+        elif statement == "prior_row_count":
             self._result = (self._conn.prior_row_count,)
-        elif "SELECT plan_version_id, mapping_version_id, content_hash, row_count" in s:
+        elif statement == "target_versions":
             self._result = (
                 "dsp_x", "dmap_x",
                 self._conn.target["content_hash"] if self._conn.target else None,
                 self._conn.target["row_count"] if self._conn.target else None,
                 self._conn.target_state,
             )
-        elif s.startswith("UPDATE app.datastreams SET current_published_execution_id"):
+        elif statement == "pointer_swap":
             self._conn.pointer_swaps += 1
-            self.rowcount = 1
-        elif s.startswith("INSERT INTO app.datastream_publication_log"):
+        elif statement == "publication_log_insert":
             self._conn.log_inserts += 1
-            self.rowcount = 1
-        elif s.startswith("INSERT INTO app.datastream_outbox"):
+        elif statement == "outbox_insert":
             self._conn.outbox_inserts += 1
-            self.rowcount = 1
-        elif "INSERT INTO app.audit_log" in s:
-            self.rowcount = 1
-        else:
-            self._result = None
-            self.rowcount = 1
+        # `audit_log` needs nothing beyond the default rowcount set above.
 
     def fetchone(self):
         return self._result
@@ -325,6 +377,8 @@ class _FakeConn:
         self.committed = False
         self.rolled_back = False
         self.current_pointer = "dse_current"
+        self.enabled = True
+        self.org_id = "org_test_fixture"
         self.append_stable_key = None
         self.active_execution = None
         self.max_delta = None
@@ -366,6 +420,23 @@ def _patch_audit(monkeypatch):
     import core.audit as audit
 
     monkeypatch.setattr(audit, "insert_audit_row", lambda *a, **k: None)
+
+
+def test_the_rollback_fake_refuses_a_statement_the_act_never_declared():
+    """AI-317: an absent target and a moved query must not produce the same row.
+
+    Every refusal this file proves -- `RollbackTargetInvalid`,
+    `RollbackWindowExpired`, `ConcurrentMutationActive` -- is reached from a
+    `fetchone()` that answered `None`. The old `else` answered `None` too, so a
+    rewritten query would have made every one of those tests pass for the wrong
+    reason.
+    """
+    conn = _FakeConn()
+    cursor = _FakeCursor(conn)
+    with pytest.raises(UnknownStatement) as raised:
+        cursor.execute("SELECT retained FROM app.datastream_rollback_log WHERE id = %s")
+    assert "app.datastream_rollback_log" in str(raised.value)
+    assert "rollback_target" in str(raised.value)
 
 
 def test_rollback_swaps_pointer_back_and_writes_new_log_row(monkeypatch):

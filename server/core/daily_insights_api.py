@@ -7,19 +7,64 @@ REUSES the existing building blocks -- it re-implements none of them:
   - store          : ``core.daily_insights`` (35.3 -- list_runs / get_run / get_insight)
   - journal/recipe : ``core.daily_insights_recipe`` (35.5 -- run_journal / build_task_recipe
                      / render_recipe_text)
-  - share          : ``core.snapshot_shares`` on ``app.render_snapshot_shares`` (migration
-                     054), via each insight's ``render_snapshot_id`` lineage. NO new share
-                     table, NO new migration, NO new public route: the existing public
-                     ``/api/rendus/shared/{token}`` serves the frozen card.
+  - share          : RETIRED by Story 50.7. This module was the THIRD caller of the
+                     plaintext-token `snapshot_shares.create_share`, and it returned
+                     `/api/rendus/shared/{token}` -- a live bearer in a URL path.
+                     `POST .../insights/{insight_id}/share` now answers `410 Gone`
+                     from its unchanged mount. Listing and revocation survive as the
+                     legacy seam and return no token.
+
+                     THIS LINE USED TO SAY "an insight is shared by sharing the
+                     Render its publication froze", and it was false -- measured
+                     2026-08-16. Publication freezes an `app.render_snapshots` row
+                     (`snapshots.persist_render_envelope`); a Share opens an
+                     `app.renders` row with its frozen payload
+                     (`render_shares.load_frozen_render`). They are different
+                     objects and nothing bridges them, which the comment at
+                     `_create_insight_share`'s grave already stated correctly: a
+                     Share needs one immutable `app.renders` row and there is no
+                     way to create one that does not name a real Result. So a
+                     published insight is NOT shareable today. Epic 35's DoD line
+                     "partage fige/revocable" is OPEN.
+
+                     THE DESIGN QUESTION IS ANSWERED (2026-08-17,
+                     `proactive-assertions.md`): yes, publication must name a
+                     Result -- because the alternative, a second Share path over
+                     `app.render_snapshots`, is the parallel-store clause of
+                     `governance.md` arriving at the Share layer. What that costs
+                     is measured and is NOT wiring: `app.query_results` requires
+                     an `attempt_id` and a `query_spec_version_id`, and a card is
+                     built from the card catalogue rather than from a Query Spec.
+
+                     THE QUERY SPEC BEHIND THE CARD EXISTS (same day):
+                     `core.daily_insight_result` derives a governed Query Spec
+                     from the insight's card contract, versions it through the
+                     existing spec store and executes it through the existing
+                     governed executor, so a published insight now carries
+                     `query_spec_version_id` + `result_id` (migration 281) -- or
+                     `result_unavailable_reason`, naming the missing link, when
+                     the card cannot stand behind a spec. Sharing goes through
+                     the ONE mechanism, unchanged: a Render over that Result
+                     (`analyze_artifacts.create_render`), a Share over the
+                     Render (`render_shares.create_share`). This module still
+                     mounts NO insight-specific share creation, and must not.
 
 Routes (console, auth Bearer, scope AD-5) :
   GET    /api/daily-insights/runs                              -- run history (journal)
   GET    /api/daily-insights/runs/{insight_date}              -- one run + its insights
   GET    /api/daily-insights/insights/{insight_id}           -- one insight (full payload)
+  POST   /api/daily-insights/insights/{insight_id}/retract   -- withdraw a published claim
   POST   /api/daily-insights/insights/{insight_id}/share     -- share via snapshot lineage
   GET    /api/daily-insights/insights/{insight_id}/shares    -- list shares of an insight
   DELETE /api/daily-insights/shares/{share_id}               -- revoke a share
   GET    /api/daily-insights/recipe                           -- 35.5 task recipe + text
+
+RETRACTION (migration 321, `proactive-assertions.md` decision 4). The one console
+door that withdraws a published claim. It is an audited state transition, never a
+DELETE -- the row stays and is served as withdrawn, because it is the evidence that
+the claim was made. It demands `edit`, like publication: withdrawing an assertion in
+someone else's project is not a read. `GET .../runs/{date}` answers `canRetract` so
+the screen never draws a control the caller cannot use.
 
 Auth  : same ``_check_auth`` as ``core.rendus_api`` (delegates to ``core.admin_api``).
 AD-5  : ``project_id`` scope enforced ; non-disclosing 404 for any invalid access.
@@ -36,6 +81,9 @@ import logging
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
+
+# Story 50.7: the `410 Gone` endpoint for the retired share-creation mount.
+from core.render_shares_api import create_insight_share_gone
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +103,27 @@ async def _check_auth(request: Request) -> tuple[bool, str]:
 def _require_project_id(request: Request) -> str:
     """Extraire project_id de la query (chaine vide si absent)."""
     return (request.query_params.get("project_id") or "").strip()
+
+
+def _with_authorship(insight: dict) -> dict:
+    """Garantir que l'insight rendu porte sa provenance (story 53.4, AC5/AC6).
+
+    Le payload publie la porte depuis `daily_insights_tools.publish`. Les lignes
+    ECRITES AVANT cette story ne l'ont pas, et la surface qui dessine
+    `confidence` devrait alors deviner lequel des deux cas elle regarde -- c'est
+    exactement la clause qu'interdit `proactive-assertions.md:162` (<< la prose
+    du modele est visiblement distinguable de la donnee citee >>).
+
+    Elle est DERIVEE, jamais fabriquee : `authorship_block` ne lit que le payload
+    lui-meme et rend le meme bloc que celui persiste. Rien n'est invente, et rien
+    n'est reecrit -- un payload qui la porte deja est rendu tel quel.
+    """
+    from core.daily_insights_schema import authorship_of  # noqa: PLC0415
+
+    payload = insight.get("payload")
+    if not isinstance(payload, dict):
+        return insight
+    return {**insight, "payload": {**payload, "authorship": authorship_of(payload)}}
 
 
 # ---------------------------------------------------------------------------
@@ -99,12 +168,12 @@ async def _list_runs(request: Request) -> Response:
         from core.daily_insights import list_runs  # noqa: PLC0415
         from core.daily_insights_recipe import run_journal  # noqa: PLC0415
         from core.db import get_connection  # noqa: PLC0415
-        from core.project_access import identity_has_project_access  # noqa: PLC0415
+        from core.project_access import identity_can_read_project  # noqa: PLC0415
 
         with get_connection() as conn:
-            if not identity_has_project_access(project_id, identity, conn):
+            if not identity_can_read_project(project_id, identity, conn):
                 return JSONResponse(
-                    {"code": "not_found", "message": "Projet non trouve"},
+                    {"code": "not_found", "message": "Project not found"},
                     status_code=404,
                 )
 
@@ -153,16 +222,20 @@ async def _get_run(request: Request) -> Response:
         from core.daily_insights import get_run  # noqa: PLC0415
         from core.daily_insights_recipe import run_journal  # noqa: PLC0415
         from core.db import get_connection  # noqa: PLC0415
-        from core.project_access import identity_has_project_access  # noqa: PLC0415
+        from core.project_access import (  # noqa: PLC0415
+            identity_can_read_project,
+            identity_has_project_role,
+        )
 
         with get_connection() as conn:
-            if not identity_has_project_access(project_id, identity, conn):
+            if not identity_can_read_project(project_id, identity, conn):
                 return JSONResponse(
                     {"code": "not_found", "message": "Run non trouve"},
                     status_code=404,
                 )
 
             run = get_run(project_id, insight_date, conn)
+            can_retract = identity_has_project_role(project_id, identity, "member", conn)
     except Exception as exc:
         logger.error(
             "daily_insights_api: get_run err date=%s p=%s: %s", insight_date, project_id, exc
@@ -178,7 +251,12 @@ async def _get_run(request: Request) -> Response:
             status_code=404,
         )
 
-    return JSONResponse({"run": run_journal(run), "insights": run.get("insights") or []})
+    insights = [_with_authorship(i) for i in (run.get("insights") or [])]
+    # The screen asks ONE question and gets it answered here: may this caller
+    # withdraw a claim of this day? Deriving it in the console from a role it does
+    # not hold would either hide the gesture from someone entitled to it or offer a
+    # control that answers 404.
+    return JSONResponse({"run": run_journal(run), "insights": insights, "canRetract": can_retract})
 
 
 # ---------------------------------------------------------------------------
@@ -213,10 +291,10 @@ async def _get_insight(request: Request) -> Response:
     try:
         from core.daily_insights import get_insight  # noqa: PLC0415
         from core.db import get_connection  # noqa: PLC0415
-        from core.project_access import identity_has_project_access  # noqa: PLC0415
+        from core.project_access import identity_can_read_project  # noqa: PLC0415
 
         with get_connection() as conn:
-            if not identity_has_project_access(project_id, identity, conn):
+            if not identity_can_read_project(project_id, identity, conn):
                 return JSONResponse(
                     {"code": "not_found", "message": "Insight non trouve"},
                     status_code=404,
@@ -241,27 +319,32 @@ async def _get_insight(request: Request) -> Response:
             status_code=404,
         )
 
-    return JSONResponse(insight)
+    return JSONResponse(_with_authorship(insight))
 
 
 # ---------------------------------------------------------------------------
-# POST /api/daily-insights/insights/{insight_id}/share
+# POST /api/daily-insights/insights/{insight_id}/retract
 # ---------------------------------------------------------------------------
 
 
-async def _create_insight_share(request: Request) -> Response:
-    """POST /api/daily-insights/insights/{insight_id}/share -- partager via le snapshot.
+async def _retract_insight(request: Request) -> Response:
+    """POST /api/daily-insights/insights/{insight_id}/retract -- retirer une assertion.
 
-    Resout l'insight (AD-5), puis reutilise ``snapshot_shares.create_share`` sur son
-    ``render_snapshot_id``. Un insight sans lignee de snapshot n'est pas partageable :
-    409 actionnable (le follow-up 35.2 persiste le snapshot du rendu fige).
+    Transition d'etat AUDITEE, jamais un DELETE (`proactive-assertions.md`,
+    decision 4 ; migration 321). La ligne reste : elle est la preuve que la
+    revendication a ete faite, et la detruire perdrait la difference entre
+    << jamais dit >> et << dit, puis retire >>.
+
+    Body JSON : {"reason": "..."} -- REQUIS. Une retractation sans raison est celle
+    que personne ne peut juger plus tard.
 
     Query params :
         project_id  (required) -- scope AD-5
 
-    Reponse 201 : {"share_id", "token", "url": "/api/rendus/shared/{token}"}
-    Reponse 409 : {"code": "no_snapshot_lineage", ...} -- pas de render_snapshot_id.
-    Reponse 404 : insight introuvable ou acces refuse (non-disclosant).
+    Reponse 200 : l'insight retracte (avec retracted_at / retracted_by / retracted_reason).
+    Reponse 404 : insight introuvable, projet introuvable ou acces refuse (non-disclosant).
+    Reponse 409 : deja retracte -- une retractation ne se defait pas.
+    Reponse 422 : raison manquante.
     """
     authorized, identity = await _check_auth(request)
     if not authorized:
@@ -279,43 +362,45 @@ async def _create_insight_share(request: Request) -> Response:
         )
 
     try:
-        from core.daily_insights import get_insight  # noqa: PLC0415
+        body = await request.json()
+    except Exception:  # noqa: BLE001 -- a malformed body is a missing reason
+        body = {}
+    reason = str((body or {}).get("reason") or "")
+
+    try:
+        from core.daily_insights import (  # noqa: PLC0415
+            DailyInsightRefusal,
+            retract_insight,
+        )
         from core.db import get_connection  # noqa: PLC0415
-        from core.project_access import identity_has_project_access  # noqa: PLC0415
-        from core.snapshot_shares import create_share  # noqa: PLC0415
+        from core.project_access import identity_has_project_role  # noqa: PLC0415
 
         with get_connection() as conn:
-            if not identity_has_project_access(project_id, identity, conn):
+            # `member` (= capability `edit`), the same floor publication demands.
+            # Withdrawing an assertion is a WRITE on a durable artifact, and a
+            # read-only holder may not make one in the neighbour's project. The
+            # refusal is the non-disclosing 404, like every other door here.
+            if not identity_has_project_role(project_id, identity, "member", conn):
                 return JSONResponse(
                     {"code": "not_found", "message": "Insight non trouve"},
                     status_code=404,
                 )
 
-            insight = get_insight(insight_id, project_id, conn)
-            if insight is None:
-                return JSONResponse(
-                    {"code": "not_found", "message": "Insight non trouve"},
-                    status_code=404,
-                )
-
-            snapshot_id = insight.get("render_snapshot_id")
-            if not snapshot_id:
-                return JSONResponse(
-                    {
-                        "code": "no_snapshot_lineage",
-                        "message": (
-                            "Cet insight ne porte pas encore de rendu partageable "
-                            "(render_snapshot_id absent) ; la publication doit d'abord "
-                            "figer un snapshot du rendu."
-                        ),
-                    },
-                    status_code=409,
-                )
-
-            result = create_share(snapshot_id, project_id, identity, conn)
+            retracted = retract_insight(
+                project_id=project_id,
+                insight_id=insight_id,
+                retracted_by=identity,
+                reason=reason,
+                conn=conn,
+            )
+    except DailyInsightRefusal as refusal:
+        return JSONResponse(
+            {"code": refusal.code, "message": refusal.message},
+            status_code=refusal.status,
+        )
     except Exception as exc:
         logger.error(
-            "daily_insights_api: create_share err insight=%s p=%s: %s",
+            "daily_insights_api: retract err insight=%s p=%s: %s",
             insight_id,
             project_id,
             exc,
@@ -325,22 +410,19 @@ async def _create_insight_share(request: Request) -> Response:
             status_code=500,
         )
 
-    if result is None:
-        # Le snapshot n'existe pas ou n'appartient pas au projet (non-disclosant).
-        return JSONResponse(
-            {"code": "not_found", "message": "Insight non trouve"},
-            status_code=404,
-        )
+    return JSONResponse(_with_authorship(retracted))
 
-    share_id, token = result
-    return JSONResponse(
-        {
-            "share_id": share_id,
-            "token": token,
-            "url": f"/api/rendus/shared/{token}",
-        },
-        status_code=201,
-    )
+
+# ---------------------------------------------------------------------------
+# POST /api/daily-insights/insights/{insight_id}/share
+# ---------------------------------------------------------------------------
+
+
+# `_create_insight_share` is DELETED by Story 50.7. Its `409 no_snapshot_lineage`
+# branch was honest and is worth keeping in spirit -- an insight with no frozen
+# Render is not shareable, and saying so beats fabricating one. The replacement says
+# the same thing at the Render level: a Share needs one immutable `app.renders` row,
+# and there is no way to create one that does not name a real Result.
 
 
 # ---------------------------------------------------------------------------
@@ -380,11 +462,11 @@ async def _list_insight_shares(request: Request) -> Response:
     try:
         from core.daily_insights import get_insight  # noqa: PLC0415
         from core.db import get_connection  # noqa: PLC0415
-        from core.project_access import identity_has_project_access  # noqa: PLC0415
+        from core.project_access import identity_can_read_project  # noqa: PLC0415
         from core.snapshot_shares import list_shares  # noqa: PLC0415
 
         with get_connection() as conn:
-            if not identity_has_project_access(project_id, identity, conn):
+            if not identity_can_read_project(project_id, identity, conn):
                 return JSONResponse(
                     {"code": "not_found", "message": "Insight non trouve"},
                     status_code=404,
@@ -449,11 +531,11 @@ async def _revoke_insight_share(request: Request) -> Response:
 
     try:
         from core.db import get_connection  # noqa: PLC0415
-        from core.project_access import identity_has_project_access  # noqa: PLC0415
+        from core.project_access import identity_can_read_project  # noqa: PLC0415
         from core.snapshot_shares import revoke_share  # noqa: PLC0415
 
         with get_connection() as conn:
-            if not identity_has_project_access(project_id, identity, conn):
+            if not identity_can_read_project(project_id, identity, conn):
                 return JSONResponse(
                     {"code": "not_found", "message": "Partage non trouve"},
                     status_code=404,
@@ -514,12 +596,12 @@ async def _get_recipe(request: Request) -> Response:
         hour = int(hour_raw)
     except (ValueError, TypeError):
         return JSONResponse(
-            {"code": "invalid_params", "message": "hour doit etre un entier 0..23"},
+            {"code": "invalid_params", "message": "hour must be an integer 0..23"},
             status_code=400,
         )
     if not (0 <= hour <= 23):
         return JSONResponse(
-            {"code": "invalid_params", "message": "hour doit etre dans [0, 23]"},
+            {"code": "invalid_params", "message": "hour must be within [0, 23]"},
             status_code=400,
         )
 
@@ -530,12 +612,12 @@ async def _get_recipe(request: Request) -> Response:
         )
         from core.daily_insights_schema import SCHEMA_VERSION  # noqa: PLC0415
         from core.db import get_connection  # noqa: PLC0415
-        from core.project_access import identity_has_project_access  # noqa: PLC0415
+        from core.project_access import identity_can_read_project  # noqa: PLC0415
 
         with get_connection() as conn:
-            if not identity_has_project_access(project_id, identity, conn):
+            if not identity_can_read_project(project_id, identity, conn):
                 return JSONResponse(
-                    {"code": "not_found", "message": "Projet non trouve"},
+                    {"code": "not_found", "message": "Project not found"},
                     status_code=404,
                 )
 
@@ -574,9 +656,21 @@ DAILY_INSIGHTS_ROUTES: list[Route] = [
         methods=["DELETE"],
     ),
     Route("/api/daily-insights/runs", endpoint=_list_runs, methods=["GET"]),
+    # Story 50.7 AC10: this mount STAYS at this exact path and method; only its
+    # endpoint changes. Nothing is removed from this list -- it mounts no raw-token
+    # public route, so there is nothing here whose absence AC10 requires.
     Route(
         "/api/daily-insights/insights/{insight_id}/share",
-        endpoint=_create_insight_share,
+        endpoint=create_insight_share_gone,
+        methods=["POST"],
+    ),
+    # Migration 321: the ONE door that withdraws a published claim. It is a POST
+    # and not a DELETE, and that is the decision rather than a REST habit -- the
+    # verb a caller reaches for is the verb they get, and there is no path here
+    # that removes the row.
+    Route(
+        "/api/daily-insights/insights/{insight_id}/retract",
+        endpoint=_retract_insight,
         methods=["POST"],
     ),
     Route(

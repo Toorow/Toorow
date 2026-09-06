@@ -29,14 +29,55 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from core import rollup
+from core import dimension_lineage, rollup
+from core.dimension_conformance import LABEL_SOURCE_CLIENT
+from core.envelope import ANALYTICAL_PATH_MART, build_envelope, declare_analytical_path
+
+# THE ONE PLACE A SENTENCE IS SPELLED (arbitrage 2026-08-22). A card title, the
+# question a card says it answers, a block heading, a column label and an honest
+# empty state are all read by a PERSON: this module composes them by KEY and
+# spells none of them. `scripts/check_narrative_no_raw.py` rule D scans this file
+# IN ITS ENTIRETY and reddens on any sentence written back into it.
+from core.narrative_phrases import phrase
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# WHICH relation each card in this module read (story 53.9, CAV-17).
+#
+# `caveats-register.md:74` names `cards.py` as the mart side of CAV-17, and for
+# the whole of story 53.9 this module said nothing: its four envelopes were dict
+# literals that never reached `core.envelope`, so the disclosure the story
+# delivered stopped at `get_daily_report`. They are declared HERE, once each,
+# and the provenance below reads its `source_field` from the declaration rather
+# than retyping the relation.
+#
+# The four are not one relation. Only `get_card`'s generic path reads the
+# `fact_daily_kpi` mart CAV-17 is written about; the three context cards read
+# their own relations, and claiming the mart for them would be a fabricated
+# provenance dressed as a disclosure.
+# ---------------------------------------------------------------------------
+
+#: `_resolve_connectors_card` -- the app control plane, not a mart at all.
+ANALYTICAL_PATH_CONNECTION_HEALTH = declare_analytical_path(
+    path="app", relation="connection_health"
+)
+
+#: `_resolve_dedup_card` -- the deduplication estimate mart.
+ANALYTICAL_PATH_DEDUP_ESTIMATE = declare_analytical_path(
+    path="mart", relation="marts.dedup_estimate"
+)
+
+#: `_resolve_mediaplan_pacing_card` -- the two pacing marts it reads together.
+ANALYTICAL_PATH_PLAN_PACING = declare_analytical_path(
+    path="mart", relation="marts.plan_pacing_by_line + plan_pacing_by_channel"
+)
 
 # Sentinel for "any >= 1 canonical metric" -- makes a template the universal fallback.
 ANY_METRIC = "*"
@@ -52,6 +93,14 @@ USERTYPES_CARD_WIDGET_URI = "ui://core/card-usertypes"
 JOURNEY_CARD_WIDGET_URI = "ui://core/card-journey"
 ATTRIBUTION_CARD_WIDGET_URI = "ui://core/card-attribution"
 DEDUP_CARD_WIDGET_URI = "ui://core/card-dedup"
+# LA CARTE VIDÉOS N'A PAS DE PAQUET À ELLE, ET C'EST DÉLIBÉRÉ POUR L'INSTANT.
+# Le widget KPI ne rend pas « un KPI » : il rend une COMPOSITION, bloc par bloc,
+# par `CardComposition` du shell (ui/cards/kpi/src/App.tsx). Une timeline avec
+# ses repères, une table et un commentaire y passent tels quels, et le titre
+# affiché est celui de l'enveloppe, pas celui du paquet. Lui donner son propre
+# paquet est le geste suivant -- il change la chrome, pas la lecture -- et le
+# faire d'abord aurait retardé la seule chose qui manquait : la réponse.
+VIDEOS_CARD_WIDGET_URI = KPI_CARD_WIDGET_URI
 # Story 22.5: mediaplan pacing context card.
 MEDIAPLAN_PACING_CARD_WIDGET_URI = "ui://core/card-mediaplan-pacing"
 
@@ -71,10 +120,10 @@ CARD_KIND_CONTEXT = "context"
 # French-first status labels for the connectors card (Story 9.8). Health/ledger status
 # codes -> operator-facing labels with accents. Unknown -> "Inconnu" (never invent).
 _TOOROW_STATUS_LABELS: dict[str, str] = {
-    "ok": "Opérationnel",
-    "stale": "Obsolète",
-    "revoked": "Révoqué",
-    "error": "En erreur",
+    "ok": "Operational",
+    "stale": "Stale",
+    "revoked": "Revoked",
+    "error": phrase("connector_status_error"),
 }
 _TOOROW_STATUS_UNKNOWN = "Inconnu"
 
@@ -83,8 +132,8 @@ _TOOROW_STATUS_UNKNOWN = "Inconnu"
 # Unknown raw value -> falls back to the raw string (never blank, AD-9 honesty).
 _USER_TYPE_LABELS: dict[str, str] = {
     "new": "Nouveaux",
-    "returning": "Fidèles",
-    "unknown": "Indéterminés",
+    "returning": "Returning",
+    "unknown": "Undetermined",
 }
 
 _DEFAULT_WINDOW_DAYS = 30
@@ -92,10 +141,25 @@ _DEFAULT_WINDOW_DAYS = 30
 # Default top-N for bar/table/donut breakdown blocks (kept small for card real estate).
 _DEFAULT_TOP_N = 8
 
-# Sensible default CPA objective (currency-normalised, EUR) used by the gauge block
-# when no explicit target is bound on the block. DOCUMENTED as a default in the payload
-# (gauge.target_source = "default") so the UI can note it. Never a silent magic number.
-_DEFAULT_CPA_TARGET = 50.0
+# CPA objective. There is no platform default any more (story 53.5, CAV-08).
+#
+# This used to be `_DEFAULT_CPA_TARGET = 50.0`, applied whenever a block bound no
+# explicit target. The comment said the payload documents it -- `target_source =
+# "default"` -- "so the UI can note it. Never a silent magic number". No `.tsx`
+# ever read `target_source` (`ui/cards/shell/src/types.ts:196` declares it and
+# nothing consumes it), so the gauge coloured a verdict and printed "target: 50"
+# against a number nobody in the project had chosen. A currency-denominated
+# objective is a business decision; 50 EUR is right for nobody in particular.
+#
+# The replacement is the mechanism this module already had for exactly this:
+# `ctx.config`, the per-project / per-report override read by `_fetch_card_config`
+# -- the same path `cannib_min_share_pct` uses. That also satisfies the standing
+# rule against platform-wide hardcodes (defaults yes, hardcodes no).
+#
+# With nothing configured the target is None and `target_source` is "unset": the
+# gauge shows its value and NO objective, because a verdict against an objective
+# nobody set is the defect, not a missing feature.
+_CPA_TARGET_CONFIG_KEY = "cpa_target"
 
 # Special dimension token: bind a breakdown block to the row-level ``connector`` column
 # (cross-source "by source" grouping) rather than a warehouse breakdown_dimension. This
@@ -106,6 +170,13 @@ DIMENSION_CONNECTOR = "connector"
 # Metrics that must NEVER be summed across breakdown rows (AD-4). Mirrors
 # rollup._NON_ADDITIVE_METRICS; kept local so this module does not reach into a private
 # attribute of rollup for a value it needs at block-resolution time.
+#
+# STORY 60.2: a PLATFORM DEFAULT, not the authority. These four names are what the
+# platform ships; a client metric declared `non_additive` or `semi_additive` in the
+# Semantic Model (or `additive = FALSE` in `app.metric_definitions`) is added to
+# this set per Project by `_BlockContext.non_additive`, resolved once per card in
+# `get_card`. A declaration only ADDS -- it can never make one of these four
+# summable, because that direction is the one that prints a confident wrong number.
 _NON_ADDITIVE_METRICS = frozenset({"average_position", "roas", "ctr", "cpa"})
 
 # Ratio metric -> (numerator, denominator) canonical component metrics. When both
@@ -157,6 +228,15 @@ class CardTemplate:
     # Ordered composition contract (Story 9.2c). Immutable: stored as tuple of dicts.
     # Each block = {type, binding, title?}. See class docstring.
     composition: tuple[dict, ...] = ()
+    # The dimensions `answers_question` NAMES IN PROSE, each {name, default}
+    # (2026-08-31). A question is a surface like a heading: it rode to the model
+    # channel verbatim, so a client who renamed `device_category` read their word
+    # on every number of the card and the shipped word in the question above them.
+    # A question ships PLAIN PROSE, never a placeholder: the entry a catalog stores
+    # and a model reads must be a sentence, and the shipped word IS the fallback
+    # governance asks for. So the declaration names the word to replace (`default`)
+    # and the client's word takes its place -- see `compose_dimension_prose`.
+    question_dimensions: tuple[dict, ...] = ()
     # Card KIND (Story 9.8): CARD_KIND_KPI (fact-backed, suggestible) or
     # CARD_KIND_CONTEXT (app-level inventory, EXPLICIT-ONLY -- never auto-suggested).
     kind: str = CARD_KIND_KPI
@@ -166,12 +246,28 @@ class CardTemplate:
         """True for a context-kind card (resolved from app-level sources, no fact rows)."""
         return self.kind == CARD_KIND_CONTEXT
 
+    def composed_question(self, dimension_labels: dict | None) -> str:
+        """The question this card answers, in the CLIENT's words.
+
+        Same seam, same fallback as a block heading: the client's word where
+        somebody named the dimension, otherwise exactly the prose the template
+        ships. A question naming no dimension declares none and is untouched.
+        """
+        return compose_dimension_prose(
+            self.answers_question, self.question_dimensions, dimension_labels
+        )
+
     def to_catalog_entry(self) -> dict:
         """Serialise for list_card_templates (what the LLM reads to CHOOSE)."""
         return {
             "id": self.id,
             "title": self.title,
+            # The catalog is read before any project is known, so there is no label
+            # map: this IS the shipped prose. It round-trips through
+            # `template_from_entry` unchanged, and the declaration travels with it
+            # so a rebuilt template can still speak a client's word.
             "answers_question": self.answers_question,
+            "question_dimensions": list(self.question_dimensions),
             "widget_uri": self.widget_uri,
             "required_metrics": list(self.required_metrics),
             "required_dimensions": list(self.required_dimensions),
@@ -209,10 +305,9 @@ class CardTemplate:
 CARD_TEMPLATES: list[CardTemplate] = [
     CardTemplate(
         id="kpi",
-        title="Synthèse KPI",
+        title=phrase("card_kpi_title"),
         answers_question=(
-            "Comment évoluent mes indicateurs clés sur la période "
-            "(valeurs, variations, tendance) ?"
+            phrase("card_kpi_question")
         ),
         widget_uri=KPI_CARD_WIDGET_URI,
         required_metrics=(ANY_METRIC,),  # any >= 1 canonical metric -> universal fallback
@@ -234,11 +329,11 @@ CARD_TEMPLATES: list[CardTemplate] = [
     # -----------------------------------------------------------------------
     CardTemplate(
         id="keywords",
-        title="Mots-clés",
+        title="Keywords",
         answers_question=(
-            "Comment se portent mes mots-clés / requêtes "
-            "(top requêtes, mouvements, opportunités) ?"
+            phrase("card_keywords_question")
         ),
+        question_dimensions=({"name": "query", "default": "queries"},),
         widget_uri=KEYWORDS_CARD_WIDGET_URI,
         required_metrics=("clicks", "impressions"),
         required_dimensions=("page",),
@@ -255,7 +350,8 @@ CARD_TEMPLATES: list[CardTemplate] = [
                 # path instead of the generic top-N-by-value path (AD-2 source-agnostic:
                 # reads canonical average_position/impressions + the query dimension).
                 "type": "bar",
-                "title": "Requêtes en mouvement (±pos.)",
+                "title": phrase("block_dimension_in_movement"),
+                "title_dimension": {"name": "query", "default": "Queries"},
                 "binding": {
                     "metrics": "average_position",
                     "dimensions": ["query", "page"],
@@ -265,7 +361,8 @@ CARD_TEMPLATES: list[CardTemplate] = [
             },
             {
                 "type": "table",
-                "title": "Top requêtes",
+                "title": "Top {dimension}",
+                "title_dimension": {"name": "query", "default": "queries"},
                 "binding": {
                     "metrics": ["clicks", "impressions", "average_position"],
                     "dimensions": ["query", "page"],
@@ -277,7 +374,7 @@ CARD_TEMPLATES: list[CardTemplate] = [
                 # of demand, weak rank). AD-2: the ``opportunities`` flag drives the resolver,
                 # never a template-id branch. Empty -> a designed empty table (never absent).
                 "type": "table",
-                "title": "Opportunités",
+                "title": "Opportunities",
                 "binding": {
                     "metrics": ["impressions", "average_position"],
                     "dimensions": ["query", "page"],
@@ -290,7 +387,7 @@ CARD_TEMPLATES: list[CardTemplate] = [
                 # AD-2: the ``cannibalisation`` binding flag drives the resolver, never a
                 # template-id branch. Empty -> designed empty table (never absent).
                 "type": "table",
-                "title": "Cannibalisation",
+                "title": "Cannibalization",
                 "binding": {
                     "metrics": ["impressions", "average_position"],
                     "dimensions": ["query", "page"],
@@ -310,7 +407,7 @@ CARD_TEMPLATES: list[CardTemplate] = [
         id="conversions",
         title="Conversions",
         answers_question=(
-            "D'où viennent mes conversions et à quel coût (par source, CPA) ?"
+            phrase("card_conversions_question")
         ),
         widget_uri=CONVERSIONS_CARD_WIDGET_URI,
         required_metrics=("conversions",),
@@ -321,12 +418,12 @@ CARD_TEMPLATES: list[CardTemplate] = [
             {"type": "kpi_row", "binding": {"metrics": "*"}},
             {
                 "type": "donut",
-                "title": "Conversions par source",
+                "title": phrase("block_conversions_by_source"),
                 "binding": {"metrics": "conversions", "dimensions": ["connector"]},
             },
             {
                 "type": "gauge",
-                "title": "CPA vs objectif",
+                "title": phrase("block_cpa_vs_target"),
                 "binding": {
                     "metrics": "cpa",
                     "numerator": "cost",
@@ -337,7 +434,7 @@ CARD_TEMPLATES: list[CardTemplate] = [
             },
             {
                 "type": "table",
-                "title": "Par source",
+                "title": phrase("block_by_source"),
                 "binding": {
                     "metrics": ["conversions", "cost", "cpa"],
                     "dimensions": ["connector"],
@@ -354,9 +451,13 @@ CARD_TEMPLATES: list[CardTemplate] = [
     # -----------------------------------------------------------------------
     CardTemplate(
         id="usertypes",
-        title="Types d'utilisateurs",
+        title=phrase("card_usertypes_title"),
         answers_question=(
-            "Qui sont mes utilisateurs (Nouveaux vs fidèles, appareil, pays) ?"
+            phrase("card_usertypes_question")
+        ),
+        question_dimensions=(
+            {"name": "device_category", "default": "device"},
+            {"name": "country", "default": "country"},
         ),
         widget_uri=USERTYPES_CARD_WIDGET_URI,
         required_metrics=("active_users", "sessions"),
@@ -373,22 +474,25 @@ CARD_TEMPLATES: list[CardTemplate] = [
             # are present → the shell renders donut-empty; the card remains valid (degrade).
             {
                 "type": "donut",
-                "title": "Nouveaux vs fidèles",
+                "title": phrase("block_new_vs_returning"),
                 "binding": {"metrics": "active_users", "dimensions": ["user_type"]},
             },
             {
                 "type": "donut",
-                "title": "Utilisateurs par appareil",
+                "title": phrase("block_users_by_dimension"),
+                "title_dimension": {"name": "device_category", "default": "device"},
                 "binding": {"metrics": "active_users", "dimensions": ["device_category"]},
             },
             {
                 "type": "bar",
-                "title": "Utilisateurs par pays",
+                "title": phrase("block_users_by_dimension"),
+                "title_dimension": {"name": "country", "default": "country"},
                 "binding": {"metrics": "active_users", "dimensions": ["country"]},
             },
             {
                 "type": "table",
-                "title": "Par appareil",
+                "title": "By {dimension}",
+                "title_dimension": {"name": "device_category", "default": "device"},
                 "binding": {
                     "metrics": ["active_users", "sessions"],
                     "dimensions": ["device_category"],
@@ -410,9 +514,9 @@ CARD_TEMPLATES: list[CardTemplate] = [
     # -----------------------------------------------------------------------
     CardTemplate(
         id="journey",
-        title="Parcours utilisateur",
+        title=phrase("card_journey_title"),
         answers_question=(
-            "Où les utilisateurs décrochent-ils (étapes du parcours, taux de passage) ?"
+            phrase("card_journey_question")
         ),
         widget_uri=JOURNEY_CARD_WIDGET_URI,
         required_metrics=("sessions", "conversions"),
@@ -430,7 +534,7 @@ CARD_TEMPLATES: list[CardTemplate] = [
         composition=(
             {
                 "type": "funnel",
-                "title": "Parcours sessions -> conversions",
+                "title": phrase("block_sessions_to_conversions_funnel"),
                 "binding": {"steps": ["sessions", "active_users", "conversions"]},
             },
             {"type": "kpi_row", "binding": {"metrics": "*"}},
@@ -439,7 +543,11 @@ CARD_TEMPLATES: list[CardTemplate] = [
             # flag. Degrades to an empty bar (bars:[]) when no landing_page rows present.
             {
                 "type": "bar",
-                "title": "Pages d'entrée",
+                "title": "{dimension}",
+                "title_dimension": {
+                    "name": "landing_page",
+                    "default": phrase("block_entry_pages_default"),
+                },
                 "binding": {
                     "metrics": "sessions",
                     "dimensions": ["landing_page"],
@@ -455,7 +563,8 @@ CARD_TEMPLATES: list[CardTemplate] = [
             # Degrades to an empty table (rows:[]) when no page rows present.
             {
                 "type": "table",
-                "title": "Pages les plus vues",
+                "title": phrase("block_top_viewed_dimension"),
+                "title_dimension": {"name": "page", "default": "pages"},
                 "binding": {
                     "metrics": "screen_page_views",
                     "dimensions": ["page"],
@@ -486,8 +595,7 @@ CARD_TEMPLATES: list[CardTemplate] = [
         id="attribution",
         title="Attribution",
         answers_question=(
-            "Quelle part de mes conversions vient de chaque canal, "
-            "en dernier clic vs premier clic ?"
+            phrase("card_attribution_question")
         ),
         widget_uri=ATTRIBUTION_CARD_WIDGET_URI,
         required_metrics=("conversions",),
@@ -523,7 +631,7 @@ CARD_TEMPLATES: list[CardTemplate] = [
             # of the returned top-N, not the full GA4 day total (pattern 10.4).
             {
                 "type": "bar",
-                "title": "Canaux — dernier clic (top-N)",
+                "title": phrase("block_channels_last_click"),
                 "binding": {
                     "metrics": "conversions",
                     "dimensions": ["session_source_medium"],
@@ -537,7 +645,7 @@ CARD_TEMPLATES: list[CardTemplate] = [
             # review-16-5 F12: same top-N suffix.
             {
                 "type": "bar",
-                "title": "Canaux — premier clic (top-N)",
+                "title": phrase("block_channels_first_click"),
                 "binding": {
                     "metrics": "conversions",
                     "dimensions": ["first_user_source_medium"],
@@ -552,14 +660,15 @@ CARD_TEMPLATES: list[CardTemplate] = [
             # review-16-5 F12: title suffixed with "(top-N)" -- share is of top-N.
             {
                 "type": "table",
-                "title": "Campagnes — dernier clic (top-N)",
+                "title": phrase("block_dimension_last_click"),
+                "title_dimension": {"name": "session_campaign", "default": "Campaigns"},
                 "binding": {
                     "metrics": ["conversions"],
                     "dimensions": ["session_campaign"],
                     "breakdown_dim_filter": "session_campaign",
                     "subtotal_share": True,
-                    "subtotal_share_label": "Part (top-N)",
-                    "dim_label": "Campagne",
+                    "subtotal_share_label": "Share (top-N)",
+                    "dim_label": "Campaign",
                 },
             },
             {"type": "comment", "binding": {"metrics": "*"}},
@@ -579,19 +688,82 @@ CARD_TEMPLATES: list[CardTemplate] = [
     # COMPOSITION contract (AI-54):
     #   1. kpi_row  -- héros : taux de duplication global (estimation label obligatoire)
     #                  NULL verified → état vide honnête « source de vérification indisponible »
-    #   2. bar      -- « Revendiqué vs dédupliqué par canal » (claimed, dernier bloc: 2 bars)
+    #   2. bar      -- « Claimed vs dédupliqué par canal » (claimed, dernier bloc: 2 bars)
     #                  Uses dedup_grouped binding flag -> two bar-sets in one block payload.
-    #   3. table    -- Détail par canal : Canal / Revendiqué / Contribution dédupliquée / Part
+    #   3. table    -- Breakdown by channel : Canal / Claimed / Contribution dédupliquée / Part
     #   4. comment  -- build_dedup_comment (AD-9, <= 3 lines, formule + source + estimation)
     #
     # AD-9 RULE (non-négociable): every rendered value carries the label « Estimation » and
     # the formula; NULL rate → never rendered as 0%.
     # -----------------------------------------------------------------------
+    # -----------------------------------------------------------------------
+    # Vidéos — la timeline des vues AVEC les dates de sortie (2026-08-19).
+    #
+    # LA QUESTION QU'ELLE RÉPOND N'EST PAS « combien de vues ». C'est « qu'est-ce
+    # que ma dernière vidéo a fait ». Les deux moitiés de cette question vivaient
+    # déjà dans le produit et ne s'étaient jamais rencontrées : les vues au grain
+    # vidéo sont dans `fact_daily_kpi` (`breakdown_dimension='video'`, posé par le
+    # profil `video_daily`), et les SORTIES sont des faits datés dans
+    # `app.context_events` (`type='video_upload'`, posé par le profil
+    # `video_upload` du MÊME connecteur, sur une porte différente).
+    #
+    # Mesuré sur le projet de référence le 2026-08-19 : 547 vidéos, 34 640 lignes
+    # brutes, et QUATRE sorties dans la fenêtre -- dont trois portent déjà leur
+    # `entity_key` (l'identifiant de la vidéo), la quatrième ne l'ayant que dans
+    # l'URL de sa description. Les quatre vidéos les plus vues de la période SONT
+    # les quatre publiées : c'est exactement ce que la timeline donne à voir, et
+    # ce qu'aucune des deux moitiés ne disait seule.
+    #
+    # `video` est OPTIONNEL, pas requis : un canal qui n'a rien publié dans la
+    # fenêtre garde sa courbe et ses totaux, et l'absence de repère se DIT
+    # (`markers_reason`) au lieu de laisser croire qu'il ne s'est rien passé.
+    # -----------------------------------------------------------------------
+    CardTemplate(
+        id="videos",
+        title="Videos",
+        answers_question=(
+            phrase("card_videos_question")
+        ),
+        widget_uri=VIDEOS_CARD_WIDGET_URI,
+        required_metrics=("views",),
+        required_dimensions=(),
+        optional_dimensions=("video",),
+        optional_metrics=("estimated_minutes_watched", "likes", "comments", "shares"),
+        # Above KPI (0) and BELOW every source-specific card: when a Project has
+        # views this is a better answer than a bare KPI row, and a tie would make
+        # the choice between two cards depend on their order in a list. `keywords`
+        # sits at 20; nothing here should ever be decided by a coin toss.
+        fallback_rank=15,
+        composition=(
+            {"type": "kpi_row", "binding": {"metrics": "*"}},
+            {
+                "type": "line",
+                "title": phrase("block_views_and_publications"),
+                # `events` is BOUND, never guessed: a release means something on a
+                # content timeline and nothing on a spend one.
+                "binding": {"metrics": "views", "events": "video_upload"},
+            },
+            {
+                "type": "table",
+                "title": phrase("block_top_videos"),
+                # Les métriques sont NOMMÉES, jamais `*` : une table dont les
+                # colonnes dépendent de ce que le projet a posé change de forme
+                # d'un jour à l'autre, et `*` rendait ici une table à deux
+                # colonnes vides (`_dim` et `*`). Les quatre nommées sont celles
+                # qu'un profil `video_daily` pose toujours ensemble.
+                "binding": {
+                    "metrics": ["views", "estimated_minutes_watched", "likes", "comments"],
+                    "dimensions": ["video"],
+                },
+            },
+            {"type": "comment", "binding": {"metrics": "*"}},
+        ),
+    ),
     CardTemplate(
         id="dedup",
-        title="Déduplication",
+        title="Deduplication",
         answers_question=(
-            "Mes conversions sont-elles comptées en double par les régies ?"
+            phrase("card_dedup_question")
         ),
         widget_uri=DEDUP_CARD_WIDGET_URI,
         required_metrics=(),   # context card: resolved from dedup_estimate, not fact rows
@@ -603,11 +775,11 @@ CARD_TEMPLATES: list[CardTemplate] = [
             {
                 "type": "kpi_row",
                 "binding": {"metrics": "duplication_rate"},
-                "title": "Taux de duplication (estimation)",
+                "title": phrase("block_duplication_rate"),
             },
             {
                 "type": "bar",
-                "title": "Revendiqué vs dédupliqué par canal",
+                "title": phrase("block_claimed_vs_deduplicated"),
                 "binding": {
                     "metrics": ["claimed_conversions", "deduplicated_contribution"],
                     "dimensions": ["channel_connector"],
@@ -616,7 +788,7 @@ CARD_TEMPLATES: list[CardTemplate] = [
             },
             {
                 "type": "table",
-                "title": "Détail par canal",
+                "title": phrase("block_channel_detail"),
                 "binding": {
                     "metrics": ["claimed_conversions", "deduplicated_contribution"],
                     "dimensions": ["channel_connector"],
@@ -654,10 +826,9 @@ CARD_TEMPLATES: list[CardTemplate] = [
     # -----------------------------------------------------------------------
     CardTemplate(
         id="mediaplan_pacing",
-        title="Pacing Médiaplan",
+        title=phrase("card_mediaplan_pacing_title"),
         answers_question=(
-            "Comment mon plan évolue-t-il face aux dépenses réelles "
-            "(consommé, pace, reste, extrapolé par ligne et par support) ?"
+            phrase("card_mediaplan_pacing_question")
         ),
         widget_uri=MEDIAPLAN_PACING_CARD_WIDGET_URI,
         required_metrics=(),   # context card: resolved from pacing marts, not fact rows
@@ -668,12 +839,12 @@ CARD_TEMPLATES: list[CardTemplate] = [
         composition=(
             {
                 "type": "table",
-                "title": "Lignes du plan",
+                "title": phrase("block_plan_lines"),
                 "binding": {"source": "plan_lines"},
             },
             {
                 "type": "table",
-                "title": "Rollup par support",
+                "title": phrase("block_rollup_by_channel"),
                 "binding": {"source": "plan_channels"},
             },
             {"type": "comment", "binding": {"source": "plan_pacing"}},
@@ -700,9 +871,9 @@ CARD_TEMPLATES: list[CardTemplate] = [
     # -----------------------------------------------------------------------
     CardTemplate(
         id="connectors",
-        title="Connecteurs",
+        title="Connectors",
         answers_question=(
-            "Quels connecteurs sont disponibles et qu'alimentent-ils ?"
+            phrase("card_connectors_question")
         ),
         widget_uri=CONNECTORS_CARD_WIDGET_URI,
         required_metrics=(),  # context card: no fact metrics gate selection
@@ -713,7 +884,7 @@ CARD_TEMPLATES: list[CardTemplate] = [
         composition=(
             {
                 "type": "table",
-                "title": "Connecteurs",
+                "title": "Connectors",
                 # binding is documentary only for a context card: the table rows are
                 # resolved by the context resolver, not by the generic block resolver.
                 "binding": {"source": "connectors"},
@@ -772,6 +943,14 @@ def _needs_cannibalisation_positions(template_id: str | None) -> bool:
     return tpl is not None and _composition_has_cannibalisation(tpl.composition)
 
 
+#: AI-169 -- what an event's date is aligned to, which is: the calendar, and nothing else.
+#: A closed-vocabulary token rather than a sentence, so a surface renders it in its own
+#: words and a test pins it. There is deliberately no "aligned" member: no event in this
+#: product carries a clock, and a vocabulary that admits a value it can never take invites
+#: a reader to assume the other case exists.
+EVENT_DAY_BOUNDARY_UNALIGNED = "calendar_date_no_source_clock"
+
+
 def _serialize_context_events(events: list[dict] | None) -> list[dict]:
     """Serialise context_events for meta inclusion, joining dim_event_type fields.
 
@@ -780,6 +959,23 @@ def _serialize_context_events(events: list[dict] | None) -> list[dict]:
     (from the dim_event_type static dictionary via ``enrich_events_with_dim``).
     This is a pure additive extension — schema_version stays "1".
     AD-9: overlay is additive; no metric value is modified.
+
+    AI-169: each event also carries ``day_boundary``, and it is a CONSTANT.
+    ``capabilities/reporting-timezone.md`` is incomplete if "business events and
+    measures align on different undisclosed boundaries", and this overlay is where
+    a human literally SEES an event sitting on a measure. The two dates are not
+    drawn on the same clock: ``app.context_events`` validates a bare ``YYYY-MM-DD``
+    and stores no timezone, while the measure's day comes from the source's
+    reporting clock (observed and recorded per run since AI-161). So a pin lands on
+    the calendar day it was typed, next to a series whose day may begin hours
+    earlier or later.
+
+    Constant rather than computed, for the same reason ``metric`` is always an
+    unscoped dimension in the pairing descriptor: no column supports the question on
+    the event side, so there is no state of the data in which it becomes checkable.
+    Computing it would suggest it is sometimes verified. And it is disclosed rather
+    than corrected -- at DATE grain there is no sub-day data to re-slice, and an
+    event a human logged has no clock to recover.
     """
     from core.report_dictionary import enrich_events_with_dim  # noqa: PLC0415
 
@@ -795,18 +991,171 @@ def _serialize_context_events(events: list[dict] | None) -> list[dict]:
             "value": e.get("value"),
             "category": e.get("category", ""),
             "default_marker": e.get("default_marker", "pin"),
+            "day_boundary": EVENT_DAY_BOUNDARY_UNALIGNED,
         }
         for e in enriched
     ]
 
 
 def list_templates() -> list[dict]:
-    """Return the catalog (serialised entries) -- the discoverable half of the contract."""
+    """Return the DEFAULT catalog (serialised entries) -- the platform default set.
+
+    Story 52.1: this is no longer what a surface reads. `CARD_TEMPLATES` is the
+    default set a Project inherits when it has configured nothing, and the single
+    reader is ``core.answerable_topics.resolve_catalog(project_id, conn)``, which
+    layers the Project's own catalog over it. Calling this function from a
+    request path reinstates the platform-wide hardcode that Story 52.1 removed --
+    ``test_answerable_topics.py`` fails when a module outside the registry and
+    the resolver does.
+    """
     return [tpl.to_catalog_entry() for tpl in CARD_TEMPLATES]
 
 
+def template_from_entry(entry: dict) -> CardTemplate:
+    """Rebuild a ``CardTemplate`` from a resolved catalog entry.
+
+    Story 52.1: a catalog entry may come from the registry OR from a Project's
+    stored catalog, and the satisfaction test (``is_satisfied_by``) must be the
+    SAME one in both cases. Without this, every surface that wants to know
+    "can this Project render that question?" would re-implement the rule -- and
+    ``cards_api`` already showed what happens when a surface pairs entries with
+    templates positionally instead of by identity.
+    """
+    return CardTemplate(
+        id=str(entry.get("id") or ""),
+        title=str(entry.get("title") or ""),
+        answers_question=str(entry.get("answers_question") or ""),
+        widget_uri=str(entry.get("widget_uri") or ""),
+        required_metrics=tuple(entry.get("required_metrics") or ()),
+        required_dimensions=tuple(entry.get("required_dimensions") or ()),
+        optional_dimensions=tuple(entry.get("optional_dimensions") or ()),
+        optional_metrics=tuple(entry.get("optional_metrics") or ()),
+        fallback_rank=int(entry.get("fallback_rank") or 0),
+        composition=tuple(entry.get("composition") or ()),
+        question_dimensions=tuple(entry.get("question_dimensions") or ()),
+        kind=str(entry.get("kind") or CARD_KIND_KPI),
+    )
+
+
+def _resolve_project_catalog(project_id: str) -> list[dict]:
+    """Return this Project's resolved catalog; the default set when it cannot be read.
+
+    Best-effort by design (Story 52.1): the catalog is how a caller discovers what it
+    can ask, so a database that blinks degrades to the platform defaults rather than
+    to an empty catalog. Access control is enforced by the tool/route wrapper BEFORE
+    this is reached (AD-5), exactly as every other read in this module assumes.
+    """
+    from core import answerable_topics as _topics  # noqa: PLC0415
+
+    if not project_id:
+        return _topics.default_catalog()
+    try:
+        from core import db as _core_db  # noqa: PLC0415
+
+        with _core_db.get_connection() as conn:
+            return _topics.resolve_catalog(project_id, conn)
+    except Exception as exc:  # noqa: BLE001 -- read path degrades to the defaults
+        logger.debug("get_card: project_catalog_skipped: %s", exc)
+        return _topics.default_catalog()
+
+
+def _resolve_knowledge_for_card(
+    project_id: str, topic_key: str
+) -> tuple[list[dict], str | None, bool]:
+    """Story 52.3: the governed knowledge this topic may elaborate from.
+
+    Best-effort like `_resolve_project_catalog`, with ONE difference that matters:
+    a failure here is reported as `context_missing`, never as "this topic declares
+    nothing". The two are different answers, and only one of them invites a model
+    to fall back on its own priors.
+    """
+    from core import answerable_topics as _topics  # noqa: PLC0415
+
+    if not project_id or not topic_key:
+        return [], _topics.NO_KNOWLEDGE_REASON, False, False
+    try:
+        from core import db as _core_db  # noqa: PLC0415
+
+        with _core_db.get_connection() as conn:
+            return _topics.knowledge_citations(project_id, topic_key, conn)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("get_card: knowledge_read_skipped: %s", exc)
+        # The store could not be opened, so whether this topic refuses was never
+        # evaluated. Refusing here would refuse EVERY card during a Postgres
+        # outage -- `requires_knowledge` is false by default and almost no topic
+        # asked for it. Saying "not refused" without the second value would claim
+        # a check nobody ran. Same shape as `stale_since_evaluated` below.
+        return [], _topics.CONTEXT_MISSING_REASON, False, False
+
+
+def attach_knowledge(data: dict, project_id: str, topic_key: str) -> dict:
+    """Write the Story 52.3 knowledge fields onto a card's ``data``. Returns it.
+
+    WHY THIS IS A FUNCTION AND NOT A BLOCK INSIDE ``get_card``. It was a block, in
+    the generic path only, and ``get_card`` has FOUR envelope return paths: the
+    three context resolvers return before ever reaching it. Measured, the dedup card
+    came back with no `knowledge_citations` key and no `knowledge_status` -- which
+    is literally what AC3 forbids ("not the absence of the field"), and it also
+    meant the AC5 refusal could NEVER fire on those cards whatever the topic
+    declared (review-epic-52 D-2). The class to treat is the three paths, so the
+    block lives in one place that all three call.
+
+    `knowledge_citations` names what was actually READ, at the version that was
+    read -- never what was declared. Citing a declaration that could not be read is
+    precisely the failure Story 52.3 exists to prevent.
+
+    `knowledge_status` keeps two absences apart, because `context-hub.md:59-60`
+    makes it a completeness criterion that "an unavailable context store is
+    indistinguishable from an empty one, so a model reads 'nothing is defined here'
+    and answers from its own priors":
+
+      * `no_knowledge_declared` -- this topic elaborates from nothing, by choice;
+      * `context_missing`       -- it declared knowledge and none could be read.
+
+    A topic that declared `requires_knowledge` and whose context is missing
+    REFUSES, and the refusal is a legitimate declared answer carried in the
+    envelope -- not a card silently rendered without the half that explains it.
+    """
+    citations, status, refused, evaluated = _resolve_knowledge_for_card(project_id, topic_key)
+    data["knowledge_citations"] = citations
+    if status is not None:
+        data["knowledge_status"] = status
+    # Whether the refusal was EVALUATED at all. Carried always, not only when
+    # false, so a reader never infers it from a missing key -- the rule
+    # `meta.freshness.stale_since_evaluated` already follows in this file, and for
+    # the same reason: an unevaluated value must not read as evaluated.
+    data["knowledge_refusal_evaluated"] = bool(evaluated)
+    if refused:
+        data["knowledge_refusal"] = {
+            "refused": True,
+            "reason_code": status,
+            # AD-9: the refusal states what is missing. It never states a cause.
+            "message": (
+                phrase("topic_no_readable_knowledge")
+            ),
+        }
+    return data
+
+
+def template_for_entry(entry: dict) -> CardTemplate:
+    """Return the CardTemplate a resolved catalog entry stands for.
+
+    An entry inherited from the platform default set carries no version marker, so
+    it IS the registered template and the registry object is returned unchanged --
+    that is what keeps a Project with no configuration byte-identical to before
+    Story 52.1. A stored entry is rebuilt from what the Project actually declared.
+    """
+    if "version_id" not in entry:
+        registered = get_template(str(entry.get("id") or ""))
+        if registered is not None:
+            return registered
+    return template_from_entry(entry)
+
+
 def suggest_template(
-    available_metrics: set[str], available_dimensions: set[str]
+    available_metrics: set[str],
+    available_dimensions: set[str],
+    catalog: list[dict] | None = None,
 ) -> tuple[CardTemplate | None, list[CardTemplate]]:
     """Return ``(best, alternatives)`` for the available canonical inputs.
 
@@ -820,10 +1169,19 @@ def suggest_template(
     they must be requested explicitly by id (the LLM discovers them via
     list_card_templates). Excluding them here is the single choke point that keeps them
     explicit-only without a module/id branch elsewhere (AD-2).
+
+    Story 52.1: ``catalog`` is a Project's resolved catalog. Omitted -> the platform
+    default set, which is the pre-52.1 behaviour exactly. A Project that retired a
+    question is never offered it back by a suggestion.
     """
+    pool = (
+        [template_for_entry(entry) for entry in catalog]
+        if catalog is not None
+        else list(CARD_TEMPLATES)
+    )
     satisfied = [
         tpl
-        for tpl in CARD_TEMPLATES
+        for tpl in pool
         if not tpl.is_context
         and tpl.is_satisfied_by(available_metrics, available_dimensions)
     ]
@@ -979,6 +1337,20 @@ class _BlockContext:
     # (cannib_min_share_pct, cannib_min_position_gap) read with defaults; NEVER hardcoded
     # constants. Empty on the pure ad-hoc path (defaults then apply).
     config: dict = field(default_factory=dict)
+    # Story 60.2: the EFFECTIVE non-additive set for this Project -- the platform
+    # default union what the client declared. Carried on the context rather than
+    # read inside each resolver so the store is read ONCE per card, and so a
+    # resolver stays a pure function of what it is handed.
+    non_additive: frozenset[str] = _NON_ADDITIVE_METRICS
+    # Les faits DATÉS de la période -- sorties, mises en ligne, campagnes. Portés
+    # ici parce qu'un bloc qui veut les poser sur son axe n'a pas à aller les
+    # chercher : un résolveur reste une fonction pure de ce qu'on lui donne.
+    context_events: list[dict] = field(default_factory=list)
+    # Story 27.9: {canonical dimension -> {display_label, label_source, ...}} for the
+    # dimensions this card's rows carry. On the CONTEXT, like `non_additive` above,
+    # so the store is read once per card and a resolver stays a pure function of what
+    # it is handed.
+    dimension_labels: dict = field(default_factory=dict)
 
     def cross_source_current(self) -> list[dict]:
         """Rows for cross-source scalar totals (dedup applied; falls back to raw)."""
@@ -1070,7 +1442,10 @@ def _first_present_dimension(rows: list[dict], candidates: list[str]) -> str | N
 
 
 def _aggregate_by_group(
-    rows: list[dict], metric: str, dimension: str
+    rows: list[dict],
+    metric: str,
+    dimension: str,
+    non_additive: frozenset[str] | None = None,
 ) -> dict[str, float]:
     """Aggregate *metric* by group under *dimension*, AD-4 aware.
 
@@ -1078,8 +1453,16 @@ def _aggregate_by_group(
     per group (rollup.weighted_avg_position over the group's rows + the impression rows
     of the SAME group). Ratio metrics (ctr/roas) aggregate as ratio-of-sums when their
     components are present, else a documented per-row mean fallback (AD-4).
+
+    ``non_additive`` is the EFFECTIVE set for the Project being rendered (Story
+    60.2): the platform default plus what the client declared. ``None`` means "no
+    project context" and applies the platform default alone -- the behaviour every
+    caller had before this parameter existed.
     """
     from core import rollup as rollup_module  # noqa: PLC0415
+
+    # `is None`, never `or`: an empty declared set is an answer, not an absence.
+    effective = _NON_ADDITIVE_METRICS if non_additive is None else non_additive
 
     metric_rows = _rows_for_dimension(rows, metric, dimension)
     groups: dict[str, list[dict]] = {}
@@ -1102,7 +1485,7 @@ def _aggregate_by_group(
                 result[g] = weighted
         return result
 
-    if metric in _NON_ADDITIVE_METRICS:
+    if metric in effective:
         # AD-4 (review-9-2b F-8): a ratio metric aggregates as RATIO-OF-SUMS, not a mean
         # of per-row ratios. When the metric's numerator/denominator components are BOTH
         # present in the rows we recompute SUM(num)/SUM(den) per group (double-count-safe,
@@ -1112,6 +1495,9 @@ def _aggregate_by_group(
         components = _RATIO_COMPONENTS.get(metric)
         if components is not None:
             num_name, den_name = components
+            # The COMPONENTS are aggregated under the platform default: a client
+            # declaring the ratio non-additive says nothing about its numerator,
+            # and summing `clicks` is still how a CTR is rebuilt.
             num_by_group = _aggregate_by_group(rows, num_name, dimension)
             den_by_group = _aggregate_by_group(rows, den_name, dimension)
             if num_by_group and den_by_group:
@@ -1239,8 +1625,72 @@ def _resolve_kpi_row(block: dict, ctx: _BlockContext) -> dict:
     return {"metrics": metrics_payload}
 
 
+#: The reason a timeline carries no marker, in the reader's words. It never says
+#: "no event": it says which of the two facts is true, because "nothing was
+#: published in this window" and "the publications carry no date this axis knows"
+#: are different answers and only one of them is about the content.
+_MARKERS_NONE_IN_WINDOW = {
+    "code": "no_dated_event_in_window",
+    "message": phrase("markers_none_in_window"),
+}
+_MARKERS_OFF_AXIS = {
+    "code": "dated_event_outside_axis",
+    "message": (
+        phrase("markers_off_axis")
+    ),
+}
+
+
+def _event_markers(
+    ctx: _BlockContext, binding: dict, axis: list[str]
+) -> tuple[list[dict], dict | None]:
+    """The dated facts of the window, placed on *axis*, and why there are none.
+
+    A MARKER IS NOT A MEASURE. A video release has a date and a title and no
+    value; drawing it as a second series would claim a magnitude it does not
+    have, and printing it as a sentence under the chart would leave the eye to
+    align two lists -- which is the whole thing the reader came for.
+
+    NAMED, NEVER IDENTIFIED. The label is the event's own `label` (the video
+    title). An id such as `b6wfcAYukFE` is what the join needs, never what a
+    person reads.
+
+    The types accepted are BOUND, never guessed: a card declares which kinds of
+    event belong on its axis (`binding.events`), because "a release" means
+    something on a content timeline and nothing on a spend one.
+    """
+    wanted = binding.get("events")
+    kinds = {wanted} if isinstance(wanted, str) else set(wanted or ())
+    if not kinds:
+        return [], None
+
+    dated = [
+        event
+        for event in ctx.context_events
+        if str(event.get("type") or "") in kinds and event.get("event_date")
+    ]
+    if not dated:
+        return [], dict(_MARKERS_NONE_IN_WINDOW)
+
+    on_axis = {str(day) for day in axis}
+    markers = [
+        {"index": str(event["event_date"]), "label": str(event.get("label") or "")}
+        for event in dated
+        if str(event["event_date"]) in on_axis
+    ]
+    if not markers:
+        return [], dict(_MARKERS_OFF_AXIS)
+    markers.sort(key=lambda marker: marker["index"])
+    return markers, None
+
+
 def _resolve_line(block: dict, ctx: _BlockContext) -> dict:
-    """line payload: {series:[{name, points:[{x:date, y:value}]}]} for bound metrics."""
+    """line payload: {series:[{name, points:[{x:date, y:value}]}]} for bound metrics.
+
+    Story 65.12: a line may also carry MARKERS -- the dated facts of the window
+    (a video release, a launch) posed on the same axis, so the distance between
+    a publication and the movement it caused is read rather than reconstructed.
+    """
     binding = block.get("binding") or {}
     want = binding.get("metrics", "*")
     if want == "*":
@@ -1249,13 +1699,22 @@ def _resolve_line(block: dict, ctx: _BlockContext) -> dict:
         metrics = [want] if isinstance(want, str) else list(want)
 
     series: list[dict] = []
+    axis: list[str] = []
     for m in metrics:
         pts = _sparkline_series(ctx.current_rows, m, ctx.start, ctx.end)
         if pts:
             series.append(
                 {"name": m, "points": [{"x": p["date"], "y": p["value"]} for p in pts]}
             )
-    return {"series": series}
+            if not axis:
+                axis = [str(p["date"]) for p in pts]
+
+    payload: dict = {"series": series}
+    markers, reason = _event_markers(ctx, binding, axis)
+    if markers or reason:
+        payload["markers"] = markers
+        payload["markers_reason"] = reason
+    return payload
 
 
 def _resolve_bar_movers(
@@ -1323,7 +1782,7 @@ def _resolve_bar_movers(
             "dimension": dimension,
             "bars": [],
             "partial": True,
-            "partial_reason": "Pas de période précédente disponible.",
+            "partial_reason": phrase("movers_no_previous_period"),
         }
 
     movers: list[dict] = []
@@ -1426,7 +1885,7 @@ def _resolve_bar(block: dict, ctx: _BlockContext) -> dict:
     if binding.get("movers") and metric == "average_position":
         return _resolve_bar_movers(block, ctx, dimension)
 
-    agg = _aggregate_by_group(src_rows, metric, dimension)
+    agg = _aggregate_by_group(src_rows, metric, dimension, ctx.non_additive)
     top_n = int(binding.get("top_n") or _DEFAULT_TOP_N)
     bars = sorted(
         ({"label": k, "value": v} for k, v in agg.items() if k),
@@ -1437,24 +1896,30 @@ def _resolve_bar(block: dict, ctx: _BlockContext) -> dict:
 
 
 def _resolve_donut(block: dict, ctx: _BlockContext) -> dict:
-    """donut payload: {total, dimension, slices:[{label,value,pct}]} share of a metric.
+    """donut payload: {total, dimension, dimension_label, slices:[{label,value,pct}]}.
 
     Share only makes sense for ADDITIVE metrics -> the metric is summed per group. A
     non-additive metric yields an empty donut (share of a weighted average is undefined).
+
+    `dimension` is the STABLE IDENTIFIER, kept because a reader of the envelope joins
+    on it. `dimension_label` is what the shell prints at the centre of the donut, and
+    it comes from the same seam the heading above it uses -- until 2026-08-31 the shell
+    printed `dimension` there, so a donut of `device_category` announced its unit in the
+    words of the database.
     """
     binding = block.get("binding") or {}
     metric = binding.get("metrics")
-    if not isinstance(metric, str) or metric in _NON_ADDITIVE_METRICS:
-        return {"total": 0.0, "dimension": None, "slices": []}
+    if not isinstance(metric, str) or metric in ctx.non_additive:
+        return {"total": 0.0, "dimension": None, "dimension_label": None, "slices": []}
     dims = binding.get("dimensions") or []
     # review-epic-9-backend F-1: for conversions read the DEDUPED base so the donut total
     # equals the gauge denominator (no cross-source double count). No-op for other metrics.
     src_rows = ctx.rows_for_metric(metric)
     dimension = _first_present_dimension(src_rows, list(dims))
     if dimension is None:
-        return {"total": 0.0, "dimension": None, "slices": []}
+        return {"total": 0.0, "dimension": None, "dimension_label": None, "slices": []}
 
-    agg = _aggregate_by_group(src_rows, metric, dimension)
+    agg = _aggregate_by_group(src_rows, metric, dimension, ctx.non_additive)
     total = sum(v for v in agg.values())
     # Story 10.2: translate breakdown_value -> FR label for the user_type dimension.
     # For all other dimensions the raw value is used directly (no branching beyond the map).
@@ -1490,7 +1955,12 @@ def _resolve_donut(block: dict, ctx: _BlockContext) -> dict:
         slices = head
     else:
         slices = ordered
-    return {"total": total, "dimension": dimension, "slices": slices}
+    return {
+        "total": total,
+        "dimension": dimension,
+        "dimension_label": dimension_word(dimension, ctx.dimension_labels),
+        "slices": slices,
+    }
 
 
 def _ratio_over_rows(
@@ -1513,7 +1983,8 @@ def _resolve_gauge(block: dict, ctx: _BlockContext) -> dict:
     v1 supports a ratio metric (CPA) computed as SUM(numerator)/SUM(denominator) over the
     current rows (double-count-safe: each summed on a single breakdown dimension via the
     connector grouping). NEVER divides by zero -> value=null (UI empty state). Target from
-    binding.target, else a documented default (_DEFAULT_CPA_TARGET) with target_source.
+    Target from binding.target, else the project's `cpa_target` preference, else NONE
+    with target_source="unset" -- there is no platform objective (CAV-08).
 
     Prior-period delta (review-9-3 F-5): when the ratio is computed and the prior window
     has a non-zero denominator, ``delta`` = value - prior_value and ``delta_pct`` = signed
@@ -1547,12 +2018,22 @@ def _resolve_gauge(block: dict, ctx: _BlockContext) -> dict:
         if prior_value != 0:
             delta_pct = round((delta / abs(prior_value)) * 100.0, 1)
 
+    # Objective resolution, most specific first. No platform fallback: an unset
+    # objective yields `target = None` / `target_source = "unset"`, so no verdict
+    # can be derived from a number nobody chose (CAV-08).
+    target = None
+    target_source = "unset"
     if "target" in binding and binding.get("target") is not None:
         target = binding.get("target")
         target_source = "binding"
     else:
-        target = _DEFAULT_CPA_TARGET
-        target_source = "default"
+        configured = ctx.config.get(_CPA_TARGET_CONFIG_KEY)
+        if configured is not None:
+            try:
+                target = float(configured)
+                target_source = "project"
+            except (TypeError, ValueError):
+                target, target_source = None, "unset"
 
     return {
         "value": value,
@@ -1620,9 +2101,23 @@ _CANNIB_MIN_SHARE_PCT_DEFAULT = 0.20   # a page must hold >= 20% of the query's 
 _CANNIB_MIN_POSITION_GAP_DEFAULT = 2.0  # best/worst weighted position spread >= 2.0 positions
 _CANNIB_MIN_PAGES = 2                    # cannibalisation requires >= 2 competing pages
 
-# Cannibalisation table French column labels (Envelope Contract, Story 10.5).
-_CANNIB_COLUMNS = ["Requête", "Page", "Part (%)", "Position moy."]
-_CANNIB_EMPTY_LABEL = "Aucune cannibalisation détectée"
+# Cannibalisation table columns (Envelope Contract, Story 10.5).
+# AI-59: {key,label,numeric} objects with rows keyed by `key`, like every other
+# table block. This alone emitted bare label strings with rows keyed by the
+# LABEL, so `DataTable` -- which reads `columns[].key` off each row and
+# right-aligns on `numeric` -- would have rendered four empty columns the day
+# the block stopped being empty. The widget short-circuits an empty table, which
+# is the only reason the divergence was never seen.
+#: The shipped prose of the cannibalisation table. The two dimension columns carry
+#: the identifier they name so the client's word can replace the prose at resolve
+#: time (`_resolve_table_cannibalisation`); the two measure columns name none.
+_CANNIB_COLUMNS = [
+    {"key": "_dim", "label": "Query", "numeric": False, "dimension": "query"},
+    {"key": "page", "label": "Page", "numeric": False, "dimension": "page"},
+    {"key": "share_pct", "label": "Share (%)", "numeric": True},
+    {"key": "average_position", "label": "Avg. position", "numeric": True},
+]
+_CANNIB_EMPTY_LABEL = phrase("cannibalisation_none_detected")
 
 
 def _detect_cannibalisation(ctx: _BlockContext) -> list[dict]:
@@ -1762,9 +2257,11 @@ def _detect_cannibalisation(ctx: _BlockContext) -> list[dict]:
 def _resolve_table_cannibalisation(ctx: _BlockContext) -> dict:
     """cannibalisation table payload (Story 10.5) -- rows flattened per (query, page).
 
-    Emits one row per competing page of each flagged query. Columns EXACTLY the French
-    Envelope Contract labels. Empty selection -> a DESIGNED EMPTY table (rows []) with the
-    empty_label -- NEVER absent, NEVER an error (degrade-never-raise, AC 8).
+    Emits one row per competing page of each flagged query, under the SAME column
+    contract as every other table block: {key,label,numeric} objects, rows keyed by
+    `key`, first column `_dim` (AI-59). Empty selection -> a DESIGNED EMPTY table
+    (rows []) with the empty_label -- NEVER absent, NEVER an error
+    (degrade-never-raise, AC 8).
     """
     flagged = _detect_cannibalisation(ctx)
     rows_out: list[dict] = []
@@ -1773,16 +2270,25 @@ def _resolve_table_cannibalisation(ctx: _BlockContext) -> dict:
         for pg in entry["pages"]:
             rows_out.append(
                 {
-                    "Requête": query,
-                    "Page": pg["page"],
-                    "Part (%)": round(pg["share_pct"] * 100.0, 1),
-                    "Position moy.": round(pg["avg_position"], 2)
+                    "_dim": query,
+                    "page": pg["page"],
+                    "share_pct": round(pg["share_pct"] * 100.0, 1),
+                    "average_position": round(pg["avg_position"], 2)
                     if pg["avg_position"] is not None
                     else None,
                 }
             )
+    columns: list[dict] = []
+    for column in _CANNIB_COLUMNS:
+        resolved = dict(column)
+        named = resolved.pop("dimension", None)
+        if named:
+            resolved["label"] = dimension_word(
+                named, ctx.dimension_labels, shipped=resolved["label"]
+            )
+        columns.append(resolved)
     return {
-        "columns": list(_CANNIB_COLUMNS),
+        "columns": columns,
         "rows": rows_out,
         "empty_label": _CANNIB_EMPTY_LABEL,
     }
@@ -1798,17 +2304,25 @@ def _resolve_table_opportunities(block: dict, ctx: _BlockContext, dimension: str
       * keep only queries whose weighted position is > _OPPORTUNITY_MIN_POSITION (10);
       * order by IMPRESSIONS desc (the size of the opportunity), top-5.
 
-    Columns EXACTLY: Requête / Impressions / Position moyenne. Empty selection -> a DESIGNED
+    Columns EXACTLY: Query / Impressions / Average position. Empty selection -> a DESIGNED
     EMPTY table (columns present, rows []) so the block is NEVER absent (card rule e).
     Never raises.
     """
     columns = [
-        {"key": "_dim", "label": "Requête", "numeric": False},
+        # "Query" is the prose this table SHIPS; the client's word replaces it when
+        # somebody named the dimension (the seam, same as every other header).
+        {
+            "key": "_dim",
+            "label": dimension_word(dimension, ctx.dimension_labels, shipped="Query"),
+            "numeric": False,
+        },
         {"key": "impressions", "label": "Impressions", "numeric": True},
-        {"key": "average_position", "label": "Position moyenne", "numeric": True},
+        {"key": "average_position", "label": phrase("column_average_position"), "numeric": True},
     ]
-    positions = _aggregate_by_group(ctx.current_rows, "average_position", dimension)
-    impressions = _aggregate_by_group(ctx.current_rows, "impressions", dimension)
+    positions = _aggregate_by_group(
+        ctx.current_rows, "average_position", dimension, ctx.non_additive
+    )
+    impressions = _aggregate_by_group(ctx.current_rows, "impressions", dimension, ctx.non_additive)
     rows_out: list[dict] = []
     for group, pos in positions.items():
         if not group or pos is None:
@@ -1860,9 +2374,13 @@ def _resolve_table(block: dict, ctx: _BlockContext) -> dict:
             # No usable dimension -> still emit the designed empty opportunities table.
             return {
                 "columns": [
-                    {"key": "_dim", "label": "Requête", "numeric": False},
+                    {"key": "_dim", "label": "Query", "numeric": False},
                     {"key": "impressions", "label": "Impressions", "numeric": True},
-                    {"key": "average_position", "label": "Position moyenne", "numeric": True},
+                    {
+                        "key": "average_position",
+                        "label": phrase("column_average_position"),
+                        "numeric": True,
+                    },
                 ],
                 "rows": [],
             }
@@ -1893,6 +2411,8 @@ def _resolve_table(block: dict, ctx: _BlockContext) -> dict:
         # Story 10.4: when subtotal_share is True but no rows -> emit designed empty table.
         if binding.get("subtotal_share"):
             _share_label = binding.get("subtotal_share_label", "Part")
+            # No dimension resolved -> nothing to ask the label map about. The
+            # designed empty table keeps the prose the binding shipped.
             return {
                 "columns": [
                     {"key": "_dim", "label": _dim_label_override or "Page", "numeric": False},
@@ -1916,7 +2436,7 @@ def _resolve_table(block: dict, ctx: _BlockContext) -> dict:
     if subtotal_share:
         primary_metric = metrics[0]
         _share_label = binding.get("subtotal_share_label", "Part")
-        agg = _aggregate_by_group(src_rows_raw, primary_metric, dimension)
+        agg = _aggregate_by_group(src_rows_raw, primary_metric, dimension, ctx.non_additive)
         subtotal = sum(v for v in agg.values() if v is not None)
         rows_out: list[dict] = []
         for g, v in agg.items():
@@ -1928,7 +2448,13 @@ def _resolve_table(block: dict, ctx: _BlockContext) -> dict:
         rows_out = rows_out[:_DEFAULT_TOP_N]
         return {
             "columns": [
-                {"key": "_dim", "label": _dim_label_override or "Page", "numeric": False},
+                {
+                    "key": "_dim",
+                    "label": dimension_word(
+                        dimension, ctx.dimension_labels, shipped=_dim_label_override
+                    ),
+                    "numeric": False,
+                },
                 {
                     "key": primary_metric,
                     "label": "Vues" if primary_metric == "screen_page_views" else primary_metric,
@@ -1940,7 +2466,16 @@ def _resolve_table(block: dict, ctx: _BlockContext) -> dict:
             "subtotal": subtotal,
         }
 
-    dim_label = _dim_label_override or ("Source" if dimension == DIMENSION_CONNECTOR else dimension)
+    # The first column NAMES the dimension, so it is the client's word (the seam),
+    # never `dimension` raw: a header reading `device_category` beside a heading
+    # reading "Terminal" is the same dimension called two things one line apart.
+    # `Source` stays the shipped prose for the row-level connector column.
+    dim_label = dimension_word(
+        dimension,
+        ctx.dimension_labels,
+        shipped=_dim_label_override
+        or ("Source" if dimension == DIMENSION_CONNECTOR else None),
+    )
     columns: list[dict] = [{"key": "_dim", "label": dim_label, "numeric": False}]
 
     # Per-group aggregates for each requested metric (skip derived cpa here; computed below).
@@ -1955,7 +2490,7 @@ def _resolve_table(block: dict, ctx: _BlockContext) -> dict:
         # For connector-scoped or breakdown_dim_filtered rows, use src_rows_raw directly.
         scoped = connector_scope or breakdown_dim_filter
         rows_for_m = src_rows_raw if scoped else ctx.rows_for_metric(m)
-        agg = _aggregate_by_group(rows_for_m, m, dimension)
+        agg = _aggregate_by_group(rows_for_m, m, dimension, ctx.non_additive)
         per_metric[m] = agg
         groups.update(agg.keys())
         columns.append({"key": m, "label": m, "numeric": True})
@@ -1979,7 +2514,7 @@ def _resolve_table(block: dict, ctx: _BlockContext) -> dict:
 
     # Sort desc by the first additive metric column (fallback: first metric).
     sort_key = next(
-        (m for m in metrics if m not in _NON_ADDITIVE_METRICS and m != "cpa"),
+        (m for m in metrics if m not in ctx.non_additive and m != "cpa"),
         metrics[0] if metrics else "_dim",
     )
     rows_out_generic.sort(key=lambda r: (r.get(sort_key) is None, -(r.get(sort_key) or 0)))
@@ -2003,6 +2538,136 @@ _BLOCK_RESOLVERS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# THE CLIENT-WORD SEAM. One function decides what a person READS for a canonical
+# dimension, and every surface of a card goes through it: block titles, the
+# question the card answers, table headers, the unit at the centre of a donut.
+#
+# It exists because there were four answers. `_resolve_block_title` consulted the
+# label map; `_resolve_table` printed `dimension` raw, so a client who called
+# `device_category` "Terminal" read "Terminal" on the heading and
+# `device_category` on the column beside it; `_resolve_donut` shipped the same
+# identifier as the donut's centre unit; and the card's question shipped its
+# prose untouched. Measured 2026-08-31: 3 of 25 block titles carried the client's
+# word, and neither a table header nor a donut unit ever did.
+# ---------------------------------------------------------------------------
+
+#: The placeholder a text uses when it declares exactly ONE dimension. A text
+#: naming several uses `{<canonical identifier>}` for each -- see `compose_dimension_prose`.
+DIMENSION_PLACEHOLDER = "{dimension}"
+
+
+def derived_dimension_word(dimension: str) -> str:
+    """The word an identifier PROPOSES, and nothing more (PURE).
+
+    The underscores that made it joinable become spaces and the sentence takes a
+    capital -- the same line `DimensionLabelPanel.proposedLabel` draws in the
+    console, so a person who never named a dimension reads the same word on both
+    sides of the product. It is the LAST resort: a machine-shaped identifier never
+    reaches a person, and `device_category` printed as a column header is exactly
+    the defect the label exists to prevent.
+    """
+    words = str(dimension or "").replace("_", " ").strip()
+    return words[:1].upper() + words[1:] if words else ""
+
+
+def dimension_word(
+    dimension: str | None, dimension_labels: dict | None, *, shipped: str | None = None
+) -> str:
+    """THE word a person reads for *dimension* (PURE). Three answers, in order.
+
+    1. the CLIENT's word, when somebody named it. A fallback entry -- one whose
+       `display_label` IS the identifier and whose `label_source` says so -- is
+       never trusted as a chosen name;
+    2. the prose the surface SHIPPED (`shipped`), which is the fallback governance
+       names for a title: "Users by device", not "Users by device_category";
+    3. the word DERIVED from the identifier, for a surface that ships no prose --
+       a table header, a donut unit. Never the raw identifier.
+    """
+    entry = (dimension_labels or {}).get(dimension) or {}
+    if entry.get("label_source") == LABEL_SOURCE_CLIENT and entry.get("display_label"):
+        return str(entry["display_label"])
+    if shipped is not None and str(shipped).strip():
+        return str(shipped)
+    return derived_dimension_word(dimension)
+
+
+def compose_dimension_prose(
+    text: str, declarations, dimension_labels: dict | None
+) -> str:
+    """Substitute the client's word into every dimension *text* DECLARES (PURE).
+
+    A text that names a dimension in prose declares which one, and this is the one
+    composer that answers for all of them -- a heading, the question the card
+    answers, tomorrow a legend. `{dimension}` is accepted when there is exactly one
+    declaration (the spelling the shipped block titles use); a text naming several
+    keys each one by its canonical identifier, `{device_category}`, because a
+    second `{dimension}` in one sentence could not say which.
+
+    TWO SHAPES, ONE RULE, and the shape is decided by the text. A heading ships a
+    PLACEHOLDER -- `"Users by {dimension}"` -- because a heading is a template and
+    nobody reads it raw. A QUESTION ships plain prose, because a catalog entry is
+    read by a model and stored by Projects that author their own; there the
+    declaration names the shipped word (`default`) and the client's word REPLACES
+    it, word-bounded. Either way the fallback is the prose the template shipped,
+    never the identifier.
+
+    A declaration that matches nothing in the text substitutes nothing -- the guard
+    beside these templates is what refuses a mention that declares nothing, and a
+    declaration that names nothing.
+    """
+    declared = [d for d in (declarations or []) if isinstance(d, dict)]
+    for declaration in declared:
+        name = str(declaration.get("name") or "")
+        if not name:
+            continue
+        shipped = declaration.get("default")
+        word = dimension_word(name, dimension_labels, shipped=shipped)
+        placeholders = ["{" + name + "}"]
+        if len(declared) == 1:
+            placeholders.append(DIMENSION_PLACEHOLDER)
+        if any(token in text for token in placeholders):
+            for token in placeholders:
+                text = text.replace(token, word)
+        elif shipped and word != shipped:
+            text = re.sub(
+                r"\b" + re.escape(str(shipped)) + r"\b", word, text
+            )
+    return text
+
+
+def block_dimension_declarations(block: dict) -> list[dict]:
+    """The dimensions a block's TITLE declares -- one dict, or a list of them."""
+    declared = block.get("title_dimension")
+    if isinstance(declared, dict):
+        return [declared]
+    if isinstance(declared, (list, tuple)):
+        return [d for d in declared if isinstance(d, dict)]
+    return []
+
+
+def _resolve_block_title(block: dict, ctx: _BlockContext) -> str | None:
+    """The block's title with the CLIENT's word for the dimension it names.
+
+    Story 27.9. A block titled "Users by device" names `device_category` in prose.
+    A client who renamed that dimension read their word on the numbers -- the
+    envelope carries `meta.dimension_labels` -- and the shipped word on the heading
+    above them: the same dimension called two things in one session.
+
+    So a block that names a dimension DECLARES it, and only then is the title
+    composed. Where nobody named the dimension the title keeps the prose the
+    template shipped (`default`), never the canonical identifier: "Users by
+    device_category" would be the exact defect the label exists to prevent. A block
+    that declares no `title_dimension` is returned untouched.
+    """
+    title = block.get("title")
+    if not isinstance(title, str):
+        return None
+    return compose_dimension_prose(
+        title, block_dimension_declarations(block), ctx.dimension_labels
+    )
+
+
 def resolve_block(block: dict, ctx: _BlockContext, rendered_comment: str) -> dict:
     """Return a shallow COPY of *block* with a resolved ``data`` payload attached.
 
@@ -2010,6 +2675,9 @@ def resolve_block(block: dict, ctx: _BlockContext, rendered_comment: str) -> dic
     UI renders its designed empty state. Unknown block types get an empty {} payload.
     """
     out = dict(block)
+    resolved_title = _resolve_block_title(block, ctx)
+    if resolved_title is not None:
+        out["title"] = resolved_title
     btype = block.get("type")
     try:
         if btype == "comment":
@@ -2040,8 +2708,18 @@ def resolve_block(block: dict, ctx: _BlockContext, rendered_comment: str) -> dic
 _CONNECTORS_TABLE_COLUMNS: list[dict] = [
     {"key": "connector", "label": "Connecteur", "numeric": False, "sortable": True},
     {"key": "status", "label": "Statut", "numeric": False, "sortable": True},
-    {"key": "last_extract", "label": "Dernier extrait", "numeric": False, "sortable": True},
-    {"key": "flows", "label": "Flows alimentés", "numeric": False, "sortable": False},
+    {
+        "key": "last_extract",
+        "label": phrase("column_last_extract"),
+        "numeric": False,
+        "sortable": True,
+    },
+    {
+        "key": "flows",
+        "label": phrase("column_datastreams_feeding"),
+        "numeric": False,
+        "sortable": False,
+    },
 ]
 
 
@@ -2310,7 +2988,7 @@ def _resolve_connectors_card(
     composition = [
         {
             "type": "table",
-            "title": "Connecteurs",
+            "title": "Connectors",
             "data": {"columns": list(_CONNECTORS_TABLE_COLUMNS), "rows": rows},
         },
         {"type": "comment", "data": {"text": rendered_comment}},
@@ -2321,7 +2999,7 @@ def _resolve_connectors_card(
     fresh_ts = least_fresh.get("last_extract_ts") if least_fresh else None
     provenance = {
         "source_system": "app",
-        "source_field": "connection_health",
+        "source_field": ANALYTICAL_PATH_CONNECTION_HEALTH["relation"],
         "pull_id": None,
         "pull_ids": [],
     }
@@ -2329,12 +3007,25 @@ def _resolve_connectors_card(
     card_selection = {
         "chosen": tpl.id,
         "mode": "explicit",  # context cards are always explicit-only
-        "answers_question": tpl.answers_question,
         "alternatives": [],
     }
 
     meta: dict = {
-        "freshness": {"last_pull": fresh_ts, "cadence_hours": 24, "stale_since": None},
+        "freshness": {
+            "last_pull": fresh_ts,
+            "cadence_hours": 24,
+            # Not evaluated HERE, and that stays true: this builder does not
+            # reach a database. `core.health_enrichment` is the one evaluator,
+            # and since AI-273 it is called at the exit of `get_card` and of
+            # `render_report`, not only from `get_daily_report` -- so the False
+            # below is now a starting value that a look can overturn, rather
+            # than the final word on a card frozen into a shared Render. When
+            # the look does not happen (no DB, unreadable window, no connection
+            # over it) it survives, and an unevaluated null must never read as
+            # "evaluated, and fresh" (README.md:123, invariant 8).
+            "stale_since": None,
+            "stale_since_evaluated": False,
+        },
         "provenance": provenance,
         "alerts": alerts or [],
         "trace_id": trace_id,
@@ -2348,13 +3039,15 @@ def _resolve_connectors_card(
         "card_id": tpl.id,
         "card_type": tpl.id,  # "connectors"
         "title": tpl.title,
-        "answers_question": tpl.answers_question,
+        "answers_question": tpl.composed_question(None),
         "connectors": sorted({e.get("connector") for e in inventory if e.get("connector")}),
         "rendered_comment": rendered_comment,
         "composition": composition,
     }
 
-    envelope = {"schema_version": "1", "meta": meta, "data": data}
+    envelope = build_envelope(
+        meta=meta, data=data, analytical_path=ANALYTICAL_PATH_CONNECTION_HEALTH
+    )
 
     # Traceability (Story 9.2c parity): a context card carries no fact rows / pull_ids,
     # but we still emit the card.* trace so a failing card is observable. row_count = the
@@ -2374,7 +3067,7 @@ def _resolve_connectors_card(
     summary = _build_summary(tpl, card_selection, rendered_comment, None)
     if not db_ok:
         # Signal degraded resolution in the text channel (ASCII, AI-03) without crashing.
-        summary = summary + "\n(inventaire indisponible : base de données injoignable)"
+        summary = summary + phrase("connectors_inventory_unavailable")
     return summary, envelope, tpl.widget_uri
 
 
@@ -2539,9 +3232,7 @@ def _resolve_dedup_card(
     if no_source_configured:
         # Return a legible, honest envelope with a link to the console.
         designed_empty_comment = (
-            "Aucune source de vérification désignée pour ce projet. "
-            "Configurez une source dans la console d'administration "
-            "pour activer la déduplication estimée."
+            phrase("dedup_no_verification_source_configured")
         )
     else:
         designed_empty_comment = None
@@ -2556,25 +3247,24 @@ def _resolve_dedup_card(
         "direction": "down_good",  # lower rate = less double-counting = better
         # AD-9: label obligatoire — toujours visible même quand la valeur n'est pas NULL.
         "estimate_label": "Estimation",
-        "unit": "x (réclamé / réel)",
+        "unit": "x (claimed / actual)",
     }
     if duplication_rate is None:
         # Honest empty state: source indisponible (stripe v1, or 0 régies this window).
         kpi_metric_entry["empty_reason"] = (
-            "Source de vérification indisponible (données régies non disponibles "
-            "ou source 'stripe' non encore livrée)."
+            phrase("dedup_verification_source_unavailable")
             if not no_source_configured
-            else "Aucune source de vérification désignée."
+            else phrase("dedup_no_verification_source")
         )
 
     kpi_block = {
         "type": "kpi_row",
-        "title": "Taux de duplication (Estimation)",
+        "title": phrase("block_duplication_rate_estimate"),
         "binding": {"metrics": "duplication_rate"},
         "data": {
             "metrics": [kpi_metric_entry],
             "estimate_label": "Estimation",
-            "formula": "taux = Σ revendiqué ÷ réel",
+            "formula": "rate = Σ claimed ÷ actual",
         },
     }
 
@@ -2587,11 +3277,15 @@ def _resolve_dedup_card(
         if not agg["dedup_null"]:
             bars_dedup.append({"label": ch, "value": round(agg["dedup"], 2)})
         else:
-            bars_dedup.append({"label": ch, "value": None, "null_reason": "source indisponible"})
+            bars_dedup.append({
+                "label": ch,
+                "value": None,
+                "null_reason": phrase("dedup_source_unavailable_null_reason"),
+            })
 
     bar_block = {
         "type": "bar",
-        "title": "Revendiqué vs dédupliqué par canal (Estimation)",
+        "title": phrase("block_claimed_vs_deduplicated_estimate"),
         "binding": {
             "metrics": ["claimed_conversions", "deduplicated_contribution"],
             "dimensions": ["channel_connector"],
@@ -2603,12 +3297,12 @@ def _resolve_dedup_card(
             "series": [
                 {
                     "metric": "claimed_conversions",
-                    "label": "Revendiqué",
+                    "label": "Claimed",
                     "bars": bars_claimed,
                 },
                 {
                     "metric": "deduplicated_contribution",
-                    "label": "Contribution dédupliquée (Estimation)",
+                    "label": phrase("series_deduplicated_contribution"),
                     "bars": bars_dedup,
                 },
             ],
@@ -2616,7 +3310,7 @@ def _resolve_dedup_card(
         },
     }
 
-    # 3. Table: Canal / Revendiqué / Contribution dédupliquée / Part.
+    # 3. Table: Canal / Claimed / Contribution dédupliquée / Part.
     #    Part = deduplicated_contribution / verified_total (share of real volume).
     table_rows: list[dict] = []
     for ch, agg in sorted(channels.items(), key=lambda kv: kv[1]["claimed"], reverse=True):
@@ -2641,7 +3335,7 @@ def _resolve_dedup_card(
 
     table_block = {
         "type": "table",
-        "title": "Détail par canal",
+        "title": phrase("block_breakdown_by_channel"),
         "binding": {
             "metrics": ["claimed_conversions", "deduplicated_contribution"],
             "dimensions": ["channel_connector"],
@@ -2650,10 +3344,10 @@ def _resolve_dedup_card(
         "data": {
             "columns": [
                 {"key": "_dim", "label": "Canal", "numeric": False},
-                {"key": "claimed_conversions", "label": "Revendiqué", "numeric": True},
+                {"key": "claimed_conversions", "label": "Claimed", "numeric": True},
                 {
                     "key": "deduplicated_contribution",
-                    "label": "Contribution dédupliquée (Estimation)",
+                    "label": phrase("series_deduplicated_contribution"),
                     "numeric": True,
                 },
                 {"key": "part_pct", "label": "Part (%)", "numeric": True},
@@ -2698,7 +3392,7 @@ def _resolve_dedup_card(
     # --- Provenance + freshness meta ----------------------------------------
     provenance = {
         "source_system": "dedup_estimate",
-        "source_field": "marts.dedup_estimate",
+        "source_field": ANALYTICAL_PATH_DEDUP_ESTIMATE["relation"],
         "pull_id": pull_ids[-1] if pull_ids else None,
         "pull_ids": pull_ids,
     }
@@ -2706,12 +3400,25 @@ def _resolve_dedup_card(
     card_selection = {
         "chosen": tpl.id,
         "mode": "explicit",
-        "answers_question": tpl.answers_question,
         "alternatives": [],
     }
 
     meta: dict = {
-        "freshness": {"last_pull": None, "cadence_hours": 24, "stale_since": None},
+        "freshness": {
+            "last_pull": None,
+            "cadence_hours": 24,
+            # Not evaluated HERE, and that stays true: this builder does not
+            # reach a database. `core.health_enrichment` is the one evaluator,
+            # and since AI-273 it is called at the exit of `get_card` and of
+            # `render_report`, not only from `get_daily_report` -- so the False
+            # below is now a starting value that a look can overturn, rather
+            # than the final word on a card frozen into a shared Render. When
+            # the look does not happen (no DB, unreadable window, no connection
+            # over it) it survives, and an unevaluated null must never read as
+            # "evaluated, and fresh" (README.md:123, invariant 8).
+            "stale_since": None,
+            "stale_since_evaluated": False,
+        },
         "provenance": provenance,
         "alerts": alerts or [],
         "trace_id": trace_id,
@@ -2725,7 +3432,7 @@ def _resolve_dedup_card(
         "card_id": tpl.id,
         "card_type": tpl.id,
         "title": tpl.title,
-        "answers_question": tpl.answers_question,
+        "answers_question": tpl.composed_question(None),
         "date_range": {"start": start, "end": end},
         "connectors": sorted(channels.keys()),
         "rendered_comment": rendered_comment or "",
@@ -2745,12 +3452,11 @@ def _resolve_dedup_card(
             "claimed_total": claimed_total,
             "estimate_label": "Estimation",
             "formula": (
-                "taux = Σ revendiqué ÷ réel ; "
-                "contribution = revendiqué_canal × réel ÷ Σ revendiqué"
+                "rate = Σ claimed ÷ actual; "
+                "contribution = claimed_channel × actual ÷ Σ claimed"
             ),
             "honesty_note": (
-                "estimation agrégée, jamais une mesure exacte (sans jointure user-level "
-                "BigQuery CAP-14/AD-14)"
+                phrase("dedup_honesty_note")
             ),
             # review-17-5 fix-7: measured coverage rate from transaction reconciliation
             # (shopify source only; None when view absent or non-shopify source).
@@ -2762,7 +3468,9 @@ def _resolve_dedup_card(
         },
     }
 
-    envelope = {"schema_version": "1", "meta": meta, "data": data}
+    envelope = build_envelope(
+        meta=meta, data=data, analytical_path=ANALYTICAL_PATH_DEDUP_ESTIMATE
+    )
 
     _emit_card_trace(
         chosen=tpl,
@@ -2777,7 +3485,11 @@ def _resolve_dedup_card(
 
     # Build <=30-line summary (AD-1 text channel).
     summary_lines: list[str] = [
-        f"Carte demandée : {tpl.title} -- « {tpl.answers_question} »",
+        phrase(
+        "card_summary_requested_ascii",
+        title=tpl.title,
+        question=tpl.composed_question(None),
+    ),
         "",
     ]
     if rendered_comment:
@@ -2789,7 +3501,7 @@ def _resolve_dedup_card(
 def _build_unmapped_actuals_block(
     *, project_id: str, plan_id: str
 ) -> tuple[dict, str]:
-    """Build the « Actuals non mappés » composition block (Story 22.5 / 22.8 E1-F-2).
+    """Build the « Unmapped actuals » composition block (Story 22.5 / 22.8 E1-F-2).
 
     Reads the plan-perimeter spend that carries no active ventilation via
     ``mediaplan_mapping.list_unmapped_actuals`` (needs Postgres for the line
@@ -2800,8 +3512,8 @@ def _build_unmapped_actuals_block(
     indisponible) » (AD-9 -- a missing block would falsely read as "100 % mappé").
 
     Returns ``(block, summary_line)`` -- ``summary_line`` is a single French line
-    (<=1 line, AD-1 budget) summarising the perimeter, e.g. "Actuals non mappés :
-    2 campagne(s), 40 € (dont hors fenêtre de lignes mappées)" or "... : aucun".
+    (<=1 line, AD-1 budget) summarising the perimeter, e.g. "Unmapped actuals :
+    2 campagne(s), 40 € (including outside the mapped rows window)" or "... : aucun".
     """
     from core import mediaplan_mapping as _mapping  # noqa: PLC0415
 
@@ -2821,16 +3533,16 @@ def _build_unmapped_actuals_block(
             "mediaplan_pacing: unmapped_actuals unavailable plan=%s: %s: %s",
             plan_id, type(exc).__name__, exc,
         )
-        note = "Périmètre non vérifiable (entrepôt indisponible)"
+        note = phrase("plan_scope_not_verifiable")
         block = {
             "type": "table",
-            "title": "Actuals non mappés",
+            "title": phrase("block_unmapped_actuals"),
             "binding": {"source": "plan_unmapped_actuals"},
             "data": {
                 "columns": [
                     {"key": "connector", "label": "Connecteur", "numeric": False},
                     {"key": "campaign_ref", "label": "Campagne", "numeric": False},
-                    {"key": "spend", "label": "Dépense réelle (€)", "numeric": True},
+                    {"key": "spend", "label": phrase("column_actual_spend"), "numeric": True},
                     {"key": "reason", "label": "Motif", "numeric": False},
                 ],
                 "rows": [],
@@ -2838,7 +3550,7 @@ def _build_unmapped_actuals_block(
                 "verifiable": False,
             },
         }
-        return block, f"Actuals non mappés : {note}"
+        return block, phrase("plan_unmapped_actuals_note", note=note)
 
     rows: list[dict] = []
     total_spend = 0.0
@@ -2859,13 +3571,13 @@ def _build_unmapped_actuals_block(
 
     block = {
         "type": "table",
-        "title": "Actuals non mappés",
+        "title": phrase("block_unmapped_actuals"),
         "binding": {"source": "plan_unmapped_actuals"},
         "data": {
             "columns": [
                 {"key": "connector", "label": "Connecteur", "numeric": False},
                 {"key": "campaign_ref", "label": "Campagne", "numeric": False},
-                {"key": "spend", "label": "Dépense réelle (€)", "numeric": True},
+                {"key": "spend", "label": phrase("column_actual_spend"), "numeric": True},
                 {"key": "reason", "label": "Motif", "numeric": False},
             ],
             "rows": rows,
@@ -2874,14 +3586,79 @@ def _build_unmapped_actuals_block(
     }
 
     if not rows:
-        summary_line = "Actuals non mappés : aucun"
+        summary_line = phrase("plan_unmapped_actuals_none")
     else:
-        suffix = " (dont hors fenêtre de lignes mappées)" if has_out_of_window else ""
+        suffix = phrase("plan_unmapped_out_of_window") if has_out_of_window else ""
         summary_line = (
-            f"Actuals non mappés : {len(rows)} campagne(s), "
-            f"{total_spend:.0f} €{suffix}"
+            phrase(
+            "plan_unmapped_actuals_count",
+            count=len(rows),
+            spend=f"{total_spend:.0f}",
+            suffix=suffix,
+        )
         )
     return block, summary_line
+
+
+def _pacing_money_evidence(plan_rows: list[dict], lines: list[dict]) -> dict:
+    """The currency of the whole reading, and the FX provenance behind it (61.4).
+
+    READ FROM THE ROWS, NEVER CHOSEN HERE. Every field below is a column the
+    pacing marts already compute; this function selects and shapes, it does not
+    decide. A second place that decided what currency a figure is in would be the
+    second authority the amendment exists to prevent -- the first defect was
+    exactly that, a `€` chosen in a column header while the marts knew better.
+
+    `comparable` is FALSE unless the plan and the observed spend are in one and
+    the same currency across every line and nothing is withheld. It is deliberately
+    not the negation of a single gap code: a plan whose lines were bought in two
+    currencies has no gap code at all on any single row and still must not be
+    summed. The console reads this flag to decide whether it may draw one total.
+    """
+    head: dict = (plan_rows[0] if plan_rows else {}) or {}
+
+    def _distinct(key: str) -> list[str]:
+        return sorted({str(r.get(key)) for r in lines if r.get(key)})
+
+    plan_ccy = _distinct("plan_currency")
+    actual_ccy = _distinct("actual_currency")
+    gap_codes = _distinct("money_gap_code")
+    withheld = [r for r in lines if r.get("actual_withheld")]
+
+    comparable = (
+        not gap_codes
+        and not withheld
+        and len(plan_ccy) == 1
+        and len(actual_ccy) <= 1
+        and (not actual_ccy or actual_ccy == plan_ccy)
+    )
+
+    return {
+        "reporting_currency": head.get("reporting_currency")
+        or (lines[0].get("reporting_currency") if lines else None),
+        "money_policy_version_id": head.get("money_policy_version_id")
+        or (lines[0].get("money_policy_version_id") if lines else None),
+        "plan_currency": plan_ccy,
+        "actual_currency": actual_ccy,
+        "comparable": comparable,
+        "gap_codes": gap_codes,
+        "withheld_line_count": len(withheld),
+        # The as-of SPAN of the rates, not a rate. See the caller's comment.
+        "fx_evidence": {
+            "native_currency": _distinct("native_currency"),
+            "as_of_start": min(
+                (str(r["fx_as_of_date_min"]) for r in lines if r.get("fx_as_of_date_min")),
+                default=None,
+            ),
+            "as_of_end": max(
+                (str(r["fx_as_of_date_max"]) for r in lines if r.get("fx_as_of_date_max")),
+                default=None,
+            ),
+            "source": _distinct("fx_source"),
+            "tier": _distinct("fx_tier"),
+            "method": _distinct("fx_method"),
+        },
+    }
 
 
 def _resolve_mediaplan_pacing_card(
@@ -2972,10 +3749,37 @@ def _resolve_mediaplan_pacing_card(
     def _round2(v: float | None) -> float | None:
         return round(v, 2) if v is not None else None
 
+    def _money(r: dict) -> dict:
+        """The currency that produced this row's amounts -- amendment 61.4.
+
+        WHY A ROW CARRIES ITS CURRENCY AND NOT THE COLUMN HEADER. Until this
+        function the two table blocks labelled every amount `Budget (€)` /
+        `Reste (€)` / `Extrapolated (€)`, and dropped all seven currency columns
+        the marts compute. A plan in USD on a Project reporting in EUR was drawn
+        under a euro sign nothing had earned -- which is the exact defect 61.4
+        was ratified to end ("an amount is stated only under a currency that
+        produced it, and nothing composed of two currencies is stated at all").
+
+        The marts already refuse to compose: `money_is_composable` gates
+        `consumed_pct`, `pace` and `remaining_budget`, so the suppression is not
+        redone here. What was missing is the LABEL, and a suppressed figure that
+        does not say why reads as an absent measure rather than a refusal. So the
+        row carries `currency` (NULL when the two sides disagree), both sides'
+        currencies, and the gap code that names the refusal.
+        """
+        return {
+            "currency": r.get("currency"),
+            "plan_currency": r.get("plan_currency"),
+            "actual_currency": r.get("actual_currency"),
+            "money_gap_code": r.get("money_gap_code"),
+            "actual_withheld": bool(r.get("actual_withheld")),
+        }
+
     line_table_rows: list[dict] = []
     for r in lines:
         is_plan_only = bool(r.get("is_plan_only"))
         line_table_rows.append({
+            **_money(r),
             "line_key": r.get("line_key"),
             "label": r.get("label") or r.get("line_key"),
             "channel": r.get("channel"),
@@ -2994,23 +3798,29 @@ def _resolve_mediaplan_pacing_card(
 
     line_table_block = {
         "type": "table",
-        "title": "Lignes du plan",
+        "title": phrase("block_plan_lines"),
         "binding": {"source": "plan_lines"},
         "data": {
             "columns": [
-                {"key": "label", "label": "Ligne", "numeric": False},
-                {"key": "channel", "label": "Support", "numeric": False},
-                {"key": "budget", "label": "Budget (€)", "numeric": True},
-                {"key": "actual_to_date", "label": "Dépensé", "numeric": True},
-                {"key": "consumed_pct", "label": "Consommé (%)", "numeric": True},
+                {"key": "label", "label": "Line", "numeric": False},
+                {"key": "channel", "label": "Channel", "numeric": False},
+                # 61.4: the currency is a COLUMN, not a glyph in a header. A
+                # header can only ever state one currency for the whole table,
+                # and a plan whose lines were bought in two of them has no such
+                # single one -- which is precisely the case the euro sign lied
+                # about.
+                {"key": "currency", "label": "Currency", "numeric": False},
+                {"key": "budget", "label": "Budget", "numeric": True},
+                {"key": "actual_to_date", "label": "Spent", "numeric": True},
+                {"key": "consumed_pct", "label": "Spent (%)", "numeric": True},
                 {"key": "pace_pct", "label": "Pace (%)", "numeric": True},
-                {"key": "remaining_budget", "label": "Reste (€)", "numeric": True},
+                {"key": "remaining_budget", "label": "Remaining", "numeric": True},
                 {
                     "key": "extrapolated_spend",
-                    "label": "Extrapolé (€) (Estimation)",
+                    "label": "Extrapolated (Estimate)",
                     "numeric": True,
                 },
-                {"key": "is_plan_only", "label": "Plan seul", "numeric": False},
+                {"key": "is_plan_only", "label": phrase("column_plan_only"), "numeric": False},
             ],
             "rows": line_table_rows,
             # AD-9: extrapolated column carries Estimation label
@@ -3023,6 +3833,7 @@ def _resolve_mediaplan_pacing_card(
     channel_table_rows: list[dict] = []
     for r in channels:
         channel_table_rows.append({
+            **_money(r),
             "channel": r.get("channel"),
             "budget": _round2(r.get("budget")),
             "actual_to_date": _round2(r.get("actual_to_date")),
@@ -3038,19 +3849,20 @@ def _resolve_mediaplan_pacing_card(
 
     channel_table_block = {
         "type": "table",
-        "title": "Rollup par support",
+        "title": phrase("block_channel_rollup"),
         "binding": {"source": "plan_channels"},
         "data": {
             "columns": [
-                {"key": "channel", "label": "Support", "numeric": False},
-                {"key": "budget", "label": "Budget (€)", "numeric": True},
-                {"key": "actual_to_date", "label": "Dépensé", "numeric": True},
-                {"key": "consumed_pct", "label": "Consommé (%)", "numeric": True},
+                {"key": "channel", "label": "Channel", "numeric": False},
+                {"key": "currency", "label": "Currency", "numeric": False},
+                {"key": "budget", "label": "Budget", "numeric": True},
+                {"key": "actual_to_date", "label": "Spent", "numeric": True},
+                {"key": "consumed_pct", "label": "Spent (%)", "numeric": True},
                 {"key": "pace_pct", "label": "Pace (%)", "numeric": True},
-                {"key": "remaining_budget", "label": "Reste (€)", "numeric": True},
+                {"key": "remaining_budget", "label": "Remaining", "numeric": True},
                 {
                     "key": "extrapolated_spend",
-                    "label": "Extrapolé (€) (Estimation)",
+                    "label": "Extrapolated (Estimate)",
                     "numeric": True,
                 },
             ],
@@ -3112,7 +3924,7 @@ def _resolve_mediaplan_pacing_card(
     # --- Provenance + freshness meta ------------------------------------------
     provenance: dict = {
         "source_system": "mediaplan_pacing",
-        "source_field": "marts.plan_pacing_by_line + plan_pacing_by_channel",
+        "source_field": ANALYTICAL_PATH_PLAN_PACING["relation"],
         "plan_id": plan_id,
         "plan_version_id": plan_version_id,
         "pull_ids": pull_ids,
@@ -3122,12 +3934,25 @@ def _resolve_mediaplan_pacing_card(
     card_selection = {
         "chosen": tpl.id,
         "mode": "explicit",
-        "answers_question": tpl.answers_question,
         "alternatives": [],
     }
 
     meta: dict = {
-        "freshness": {"last_pull": None, "cadence_hours": 24, "stale_since": None},
+        "freshness": {
+            "last_pull": None,
+            "cadence_hours": 24,
+            # Not evaluated HERE, and that stays true: this builder does not
+            # reach a database. `core.health_enrichment` is the one evaluator,
+            # and since AI-273 it is called at the exit of `get_card` and of
+            # `render_report`, not only from `get_daily_report` -- so the False
+            # below is now a starting value that a look can overturn, rather
+            # than the final word on a card frozen into a shared Render. When
+            # the look does not happen (no DB, unreadable window, no connection
+            # over it) it survives, and an unevaluated null must never read as
+            # "evaluated, and fresh" (README.md:123, invariant 8).
+            "stale_since": None,
+            "stale_since_evaluated": False,
+        },
         "provenance": provenance,
         "alerts": alerts or [],
         "trace_id": trace_id,
@@ -3143,7 +3968,7 @@ def _resolve_mediaplan_pacing_card(
         "card_id": tpl.id,
         "card_type": tpl.id,
         "title": tpl.title,
-        "answers_question": tpl.answers_question,
+        "answers_question": tpl.composed_question(None),
         "plan_id": plan_id,
         "plan_name": plan_name,
         "plan_version_id": plan_version_id,
@@ -3152,21 +3977,33 @@ def _resolve_mediaplan_pacing_card(
         "connectors": channels_list,
         "rendered_comment": rendered_comment or "",
         "composition": composition,
+        # WHICH CURRENCY THE READING IS IN, AND WHAT PRODUCED IT -- amendment
+        # 61.4. Plan-level facts belong at plan level: repeating the reporting
+        # currency and six FX fields on every line would say the same thing N
+        # times and spend the model channel doing it.
+        #
+        # THE RATE ITSELF IS DELIBERATELY ABSENT, and that is the amendment's own
+        # instruction: it "is deliberately not carried at the to-date grain -- it
+        # varies day by day, and one rate printed over a period is a day's
+        # measurement wearing the period's clothes." What travels is the SPAN the
+        # rates covered, their source, tier and method.
+        "money": _pacing_money_evidence(plan_rows, lines),
         # AD-9 pacing metadata on the envelope so LLM can cite it.
         "pacing_meta": {
             "plan_version_id": plan_version_id,
             "pull_ids": pull_ids,
             "as_of_day": as_of_day,
             "estimate_label": "Estimation",
-            "pace_formula": "Pace = (réel − prévu_to-date) / prévu_to-date",
+            "pace_formula": "Pace = (actual − planned_to-date) / planned_to-date",
             "honesty_note": (
-                "extrapolated_spend est une Estimation (run-rate linéaire) ; "
-                "jamais une mesure exacte. pace NULL = allocation to-date nulle ou ligne plan seul."
+                phrase("plan_pacing_honesty_note")
             ),
         },
     }
 
-    envelope = {"schema_version": "1", "meta": meta, "data": data}
+    envelope = build_envelope(
+        meta=meta, data=data, analytical_path=ANALYTICAL_PATH_PLAN_PACING
+    )
 
     _emit_card_trace(
         chosen=tpl,
@@ -3181,9 +4018,17 @@ def _resolve_mediaplan_pacing_card(
 
     # Build <=30-line summary (AD-1 text channel, <=30 lignes LLM).
     summary_lines: list[str] = [
-        f"Carte demandée : {tpl.title} — « {tpl.answers_question} »",
-        f"Plan : {plan_name or plan_id}  |  Version active : {plan_version_id or '?'}",
-        f"Arrêté au : {as_of_day or '?'}",
+        phrase(
+            "card_summary_requested",
+            title=tpl.title,
+            question=tpl.composed_question(None),
+        ),
+        phrase(
+            "plan_pacing_plan_line",
+            plan=plan_name or plan_id,
+            version=plan_version_id or "?",
+        ),
+        phrase("plan_pacing_as_of", day=as_of_day or "?"),
         # E1-F-2: one honest summary line for [Unmapped Actuals] (<=1 line, AD-1).
         unmapped_summary,
         "",
@@ -3193,18 +4038,23 @@ def _resolve_mediaplan_pacing_card(
     # Add a concise line table (pace + consumed) — capped to keep <=30 lines.
     if lines:
         summary_lines.append("")
-        summary_lines.append("Lignes (budget / consommé% / pace%) :")
+        summary_lines.append("Rows (budget / spent% / pace%):")
         for r in line_table_rows[:20]:
             lbl = r.get("label") or r.get("line_key") or "?"
             budget_s = f"{r['budget']:.0f} €" if r.get("budget") is not None else "?"
             cons_s = f"{r['consumed_pct']:.1f}%" if r.get("consumed_pct") is not None else "—"
             pace_s = f"{r['pace_pct']:+.1f}%" if r.get("pace_pct") is not None else "—"
-            plan_only_s = " [plan seul]" if r.get("is_plan_only") else ""
+            plan_only_s = phrase("plan_pacing_plan_only_suffix") if r.get("is_plan_only") else ""
             summary_lines.append(
-                f"  {lbl}: {budget_s} / consommé {cons_s} / pace {pace_s}{plan_only_s}"
+                f"  {lbl}: {budget_s} / spent {cons_s} / pace {pace_s}{plan_only_s}"
             )
     summary = "\n".join(summary_lines[:30])
     return summary, envelope, tpl.widget_uri
+
+
+# ---------------------------------------------------------------------------
+# Story 41.6 -- the Tax & Fees bridge context card.
+# ---------------------------------------------------------------------------
 
 
 def get_card(
@@ -3220,6 +4070,9 @@ def get_card(
     context_events: list[dict] | None = None,
     alerts: list[dict] | None = None,
     trace_id: str | None = None,
+    # AI-344: the `{reason, repair}` the caller received when the events could
+    # not be read from any store; the comment then says "not read", never "none".
+    context_events_unavailable: dict | None = None,
     today: date | None = None,
     plan_id: str | None = None,  # Story 22.5: required for mediaplan_pacing context card
 ) -> tuple[str, dict, str]:
@@ -3246,6 +4099,28 @@ def get_card(
     from core import warehouse as warehouse_module  # noqa: PLC0415
 
     start, end = _resolve_window(date_from, date_to, today=today)
+
+    # --- Story 52.1: the Project's own catalog ----------------------------------
+    # Resolved ONCE, and used for both halves of selection: an explicit id that
+    # names one of the Project's stored topics is mapped back to the registered
+    # card that renders it, and the suggestion pool becomes the Project's catalog
+    # rather than the platform list. A Project with nothing stored resolves to the
+    # default set, so both paths behave exactly as they did before this story.
+    _project_catalog = _resolve_project_catalog(project_id)
+    # The key the CALLER asked for, kept before the rewrite below. Story 52.3 reads
+    # the knowledge pins of a TOPIC, and after the rewrite `template` names the base
+    # CARD -- two different objects that happen to share a namespace. Passing the
+    # rewritten value meant a project-authored topic's pins were never read, and a
+    # topic keyed like a default card would have had its pins cited under the wrong
+    # question. Found by the fresh-context review (C-1), proved by execution.
+    _requested_topic_key = template or ""
+    if template:
+        _stored = next(
+            (e for e in _project_catalog if e.get("id") == template and e.get("base_template_id")),
+            None,
+        )
+        if _stored is not None:
+            template = str(_stored["base_template_id"])
 
     # --- Story 9.8: flow.report preferred card_template -------------------------
     # A flow.report may pin a preferred card_template via flows_upsert. When the caller
@@ -3284,8 +4159,13 @@ def get_card(
             # Story 22.5: the mediaplan_pacing card reads the plan pacing marts.
             # All other context cards fall through to the connectors resolver (Story 9.8).
             # AD-2: dispatch is data-driven (template id), never a code branch per-feature.
+            #
+            # ONE return for the whole context family, so Story 52.3's knowledge
+            # fields are attached to every one of them. Three separate `return`s
+            # here is exactly how the dedup / connectors / mediaplan_pacing cards
+            # came back with no `knowledge_status` at all (review-epic-52 D-2).
             if _explicit.id == "dedup":
-                return _resolve_dedup_card(
+                _resolved = _resolve_dedup_card(
                     _explicit,
                     project_id,
                     start,
@@ -3294,7 +4174,7 @@ def get_card(
                     alerts=alerts,
                     trace_id=trace_id,
                 )
-            if _explicit.id == "mediaplan_pacing":
+            elif _explicit.id == "mediaplan_pacing":
                 # plan_id MUST be supplied by the caller (Story 22.5 rule).
                 # The MCP tool wrapper in main.py passes it as an explicit kwarg.
                 if not plan_id:
@@ -3303,7 +4183,7 @@ def get_card(
                     raise CardTemplateUnsatisfied(
                         "mediaplan_pacing", {"plan_id": "requis"}
                     )
-                return _resolve_mediaplan_pacing_card(
+                _resolved = _resolve_mediaplan_pacing_card(
                     _explicit,
                     project_id,
                     plan_id,
@@ -3311,13 +4191,23 @@ def get_card(
                     alerts=alerts,
                     trace_id=trace_id,
                 )
-            return _resolve_connectors_card(
-                _explicit,
+            else:
+                _resolved = _resolve_connectors_card(
+                    _explicit,
+                    project_id,
+                    context_events=context_events,
+                    alerts=alerts,
+                    trace_id=trace_id,
+                )
+            _ctx_summary, _ctx_envelope, _ctx_uri = _resolved
+            # The TOPIC key, never the base card the renderer resolved to (C-1).
+            attach_knowledge(
+                _ctx_envelope.setdefault("data", {}),
                 project_id,
-                context_events=context_events,
-                alerts=alerts,
-                trace_id=trace_id,
+                _requested_topic_key or _explicit.id,
             )
+            _evaluate_freshness(_ctx_envelope, project_id, start, end)
+            return _ctx_summary, _ctx_envelope, _ctx_uri
 
     # --- Resolve rows (delta-aware: current + prior window) ---------------------
     resolved_metrics: list[str] = []
@@ -3429,11 +4319,15 @@ def get_card(
                 template,
                 _missing_inputs(chosen, available_metrics, available_dimensions),
             )
-        _, alternatives = suggest_template(available_metrics, available_dimensions)
+        _, alternatives = suggest_template(
+            available_metrics, available_dimensions, catalog=_project_catalog
+        )
         alternatives = [t for t in alternatives if t.id != chosen.id]
         selection_mode = "explicit"
     else:
-        chosen, alternatives = suggest_template(available_metrics, available_dimensions)
+        chosen, alternatives = suggest_template(
+            available_metrics, available_dimensions, catalog=_project_catalog
+        )
         selection_mode = "suggested"
         if chosen is None:
             # No metric at all -> fall back to KPI so the card still renders an empty state.
@@ -3483,6 +4377,10 @@ def get_card(
     rollup = rollup_module.compute_rollup(
         rollup_current + rollup_prior, resolved_metrics or sorted(available_metrics),
         start, end, project_id, pull_ids,
+        # CAV-02: ask whether several sources may be combined at all, instead of
+        # adding them and citing one. `resolve_route` declared itself passive and
+        # named this module as the consumer it was waiting for.
+        route_resolver=_route_resolver_for(project_id),
     )
 
     # --- Sparkline series per metric --------------------------------------------
@@ -3509,6 +4407,19 @@ def get_card(
         # Story 10.5: per-project/per-report config (cannibalisation thresholds) from the
         # report override doc. Best-effort merge; empty on the pure ad-hoc path (defaults apply).
         config=_fetch_card_config(project_id, report_ref, resolved_metrics, loaded_modules),
+        # Story 60.2: the platform default UNION what this Project declared
+        # non-additive. Read once here, from the same authority `compute_rollup`
+        # just consulted, so a card and the rollup it sits next to cannot disagree
+        # on whether a client ratio may be summed.
+        non_additive=_NON_ADDITIVE_METRICS
+        | rollup_module.declared_non_additive_metrics(project_id),
+        context_events=list(context_events or []),
+        # Story 27.9: the client's own word for each dimension these rows carry.
+        # Never raises -- an unreachable store yields the fallback map and the card
+        # is served with the words the template shipped.
+        dimension_labels=dimension_lineage.resolve_report_dimension_labels(
+            project_id, current_rows
+        ),
     )
 
     # --- Story 9.7: per-card deterministic cited comment (AD-9) ------------------
@@ -3570,13 +4481,22 @@ def get_card(
             _block_data["bar"] = _rb.get("data") or {}
 
     per_card_builder = narrative_module.CARD_COMMENT_BUILDERS.get(chosen.id)
-    if per_card_builder is not None:
+    # AI-344: a per-card builder spells the AD-9 absence line itself when it is
+    # handed no events. When the events were NOT READ that line would claim a
+    # window that was read and found empty, so the generic narrative -- which
+    # knows the difference -- writes the comment instead.
+    if per_card_builder is not None and context_events_unavailable is None:
         try:
             rendered_comment = per_card_builder(
                 block_data=_block_data,
                 rollup=rollup,
                 context_events=context_events or [],
                 pull_ids=pull_ids,
+                # Story 27.9: the SAME object `_resolve_block_title` composes the
+                # headings from, resolved once above. Resolving a second map here
+                # would be a second answer free to disagree with the first, which
+                # is the very drift the label exists to close.
+                dimension_labels=block_ctx.dimension_labels,
             )
         except Exception as exc:  # noqa: BLE001 -- builder never crashes get_card (rule e)
             logger.debug(
@@ -3590,6 +4510,7 @@ def get_card(
                 alerts=alerts or [],
                 as_of=None,
                 narrative_prompt=None,
+                context_unavailable=context_events_unavailable,
             )
     else:
         # Generic build_narrative for kpi and any future card without a dedicated builder.
@@ -3601,6 +4522,7 @@ def get_card(
             alerts=alerts or [],
             as_of=None,
             narrative_prompt=None,
+            context_unavailable=context_events_unavailable,
         )
 
     # Assemble final resolved_composition: previously-resolved non-comment blocks
@@ -3618,22 +4540,50 @@ def get_card(
     last_pull = max(loaded_ats) if loaded_ats else None
     provenance = {
         "source_system": (connectors_present[0] if connectors_present else None),
-        "source_field": "fact_daily_kpi",
+        # The mart identity is IMPORTED, never retyped -- this line and
+        # `ANALYTICAL_PATH_MART` said `fact_daily_kpi` twice, and one of the two
+        # would eventually have stopped being true.
+        "source_field": ANALYTICAL_PATH_MART["relation"],
         "pull_id": pull_ids[-1] if pull_ids else None,
         "pull_ids": pull_ids,
     }
 
+    # TWO DUPLICATIONS REMOVED (2026-08-16), measured rather than assumed.
+    #
+    # `answers_question` rode here AND in `data.answers_question` -- the same
+    # string twice in an envelope bounded at 4096 bytes. Nothing read this copy:
+    # the summary builder below takes it from `chosen.answers_question`, and the
+    # card templates read `data.answers_question`.
+    #
+    # The alternatives carried their full question text too, and `_build_summary`
+    # joins only their IDS (`:4332`). A card that was NOT chosen does not owe the
+    # model its question -- the id is what lets the model ask for it, and that is
+    # what alternatives are for.
+    #
+    # Together this returned ~190 bytes per card to the budget that decides
+    # whether a card renders at all.
     card_selection = {
         "chosen": chosen.id,
         "mode": selection_mode,
-        "answers_question": chosen.answers_question,
-        "alternatives": [
-            {"id": t.id, "answers_question": t.answers_question} for t in alternatives
-        ],
+        "alternatives": [{"id": t.id} for t in alternatives],
     }
 
     meta: dict = {
-        "freshness": {"last_pull": last_pull, "cadence_hours": 24, "stale_since": None},
+        "freshness": {
+            "last_pull": last_pull,
+            "cadence_hours": 24,
+            # Not evaluated HERE, and that stays true: this builder does not
+            # reach a database. `core.health_enrichment` is the one evaluator,
+            # and since AI-273 it is called at the exit of `get_card` and of
+            # `render_report`, not only from `get_daily_report` -- so the False
+            # below is now a starting value that a look can overturn, rather
+            # than the final word on a card frozen into a shared Render. When
+            # the look does not happen (no DB, unreadable window, no connection
+            # over it) it survives, and an unevaluated null must never read as
+            # "evaluated, and fresh" (README.md:123, invariant 8).
+            "stale_since": None,
+            "stale_since_evaluated": False,
+        },
         "provenance": provenance,
         "alerts": alerts or [],
         "trace_id": trace_id,
@@ -3642,12 +4592,25 @@ def get_card(
         "card_selection": card_selection,
         "project_id": project_id,
     }
+    # Story 27.9, the same additive key `build_canonical_envelope` carries: the
+    # client's own name for every dimension this card's rows break down by. Empty
+    # -> the key is OMITTED, never `null`, so an existing reader is unaffected. The
+    # block titles above are composed from the SAME map, so a heading and the
+    # numbers under it cannot call one dimension two things.
+    # AI-355: the same filter `build_canonical_envelope` applies -- an entry
+    # that only says "nothing is stored" never reaches the wire, from EITHER
+    # writer. The block titles still compose from the unfiltered map above.
+    from core.envelope import stored_dimension_labels  # noqa: PLC0415
+
+    wire_labels = stored_dimension_labels(block_ctx.dimension_labels)
+    if wire_labels:
+        meta["dimension_labels"] = wire_labels
 
     data: dict = {
         "card_id": chosen.id,
         "card_type": chosen.id,  # Story 9.2c: explicit card_type for traceability
         "title": chosen.title,
-        "answers_question": chosen.answers_question,
+        "answers_question": chosen.composed_question(block_ctx.dimension_labels),
         "date_range": {"start": start, "end": end},
         "connectors": connectors_present,
         "metrics": rollup,  # {metric: {value, delta, delta_pct, ...}} -- delta-aware (R6)
@@ -3663,7 +4626,11 @@ def get_card(
     if r6_guidelines:
         data["llm_commentary_guidelines"] = r6_guidelines
 
-    envelope = {"schema_version": "1", "meta": meta, "data": data}
+    # Story 52.3, generic path. The TOPIC key, never the base card the renderer
+    # resolved to (C-1). See `attach_knowledge` for why this is one function.
+    attach_knowledge(data, project_id, _requested_topic_key or chosen.id)
+
+    envelope = build_envelope(meta=meta, data=data, analytical_path=ANALYTICAL_PATH_MART)
 
     # --- Story 9.2c: Backend traceability (card.* span attributes + structured log) ---
     # Attach card.* attributes to the ambient OTel span (created by TracingMiddleware in
@@ -3681,9 +4648,54 @@ def get_card(
     )
 
     # --- The <=30-line summary (AD-1 text channel) ------------------------------
-    summary = _build_summary(chosen, card_selection, rendered_comment, r6_guidelines)
+    summary = _build_summary(
+        chosen,
+        card_selection,
+        rendered_comment,
+        r6_guidelines,
+        block_ctx.dimension_labels,
+    )
+
+    _evaluate_freshness(envelope, project_id, start, end)
 
     return summary, envelope, chosen.widget_uri
+
+
+def _evaluate_freshness(envelope: dict, project_id: str, start: str, end: str) -> None:
+    """Look, so the null in `stale_since` means something (AI-273).
+
+    A card is the surface that gets FROZEN into a Render and shared, and until
+    this call existed it was the only surface that never looked. The four
+    builders in this file each shipped `stale_since_evaluated: False` -- honest,
+    but permanently honest: nothing downstream ever turned it True, so a Render
+    shared in March carried "nobody checked" forever and the reader saw an
+    absence of staleness where there had only been an absence of looking.
+
+    `core.health_enrichment.enrich_envelope_with_health` is the ONE evaluator in
+    the repository, and it was reached from `get_daily_report` alone. This calls
+    the same function with the same window rather than growing a second one:
+    two evaluators would be two verdicts on one question, and the report and the
+    card built from the same rows could disagree about their own freshness.
+
+    Called at BOTH exits of `get_card` -- the context-card early return and the
+    mart path -- and both are pinned by `test_card_freshness_is_evaluated`,
+    which was written after a probe found that removing the mart-path call left
+    the first version of that guard green.
+
+    It mutates in place and returns nothing: the function is already a no-op
+    when the DB is unreachable, when the window is unreadable, or when no
+    connection served this project over it, and in each of those cases the
+    builders' `False` is the correct answer and must survive untouched.
+    """
+    from core.health_enrichment import enrich_envelope_with_health  # noqa: PLC0415
+
+    try:
+        enrich_envelope_with_health(envelope, project_id, date_from=start, date_to=end)
+    except Exception:  # noqa: BLE001
+        # A card that cannot state its freshness still answers its question. The
+        # envelope keeps `stale_since_evaluated: False`, which reads "nobody
+        # looked" -- the same thing it read before this call existed.
+        logger.debug("cards: freshness not evaluated for project_id=%s", project_id)
 
 
 def _emit_card_trace(
@@ -3778,6 +4790,21 @@ def _flow_preferred_template(
         return None
 
 
+def _route_resolver_for(project_id: str):
+    """Bind the reconciliation gate to this project (story 53.2: ONE factory).
+
+    This function used to CONTAIN the binding, which made the card path the only
+    one that could ask: `get_daily_report`, the two notebook renders, the scheduler
+    briefing and the report renderer would each have had to import `cards` to reach
+    it, so none of them did. The factory now lives with the gate itself
+    (`core.metric_reconciliation.route_status_resolver`) and this name is the card
+    path's call to it, kept because the card tests and this module's readers know it.
+    """
+    from core.metric_reconciliation import route_status_resolver  # noqa: PLC0415
+
+    return route_status_resolver(project_id)
+
+
 def _fetch_r6(
     project_id: str, report_ref: str, loaded_modules: list
 ) -> tuple[dict | None, str | None]:
@@ -3859,7 +4886,13 @@ def _fetch_r6_adhoc(
         return None, None
 
 
-_CARD_CONFIG_KEYS = ("cannib_min_share_pct", "cannib_min_position_gap")
+_CARD_CONFIG_KEYS = (
+    "cannib_min_share_pct",
+    "cannib_min_position_gap",
+    # Story 53.5: the CPA objective the gauge compares against. Project-scoped,
+    # never a platform constant -- see `_CPA_TARGET_CONFIG_KEY`.
+    "cpa_target",
+)
 
 
 def _fetch_card_config(
@@ -3918,28 +4951,39 @@ def _build_summary(
     card_selection: dict,
     rendered_comment: str,
     guidelines: str | None,
+    dimension_labels: dict | None = None,
 ) -> str:
     """Build the <=30-line LLM summary for a card (AD-1 text channel).
 
     Carries: which card was chosen + the question it answers, the deterministic cited
     comment (so the claim/citation survive), and -- when present -- the R6 commentary
     guidelines inviting Claude to deepen per the user's actual question.
+
+    The question is composed from the SAME label map the headings and the numbers
+    are (`dimension_labels`), because this is the model channel: a question that
+    said "device" while every number under it said "Terminal" taught the model the
+    product's word for a dimension the client had renamed, and the model then
+    answered in it.
     """
     lines: list[str] = []
     verb = {
-        "explicit": "Carte demandée",
-        "suggested": "Carte suggérée",
-        "fallback_empty": "Carte par défaut",
+        "explicit": phrase("card_selection_verb_explicit"),
+        "suggested": phrase("card_selection_verb_suggested"),
+        "fallback_empty": phrase("card_selection_verb_fallback"),
     }.get(card_selection.get("mode", ""), "Carte")
-    lines.append(f"{verb} : {chosen.title} -- « {chosen.answers_question} »")
+    lines.append(
+        f"{verb} : {chosen.title} -- « {chosen.composed_question(dimension_labels)} »"
+    )
     if card_selection.get("alternatives"):
         alt_ids = ", ".join(a["id"] for a in card_selection["alternatives"])
-        lines.append(f"Alternatives disponibles : {alt_ids}.")
+        lines.append(phrase("card_summary_alternatives", alternatives=alt_ids))
     lines.append("")
     lines.extend(rendered_comment.splitlines())
     if guidelines:
         lines.append("")
-        lines.append(f"Directives de commentaire : {guidelines}")
+        from core.narrative import GUIDANCE_FRAME  # noqa: PLC0415
+
+        lines.append(f"{GUIDANCE_FRAME}{guidelines}")
     # AD-1 <=30-line budget. When the content overflows, keep the first 29 lines and add
     # an explicit "[tronque]" marker (ASCII, AI-03) so the LLM knows content was dropped
     # rather than silently losing the tail (review-9-1 F-9, matches get_daily_report).

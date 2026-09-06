@@ -378,7 +378,7 @@ def _build_phases(
             live_publication_execution_id=current_pointer,
             next_action=None
             if has_selection
-            else _next_action("Choisir un rapport et des métriques."),
+            else _next_action("Choose a report and metrics."),
         )
     )
 
@@ -388,19 +388,19 @@ def _build_phases(
         recent_action = None
     elif recent_state == "degraded":
         recent_phase = PHASE_DEGRADED
-        recent_action = _next_action("Le résultat récent est partiel : vérifier la couverture.")
+        recent_action = _next_action("The recent result is partial: check coverage.")
     elif recent_state == "loading":
         recent_phase = PHASE_RUNNING
         recent_action = None
     elif recent_state in ("failed",):
         recent_phase = PHASE_FAILED
-        recent_action = _next_action("Le pull récent a échoué : diagnostiquer puis relancer.")
+        recent_action = _next_action("The recent pull failed: diagnose, then run it again.")
     elif recent_state == "pending" or recent_state is None:
         recent_phase = PHASE_WAITING
-        recent_action = _next_action("Lancer le premier pull récent.")
+        recent_action = _next_action("Run the first recent pull.")
     else:  # pragma: no cover - defensive
         recent_phase = PHASE_WAITING
-        recent_action = _next_action("Lancer le premier pull récent.")
+        recent_action = _next_action("Run the first recent pull.")
     phases.append(
         PhaseState(
             phase=PHASE_RECENT_PULL,
@@ -420,10 +420,10 @@ def _build_phases(
         ver_action = None
     elif verdict in ("partial", "empty"):
         ver_phase = PHASE_DEGRADED
-        ver_action = _next_action("Vérification partielle : couverture honnête exposée.")
+        ver_action = _next_action("Partial verification: honest coverage exposed.")
     elif verdict in ("invalid", "failed"):
         ver_phase = PHASE_FAILED
-        ver_action = _next_action("Vérification en échec : le candidat n'est pas publiable.")
+        ver_action = _next_action("Verification failed: the candidate cannot be published.")
     elif verification is None:
         ver_phase = PHASE_WAITING if recent_phase in (PHASE_WAITING,) else PHASE_RUNNING
         ver_action = None
@@ -451,10 +451,10 @@ def _build_phases(
         pub_action = None
     elif recent_phase == PHASE_FAILED:
         pub_phase = PHASE_BLOCKED
-        pub_action = _next_action("Aucune publication : dernier bon rapport indisponible.")
+        pub_action = _next_action("No publication: last known-good report unavailable.")
     else:
         pub_phase = PHASE_WAITING
-        pub_action = _next_action("Publier le résultat récent validé.")
+        pub_action = _next_action("Publish the validated recent result.")
     phases.append(
         PhaseState(
             phase=PHASE_PUBLICATION,
@@ -472,10 +472,10 @@ def _build_phases(
     #    the recent result is still available (honest degraded, never blocked).
     if dq.get("monitors_unavailable"):
         dq_phase = PHASE_DEGRADED
-        dq_action = _next_action("Monitors DQ indisponibles : état non affirmé.")
+        dq_action = _next_action("DQ monitors unavailable: state not asserted.")
     elif dq.get("degraded"):
         dq_phase = PHASE_DEGRADED
-        dq_action = _next_action("Des contrôles DQ sont ouverts : couverture dégradée honnête.")
+        dq_action = _next_action("DQ checks are open: honestly degraded coverage.")
     else:
         dq_phase = PHASE_SUCCEEDED
         dq_action = None
@@ -505,7 +505,7 @@ def _build_phases(
     elif hist_state in ("degraded", "failed"):
         hist_phase = PHASE_DEGRADED
         hist_action = _next_action(
-            "L'historique est partiel : le résultat récent reste disponible.", owner="systeme"
+            "History is partial: the recent result stays available.", owner="systeme"
         )
     else:  # pending / None
         hist_phase = PHASE_WAITING
@@ -578,13 +578,13 @@ def _host_cta_for(overall: str) -> str:
 def _headline(overall: str) -> str:
     """Honest French one-liner. NEVER says "prêt" unless overall == ready."""
     if overall == OVERALL_READY:
-        return "Rapport prêt : période récente publiée et contrôles au vert."
+        return "Report ready: recent period published and checks green."
     if overall == OVERALL_DEGRADED:
         return (
-            "Rapport dégradé mais utilisable : le résultat récent est publié ; "
-            "l'historique ou la qualité des données reste partiel."
+            "Report degraded but usable: the recent result is published; "
+            "history or data quality remains partial."
         )
-    return "Rapport indisponible : aucun résultat récent publié pour l'instant."
+    return "Report unavailable: no recent result published yet."
 
 
 # ---------------------------------------------------------------------------

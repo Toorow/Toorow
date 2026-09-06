@@ -13,13 +13,93 @@ These tests are slower (~30 s) and skipped when dbt is not available in PATH.
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import pathlib
+import re
+import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
+
+from tests.integration import seed_all_connectors
+
+# Combien de temps un worker attend le seed du constructeur. Le build mesure
+# 114-151 s seul (AI-106) ; la marge couvre une machine chargee sans transformer
+# un constructeur mort en attente infinie.
+_BUILD_WAIT_SECONDS = 900
+
+#: CE QUI FAIT VIEILLIR UNE BASE CONSTRUITE, et il n'y avait RIEN.
+#:
+#: `if marker.exists(): return _hand_out_a_private_copy(...)` rendait une copie
+#: du `master.duckdb` partage des que le marqueur existait, sans aucune borne.
+#: Le commentaire du verrou, vingt lignes plus bas, raconte deja ce que ca coute
+#: -- << Mesure du 2026-08-08 : [...] `pytest tests/integration/
+#: test_seed_to_mart_loop.py -q` rendait 14 passed en 3 s sans lancer un seul
+#: sous-processus dbt. Trois jours de changements dbt se sont declares verts sur
+#: une base anterieure. >> -- mais SEUL LE VERROU a ete soigne. Le marqueur, qui
+#: est l'autre moitie du meme piege, est reste sans borne : mesure du 2026-08-21,
+#: `pytest -k published_coverage_matches_the_mart` -> 2 passed in 1.56s sur un
+#: `master.duckdb` du 2026-08-19.
+#:
+#: UNE BORNE D'AGE AURAIT ETE LE MAUVAIS OUTIL. Elle reconstruit quand rien n'a
+#: bouge, et elle accepte quand meme une base perimee dans sa fenetre. Ce qui
+#: fait vieillir cette base n'est pas le temps : ce sont les FICHIERS qu'elle
+#: compile. L'empreinte les lit, et le marqueur ne repond que si elle est la
+#: meme -- donc un modele qui bouge force la reconstruction a la seconde pres, et
+#: une journee sans changement ne reconstruit rien.
+_BUILD_INPUT_GLOBS = (
+    "dbt/models/**/*.sql",
+    "dbt/macros/**/*.sql",
+    "dbt/seeds/**/*.py",
+    "dbt/dbt_project.yml",
+    "server/modules/*/dbt/**/*.sql",
+    "server/modules/*/seeds/*.py",
+    "server/tests/integration/seed_all_connectors.py",
+    # The tests and the declarations are build inputs too (2026-08-30): a
+    # singular test or a schema.yml edited alone left the fingerprint unchanged,
+    # so `dbt test` ran against the cached warehouse and answered a stale green.
+    "dbt/tests/**/*.sql",
+    "dbt/seeds/**/*.yml",
+    "dbt/seeds/**/*.csv",
+    "server/modules/*/dbt/**/*.yml",
+    # And the MODEL declarations too (2026-08-31). `dbt/models/**/*.yml` was the
+    # one half of the same hole left open: a generic test lives in a .yml beside
+    # the model, and `accepted_values: {quote: false}` -- the repair for the
+    # INT64/BOOL dialect class -- changes nothing else on disk. Without this
+    # line the fixture loop answered green off a warehouse built before it.
+    "dbt/models/**/*.yml",
+)
+
+
+def _build_fingerprint() -> str:
+    """L'empreinte de TOUT ce que cette construction compile.
+
+    Le chemin ET le contenu : un modele renomme change la construction autant
+    qu'un modele reecrit, et un digest qui ne lirait que les contenus verrait
+    les deux comme identiques.
+    """
+    import hashlib  # noqa: PLC0415
+
+    root = pathlib.Path(__file__).resolve().parents[3]
+    digest = hashlib.sha256()
+    seen: list[pathlib.Path] = []
+    for pattern in _BUILD_INPUT_GLOBS:
+        seen.extend(sorted(root.glob(pattern)))
+    # Un fichier peut etre attrape par deux motifs ; l'ordre et l'unicite font
+    # que deux executions sur le meme arbre rendent le meme digest.
+    for path in sorted(set(seen)):
+        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    # LE COMPTE VOYAGE AVEC L'EMPREINTE. Un glob casse rendrait zero fichier et
+    # un digest stable -- l'instrument mesurerait alors sa propre indulgence, ce
+    # qui est exactement la forme que ce fichier repare.
+    return f"{len(set(seen))}:{digest.hexdigest()}"
 
 # ---------------------------------------------------------------------------
 # Path constants
@@ -39,10 +119,85 @@ try:  # dbt is invoked via `python -m dbt.cli.main` from the venv
 except ImportError:
     _DBT_AVAILABLE = False
 
-pytestmark = pytest.mark.skipif(
-    not _DBT_AVAILABLE,
-    reason="dbt not found in PATH — skipping full seed-to-mart loop integration tests",
-)
+# dbt being importable is NOT the same as this dbt project being runnable, and
+# the guard used to check only the first. The fixture runs `dbt run` with no
+# `--select`, so it builds EVERY staging model; a connector whose raw_* source
+# is absent fails with "ERROR creating sql view model
+# main_staging.stg_<connector>_daily" and the suite reports a wall of dbt output.
+#
+# THE PREVIOUS VERSION OF THIS GUARD MEASURED THE WRONG THING (AI-164, repaired
+# 2026-08-04). It counted seed MATERIAL -- "any file under the connector's
+# seeds/" -- which reached 38/38 covered, so it stopped firing. But the fixture
+# INVOKED about fifteen loaders by hand, so `dbt run` was failing on ~30 absent
+# raw tables while the guard reported full coverage. A guard that reports
+# "covered" is worse than no guard.
+#
+# It now measures what the fixture actually does: a connector is covered when
+# `seed_all_connectors.discover_loaders()` finds a loader for it -- the same
+# derivation the fixture runs -- so the guard and the seeding can no longer
+# disagree.
+_MODULES_DIR = REPO_ROOT / "server" / "modules"
+_WITH_STAGING = {
+    path.parent.parent.parent.name for path in _MODULES_DIR.glob("*/dbt/staging/stg_*.sql")
+}
+_WITH_LOADER = {connector for connector, _path in seed_all_connectors.discover_loaders()}
+_UNSEEDED = sorted(_WITH_STAGING - _WITH_LOADER)
+
+#: dbt tests that fail on the all-connectors seed fixture. SHRINK-ONLY: the
+#: assertion in `seeded_db` refuses a name that is not in here, and each name
+#: removed is a repair that sticks. Il a tourne deux fois, et la seconde a paye :
+#: 48 -> 40 le 2026-08-04, puis 41 -> 1 le 2026-08-08.
+#:
+#: LE CLIQUET NE POUVAIT PAS DESCENDRE TANT QU'IL NE SE LISAIT PAS. L'assertion
+#: ne dit que << rien de neuf >> et jetait la liste, donc un nom qui avait CESSE
+#: d'echouer y restait pour toujours -- un cliquet qui ne descend jamais est un
+#: plafond. Le set mesure est desormais publie dans `built.json`
+#: (`dbt_failures`, et `dbt_failures_stale` = ce qui peut etre retire), lisible
+#: apres coup sans reconstruire. C'est ce champ qui a nomme les 40 a retirer.
+#:
+#: Le seul nom restant est explique a sa ligne.
+_KNOWN_FAILING_DBT_TESTS: frozenset[str] = frozenset()
+# VIDE, ET C'EST UN ETAT MESURE -- pas une suppression de garde. L'assertion en bas
+# de `seeded_db` refuse toujours tout nom qui apparait : un ensemble vide veut dire
+# que le PREMIER echec dbt fait rougir cette fixture, ce qui est le regime le plus
+# strict que ce cliquet ait jamais eu.
+#
+# Sa descente, mesuree a chaque palier sur un build reel :
+#     48 -> 40  le 2026-08-04  (huit assertions restatees sur le contrat de 48.3)
+#     41 ->  1  le 2026-08-08  (les regles fee/tax existaient ; une colonne les
+#                               empechait d'arriver -- voir seed_all_connectors)
+#      1 ->  0  le 2026-08-08  (test_fx_resolution_applied decrivait un monde
+#                               revolu ; reecrit comme son voisin l'avait ete)
+#
+# ET IL NE POUVAIT PAS DESCENDRE TANT QU'IL NE SE LISAIT PAS. L'assertion ne dit
+# que << rien de neuf >> et jetait la liste, donc un nom qui avait CESSE d'echouer y
+# restait pour toujours : un cliquet qui ne descend jamais est un plafond. Le set
+# mesure est publie dans `built.json` -- `dbt_failures`, et `dbt_failures_stale` =
+# ce qui peut etre retire. C'est ce champ qui a nomme les 41.
+
+pytestmark = [
+    # Ce fichier pilote dbt en sous-processus. Sans ce plafond il ne rate pas :
+    # il ARRETE LA SESSION. `timeout = 180` + `timeout_method = "thread"`
+    # (server/pyproject.toml) ne peut pas interrompre un `subprocess.run`
+    # bloquant, donc pytest vide la pile et tout ce qui restait a jouer n'est
+    # jamais rapporte. Mesure 2026-08-05 : la suite complete est morte ici, dans
+    # la fixture `seeded_db` a l'appel `dbt seed`. Voir la garde de classe dans
+    # tests/conformance/test_dbt_tests_declare_their_time.py.
+    pytest.mark.timeout(1800),
+    pytest.mark.skipif(
+        not _DBT_AVAILABLE,
+        reason="dbt not found in PATH — skipping full seed-to-mart loop integration tests",
+    ),
+    pytest.mark.skipif(
+        bool(_UNSEEDED),
+        reason=(
+            f"{len(_UNSEEDED)} of {len(_WITH_STAGING)} connectors have a dbt staging model "
+            f"and no seed loader that seed_all() can drive, so an unselected `dbt run` "
+            f"cannot succeed: {', '.join(_UNSEEDED)}. Add a `seeds/load_<name>_seed.py` "
+            f"exposing run(duckdb_path=...) for each."
+        ),
+    ),
+]
 
 
 @pytest.fixture
@@ -77,198 +232,130 @@ def loader():
 
 
 @pytest.fixture(scope="module")
-def seeded_db(tmp_path_factory, gen, loader):
+def seeded_db(request, tmp_path_factory, gen, loader):
     """Full pipeline: generate CSV → load DuckDB → dbt run → dbt test.
 
     Returns the path to the populated DuckDB file so further tests can query it.
+
+    AI-106 -- CE MODULE ETAIT LA MOITIE VACILLANTE DE LA SUITE, ET LA CAUSE N'ETAIT
+    PAS DANS DUCKDB.
+
+    Mesure du 2026-08-05. Seul : `14 passed` trois fois de suite, en 124 / 151 /
+    114 s. Sous la commande de reference `-n 8` : les huit workers tombent en
+    « node down: Not properly terminated » et il reste 12 rouges sur 14 -- puis 8
+    au tour suivant. Un compte d'echecs qui change a chaque execution, sur un
+    arbre identique : la definition de la vacillation.
+
+    Cette fixture est `scope="module"`, et xdist repartit les tests d'un module
+    entre TOUS ses workers. Chacun exécute donc la fixture pour lui : huit
+    `seed_all()`, huit `dbt seed`, huit `dbt run`, huit `dbt test` simultanes,
+    chacun avec son DuckDB et son sous-processus dbt. Les workers ne rougissent
+    pas, ils MEURENT -- et combien meurent depend de la memoire libre au moment
+    du lancement. C'est pour cela que le nombre d'echecs bougeait.
+
+    La reparation est de construire UNE fois par execution et de distribuer une
+    COPIE, sous la meme regle qu'AI-130 : un fichier DuckDB ne se partage pas
+    entre workers. Le premier a poser le verrou construit ; les autres attendent
+    son marqueur, copient le resultat et repartent. En mono-process il n'y a
+    qu'un worker et le chemin est le meme, sans attente.
+
+    CE N'EST PAS UN RERUN-ON-FAILURE, et c'est deliberé : masquer un defaut
+    d'isolation le transforme en vert, ce que ce depot retire partout ailleurs.
+    Effet secondaire mesurable : le module coute un build au lieu de N.
     """
     tmp_dir = tmp_path_factory.mktemp("seed_loop")
-    csv_path = str(tmp_dir / "ga4_seed.csv")
     db_path = str(tmp_dir / "test.duckdb")
 
-    # 1 — Generate seed CSV (generate 95 days to ensure we cover the start of static seeds)
-    from datetime import date, timedelta
-    rows1 = gen.generate_rows(date.today())
-    rows2 = gen.generate_rows(date.today() - timedelta(days=5))
-    seen = set()
-    rows = []
-    for r in rows1 + rows2:
-        key = (r["date"], r["device_category"], r["country"])
-        if key not in seen:
-            seen.add(key)
-            rows.append(r)
+    # `getbasetemp()` est propre au worker ; son PARENT est commun a toute
+    # l'execution. C'est le seul point de rendez-vous que xdist offre sans
+    # dependance supplementaire (`filelock` n'est pas installe ici).
+    shared = tmp_path_factory.getbasetemp().parent / "seed_loop_shared"
+    shared.mkdir(parents=True, exist_ok=True)
+    master = shared / "master.duckdb"
+    marker = shared / "built.json"
+    lock = shared / "build.lock"
 
-    gen.write_csv(rows, csv_path)
-    assert Path(csv_path).exists(), "generate_seed must produce a CSV"
+    def _hand_out_a_private_copy(payload: dict) -> dict:
+        shutil.copy2(master, db_path)
+        wal = master.with_suffix(master.suffix + ".wal")
+        if wal.exists():
+            # Meme piege qu'AI-130 : un `.duckdb` sans son `.wal` s'ouvre en
+            # silence et il lui MANQUE les dernieres ecritures -- un faux vert.
+            shutil.copy2(wal, pathlib.Path(db_path).with_suffix(".duckdb.wal"))
+        return {**payload, "db_path": db_path}
 
-    # 2 — Load into DuckDB
-    pull_id, count = loader.run(
-        csv_path=csv_path,
-        mode="duckdb",
-        duckdb_path=db_path,
-        bq_project=None,
-    )
-    assert count >= 1350, (
-        f"Expected at least 1350 rows (90d × 3 devices × 5 countries), got {count}"
-    )
-    assert pull_id.startswith("pull_"), f"pull_id must start with pull_: {pull_id!r}"
+    fingerprint = _build_fingerprint()
 
-    # 2b — Story 3.6: also land Meta Ads seed rows so the module-owned staging
-    # model (stg_meta_ads_daily) has a source table and the mart proves the join
-    # (fact_daily_kpi gains connector='meta-ads' rows). This is the FR2 proof
-    # that a second source flows end-to-end through the shared base.
-    meta_loader = _import_module("load_meta_seed", META_SEEDS_DIR / "load_meta_seed.py")
-    meta_pull_id, meta_count = meta_loader.run(duckdb_path=db_path, days=30)
-    assert meta_count == 60, f"Expected 60 Meta rows (30d × 2 campaigns), got {meta_count}"
+    def _usable(payload: dict) -> bool:
+        """Cette base a-t-elle ete construite depuis CES fichiers-la ?
 
-    # review-15-9 F-1: ALSO land the three-grain coexistence seed (campaign / adset /
-    # creative daily) so the mart exercises the data_level filter that fixes the F-1
-    # double-count. The campaign-grain load above (60 rows) keeps the retro-compat count
-    # assertion; this multigrain load makes the adset_id / ad_id mart series non-empty
-    # (they read data_level='ADSET' / 'CREATIVE'). Append-only (AD-7), distinct pull_id.
-    meta_loader.run(duckdb_path=db_path, days=30, grains="multi")
+        Un marqueur sans empreinte est un marqueur d'avant cette borne : il est
+        refuse, donc la premiere execution apres ce changement reconstruit une
+        fois, et une seule.
+        """
+        return payload.get("build_fingerprint") == fingerprint
 
-    # 2b-bis — Story 6.2: land GSC seed rows so stg_gsc_daily has its source
-    # (raw_gsc_daily) and the mart carries connector='gsc' additive metrics.
-    gsc_seeds_dir = REPO_ROOT / "server" / "modules" / "gsc" / "seeds"
-    gsc_loader = _import_module("load_gsc_seed", gsc_seeds_dir / "load_gsc_seed.py")
-    gsc_pull_id, gsc_count = gsc_loader.run(duckdb_path=db_path, days=30)
-    assert gsc_count > 0, f"Expected GSC seed rows, got {gsc_count}"
+    if marker.exists():
+        cached = json.loads(marker.read_text(encoding="utf-8"))
+        if _usable(cached):
+            return _hand_out_a_private_copy(cached)
+        # LE MARQUEUR PART AVANT LE VERROU. Le laisser ferait repondre le chemin
+        # cache a tout worker qui arrive pendant la reconstruction, et ils
+        # liraient la base d'avant pendant qu'on ecrit celle d'apres.
+        marker.unlink(missing_ok=True)
 
-    # Charger le seed de type utilisateur GA4
-    ut_loader = _import_module("load_seed_user_type", SEEDS_DIR / "load_seed_user_type.py")
-    ut_loader.run(
-        csv_path=str(SEEDS_DIR / "ga4_user_type_seed.csv"),
-        mode="duckdb",
-        duckdb_path=db_path,
-        bq_project=None,
-    )
+    try:
+        # `mkdir` est atomique sur les deux systemes de fichiers : exactement un
+        # worker gagne, les autres partent attendre.
+        lock.mkdir()
+        # ET IL SE RELACHE. Sans cette ligne le verrou survit a l'execution qui
+        # l'a pose, et le repertoire partage reste a jamais dans l'etat
+        # << quelqu'un construit >>. Tant que le marqueur existe personne ne le
+        # voit : le chemin cache repond. Le jour ou le marqueur disparait -- des
+        # modeles qui bougent, un nettoyage, une base a reconstruire -- plus
+        # aucun worker ne peut construire, ils attendent tous 900 s un
+        # constructeur qui n'existe pas, et le module echoue en accusant un
+        # rapport introuvable. Mesure du 2026-08-08 : le verrou de ce depot
+        # datait du 2026-08-05 22:12, le marqueur du meme jour 22:14, et
+        # `pytest tests/integration/test_seed_to_mart_loop.py -q` rendait
+        # 14 passed en 3 s sans lancer un seul sous-processus dbt. Trois jours de
+        # changements dbt se sont declares verts sur une base anterieure.
+        request.addfinalizer(lambda: shutil.rmtree(lock, ignore_errors=True))
+    except FileExistsError:
+        deadline = time.monotonic() + _BUILD_WAIT_SECONDS
+        while time.monotonic() < deadline:
+            if marker.exists():
+                published = json.loads(marker.read_text(encoding="utf-8"))
+                # LA MEME BORNE ICI, et pour la meme raison. Un worker qui
+                # attend est arrive APRES le constructeur : si le marqueur qu'il
+                # trouve porte une autre empreinte, c'est celui d'avant, et le
+                # prendre annulerait la reconstruction en cours pour lui seul.
+                if _usable(published):
+                    return _hand_out_a_private_copy(published)
+            time.sleep(1.0)
+        pytest.fail(
+            "le worker constructeur n'a pas publie le seed en "
+            f"{_BUILD_WAIT_SECONDS}s. Deux causes, et elles ne se soignent pas "
+            "pareil : soit il a echoue, et son rapport dit pourquoi -- soit il "
+            "n'existe pas, et le verrou est un RESTE d'une execution passee. "
+            f"Regarder la date de {lock} : plus vieille que cette execution, "
+            "c'est le second cas, et il se repare en le supprimant."
+        )
 
-    # Charger le seed de landing pages GA4
-    pages_loader = _import_module("load_seed_pages", SEEDS_DIR / "load_seed_pages.py")
-    pages_loader.run(
-        csv_path=str(SEEDS_DIR / "ga4_landing_seed.csv"),
-        profile="landing",
-        mode="duckdb",
-        duckdb_path=db_path,
-        bq_project=None,
+    # 1 — Land EVERY connector's seed, not the fifteen this fixture used to
+    # hand-list. `dbt run` is unselected here, so it builds every staging model,
+    # and a model whose raw_* source is absent fails the whole run. Each
+    # connector that landed after this block was written broke it silently; the
+    # skip-guard above did not fire because it counted seed MATERIAL rather than
+    # loaders actually INVOKED (AI-164). The list is now DERIVED from the tree.
+    landed = seed_all_connectors.seed_all(db_path)
+    assert landed, "every connector seed loader must be discovered and run"
+    ga4 = landed["google-analytics/load_seed"]
+    assert ga4["rows"] >= 1350, (
+        f"GA4 base seed must land 90d x 3 devices x 5 countries, got {ga4['rows']}"
     )
-
-    # Charger le seed de paths pages GA4
-    pages_loader.run(
-        csv_path=str(SEEDS_DIR / "ga4_paths_seed.csv"),
-        profile="paths",
-        mode="duckdb",
-        duckdb_path=db_path,
-        bq_project=None,
-    )
-
-    # Charger le seed d'acquisition session GA4
-    acq_loader = _import_module("load_seed_acquisition", SEEDS_DIR / "load_seed_acquisition.py")
-    acq_loader.run(
-        csv_path=str(SEEDS_DIR / "ga4_acquisition_session_seed.csv"),
-        profile="session",
-        mode="duckdb",
-        duckdb_path=db_path,
-        bq_project=None,
-    )
-
-    # Charger le seed d'acquisition first_user GA4
-    acq_loader.run(
-        csv_path=str(SEEDS_DIR / "ga4_acquisition_first_user_seed.csv"),
-        profile="first_user",
-        mode="duckdb",
-        duckdb_path=db_path,
-        bq_project=None,
-    )
-
-    # Charger le seed de transactions GA4
-    tx_loader = _import_module("load_seed_transactions", SEEDS_DIR / "load_seed_transactions.py")
-    tx_loader.run(duckdb_path=db_path)
-
-    # Charger le seed d'ordres Shopify
-    shopify_seeds_dir = REPO_ROOT / "server" / "modules" / "shopify" / "seeds"
-    shopify_loader = _import_module("load_shopify_seed", shopify_seeds_dir / "load_shopify_seed.py")
-    shopify_loader.run(duckdb_path=db_path, days=90)
-
-    # Story 15.8 F-4 AJOUT ADDITIF : charger le seed Klaviyo (campagnes + flows)
-    # pour prouver que fact_daily_kpi contient des lignes connector='klaviyo'
-    # avec les metriques attributed_*. Pattern identique aux loaders GA4/Meta/GSC.
-    klaviyo_seeds_dir = REPO_ROOT / "server" / "modules" / "klaviyo" / "seeds"
-    klaviyo_loader = _import_module(
-        "load_klaviyo_seed", klaviyo_seeds_dir / "load_klaviyo_seed.py"
-    )
-    klaviyo_pull_id, klaviyo_count = klaviyo_loader.run(duckdb_path=db_path, days=40)
-    assert klaviyo_count > 0, (
-        f"Klaviyo seed doit produire des lignes, got {klaviyo_count}"
-    )
-
-    # Story 15.2 AJOUT ADDITIF : charger le seed TikTok multigrain (les 3 data_level
-    # coexistent) -- sans lui, stg_tiktok_ads_daily echoue au dbt build de la fixture
-    # (raw_tiktok_ads_daily absent) et test_tiktok_no_grain_bleed n'a pas de matiere.
-    tiktok_seeds_dir = REPO_ROOT / "server" / "modules" / "tiktok-ads" / "seeds"
-    tiktok_loader = _import_module(
-        "load_tiktok_seed", tiktok_seeds_dir / "load_tiktok_seed.py"
-    )
-    tiktok_pull_id, tiktok_count = tiktok_loader.run(duckdb_path=db_path, grains="multi")
-    assert tiktok_count > 0, (
-        f"TikTok seed doit produire des lignes, got {tiktok_count}"
-    )
-
-    # Story 15.3 AJOUT ADDITIF : charger le seed LinkedIn multigrain (CAMPAIGN +
-    # CAMPAIGN_GROUP coexistant) -- sans lui, stg_linkedin_ads_campaign_daily et
-    # stg_linkedin_ads_campaign_group_daily echouent au dbt build (raw_linkedin_ads_daily
-    # absent) et test_fact_daily_kpi_includes_linkedin_ads n'a pas de matiere.
-    linkedin_seeds_dir = REPO_ROOT / "server" / "modules" / "linkedin-ads" / "seeds"
-    linkedin_loader = _import_module(
-        "load_linkedin_seed", linkedin_seeds_dir / "load_linkedin_seed.py"
-    )
-    linkedin_pull_id, linkedin_count = linkedin_loader.run(duckdb_path=db_path, grains="multi")
-    assert linkedin_count > 0, (
-        f"LinkedIn Ads seed doit produire des lignes, got {linkedin_count}"
-    )
-
-    # Story 15.7 AJOUT ADDITIF : charger le seed Stripe (charges). Il CORRELE une majorite
-    # de charges avec les commandes Shopify deja chargees (meme jour, meme revenue,
-    # client_reference_id = order_id) pour prouver la dedup revenue Stripe x Shopify
-    # (cross_source_revenue) de facon NON-tautologique + une minorite Stripe-only (SaaS).
-    # Doit tourner APRES le loader Shopify (le generateur importe le seed Shopify pour correler).
-    stripe_seeds_dir = REPO_ROOT / "server" / "modules" / "stripe" / "seeds"
-    stripe_loader = _import_module(
-        "load_stripe_seed", stripe_seeds_dir / "load_stripe_seed.py"
-    )
-    stripe_pull_id, stripe_count = stripe_loader.run(duckdb_path=db_path, days=90)
-    assert stripe_count > 0, (
-        f"Stripe seed doit produire des lignes, got {stripe_count}"
-    )
-
-    # Story 15.5 AJOUT ADDITIF : charger le seed HubSpot CRM (contacts + deals).
-    # Prouve que fact_daily_kpi contient des lignes connector='hubspot' avec les
-    # metriques CRM (new_contacts, deals_created, deals_closed, deal_amount) et
-    # qu'elles sont ISOLEES des totaux cross-source existants (AD-4 CRM).
-    hubspot_seeds_dir = REPO_ROOT / "server" / "modules" / "hubspot" / "seeds"
-    hubspot_loader = _import_module(
-        "load_hubspot_seed", hubspot_seeds_dir / "load_hubspot_seed.py"
-    )
-    hubspot_pull_id, hubspot_count = hubspot_loader.run(duckdb_path=db_path, days=30)
-    assert hubspot_count > 0, (
-        f"HubSpot seed doit produire des lignes (contacts + deals), got {hubspot_count}"
-    )
-
-    # google-sheets: BEGIN Story 15.6 AJOUT ADDITIF : charger le seed Google Sheets.
-    # Prouve que fact_daily_kpi contient des lignes connector='google-sheets' avec les
-    # metriques objectifs (budget_declared, target_revenue, target_conversions) et
-    # qu'elles sont ISOLEES des totaux cross-source existants (AD-4 -- pas de collision).
-    gsheets_seeds_dir = REPO_ROOT / "server" / "modules" / "google-sheets" / "seeds"
-    gsheets_loader = _import_module(
-        "load_google_sheets_seed", gsheets_seeds_dir / "load_google_sheets_seed.py"
-    )
-    gsheets_pull_id, gsheets_count = gsheets_loader.run(duckdb_path=db_path, days=30)
-    assert gsheets_count > 0, (
-        f"Google Sheets seed doit produire des lignes (objectifs), got {gsheets_count}"
-    )
-    # google-sheets: END Story 15.6 block.
-
+    pull_id = ga4["pull_id"]
+    assert pull_id and pull_id.startswith("pull_"), f"pull_id must start with pull_: {pull_id!r}"
     # 3 — Copy profiles.yml.example → tmp profiles dir for dbt
     profiles_dir = tmp_dir / "profiles"
     profiles_dir.mkdir()
@@ -287,86 +374,64 @@ def seeded_db(tmp_path_factory, gen, loader):
         encoding="utf-8",
     )
 
-    # 2c — Story 4.4: populate mirror schema in DuckDB so dim_project can materialise.
-    # In production, mirror_sync.py does this. In CI without Postgres, we create the
-    # mirror.project_preferences table directly from the seed CSV default row.
-    import duckdb as _duckdb
-    _mirror_conn = _duckdb.connect(db_path)
-    _mirror_conn.execute("CREATE SCHEMA IF NOT EXISTS mirror")
-    _mirror_conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS mirror.project_preferences (
-            project_id VARCHAR,
-            canonical_currency VARCHAR,
-            reporting_timezone VARCHAR,
-            -- Story 17.1: colonnes source de vérification (nullable, opt-in).
-            verification_source_type VARCHAR,
-            verification_source_id VARCHAR,
-            lead_event_name VARCHAR,
-            created_at TIMESTAMP,
-            updated_at TIMESTAMP
-        )
-        """
-    )
-    _mirror_conn.execute(
-        """
-        INSERT INTO mirror.project_preferences
-            (project_id, canonical_currency, reporting_timezone,
-             verification_source_type, verification_source_id, lead_event_name,
-             created_at, updated_at)
-        VALUES ('default', 'EUR', 'Europe/Paris', NULL, NULL, NULL,
-                current_timestamp, current_timestamp)
-        """
-    )
-    _mirror_conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS mirror.context_events (
-            id VARCHAR,
-            project_id VARCHAR,
-            event_date DATE,
-            type VARCHAR,
-            label VARCHAR,
-            description VARCHAR,
-            created_by VARCHAR,
-            created_at TIMESTAMP
-        )
-        """
-    )
-    _mirror_conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS mirror.connection_ref_dim (
-            project_id VARCHAR,
-            connector_name VARCHAR,
-            display_name VARCHAR
-        )
-        """
-    )
-    # Story 13.2: staging models LEFT JOIN mirror.fx_conflict_resolutions (AD-6).
-    # mirror_sync.py creates it in production (empty when no resolutions). Empty
-    # here -> JOIN matches nothing -> COALESCE falls back to raw currency.
-    _mirror_conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS mirror.fx_conflict_resolutions (
-            id VARCHAR,
-            project_id VARCHAR,
-            target_field VARCHAR,
-            source_module VARCHAR,
-            resolved_source_currency VARCHAR,
-            decided_by VARCHAR,
-            decided_at TIMESTAMP,
-            note VARCHAR
-        )
-        """
-    )
-    _mirror_conn.close()
+    # 2c — mirror.* relations (Story 4.4). In production mirror_sync.py lands
+    # them from Postgres; here the ONE shared fixture creates them, so this
+    # harness and the 24.4 equivalence test cannot drift apart again.
+    seed_all_connectors.create_mirror(db_path)
+
+    # 2d — LES CINQ SEEDERS fee/tax, DANS LEUR ORDRE DECLARE. Ils existent depuis
+    # le 2026-07-27 et rien ne les appelait, ce qui laissait les relations
+    # `mirror.fee_tax_*` vides et 40 `test_epic41_*` rouges -- la ligne AI-165 les
+    # comptait comme un contenu a inventer alors qu'il etait ecrit.
+    #
+    # POURQUOI CE N'ETAIT PAS SEULEMENT UN APPEL MANQUANT, et pourquoi la note du
+    # 2026-08-05 concluait de bonne foi que << seeder n'est pas la piece qui
+    # manque >> : `seed_tax_fee_activation_mirror` MOURAIT, parce que
+    # `create_mirror` declarait 12 colonnes sur `project_tax_fee_activation` et
+    # que le seeder en fournit 13. `CREATE TABLE IF NOT EXISTS` fait gagner le
+    # premier, donc le seeder ne pouvait pas corriger la forme -- seulement s'y
+    # casser. La mesure prise alors etait donc prise sur une activation VIDE, et
+    # chaque modele Tax lit sa porte d'activation dans cette relation depuis 48.4 :
+    # zero ligne active, zero ligne partout en aval. La colonne est ajoutee dans
+    # `seed_all_connectors.create_mirror` (mesuree sur la vue de production).
+    #
+    # Mesure du 2026-08-08, les cinq dans cet ordre sur une base neuve :
+    #     61 regles, 42 projets, 39 actifs.
+    # L ORDRE N EST PAS COMMUTATIF : `create_mirror` d abord, les seeders ensuite.
+    # Pose l inverse le 2026-08-08 et la chaine meurt sur `Catalog Error: Table
+    # with name project_preferences does not exist` -- un seeder qui la creerait
+    # lui-meme deviendrait la SECONDE definition d une relation miroir, la classe
+    # exacte qui a tenu 40 tests rouges.
+    seed_all_connectors.seed_fee_tax(db_path)
+
+    # 2e — LE SEEDER DU PLAN MEDIA, meme histoire que les cinq au-dessus : ecrit
+    # pour la 22.4, jamais appele. `create_mirror` cree ses cinq relations VIDES,
+    # donc les cinq tests dbt de pacing (`test_plan_pacing_*`,
+    # `test_plan_vs_actual_ventilation_sum`) tournaient sur zero ligne et
+    # passaient sans rien prouver -- un test singulier dbt passe quand il ne rend
+    # aucune ligne, et zero ligne en entree en rend zero.
+    #
+    # Story 61.4 : c'est aussi ce qui a laisse le defaut de devise invisible. Le
+    # mart etiquetait la depense reelle avec la devise du PLAN alors qu'elle sort
+    # convertie dans celle du PROJET, et aucune fixture ne faisait differer les
+    # deux -- il n'y avait rien a construire pour s'en apercevoir. Le seeder
+    # apporte maintenant TROIS plans : celui de 22.4, un plan en USD sur un projet
+    # qui restitue en EUR, et un plan dont une campagne est facturee dans une
+    # devise sans taux. L'ordre compte comme au-dessus : apres `create_mirror`,
+    # qui est la seule definition de forme des relations miroir.
+    _import_module(
+        "seed_plan_mirror", DBT_DIR / "seeds" / "mediaplan" / "seed_plan_mirror.py"
+    ).run(db_path)
 
     # 3b — dbt seed (metric_source_priority, Story 3.7)
     env = {**os.environ, "TOOROW_DUCKDB_PATH": db_path}
+    target_dir = tmp_dir / "target"
     seed_result = subprocess.run(
         [
             sys.executable, "-m", "dbt.cli.main", "seed",
             "--profiles-dir", str(profiles_dir),
             "--project-dir", str(DBT_DIR),
+            "--target-path", str(target_dir),
         ],
         capture_output=True,
         text=True,
@@ -382,6 +447,7 @@ def seeded_db(tmp_path_factory, gen, loader):
             sys.executable, "-m", "dbt.cli.main", "run",
             "--profiles-dir", str(profiles_dir),
             "--project-dir", str(DBT_DIR),
+            "--target-path", str(target_dir),
         ],
         capture_output=True,
         text=True,
@@ -397,22 +463,116 @@ def seeded_db(tmp_path_factory, gen, loader):
             sys.executable, "-m", "dbt.cli.main", "test",
             "--profiles-dir", str(profiles_dir),
             "--project-dir", str(DBT_DIR),
+            "--target-path", str(target_dir),
         ],
         capture_output=True,
         text=True,
         env=env,
     )
-    assert test_result.returncode == 0, (
-        f"dbt test failed:\nSTDOUT:\n{test_result.stdout}\nSTDERR:\n{test_result.stderr}"
+    # A RATCHET, not a green light -- same discipline as `css_lines` in
+    # CLAUDE.md §5. `assert returncode == 0` was unreachable: it has never held,
+    # because for as long as the fixture seeded fifteen connectors the run died
+    # before dbt got to the tests, and the harness was green by ABSENCE. Now that
+    # every model materialises, 808 tests actually run and 48 disagree. Those 48
+    # are named below and may only SHRINK: a 49th is a regression this fixture
+    # must refuse, and each one removed from the set is a repair that sticks.
+    failing = {
+        name
+        for name in re.findall(
+            r"Failure in test ([a-z0-9_]+)", test_result.stdout + test_result.stderr
+        )
+    }
+    new_failures = sorted(failing - _KNOWN_FAILING_DBT_TESTS)
+    assert not new_failures, (
+        "dbt test failures not in the pinned baseline -- a model or a seed changed "
+        f"a number: {new_failures}\nSTDOUT:\n{test_result.stdout}\nSTDERR:\n{test_result.stderr}"
     )
 
-    return {
-        "db_path": db_path,
+    payload = {
+        # L'EMPREINTE DES ENTREES, publiee avec la base qu'elle decrit. C'est
+        # elle qui fait vieillir ce marqueur, et rien d'autre.
+        "build_fingerprint": fingerprint,
         "pull_id": pull_id,
-        "row_count": count,
-        "meta_pull_id": meta_pull_id,
-        "meta_row_count": meta_count,
+        "row_count": ga4["rows"],
+        "landed": json.loads(json.dumps(landed, default=str)),
+        # LE CLIQUET NE PEUT RETRECIR QUE SI ON PEUT LE LIRE. L'assertion
+        # ci-dessus ne dit que << rien de neuf >> ; elle jette la liste, et un nom
+        # qui a CESSE d'echouer y reste alors pour toujours -- un cliquet qui ne
+        # descend jamais est un plafond. Publie ici, le set se lit apres coup dans
+        # `built.json` sans reconstruire, et `stale` nomme ce qu'il y a a retirer.
+        "dbt_failures": sorted(failing),
+        "dbt_failures_stale": sorted(_KNOWN_FAILING_DBT_TESTS - failing),
     }
+
+    # Publier POUR LES AUTRES : la base d'abord, le marqueur ensuite, et par
+    # `replace` -- un marqueur visible avant sa base ferait lire un fichier
+    # incomplet, ce qui rougirait ailleurs et pour une autre raison.
+    shutil.copy2(db_path, master)
+    wal = pathlib.Path(db_path + ".wal")
+    if wal.exists():
+        shutil.copy2(wal, master.with_suffix(master.suffix + ".wal"))
+    staging = marker.with_suffix(".json.partial")
+    staging.write_text(json.dumps(payload), encoding="utf-8")
+    staging.replace(marker)
+
+    return {**payload, "db_path": db_path}
+
+
+# ---------------------------------------------------------------------------
+# L'empreinte qui fait vieillir la base -- gardee, parce qu'une borne muette est
+# la meme chose qu'aucune borne.
+# ---------------------------------------------------------------------------
+
+
+def test_the_fingerprint_reads_a_real_corpus_and_not_an_empty_one():
+    """UN GLOB CASSE REND UN DIGEST STABLE, donc un cache eternellement valide.
+
+    C'est la forme exacte que ce fichier repare, une couche plus haut : un
+    instrument qui mesure son indulgence. Le compte voyage DANS l'empreinte,
+    donc il est verifiable ici sans relire les globs.
+    """
+    count = int(_build_fingerprint().split(":", 1)[0])
+    assert count > 100, (
+        f"l'empreinte ne lit que {count} fichiers : un motif de "
+        "`_BUILD_INPUT_GLOBS` ne resout plus, et le cache ne peut plus perimer"
+    )
+
+
+def test_a_model_that_changes_changes_the_fingerprint(tmp_path, monkeypatch):
+    """La propriete qui compte : un modele qui bouge force la reconstruction.
+
+    Joue sur un ARBRE FABRIQUE plutot que sur le depot -- ecrire dans
+    `dbt/models/` pour le prouver laisserait un fichier derriere en cas
+    d'interruption, et cette suite construit une base a partir de ces
+    fichiers-la.
+    """
+    import hashlib
+
+    def _digest(root: pathlib.Path) -> str:
+        h = hashlib.sha256()
+        files = sorted(root.rglob("*.sql"))
+        for path in files:
+            h.update(path.relative_to(root).as_posix().encode("utf-8"))
+            h.update(b"\0")
+            h.update(path.read_bytes())
+            h.update(b"\0")
+        return f"{len(files)}:{h.hexdigest()}"
+
+    models = tmp_path / "models"
+    models.mkdir()
+    (models / "a.sql").write_text("select 1", encoding="utf-8")
+    before = _digest(tmp_path)
+
+    # Le CONTENU change.
+    (models / "a.sql").write_text("select 2", encoding="utf-8")
+    assert _digest(tmp_path) != before
+
+    # Et le NOM aussi : un digest qui ne lirait que les contenus verrait un
+    # renommage comme un no-op, alors que dbt ne construit plus le meme modele.
+    (models / "a.sql").write_text("select 1", encoding="utf-8")
+    assert _digest(tmp_path) == before
+    (models / "a.sql").rename(models / "b.sql")
+    assert _digest(tmp_path) != before
 
 
 # ---------------------------------------------------------------------------
@@ -571,7 +731,7 @@ def test_fact_daily_kpi_includes_meta_ads(seeded_db):
 @pytest.mark.anyio
 async def test_get_ga4_report_returns_real_data(seeded_db):
     """get_ga4_report returns non-empty mart data for the seeded date range (T7.2, AC5)."""
-    from datetime import date, timedelta
+    from datetime import timedelta
     from unittest.mock import patch
 
     db_path = seeded_db["db_path"]
@@ -589,9 +749,16 @@ async def test_get_ga4_report_returns_real_data(seeded_db):
             REPO_ROOT / "server" / "modules" / "google-analytics" / "connector.py",
         )
 
-        # Date range within the 90-day seed window
-        date_to = (date.today() - timedelta(days=1)).isoformat()
-        date_from = (date.today() - timedelta(days=30)).isoformat()
+        # Date range within the 90-day seed window. The window is derived from the
+        # generator's OWN anchor, never from date.today(): the seed is pinned to
+        # TOOROW_SEED_END_DATE (2026-07-15, byte-reproducible for the evals corpus),
+        # so a today-relative window stops overlapping it the day the calendar
+        # passes anchor+30 -- measured 2026-08-17, provenance came back None on a
+        # perfectly seeded mart because today-30 was already past the last row.
+        generate = _import_module("generate_seed", SEEDS_DIR / "generate_seed.py")
+        anchor = generate._ANCHOR_END_DATE
+        date_to = (anchor - timedelta(days=1)).isoformat()
+        date_from = (anchor - timedelta(days=30)).isoformat()
 
         envelope = connector.get_ga4_report(
             project_id="default",
@@ -667,8 +834,79 @@ def test_connector_does_not_read_csv_or_raw_table():
 
 
 # ---------------------------------------------------------------------------
-# Story 15.8 F-4 AJOUT ADDITIF : klaviyo dans fact_daily_kpi apres dbt build
+# Story 53.10 — le compte de couverture PUBLIE, confronte au mart REEL
 # ---------------------------------------------------------------------------
+
+def test_the_published_coverage_matches_the_mart(seeded_db):
+    """Le nombre publie par la conformite doit tenir devant `main_marts.fact_daily_kpi`.
+
+    C'EST LA GARDE QUI MANQUAIT, et son absence est ce qui a laisse passer un
+    faux chiffre pendant cinq jours. `tests/conformance/
+    test_fact_daily_kpi_connector_coverage.py` derive sa couverture en lisant du
+    TEXTE SQL -- elle ne compte jamais une ligne. Le mart, lui, est construit
+    ici. Tant que personne ne mettait les deux face a face, une lecture statique
+    fausse pouvait etre imprimee, recopiee dans un document ratifie, et rester
+    vraie de nulle part : `16 (42 %)` a ete publie alors que la base en rendait
+    18.
+
+    Les deux sens sont rouges, et ils ne disent pas la meme chose :
+      * publie-couvert et absent du mart  -> la couverture est REVENDIQUEE a tort ;
+      * present dans le mart et non publie -> la couverture est SOUS-comptee, ce
+        qui est exactement le defaut de 53.10.
+
+    Un mot sur l'identite des noms : la colonne `connector` du mart porte des
+    litteraux ecrits dans les modeles, tandis que la conformite lit des noms de
+    REPERTOIRE sous `server/modules/`. Les deux coincident pour TOUT l'ensemble
+    publie, quelle qu'en soit la taille, et ce test est ce qui le prouve : une
+    divergence d'un seul nom rougit ici plutot que de se glisser dans un compte.
+
+    CE DOCSTRING NE DIT PLUS COMBIEN, ET C'EST DELIBERE. Il a lu << les deux
+    coincident aujourd'hui pour les dix-huit >> jusqu'au 2026-08-24, alors que la
+    base batie ici en rend 36 (mesure du 2026-08-24) -- un nombre fige dans le
+    commentaire de la garde meme dont l'objet est d'empecher un nombre de se
+    figer. Ce que cette garde tient est une EGALITE ; sa taille est ce que le
+    mart et `classify()` en disent au moment ou elle tourne.
+    """
+    import duckdb
+
+    from tests.conformance.test_fact_daily_kpi_connector_coverage import classify
+
+    db_path = seeded_db["db_path"]
+    con = duckdb.connect(db_path, read_only=True)
+    try:
+        observed = {
+            row[0]
+            for row in con.execute(
+                "SELECT DISTINCT connector FROM main_marts.fact_daily_kpi"
+            ).fetchall()
+        }
+    finally:
+        con.close()
+
+    published = classify()["in_fact"]
+
+    # Une lecture qui echoue ne doit jamais se lire comme « zero couvert » : le
+    # mart a des lignes, prouve par `test_fact_daily_kpi_has_rows` juste au-dessus,
+    # donc un ensemble vide ici est un instrument casse, pas une mesure.
+    assert observed, (
+        "aucun connecteur distinct dans main_marts.fact_daily_kpi : le mart est "
+        "vide ou la requete lit la mauvaise relation -- ce n'est pas une couverture "
+        "de zero, c'est une lecture cassee"
+    )
+
+    claimed_but_absent = sorted(published - observed)
+    present_but_uncounted = sorted(observed - published)
+    assert not claimed_but_absent and not present_but_uncounted, (
+        "le compte de couverture publie ne correspond pas au mart construit.\n"
+        f"  publie comme atteignant le fait, aucune ligne dedans : {claimed_but_absent}\n"
+        f"  des lignes dans le fait, absent du compte publie   : {present_but_uncounted}\n\n"
+        "Soit la classification de tests/conformance/"
+        "test_fact_daily_kpi_connector_coverage.py ne suit plus le graphe `ref()` "
+        "jusqu'au bout, soit un modele ecrit un litteral `connector` qui ne porte "
+        "pas le nom de son repertoire sous server/modules/. Les deux rendent faux "
+        "le nombre publie dans docs/product-architecture/caveats-register.md."
+    )
+
 
 def test_fact_daily_kpi_includes_klaviyo(seeded_db):
     """Story 15.8 F-4 : fact_daily_kpi doit contenir connector='klaviyo' avec les
@@ -718,12 +956,12 @@ def test_fact_daily_kpi_includes_klaviyo(seeded_db):
         "sends", "opens", "clicks", "attributed_conversions", "attributed_revenue"
     }
     assert expected_metrics.issubset(klaviyo_metrics), (
-        f"Metriques Klaviyo manquantes dans le mart: "
+        f"Metriques Klaviyo missinges dans le mart: "
         f"{expected_metrics - klaviyo_metrics}. Presentes: {klaviyo_metrics}"
     )
     # Les deux sous-dimensions klaviyo (campaigns et flows) doivent etre presentes.
     assert {"campaign_id", "flow_id"}.issubset(klaviyo_dims), (
-        f"Dimensions klaviyo manquantes dans le mart: {klaviyo_dims}. "
+        f"Dimensions klaviyo missinges dans le mart: {klaviyo_dims}. "
         "Attendu: campaign_id ET flow_id (deux sous-modeles de staging)"
     )
     # Regle de non-agregation (AD-4) : 'conversions' et 'revenue' generiques interdits.
@@ -791,7 +1029,7 @@ def test_fact_daily_kpi_includes_linkedin_ads(seeded_db):
     # Metriques canoniques LinkedIn (AD-4 : cost, impressions, clicks, conversions, leads).
     expected_metrics = {"cost", "impressions", "clicks", "conversions"}
     assert expected_metrics.issubset(linkedin_metrics), (
-        f"Metriques LinkedIn manquantes dans le mart: "
+        f"Metriques LinkedIn missinges dans le mart: "
         f"{expected_metrics - linkedin_metrics}. Presentes: {linkedin_metrics}"
     )
     # 'leads' est optionnel (emis uniquement si non-NULL au grain campaign).
@@ -871,7 +1109,7 @@ def test_fact_daily_kpi_includes_stripe(seeded_db):
     )
     expected_metrics = {"revenue", "refunds", "fees", "transaction_count", "order_count"}
     assert expected_metrics.issubset(stripe_metrics), (
-        f"Metriques Stripe manquantes dans le mart: "
+        f"Metriques Stripe missinges dans le mart: "
         f"{expected_metrics - stripe_metrics}. Presentes: {stripe_metrics}"
     )
     # Une seule serie day-total (pas de partition par charge -- charge_id reste detail).
@@ -1036,16 +1274,39 @@ def test_fact_daily_kpi_includes_hubspot(seeded_db):
     # Metriques canoniques HubSpot CRM (AD-4 : noms CRM distincts des regies).
     expected_metrics = {"new_contacts", "deals_created", "deals_closed"}
     assert expected_metrics.issubset(hubspot_metrics), (
-        f"Metriques HubSpot CRM manquantes dans le mart: "
+        f"Metriques HubSpot CRM missinges dans le mart: "
         f"{expected_metrics - hubspot_metrics}. Presentes: {hubspot_metrics}"
     )
     # deal_amount peut etre absent si tous les jours ont deals_closed=0 (AD-9).
     # On ne l'assert pas comme obligatoire.
 
-    # breakdown_dimension doit etre 'date' (grain journalier CRM, pas par entite).
-    assert hubspot_dims == {"date"}, (
-        f"hubspot doit n'emettre que breakdown_dimension='date', trouve: {hubspot_dims}"
+    # breakdown_dimension : grain journalier CRM, jamais par entite (pas de deal_id,
+    # pas de contact_id). Deux dimensions sont legitimes et deux seulement :
+    #   * 'date'     -- les trois metriques de comptage (new_contacts, deals_*) ;
+    #   * 'currency' -- deal_amount, qui est monetaire et porte sa devise
+    #                   (fact_daily_kpi.sql, bloc hubspot story 15.5).
+    # L'assertion disait `== {"date"}` et n'avait plus rien a voir avec le modele :
+    # le bloc 'currency' existe depuis 15.5, et ce test n'a pas pu tourner depuis
+    # que la fixture ne construisait plus (AI-164). Corrigee sur le modele, pas
+    # relachee -- une troisieme dimension casse toujours.
+    assert hubspot_dims <= {"date", "currency"}, (
+        f"hubspot ne doit emettre que 'date' (comptages) et 'currency' (deal_amount), "
+        f"trouve: {hubspot_dims}"
     )
+    assert "date" in hubspot_dims, (
+        f"les metriques de comptage HubSpot doivent etre au grain 'date': {hubspot_dims}"
+    )
+    if "deal_amount" in hubspot_metrics:
+        deal_amount_dims = {
+            r[0]
+            for r in duckdb.connect(db_path, read_only=True).execute(
+                "SELECT DISTINCT breakdown_dimension FROM main_marts.fact_daily_kpi "
+                "WHERE connector = 'hubspot' AND metric = 'deal_amount'"
+            ).fetchall()
+        }
+        assert deal_amount_dims == {"currency"}, (
+            f"deal_amount est monetaire et porte sa devise: {deal_amount_dims}"
+        )
 
     # REGLE D'ISOLATION CRM (AD-4, CRITIQUE) : pas de collision nominale avec les regies.
     assert "conversions" not in hubspot_metrics, (
@@ -1137,7 +1398,7 @@ def test_fact_daily_kpi_includes_google_sheets(seeded_db):
     # Metriques canoniques Objectifs (AD-4 : noms objectifs distincts des regies).
     expected_metrics = {"budget_declared", "target_revenue", "target_conversions"}
     assert expected_metrics.issubset(gsheets_metrics), (
-        f"Metriques Google Sheets manquantes dans le mart: "
+        f"Metriques Google Sheets missinges dans le mart: "
         f"{expected_metrics - gsheets_metrics}. Presentes: {gsheets_metrics}"
     )
 

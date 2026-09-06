@@ -9,7 +9,6 @@ Routes console (auth Bearer, scope AD-5) :
   DELETE /api/rendus/shares/{share_id}               -- revoquer un partage
 
 Route publique (sans auth, rate-limitee) :
-  GET    /api/rendus/shared/{token}                  -- snapshot fige HTML (O1)
 
 Auth  : meme _check_auth que core.admin_api (Bearer token via core.api_auth).
 AD-5  : project_id scope enforced ; 404 non-disclosant pour tout acces invalide.
@@ -23,15 +22,35 @@ ASCII-only stdout (L-3). Copie FR accentuee dans les messages d'erreur.
 
 from __future__ import annotations
 
-import html as _html_mod
 import json
 import logging
 import os
-import time
 
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse, Response
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
+
+from core.audit import declare_action
+
+# Story 50.7: the `410 Gone` endpoint for the retired share-creation mount. It
+# lives in the module that owns the replacement, so the retirement names its
+# successor in exactly one place.
+from core.render_shares_api import create_snapshot_share_gone
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12) : declarees ICI, a cote du code qui les ecrit, et non
+# dans `core/audit.py`. Ce fichier etait un carrefour -- 43 editions de 29
+# sujets depuis juin, dont 34 n'ajoutaient qu'une constante -- et 45 % des
+# actions reellement ecrites en production n'y etaient meme pas declarees,
+# parce que la liste etait trop loin pour valoir le detour. `write_audit_row`
+# refuse desormais une action que personne n'a declaree.
+# `shared` n a plus d ecrivain depuis que la story 50.7 a retire le chemin de
+# partage ; sa declaration reste ICI, a cote de son frere, plutot que dans le
+# carrefour -- une absence se lit a cote de ce qui l explique.
+ACTION_SNAPSHOT_SHARED = declare_action("render_snapshot.shared")
+ACTION_SNAPSHOT_SHARE_REVOKED = declare_action("render_snapshot.share_revoked")
+
 
 logger = logging.getLogger(__name__)
 
@@ -41,10 +60,8 @@ logger = logging.getLogger(__name__)
 # TODO(Phase-B) : deplacer vers Redis pour multi-replica.
 # ---------------------------------------------------------------------------
 
-_shared_rendus_rate: dict[str, tuple[int, float]] = {}
-_SHARED_RATE_LIMIT = 60
-_SHARED_TOKEN_RATE_LIMIT = 120
-_SHARED_RATE_WINDOW = 60.0
+# Story 50.7: the in-memory rate-limit buckets are REMOVED with the public
+# endpoint that was their only consumer. They were keyed on `token[:8]`.
 
 
 def _json_for_script(obj) -> str:
@@ -69,43 +86,11 @@ def _json_for_script(obj) -> str:
     )
 
 
-def _check_rendus_rate_limit(ip: str, token: str = "") -> tuple[bool, float]:
-    """Retourner (dans_limite, retry_after_seconds).
-
-    Cle sur (client_host, token_prefix[:8]) pour eviter le contournement XFF.
-    Plafond global par token pour que les IPs rotatives restent limitees.
-
-    M1 : purge des entrees expirees au debut de chaque appel pour eviter la
-    croissance illimitee du dict (DoS par IPs ou tokens rotatifs).
-    """
-    ts = time.monotonic()
-    token_prefix = token[:8] if token else ""
-
-    # Purge des entrees dont la fenetre est ecoulee (M1).
-    expired_keys = [k for k, (_, w) in _shared_rendus_rate.items() if ts - w >= _SHARED_RATE_WINDOW]
-    for k in expired_keys:
-        _shared_rendus_rate.pop(k, None)
-
-    ip_key = f"ip::{ip}::{token_prefix}"
-    ip_count, ip_window = _shared_rendus_rate.get(ip_key, (0, ts))
-    if ts - ip_window >= _SHARED_RATE_WINDOW:
-        ip_count, ip_window = 0, ts
-    if ip_count >= _SHARED_RATE_LIMIT:
-        retry_after = _SHARED_RATE_WINDOW - (ts - ip_window)
-        return False, max(retry_after, 1.0)
-    _shared_rendus_rate[ip_key] = (ip_count + 1, ip_window)
-
-    if token_prefix:
-        tok_key = f"tok::{token_prefix}"
-        tok_count, tok_window = _shared_rendus_rate.get(tok_key, (0, ts))
-        if ts - tok_window >= _SHARED_RATE_WINDOW:
-            tok_count, tok_window = 0, ts
-        if tok_count >= _SHARED_TOKEN_RATE_LIMIT:
-            retry_after = _SHARED_RATE_WINDOW - (ts - tok_window)
-            return False, max(retry_after, 1.0)
-        _shared_rendus_rate[tok_key] = (tok_count + 1, tok_window)
-
-    return True, 0.0
+# `_check_rendus_rate_limit` is REMOVED by Story 50.7. It keyed its buckets on
+# `token[:8]` -- eight characters of a live plaintext bearer, held in process
+# memory and therefore in every heap dump. Its only caller was the public
+# `/api/rendus/shared/{token}` endpoint, which is removed with it. The replacement
+# keys on the bearer's HMAC prefix: `core.render_shares.check_rate_limit`.
 
 
 # ---------------------------------------------------------------------------
@@ -140,10 +125,10 @@ def _authorize_snapshot_project(
         return identity == "anonymous"
 
     try:
-        from core.db import set_local_access_context  # noqa: PLC0415
+        # The connection arrives armed from `request_connection`; arming it
+        # again here would be the double this story removes.
         from core.project_access import resolve_strict_resource_access  # noqa: PLC0415
 
-        set_local_access_context(conn, identity, enforce_epic36=True)
         decision = resolve_strict_resource_access(
             identity,
             conn,
@@ -221,10 +206,10 @@ async def _list_snapshots(request: Request) -> Response:
     tool_name = request.query_params.get("tool_name") or None
 
     try:
-        from core.db import get_connection  # noqa: PLC0415
+        from core.db import request_connection  # noqa: PLC0415
         from core.snapshots import list_render_snapshots  # noqa: PLC0415
 
-        with get_connection() as conn:
+        with request_connection(identity) as conn:
             # AD-5 : verifier l'acces au projet (404 non-disclosant).
             if not _authorize_snapshot_project(
                 identity,
@@ -233,7 +218,7 @@ async def _list_snapshots(request: Request) -> Response:
                 minimum_capability="view",
             ):
                 return JSONResponse(
-                    {"code": "not_found", "message": "Projet non trouve"},
+                    {"code": "not_found", "message": "Project not found"},
                     status_code=404,
                 )
 
@@ -300,10 +285,10 @@ async def _get_snapshot(request: Request) -> Response:
         )
 
     try:
-        from core.db import get_connection  # noqa: PLC0415
+        from core.db import request_connection  # noqa: PLC0415
         from core.snapshots import get_render_snapshot  # noqa: PLC0415
 
-        with get_connection() as conn:
+        with request_connection(identity) as conn:
             # AD-5 : verifier l'acces au projet (404 non-disclosant).
             if not _authorize_snapshot_project(
                 identity,
@@ -365,10 +350,10 @@ async def _delete_snapshot(request: Request) -> Response:
         )
 
     try:
-        from core.db import get_connection  # noqa: PLC0415
+        from core.db import request_connection  # noqa: PLC0415
         from core.snapshots import delete_render_snapshot  # noqa: PLC0415
 
-        with get_connection() as conn:
+        with request_connection(identity) as conn:
             # AD-5 : verifier l'acces au projet (404 non-disclosant).
             if not _authorize_snapshot_project(
                 identity,
@@ -404,95 +389,17 @@ async def _delete_snapshot(request: Request) -> Response:
 # ---------------------------------------------------------------------------
 
 
-async def _create_share(request: Request) -> Response:
-    """POST /api/rendus/snapshots/{snapshot_id}/share -- creer un partage tokenise (O1).
-
-    Query params :
-        project_id  (required) -- scope AD-5
-
-    Reponse 201 :
-        {
-          "share_id": "rss_...",
-          "share_token": "<token>",
-          "share_url": "https://{host}/api/rendus/shared/<token>",
-          "shared_at": "2026-07-21T..."
-        }
-
-    Reponse 404 : snapshot introuvable ou acces refuse (non-disclosant).
-    """
-    authorized, identity = await _check_auth(request)
-    if not authorized:
-        return JSONResponse(
-            {"code": "unauthorized", "message": "Token Bearer requis"},
-            status_code=401,
-        )
-
-    snapshot_id = request.path_params.get("snapshot_id", "").strip()
-    project_id = (request.query_params.get("project_id") or "").strip()
-
-    if not project_id:
-        return JSONResponse(
-            {"code": "invalid_params", "message": "project_id requis"},
-            status_code=422,
-        )
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-        from core.snapshot_shares import create_share  # noqa: PLC0415
-
-        with get_connection() as conn:
-            if not _authorize_snapshot_project(
-                identity,
-                project_id,
-                conn,
-                minimum_capability="edit",
-            ):
-                return JSONResponse(
-                    {"code": "not_found", "message": "Snapshot non trouve"},
-                    status_code=404,
-                )
-
-            result = create_share(snapshot_id, project_id, identity, conn)
-
-    except Exception as exc:
-        logger.error("rendus_api: create_share err snap=%s p=%s: %s", snapshot_id, project_id, exc)
-        return JSONResponse(
-            {"code": "db_error", "message": f"Erreur base de donnees : {exc}"},
-            status_code=500,
-        )
-
-    if result is None:
-        return JSONResponse(
-            {"code": "not_found", "message": "Snapshot non trouve"},
-            status_code=404,
-        )
-
-    share_id, token = result
-    base_url = f"{request.url.scheme}://{request.url.netloc}"
-    share_url = f"{base_url}/api/rendus/shared/{token}"
-
-    # Audit (best-effort, non bloquant).
-    try:
-        from core.audit import ACTION_SNAPSHOT_SHARED, write_audit_row  # noqa: PLC0415
-
-        write_audit_row(
-            identity=identity,
-            action=ACTION_SNAPSHOT_SHARED,
-            provider_account="rendus",
-            connection_ref="",
-            metadata={"share_id": share_id, "snapshot_id": snapshot_id, "project_id": project_id},
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("rendus_api: audit share err: %s", exc)
-
-    return JSONResponse(
-        {
-            "share_id": share_id,
-            "share_token": token,
-            "share_url": share_url,
-        },
-        status_code=201,
-    )
+# `_create_share` is REMOVED by Story 50.7. It minted a PLAINTEXT 192-bit token,
+# stored it in the clear, returned it in the body AND in a `share_url`, and wrote
+# its audit row best-effort AFTER the grant had already committed -- so a share
+# that was created but not audited was indistinguishable from one that was never
+# created. Its mount stays at the same path and method and now answers `410 Gone`
+# through `core.render_shares_api.create_snapshot_share_gone`.
+#
+# The replacement is `core.render_shares.create_share`: a 256-bit bearer stored
+# only as a peppered HMAC, a mandatory expiry, and creation routed through
+# `core.operations.execute_operation` so the grant, the audit row and the outbox
+# commit together or not at all.
 
 
 # ---------------------------------------------------------------------------
@@ -513,8 +420,6 @@ async def _list_shares(request: Request) -> Response:
             {
               "id": "rss_...",
               "snapshot_id": "rsn_...",
-              "share_token": "...",
-              "share_url": "https://{host}/api/rendus/shared/<token>",
               "shared_at": "...",
               "shared_by": "...",
               "revoked_at": null | "..."
@@ -541,10 +446,10 @@ async def _list_shares(request: Request) -> Response:
         )
 
     try:
-        from core.db import get_connection  # noqa: PLC0415
+        from core.db import request_connection  # noqa: PLC0415
         from core.snapshot_shares import list_shares  # noqa: PLC0415
 
-        with get_connection() as conn:
+        with request_connection(identity) as conn:
             if not _authorize_snapshot_project(
                 identity,
                 project_id,
@@ -565,13 +470,13 @@ async def _list_shares(request: Request) -> Response:
             status_code=500,
         )
 
-    # Enrichir avec share_url (construit a partir de l'hote de la requete).
-    base_url = f"{request.url.scheme}://{request.url.netloc}"
-    for share in shares:
-        tok = share.get("share_token") or ""
-        share["share_url"] = f"{base_url}/api/rendus/shared/{tok}" if tok else None
-
-    return JSONResponse({"shares": shares})
+    # Story 50.7 AC10: this listing survives as the LEGACY revocation-and-history
+    # seam, and it returns NO token and NO URL. `core.snapshot_shares.list_shares`
+    # no longer selects `share_token` at all, and the `share_url` enrichment that
+    # used to run here is deleted: a URL built from a stored plaintext token is a
+    # live public grant, and putting one in a console response puts it in every
+    # screenshot and every browser cache.
+    return JSONResponse({"shares": shares, "legacy": True})
 
 
 # ---------------------------------------------------------------------------
@@ -605,10 +510,10 @@ async def _revoke_share(request: Request) -> Response:
         )
 
     try:
-        from core.db import get_connection  # noqa: PLC0415
+        from core.db import request_connection  # noqa: PLC0415
         from core.snapshot_shares import revoke_share  # noqa: PLC0415
 
-        with get_connection() as conn:
+        with request_connection(identity) as conn:
             if not _authorize_snapshot_project(
                 identity,
                 project_id,
@@ -637,7 +542,7 @@ async def _revoke_share(request: Request) -> Response:
 
     # Audit (best-effort).
     try:
-        from core.audit import ACTION_SNAPSHOT_SHARE_REVOKED, write_audit_row  # noqa: PLC0415
+        from core.audit import write_audit_row  # noqa: PLC0415
 
         write_audit_row(
             identity=identity,
@@ -662,218 +567,55 @@ async def _revoke_share(request: Request) -> Response:
 # AD-9 : "Partage le <shared_at>" honnete + stale_since = freshness figee.
 # O1 strict : aucun re-run, aucun acces live.
 
-_SHARED_HTML_TEMPLATE = """\
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Rendu partage &mdash; toorow</title>
-  <style>
-    body {{
-      margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #0f0f1a;
-      color: #e8e8f0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 32px 16px;
-      min-height: 100vh;
-    }}
-    .banner {{
-      font-size: 11px;
-      color: #8888aa;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 6px;
-      padding: 8px 14px;
-      margin-bottom: 24px;
-      text-align: center;
-      max-width: 640px;
-    }}
-    .widget-frame {{
-      width: 100%;
-      max-width: 900px;
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 10px;
-      overflow: hidden;
-      background: rgba(255,255,255,0.03);
-      min-height: 400px;
-    }}
-    #widget-mount {{
-      width: 100%;
-      min-height: 400px;
-    }}
-  </style>
-</head>
-<body>
-  <div class="banner">
-    Partag&eacute; le {shared_at_fr} &mdash; Fraicheur fig&eacute;e : {stale_since}
-    &mdash; Ce lien est en lecture seule. Aucune donn&eacute;e n&rsquo;est
-    recharg&eacute;e au moment de l&rsquo;ouverture.
-  </div>
-  <div class="widget-frame">
-    <div id="widget-mount"></div>
-  </div>
-  <script>
-    // O1 strict : l'envelope est INJECTEE ici (gelee au moment du rendu).
-    // Aucun appel reseau vers les marts ou le projet n'est effectue.
-    window.__MCP_STRUCTURED_CONTENT__ = {envelope_json};
-    window.__TOOROW_SHARED_META__ = {{
-      share_id: {share_id_json},
-      shared_at: {shared_at_json},
-      stale_since: {stale_since_json},
-      tool_name: {tool_name_json},
-      question: {question_json}
-    }};
-    // Le shell widget lit l'envelope depuis window.__MCP_STRUCTURED_CONTENT__
-    // via mcpApp.readInjectedEnvelope() au chargement.
-    // (mcpApp.ts, Story 9.10 -- non modifie ici, AI-53)
-  </script>
-</body>
-</html>"""
-
-
-def _fmt_date_fr(iso: str | None) -> str:
-    """Formater une date ISO en date FR lisible (sans librairie externe)."""
-    if not iso:
-        return "date inconnue"
-    try:
-        date_part = iso[:10]   # "2026-07-21"
-        time_part = iso[11:16] if len(iso) > 16 else ""  # "14:32"
-        mois = [
-            "", "jan.", "fev.", "mars", "avr.", "mai", "juin",
-            "juil.", "aout", "sept.", "oct.", "nov.", "dec.",
-        ]
-        y, m, d = date_part.split("-")
-        m_label = mois[int(m)]
-        return f"{int(d)} {m_label} {y}" + (f" a {time_part}" if time_part else "")
-    except Exception:
-        return iso or ""
-
-
-async def _shared_snapshot_endpoint(request: Request) -> Response:
-    """GET /api/rendus/shared/{token} -- snapshot fige HTML (endpoint public O1).
-
-    Sans auth. Rate-limite : 60 req/min/(IP, token_prefix) + 120/min/token.
-    Retourne le HTML single-file avec l'envelope GELEE injectee dans
-    window.__MCP_STRUCTURED_CONTENT__ (mcpApp.readInjectedEnvelope, AI-53).
-
-    Reponse 200 : HTML
-    Reponse 404 : token inconnu ou revoque (non-disclosant)
-    Reponse 429 : rate limit (Retry-After header)
-
-    GARANTIE O1 :
-      Aucun re-run. Aucun acces aux marts/projet.
-      get_shared_snapshot ne touche QUE render_snapshot_shares + render_snapshots.
-    """
-    token = request.path_params.get("token", "")
-
-    client_ip = request.client.host if request.client else "unknown"
-    allowed, retry_after = _check_rendus_rate_limit(client_ip, token)
-    if not allowed:
-        return JSONResponse(
-            {"code": "rate_limited", "message": "Trop de requetes"},
-            status_code=429,
-            headers={"Retry-After": str(int(retry_after))},
-        )
-
-    if not token:
-        return JSONResponse(
-            {"code": "not_found", "message": "Lien non trouve"},
-            status_code=404,
-        )
-
-    try:
-        from core.db import get_connection  # noqa: PLC0415
-        from core.snapshot_shares import get_shared_snapshot  # noqa: PLC0415
-
-        with get_connection() as conn:
-            snap = get_shared_snapshot(token, conn)
-
-    except Exception as exc:
-        logger.error("rendus_api: shared_snapshot err token_prefix=%s: %s", token[:8], exc)
-        return JSONResponse(
-            {"code": "db_error", "message": "Erreur interne"},
-            status_code=500,
-        )
-
-    if snap is None:
-        return JSONResponse(
-            {"code": "not_found", "message": "Lien non trouve"},
-            status_code=404,
-        )
-
-    # Audit acces (best-effort, non bloquant).
-    try:
-        from core.audit import ACTION_SNAPSHOT_SHARE_ACCESSED, write_audit_row  # noqa: PLC0415
-
-        write_audit_row(
-            identity=f"public:{client_ip}",
-            action=ACTION_SNAPSHOT_SHARE_ACCESSED,
-            provider_account="rendus",
-            connection_ref="",
-            metadata={
-                "share_id": snap.get("share_id"),
-                "snapshot_id": snap.get("snapshot_id"),
-                "token_prefix": token[:8],
-            },
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("rendus_api: audit share_accessed err: %s", exc)
-
-    # Construire le HTML avec l'envelope injectee (O1 strict).
-    envelope = snap.get("envelope") or {}
-    shared_at = snap.get("shared_at") or ""
-    stale_since = snap.get("stale_since") or "unknown"
-    share_id = snap.get("share_id") or ""
-    tool_name = snap.get("tool_name") or ""
-    question = snap.get("question") or ""
-
-    html_content = _SHARED_HTML_TEMPLATE.format(
-        shared_at_fr=_html_mod.escape(_fmt_date_fr(shared_at)),
-        stale_since=_html_mod.escape(str(stale_since)),
-        envelope_json=_json_for_script(envelope),
-        share_id_json=_json_for_script(share_id),
-        shared_at_json=_json_for_script(shared_at),
-        stale_since_json=_json_for_script(stale_since),
-        tool_name_json=_json_for_script(tool_name),
-        question_json=_json_for_script(question),
-    )
-
-    # L1/L2 : headers de durcissement pour l'endpoint public.
-    # 'unsafe-inline' est requis car le script est inline (injection envelope O1 strict).
-    # C1 (fix XSS) est la defense principale ; ces headers sont la defense en profondeur.
-    security_headers = {
-        "X-Content-Type-Options": "nosniff",
-        "X-Frame-Options": "SAMEORIGIN",
-        "Content-Security-Policy": (
-            "default-src 'none'; "
-            "style-src 'unsafe-inline'; "
-            "script-src 'unsafe-inline'; "
-            "object-src 'none'; "
-            "base-uri 'none'; "
-            "form-action 'none'"
-        ),
-    }
-    return HTMLResponse(content=html_content, status_code=200, headers=security_headers)
-
-
 # ---------------------------------------------------------------------------
-# Route list (spliced into admin_api.router)
+# REMOVED BY STORY 50.7: the public share page and its endpoint.
+#
+# `_SHARED_HTML_TEMPLATE`, `_fmt_date_fr` and `_shared_snapshot_endpoint` are gone.
+# What they did, recorded here because the absence is the inventory:
+#
+#   * The page was `lang="fr"` with French copy ("Rendu partage", "Partage le",
+#     "Fraicheur figee"). `analyze-and-test.md` fixes the English Level 2 name
+#     "Renders"; the French route segment and label are not reintroduced.
+#   * It injected the envelope into `window.__MCP_STRUCTURED_CONTENT__` and MOUNTED
+#     NOTHING: the `<div id="widget-mount"></div>` stayed empty because the page
+#     loaded no script bundle at all -- only the inline injection. That is the gap
+#     `visualization-and-rendering.md:351` names. Verified again on 2026-07-31
+#     before deleting it.
+#   * Its headers were `X-Frame-Options: SAMEORIGIN` and a CSP carrying
+#     `script-src 'unsafe-inline'`, with no `Cache-Control: no-store`, no
+#     `Referrer-Policy: no-referrer` and no `frame-ancestors`.
+#   * It logged `token[:8]` at `logger.error` and persisted `"token_prefix": token[:8]`
+#     into the audit spine -- eight characters of a live bearer, in two durable places.
+#   * And the token was in the URL PATH, so every access log held a live bearer
+#     before any application code ran. No handler-level redaction can reach that,
+#     which is why the route is removed rather than hardened.
+#
+# Replaced by `GET /share` + `POST /api/render-shares/exchange` + `GET /share/view`
+# in `core.render_shares_api`, which mounts the Story 50.5 runtime over one frozen
+# Render. AC10 requires NO ROUTE TO MATCH `/api/rendus/shared/{token}`, so its
+# `Route(...)` entry is deleted below rather than repointed -- a `410` there would
+# still be a route, and the requirement is absence.
 # ---------------------------------------------------------------------------
+
 
 RENDUS_ROUTES: list[Route] = [
     # Routes statiques AVANT les routes parametrisees (Starlette matching order).
-    # Le endpoint public /shared/{token} n'a pas d'auth -- doit preceder les routes
-    # console pour que "shared" ne soit pas absorbe comme snapshot_id.
-    Route("/api/rendus/shared/{token}", endpoint=_shared_snapshot_endpoint, methods=["GET"]),
+    # Story 50.7 AC10: the raw-token public read is REMOVED, not repointed. AC10
+    # requires NO route to match "/api/rendus/shared/{token}"; a 410 handler here
+    # would still be a route. Absence is the statement.
     # Console : suppression d'un partage (share_id dans path).
     Route("/api/rendus/shares/{share_id}", endpoint=_revoke_share, methods=["DELETE"]),
     # Console : galerie + CRUD snapshots.
     Route("/api/rendus/snapshots", endpoint=_list_snapshots, methods=["GET"]),
-    Route("/api/rendus/snapshots/{snapshot_id}/share", endpoint=_create_share, methods=["POST"]),
+    # Story 50.7 AC10: this mount STAYS at this exact path and method, and only its
+    # endpoint changes. Deleting the entry would answer 405 (or a fall-through 404),
+    # which is a different statement and is indistinguishable to a client from a
+    # routing regression. 410 says "this existed and was retired".
+    Route(
+        "/api/rendus/snapshots/{snapshot_id}/share",
+        endpoint=create_snapshot_share_gone,
+        methods=["POST"],
+    ),
     Route("/api/rendus/snapshots/{snapshot_id}/shares", endpoint=_list_shares, methods=["GET"]),
     Route("/api/rendus/snapshots/{snapshot_id}", endpoint=_get_snapshot, methods=["GET"]),
     Route("/api/rendus/snapshots/{snapshot_id}", endpoint=_delete_snapshot, methods=["DELETE"]),

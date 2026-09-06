@@ -4,70 +4,232 @@
   "title": "FlowDatastream",
   "description": "Declarative datastream flow document (Story 8.7, Epic 8 Part D). The common interface through which both the admin UI and the LLM agent read/edit datastream flows. GUARDRAIL: additionalProperties:false everywhere so no authorization secret (token/access_token/secret) can be smuggled in; connection_ref_id is an opaque reference only.",
   "type": "object",
-  "required": ["schema_version", "kind", "project_id", "name"],
+  "required": [
+    "schema_version",
+    "kind",
+    "project_id",
+    "name"
+  ],
   "additionalProperties": false,
   "allOf": [
     {
-      "if": { "properties": { "schema_version": { "const": "1" } } },
+      "if": {
+        "properties": {
+          "schema_version": {
+            "const": "1"
+          }
+        }
+      },
       "then": {
-        "required": ["module_name"],
-        "not": { "required": ["intent"] }
+        "required": [
+          "module_name"
+        ],
+        "not": {
+          "required": [
+            "intent"
+          ]
+        }
       }
     },
     {
-      "if": { "properties": { "schema_version": { "const": "2" } } },
+      "if": {
+        "properties": {
+          "schema_version": {
+            "const": "2"
+          }
+        }
+      },
       "then": {
-        "required": ["intent", "idempotency_key"],
+        "required": [
+          "intent",
+          "idempotency_key"
+        ],
         "not": {
           "anyOf": [
-            { "required": ["config"] },
-            { "required": ["mappings"] },
-            { "required": ["schedule_mode"] },
-            { "required": ["refetch_days"] },
-            { "required": ["date_window_days"] }
+            {
+              "required": [
+                "config"
+              ]
+            },
+            {
+              "required": [
+                "mappings"
+              ]
+            },
+            {
+              "required": [
+                "schedule_mode"
+              ]
+            },
+            {
+              "required": [
+                "refetch_days"
+              ]
+            },
+            {
+              "required": [
+                "date_window_days"
+              ]
+            }
           ]
         }
       }
     }
   ],
   "properties": {
-    "schema_version": { "type": "string", "enum": ["1", "2"] },
-    "kind": { "const": "datastream" },
+    "schema_version": {
+      "type": "string",
+      "enum": [
+        "1",
+        "2"
+      ]
+    },
+    "kind": {
+      "const": "datastream"
+    },
     "id": {
       "type": "string",
       "description": "ds_<ULID>. Absent on create; present on update."
     },
-    "project_id": { "type": "string", "minLength": 1 },
-    "name": { "type": "string", "minLength": 1 },
+    "project_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
     "intent": {
       "type": "object",
       "description": "Schema-version-2 immutable intent; validated by datastream-intent.schema.json."
     },
-    "idempotency_key": { "type": "string", "minLength": 1, "maxLength": 255 },
-    "reason": { "type": "string", "minLength": 1, "maxLength": 255 },
-    "trace_id": { "type": ["string", "null"], "maxLength": 255 },
-    "current_plan_version_id": { "type": ["string", "null"] },
-    "current_plan_version": { "type": ["integer", "null"], "minimum": 1 },
-    "source_kind": { "enum": ["connector_pull", "external_bq", "managed_feed"] },
-    "writer_kind": { "enum": ["toorow", "external"] },
-    "destination_policy": { "enum": ["managed_raw", "external_read_only"] },
-    "cadence_mode": { "enum": ["manual", "daily", "hourly"] },
-    "validation_state": { "enum": ["legacy", "blocked", "executable"] },
-    "next_run_at": { "type": ["string", "null"], "format": "date-time" },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "data_role": {
+      "description": "What the Datastream is FOR. Mirrors app.datastreams.data_role's CHECK (migration 093) and core.datastreams.DATA_ROLES. Null when undeclared.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "Spend",
+        "Performance",
+        "Revenue & conversions",
+        "Forecast & plan",
+        "Context",
+        "Reference & targets",
+        "Operational",
+        null
+      ]
+    },
+    "trace_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 255
+    },
+    "current_plan_version_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "current_plan_version": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "source_kind": {
+      "enum": [
+        "connector_pull",
+        "external_bq",
+        "managed_feed"
+      ]
+    },
+    "writer_kind": {
+      "enum": [
+        "toorow",
+        "external"
+      ]
+    },
+    "destination_policy": {
+      "enum": [
+        "managed_raw",
+        "external_read_only"
+      ]
+    },
+    "cadence_mode": {
+      "description": "AI-217. `weekly` is a legal cadence (migration 204) and the read projection returns it for a weekly Datastream. `additionalProperties: false` makes an out-of-date enum a total refusal of the document, not a partial one.",
+      "enum": [
+        "manual",
+        "daily",
+        "weekly",
+        "hourly"
+      ]
+    },
+    "validation_state": {
+      "enum": [
+        "legacy",
+        "blocked",
+        "executable"
+      ]
+    },
+    "next_run_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
     "module_name": {
       "type": "string",
       "pattern": "^[a-z0-9-]+$",
       "description": "Connector manifest name (kebab-case). AD-2: data, never hardcoded."
     },
     "connection_ref_id": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "OPAQUE reference to app.connection_ref. Never a secret. Validated to exist and belong to the project at upsert time."
     },
-    "report_profile_id": { "type": ["string", "null"] },
-    "enabled": { "type": "boolean" },
-    "schedule_mode": { "type": "string", "enum": ["nightly", "manual"] },
-    "refetch_days": { "type": "integer", "minimum": 1, "maximum": 90 },
-    "date_window_days": { "type": "integer", "minimum": 1, "maximum": 365 },
+    "report_profile_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "schedule_mode": {
+      "type": "string",
+      "enum": [
+        "nightly",
+        "manual"
+      ]
+    },
+    "refetch_days": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 90
+    },
+    "date_window_days": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 365
+    },
     "config": {
       "type": "object",
       "additionalProperties": false,
@@ -83,7 +245,10 @@
         },
         "source": {
           "type": "string",
-          "enum": ["csv_inline", "url"],
+          "enum": [
+            "csv_inline",
+            "url"
+          ],
           "description": "R4 generic module: data source type. 'csv_inline' = rows embedded in config; 'url' = fetched via HTTP."
         },
         "url": {
@@ -108,12 +273,24 @@
           "description": "R4 generic module: source column -> canonical metric name mappings. Passed directly to the generic connector.",
           "items": {
             "type": "object",
-            "required": ["source_field"],
+            "required": [
+              "source_field"
+            ],
             "additionalProperties": false,
             "properties": {
-              "source_field": { "type": "string", "minLength": 1 },
-              "target_field": { "type": ["string", "null"] },
-              "is_key_column": { "type": "boolean" }
+              "source_field": {
+                "type": "string",
+                "minLength": 1
+              },
+              "target_field": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "is_key_column": {
+                "type": "boolean"
+              }
             }
           }
         }
@@ -124,15 +301,25 @@
       "description": "source_field -> target_field bindings (data dictionary).",
       "items": {
         "type": "object",
-        "required": ["source_field"],
+        "required": [
+          "source_field"
+        ],
         "additionalProperties": false,
         "properties": {
-          "source_field": { "type": "string", "minLength": 1 },
+          "source_field": {
+            "type": "string",
+            "minLength": 1
+          },
           "target_field": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Target field name in app.target_fields, or null when unmapped."
           },
-          "is_key_column": { "type": "boolean" }
+          "is_key_column": {
+            "type": "boolean"
+          }
         }
       }
     }

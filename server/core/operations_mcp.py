@@ -35,8 +35,13 @@ AD-27 prepare-confirm-commit (the write-effect contract):
 E36-NFR05 (wrap existing seams): this module opens NO parallel recovery engine and
 adds NO source/provider vocabulary to core. It reuses:
   * ``datastream_diagnosis`` for the readiness/diagnostic read evidence;
-  * ``datastream_publication.create_execution`` / ``advance_state`` (retry/refetch
-    candidates) and ``reconcile_execution`` (execution-state reconciliation);
+  * ``datastream_publication.reconcile_execution`` (execution-state
+    reconciliation). It DID mint a candidate through ``create_execution`` for
+    ``retry`` / ``refetch``; story 63.7 removed that mint, because nothing in
+    this build advances such a candidate and a non-terminal execution holds
+    ``uq_datastream_executions_active`` -- 409 on every later publication, and
+    ``None`` from ``open_collection_run`` every following night. Both verbs now
+    answer ``core.run_origins.refusal_message``;
   * ``refetch`` for the bounded refetch interval ladder / window ceiling;
   * ``quota`` for the quota/cost pre-check in the prepared proposal;
   * ``operations.execute_operation`` for the single durable write.
@@ -51,6 +56,11 @@ from __future__ import annotations
 
 import json
 import logging
+
+# Story 63.7. A leaf registry -- a frozen table and four pure functions, with no
+# `core` import of its own -- so it cannot join the `core.main` import cycle the
+# lazy-import convention above exists to avoid.
+from core import run_origins
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +131,15 @@ def _result(summary: str, data: dict):
 # ---------------------------------------------------------------------------
 
 
-def _guard_datastream(datastream_id: str, identity: str, *, minimum_capability: str):
+
+def _guard_datastream(
+    datastream_id: str,
+    identity: str,
+    *,
+    minimum_capability: str,
+    conn=None,
+    not_found_message: str = "Datastream not found.",
+):
     """Return an ``AccessDecision`` or raise not_found (existence-hiding).
 
     Wraps ``project_access.resolve_strict_resource_access`` on the Datastream scope.
@@ -131,22 +149,32 @@ def _guard_datastream(datastream_id: str, identity: str, *, minimum_capability: 
     disclose whether the Datastream exists (E36-NFR02). Fail-closed: the operation
     must NOT proceed unguarded on a guard failure.
     """
-    from core.db import get_connection  # noqa: PLC0415
+    from core.db import request_connection  # noqa: PLC0415
     from core.project_access import resolve_strict_resource_access  # noqa: PLC0415
 
     try:
-        with get_connection() as conn:
+        if conn is None:
+            with request_connection(identity) as owned_conn:
+                decision = resolve_strict_resource_access(
+                    identity,
+                    owned_conn,
+                    datastream_id=datastream_id,
+                    minimum_capability=minimum_capability,
+                    hold_access=True,
+                )
+        else:
             decision = resolve_strict_resource_access(
                 identity,
                 conn,
                 datastream_id=datastream_id,
                 minimum_capability=minimum_capability,
+                hold_access=True,
             )
     except Exception as exc:  # noqa: BLE001 -- fail-closed (never unguarded).
         logger.error("operations_mcp: access guard failed ds=%s: %s", datastream_id, exc)
-        raise _tool_error("not_found", "Flux introuvable.") from exc
+        raise _tool_error("not_found", not_found_message) from exc
     if not decision.allowed or not decision.org_id:
-        raise _tool_error("not_found", "Flux introuvable.")
+        raise _tool_error("not_found", not_found_message)
     return decision
 
 
@@ -173,7 +201,7 @@ def _bounded_interval(date_from, date_to) -> dict:
     d_from = _parse(date_from)
     d_to = _parse(date_to)
     if d_from is None or d_to is None:
-        raise _tool_error("forbidden_interval", "Intervalle de refetch invalide.")
+        raise _tool_error("forbidden_interval", "Invalid refetch interval.")
     span = (d_to - d_from).days + 1
     if span < 1 or span > _MAX_REFETCH_DAYS:
         raise _tool_error(
@@ -210,8 +238,12 @@ def _quota_estimate(platform: str | None, estimated_points: int) -> dict:
         can_proceed, reason = quota.pre_check(platform or "", points)
     except Exception as exc:  # noqa: BLE001 -- a quota lookup hiccup must fail closed.
         logger.warning("operations_mcp: quota pre_check failed platform=%s: %s", platform, exc)
-        return {"platform_known": bool(platform), "estimated_points": points,
-                "verdict": "budget_exhausted", "can_proceed": False}
+        return {
+            "platform_known": bool(platform),
+            "estimated_points": points,
+            "verdict": "budget_exhausted",
+            "can_proceed": False,
+        }
     return {
         "platform_known": bool(platform),
         "estimated_points": points,
@@ -400,6 +432,7 @@ def _load_operation_trace(conn, operation_id: str) -> str | None:
         row = cur.fetchone()
     return str(row[0]) if row and row[0] else None
 
+
 def _mark_preparation_confirmed(conn, preparation_id: str, operation_id: str) -> None:
     """Attach the durable operation + flip state prepared->confirmed (lifecycle only).
 
@@ -430,11 +463,7 @@ def _dispatch_recovery(conn, operation_id: str, prep: dict, target: dict):
     seams (E36-NFR05); it NEVER commits a publication and NEVER mutates the live
     pointer. Returns a ``MutationResult``.
     """
-    from core.datastream_publication import (  # noqa: PLC0415
-        PublicationError,
-        create_execution,
-        reconcile_execution,
-    )
+    from core.datastream_publication import reconcile_execution  # noqa: PLC0415
     from core.operations import MutationResult, _canonical_hash  # noqa: PLC0415
 
     kind = prep["kind"]
@@ -449,7 +478,9 @@ def _dispatch_recovery(conn, operation_id: str, prep: dict, target: dict):
         execution_id = (prep.get("interval") or {}).get("execution_id")
         if not execution_id:
             return MutationResult(
-                outcome="failed", before_hash=None, after_hash=None,
+                outcome="failed",
+                before_hash=None,
+                after_hash=None,
                 result={"reason": "missing_execution_reference"},
                 outbox_payload={"kind": kind, "datastream_id": datastream_id},
             )
@@ -458,61 +489,857 @@ def _dispatch_recovery(conn, operation_id: str, prep: dict, target: dict):
         except Exception as exc:  # noqa: BLE001 -- outcome unknown, never a duplicate.
             logger.error("operations_mcp: reconcile failed exec=%s: %s", execution_id, exc)
             return MutationResult(
-                outcome="outcome_unknown", before_hash=None, after_hash=None,
+                outcome="outcome_unknown",
+                before_hash=None,
+                after_hash=None,
                 result={"reason": "reconcile_uncertain"},
                 outbox_payload={"kind": kind, "execution_id": execution_id},
             )
-        result = {"kind": kind, "execution_id": execution_id,
-                  "final_state": outcome.get("final_state"),
-                  "action_taken": outcome.get("action_taken")}
+        result = {
+            "kind": kind,
+            "execution_id": execution_id,
+            "final_state": outcome.get("final_state"),
+            "action_taken": outcome.get("action_taken"),
+        }
         return MutationResult(
             outcome="succeeded" if outcome.get("resolved") else "failed",
-            before_hash=None, after_hash=_canonical_hash(result),
-            result=result, outbox_payload=result,
+            before_hash=None,
+            after_hash=_canonical_hash(result),
+            result=result,
+            outbox_payload=result,
         )
 
-    # retry / refetch: create ONE idempotent CANDIDATE execution against the exact
-    # pinned plan/mapping versions. The candidate is non-live: it does not touch the
-    # published pointer (that is Governance's publish authority, excluded here).
-    projection_plan = {"executable": True, "recovery_kind": kind}
-    if prep.get("interval"):
-        projection_plan["interval"] = prep["interval"]
-    try:
-        execution = create_execution(
-            datastream_id=datastream_id,
-            project_id=project_id,
-            plan_version_id=target["plan_version_id"],
-            mapping_version_id=target["mapping_version_id"],
-            projection_plan=projection_plan,
-            actor=prep["actor"],
-            idempotency_key=f"{operation_id}:candidate",
-            conn=conn,
+    if kind == "refetch":
+        # LA PARITE, RENDUE 2026-08-22 (story 67.23) -- ET PAR APPEL, PAS PAR COPIE.
+        #
+        # Ce qui etait ici refusait `refetch` avec `run_origins.NO_ENGINE`. Le
+        # refus etait juste EN 63.7 et faux depuis : ce que la story 63.7 a retire,
+        # c'est un moteur qui mintait une execution et n'enfilait RIEN -- elle
+        # restait en `created`, un etat ACTIF, donc
+        # `uq_datastream_executions_active` repondait 409 a toute publication
+        # suivante et le flux perdait sa collecte recurrente pour de bon, d'un
+        # seul appel d'outil, en silence. Retirer CE moteur etait la reparation.
+        #
+        # Mais le registre declare `refetch` avec `has_engine=True`
+        # (`run_origins.py:93`), des deux cotes du fil (`runOrigins.ts:39`), et la
+        # porte REST en a un vrai depuis : il enfile ses fenetres et referme son
+        # run. Refuser ici laissait un modele incapable de re-collecter un jour
+        # qu'une personne re-collecte d'un clic -- l'audit du 2026-08-17 l'appelle
+        # << le trou de parite le plus net entre les portes >> (`05-datastream.md`
+        # :385-389).
+        #
+        # ALORS C'EST LE MOTEUR DE L'AUTRE PORTE QUI EST APPELE. Un second ici
+        # serait exactement la faute de 63.7 recommencee : deux chemins vers une
+        # execution, dont un seul referme la sienne. Les pre-conditions sont deja
+        # toutes verifiees plus haut (:800-832) -- versions, policy, fenetre
+        # bornee, exposition de compte, quota, verrou -- et `run_refetch` refait
+        # les gates de l'horloge par-dessus.
+        from core.datastream_collection_api import (  # noqa: PLC0415
+            RefetchRefused,
+            expand_refetch_days,
+            run_refetch,
         )
-    except PublicationError as exc:
-        logger.warning("operations_mcp: recovery candidate rejected: %s", exc)
+
+        interval = prep.get("interval") or {}
+        try:
+            days = expand_refetch_days(
+                date_from=interval.get("from"), date_to=interval.get("to")
+            )
+            answer = run_refetch(
+                datastream_id=datastream_id,
+                project_id=project_id,
+                days=days,
+                actor=prep.get("actor") or "mcp",
+            )
+        except RefetchRefused as refused:
+            # UN REFUS DU MOTEUR N'EST PAS UNE PANNE : il porte le code et la
+            # phrase que la porte REST rend, donc les deux portes refusent avec
+            # les memes mots.
+            logger.warning(
+                "operations_mcp: refetch refused ds=%s code=%s",
+                datastream_id,
+                refused.code,
+            )
+            result = {
+                "kind": kind,
+                "execution_id": None,
+                "reason": refused.code,
+                "message": refused.message,
+            }
+            return MutationResult(
+                outcome="failed",
+                before_hash=None,
+                after_hash=None,
+                result=result,
+                outbox_payload={"kind": kind, "datastream_id": datastream_id,
+                                "reason": refused.code},
+            )
+        except Exception as exc:  # noqa: BLE001
+            # L'ISSUE EST INCONNUE, PAS ECHOUEE. Des fenetres ont pu partir en
+            # file avant l'incident ; annoncer `failed` inviterait un rejeu qui
+            # les doublerait.
+            logger.error(
+                "operations_mcp: refetch uncertain ds=%s: %s", datastream_id, exc
+            )
+            return MutationResult(
+                outcome="outcome_unknown",
+                before_hash=None,
+                after_hash=None,
+                result={"kind": kind, "reason": "refetch_uncertain"},
+                outbox_payload={"kind": kind, "datastream_id": datastream_id},
+            )
+
+        result = {
+            "kind": kind,
+            "execution_id": answer.get("execution_id"),
+            "jobs": answer.get("jobs", []),
+            "windows": len(answer.get("jobs", [])),
+        }
+        if answer.get("active_run"):
+            # UN RUN DEJA EN VOL EST UN FAIT, JAMAIS UN REFUS (Jean, 2026-08-06) :
+            # les fenetres sont enfilees et atterrissent, elles n'ont simplement
+            # pas de ligne d'execution a elles.
+            result["active_run"] = answer["active_run"]
         return MutationResult(
-            outcome="failed", before_hash=None, after_hash=None,
-            result={"reason": "candidate_rejected", "kind": kind},
-            outbox_payload={"kind": kind, "datastream_id": datastream_id},
+            outcome="succeeded",
+            before_hash=None,
+            after_hash=_canonical_hash(result),
+            result=result,
+            outbox_payload=result,
         )
-    except Exception as exc:  # noqa: BLE001 -- concurrency/lock conflict, never a dup.
-        logger.warning("operations_mcp: recovery candidate conflict: %s", exc)
-        return MutationResult(
-            outcome="failed", before_hash=None, after_hash=None,
-            result={"reason": "lock_conflict", "kind": kind},
-            outbox_payload={"kind": kind, "datastream_id": datastream_id},
-        )
-    result = {"kind": kind, "execution_id": execution.get("id"),
-              "state": execution.get("state")}
+
+    # retry: REFUSED, and nothing is minted -- story 63.7.
+    #
+    # `retry` figure dans AUCUNE entree de `run_origins.RUN_ORIGINS` : le registre
+    # ne lui connait pas de moteur, et ce n'est pas un oubli -- rejouer une
+    # execution echouee telle quelle est precisement ce qui mintait un candidat
+    # non-live contre des versions epinglees sans rien enfiler. Le refus reste,
+    # et il reste pour la raison que le registre porte, pas pour une regle ecrite
+    # ici. `reconcile` plus haut est intact : il resout une execution qui existe
+    # deja et ne minte rien.
+    logger.warning(
+        "operations_mcp: recovery refused kind=%s ds=%s -- no engine advances this run",
+        kind,
+        datastream_id,
+    )
+    result = {
+        "kind": kind,
+        "execution_id": None,
+        "reason": run_origins.NO_ENGINE,
+        "message": run_origins.refusal_message(None),
+    }
     return MutationResult(
-        outcome="succeeded", before_hash=None, after_hash=_canonical_hash(result),
-        result=result, outbox_payload=result,
+        outcome="failed",
+        before_hash=None,
+        after_hash=None,
+        result=result,
+        outbox_payload={"kind": kind, "datastream_id": datastream_id,
+                        "reason": run_origins.NO_ENGINE},
     )
 
 
 # ---------------------------------------------------------------------------
 # register(mcp): define each handler locally and register it via register_profiled.
 # ---------------------------------------------------------------------------
+
+
+# ---- Read: run history (delegates to the sanitized diagnosis read model) ----
+def list_datastream_runs(datastream_id: str, cursor: int = 0, page_size: int = 50):
+    """Historique BORNE des executions/pulls d'UN flux (profil Operations, lecture).
+
+    Compose le meme modele de lecture sanitise que ``datastream_pull_history``
+    (E36-NFR05 : aucune deuxieme source de verite) : chronologie bornee et
+    paginee, serialiseur allow-list (classe d'erreur canonique, rejouabilite,
+    tentatives, intervalle, identifiants de correlation copiables). Guard strict
+    AD-5 (vue) ; flux etranger -> not_found. Ne mute AUCUN pointeur (lecture pure).
+    """
+    datastream_id = (datastream_id or "").strip() or None
+    if datastream_id is None:
+        raise _tool_error("missing_param", "datastream_id is required.")
+    identity = _identity()
+    _guard_datastream(datastream_id, identity, minimum_capability="view")
+    from core.datastream_diagnosis import (  # noqa: PLC0415
+        _assemble_timeline,
+        _bound_offset,
+        _bound_page_size,
+        _collect_events,
+    )
+    from core.db import request_connection  # noqa: PLC0415
+
+    try:
+        with request_connection(identity) as conn:
+            events, context = _collect_events(conn, datastream_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("operations_mcp: runs failed ds=%s: %s", datastream_id, exc)
+        raise _tool_error("server_error", "Erreur serveur.") from exc
+    timeline = _assemble_timeline(
+        events, cursor=_bound_offset(cursor), page_size=_bound_page_size(page_size)
+    )
+    summary = (
+        f"Executions of datastream {context.get('datastream_id')!r}: "
+        f"{timeline['page']['size']} of {timeline['total']}."
+    )
+    return _result(summary, {"context": context, "timeline": timeline})
+
+
+# ---- Read: readiness (recovery-oriented view of the diagnosis) --------------
+def get_datastream_readiness(datastream_id: str):
+    """Etat de preparation/recuperation d'UN flux (profil Operations, lecture).
+
+    Derive le diagnostic canonique (E36-FR08) via le modele de lecture partage
+    (``datastream_diagnosis._diagnose``) et expose l'etat de recuperation :
+    classe d'erreur, rejouabilite, action recommandee, presence d'une execution
+    active (verrou), et pointeur publie courant (LU, jamais mute). Guard strict
+    AD-5 (vue) ; flux etranger -> not_found. Aucune donnee brute retournee.
+    """
+    datastream_id = (datastream_id or "").strip() or None
+    if datastream_id is None:
+        raise _tool_error("missing_param", "datastream_id is required.")
+    identity = _identity()
+    _guard_datastream(datastream_id, identity, minimum_capability="view")
+    from core.datastream_diagnosis import _collect_events, _diagnose  # noqa: PLC0415
+    from core.db import request_connection  # noqa: PLC0415
+
+    try:
+        with request_connection(identity) as conn:
+            events, context = _collect_events(conn, datastream_id)
+            target = _load_target(conn, datastream_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("operations_mcp: readiness failed ds=%s: %s", datastream_id, exc)
+        raise _tool_error("server_error", "Erreur serveur.") from exc
+    diagnosis = _diagnose(events)
+    readiness = {
+        "diagnosis": diagnosis,
+        "has_active_execution": bool(target and target.get("active_execution_id")),
+        "current_published_execution_id": (
+            target.get("current_published_execution_id") if target else None
+        ),
+        "recoverable_kinds": sorted(_RECOVERY_KINDS),
+    }
+    summary = (
+        f"Readiness of datastream {context.get('datastream_id')!r}: "
+        f"verdict {diagnosis.get('verdict')}."
+    )
+    return _result(summary, {"context": context, "readiness": readiness})
+
+
+# ---- Write-effect: prepare an immutable recovery proposal (AD-27) -----------
+def prepare_datastream_recovery(
+    datastream_id: str,
+    kind: str,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    execution_id: str | None = None,
+    estimated_points: int = 0,
+):
+    """Prepare une PROPOSITION IMMUABLE de recuperation bornee (AD-27, prepare).
+
+    Produit une proposition immuable (``app.operation_preparations``) rendant
+    VISIBLE : flux cible, versions (plan/mapping) figees, intervalle borne,
+    impact attendu, quota/cout estime, verrou, chemin de rollback et cle
+    d'idempotence. Ne cree AUCUNE operation durable et ne declenche AUCUN
+    dispatch (c'est ``confirm_datastream_recovery`` qui, sur confirmation de
+    confiance, route UNE operation via Story 36.2). ``kind`` in
+    {retry, refetch, reconcile} : la publication de mapping et l'autorite sur le
+    pointeur publie sont EXCLUES de ce profil. Guard strict AD-5 (edition
+    requise) ; flux etranger -> not_found. Intervalle refetch borne a
+    ``_MAX_REFETCH_DAYS`` jours (au-dela = forbidden_interval).
+    """
+    datastream_id = (datastream_id or "").strip() or None
+    kind = (kind or "").strip()
+    if datastream_id is None:
+        raise _tool_error("missing_param", "datastream_id is required.")
+    if kind not in _RECOVERY_KINDS:
+        raise _tool_error("invalid_kind", "Recovery type not allowed.")
+    identity = _identity()
+    decision = _guard_datastream(datastream_id, identity, minimum_capability="edit")
+    org_id = str(decision.org_id)
+
+    # Bound / normalize the interval per kind (forbidden_interval refuses here).
+    interval: dict | None = None
+    if kind == "refetch":
+        interval = _bounded_interval(date_from, date_to)
+    elif kind == "reconcile":
+        execution_id = (execution_id or "").strip() or None
+        if execution_id is None:
+            raise _tool_error("missing_param", "execution_id is required for reconcile.")
+        interval = {"execution_id": execution_id}
+
+    from core.db import request_connection  # noqa: PLC0415
+
+    try:
+        with request_connection(identity) as conn:
+            target = _load_target(conn, datastream_id)
+            if target is None:
+                raise _tool_error("not_found", "Datastream not found.")
+            target_versions = {
+                "plan_version_id": target.get("plan_version_id"),
+                "mapping_version_id": target.get("mapping_version_id"),
+                "policy_version": _current_policy_version(),
+            }
+            quota = _quota_estimate(target.get("platform"), estimated_points)
+            impact = {
+                "kind": kind,
+                "interval": interval,
+                "touches_published_pointer": False,  # Operations NEVER publishes.
+                "candidate_only": kind in {"retry", "refetch"},
+            }
+            lock_ref = target.get("active_execution_id")
+            rollback_ref = target.get("current_published_execution_id")
+            fingerprint = _proposal_fingerprint(
+                {
+                    "datastream_id": datastream_id,
+                    "kind": kind,
+                    "interval": interval,
+                    "target_versions": target_versions,
+                }
+            )
+            idempotency_key = _recovery_idempotency_key(
+                org_id, datastream_id, kind, fingerprint
+            )
+            proposal = {
+                "org_id": org_id,
+                "project_id": target.get("project_id"),
+                "datastream_id": datastream_id,
+                "kind": kind,
+                "actor": identity,
+                "target_versions": target_versions,
+                "interval": interval,
+                "impact": impact,
+                "quota": quota,
+                "lock_ref": lock_ref,
+                "rollback_ref": rollback_ref,
+            }
+            preparation_id = _insert_preparation(conn, proposal, idempotency_key)
+            conn.commit()
+    except Exception as exc:  # noqa: BLE001
+        if isinstance(exc, Exception) and exc.__class__.__name__ == "ToolError":
+            raise
+        logger.error("operations_mcp: prepare failed ds=%s: %s", datastream_id, exc)
+        raise _tool_error("server_error", "Preparation unavailable.") from exc
+
+    data = {
+        "preparation_id": preparation_id,
+        "target": {
+            "datastream_id": datastream_id,
+            "project_id": proposal["project_id"],
+        },
+        "kind": kind,
+        "target_versions": target_versions,
+        "interval": interval,
+        "impact": impact,
+        "quota": quota,
+        "lock_ref": lock_ref,
+        "rollback_ref": rollback_ref,
+        "expires_in_seconds": _PREPARATION_TTL_SECONDS,
+    }
+    summary = (
+        f"Recovery proposal {kind!r} prepared for datastream "
+        f"{datastream_id!r} (immutable, pending confirmation)."
+    )
+    return _result(summary, data)
+
+
+# ---- Write-effect: confirm -> ONE durable operation + dispatch (AD-27) ------
+def confirm_datastream_recovery(preparation_id: str):
+    """Confirme une proposition et route UNE operation durable (AD-27, commit).
+
+    Sur confirmation de confiance, RE-VERIFIE tous les preconditions
+    d'autorisation : versions plan/mapping perimees, politique changee,
+    intervalle interdit, exposition de compte manquante, violation de quota,
+    conflit de verrou -> AUCUN dispatch (AC4). Sinon, cree EXACTEMENT UNE
+    operation durable via Story 36.2 (etat+audit+outbox atomiques) et le
+    dispatch la reutilise. Un confirm en double / timeout / retry renvoie
+    l'operation ORIGINALE + son etat (jamais de doublon, AC5). Guard strict
+    AD-5 (edition) ; proposition etrangere/perimee/deja consommee -> not_found.
+    Ne publie JAMAIS de mapping et ne mute JAMAIS le pointeur publie.
+    """
+    preparation_id = (preparation_id or "").strip() or None
+    if preparation_id is None:
+        raise _tool_error("missing_param", "preparation_id is required.")
+    identity = _identity()
+
+    from core.db import request_connection  # noqa: PLC0415
+    from core.operations import (  # noqa: PLC0415
+        OperationSpec,
+        _sha256,
+        execute_operation,
+    )
+
+    try:
+        with request_connection(identity) as conn:
+            prep = _load_preparation(conn, preparation_id)
+            if prep is None:
+                raise _tool_error("not_found", "Proposal not found.")
+            # Re-authorize the resource at CALL time (fail closed, edit floor).
+            decision = _guard_datastream(
+                prep["datastream_id"], identity, minimum_capability="edit"
+            )
+            if str(decision.org_id) != prep["org_id"]:
+                raise _tool_error("not_found", "Proposal not found.")
+            # Stale / consumed / expired proposal -> refuse (no dispatch).
+            if prep["state"] != "prepared" or prep["expired"]:
+                raise _tool_error("stale_preparation", "Proposal stale or already handled.")
+
+            target = _load_target(conn, prep["datastream_id"])
+            if target is None:
+                raise _tool_error("not_found", "Datastream not found.")
+
+            # (a) stale plan/mapping versions -> refuse.
+            if not _versions_match(prep["target_versions"], target):
+                raise _tool_error("stale_versions", "Versions plan/mapping perimees.")
+            # (b) changed policy -> refuse.
+            if prep["target_versions"].get("policy_version") != _current_policy_version():
+                raise _tool_error("policy_changed", "Policy changed since the preparation.")
+            # (c) forbidden interval (revalidate the bounded refetch window).
+            if prep["kind"] == "refetch":
+                _bounded_interval(
+                    (prep.get("interval") or {}).get("from"),
+                    (prep.get("interval") or {}).get("to"),
+                )
+            # (d) missing account exposure -> refuse. No live connection ref =>
+            # the account exposure was revoked/never granted (fail closed).
+            if not target.get("platform"):
+                raise _tool_error("missing_exposure", "Exposition de compte manquante.")
+            # (e) quota violation -> refuse (re-run the pre-check, not the cache).
+            quota_now = _quota_estimate(
+                target.get("platform"),
+                int((prep.get("quota") or {}).get("estimated_points", 0)),
+            )
+            if not quota_now.get("can_proceed"):
+                raise _tool_error("quota_violation", "Budget quota insuffisant.")
+            # (f) lock conflict -> refuse. A retry/refetch needs a free lock; a
+            # newly-active execution that is not our own rollback target blocks.
+            if prep["kind"] in {"retry", "refetch"} and target.get("active_execution_id"):
+                raise _tool_error("lock_conflict", "An execution is already active.")
+
+            # All rechecks pass: route EXACTLY ONE durable operation (Story 36.2).
+            # The idempotency key is rebuilt from the SAME immutable proposal
+            # fingerprint so a duplicate confirm replays the original operation.
+            fingerprint = _proposal_fingerprint(
+                {
+                    "datastream_id": prep["datastream_id"],
+                    "kind": prep["kind"],
+                    "interval": prep["interval"],
+                    "target_versions": prep["target_versions"],
+                }
+            )
+            idempotency_key = _recovery_idempotency_key(
+                prep["org_id"], prep["datastream_id"], prep["kind"], fingerprint
+            )
+            # Defence in depth: the raw key must hash to the value pinned at
+            # prepare -- otherwise the confirmed proposal was tampered with.
+            if _sha256(idempotency_key) != prep["idempotency_key_hash"]:
+                raise _tool_error("stale_preparation", "Proposition alteree.")
+
+            spec = OperationSpec(
+                command_type=f"operations.recovery.{prep['kind']}",
+                actor=identity,
+                effective_org_id=prep["org_id"],
+                resource_path=(
+                    f"organization:{prep['org_id']}",
+                    f"flux:{prep['datastream_id']}",
+                ),
+                idempotency_key=idempotency_key,
+                host_context={},
+                versions={
+                    "policy": prep["target_versions"].get("policy_version"),
+                    "catalog": _current_policy_version(),
+                    "tool": "confirm_datastream_recovery",
+                },
+                request_payload={
+                    "kind": prep["kind"],
+                    "interval": prep["interval"],
+                    "plan_version_id": prep["target_versions"].get("plan_version_id"),
+                    "mapping_version_id": prep["target_versions"].get("mapping_version_id"),
+                },
+                provider_references={},
+                confirmation_mode="human",
+                confirmation_reference=preparation_id,
+                trace_id=None,
+            )
+
+            op_result = execute_operation(
+                conn,
+                spec,
+                mutation=lambda c, op_id: _dispatch_recovery(c, op_id, prep, target),
+            )
+            # Link the durable operation back to the immutable proposal (lifecycle
+            # only). On a REPLAY the proposal is already confirmed -> no-op.
+            _mark_preparation_confirmed(conn, preparation_id, op_result.operation_id)
+            conn.commit()
+    except Exception as exc:  # noqa: BLE001
+        if exc.__class__.__name__ == "ToolError":
+            raise
+        logger.error("operations_mcp: confirm failed prep=%s: %s", preparation_id, exc)
+        raise _tool_error("server_error", "Confirmation unavailable.") from exc
+
+    data = {
+        "preparation_id": preparation_id,
+        "operation_id": op_result.operation_id,
+        "outcome": op_result.outcome,
+        "replayed": op_result.replayed,
+        "result": op_result.result,
+    }
+    replayed = " (replay of the original operation)" if op_result.replayed else ""
+    summary = (
+        f"Recovery {prep['kind']!r} confirmed: operation "
+        f"{op_result.operation_id} ({op_result.outcome}){replayed}."
+    )
+    return _result(summary, data)
+
+
+# ---- Read: connector installation status (Story 38.2, AC2) -----------------
+def get_connector_installation_status(connector_name: str):
+    """Read platform connector installation evidence (platform admins only).
+
+    The Operations capability profile controls discovery. Call-time
+    authorization separately enforces the platform-administrator audience,
+    matching the full REST projection.
+    """
+    connector_name = (connector_name or "").strip() or None
+    if connector_name is None:
+        raise _tool_error("missing_param", "connector_name is required.")
+
+    identity = _identity()
+    # THE one resolution (audit 12, P1-2): `_identity()` returns the token
+    # `sub`, a `person_<ULID>` in canonical mode, and the allow-list is keyed
+    # by email -- the raw comparison that stood here could never pass.
+    from core.super_admin import identity_is_super_admin  # noqa: PLC0415
+
+    if not identity_is_super_admin(identity):
+        raise _tool_error("not_found", "Resource not found.")
+
+    import os as _os  # noqa: PLC0415
+
+    environment = _os.environ.get("TOOROW_ENVIRONMENT", "production").strip() or "production"
+
+    try:
+        from core.connector_installation import get_installation_state  # noqa: PLC0415
+        from core.db import get_connection  # noqa: PLC0415
+
+        with get_connection() as conn:
+            read_model = get_installation_state(
+                conn,
+                environment=environment,
+                connector_name=connector_name,
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "operations_mcp: get_connector_installation_status cn=%s: %s",
+            connector_name,
+            exc,
+        )
+        raise _tool_error("server_error", "Installation state is unavailable.") from exc
+
+    if read_model is None:
+        data = {
+            "connector_name": connector_name,
+            "environment": environment,
+            "state": "NOT_INSTALLED",
+            "safe_next_action": (
+                "platform_admin: apply installation to advance to DOMAIN_PENDING"
+            ),
+            "responsible_actor": "platform_admin",
+            "blocking_cause": "installation_not_applied",
+            "last_verified_at": None,
+            "catalog_availability": "unavailable",
+        }
+    else:
+        state = read_model["state"]
+        data = {
+            "connector_name": connector_name,
+            "environment": environment,
+            **read_model,
+            "catalog_availability": ("selectable" if state == "READY" else "unavailable"),
+        }
+
+    summary = (
+        f"Connector {connector_name!r} installation: "
+        f"{data['state']} / {data['catalog_availability']}."
+    )
+    return _result(summary, data)
+
+
+# ---- Read: connector domain config (Story 38.3, AC2) -------------------------
+def get_connector_domain_config(connector_name: str):
+    """Read the secret-free platform connector domain configuration."""
+    connector_name = (connector_name or "").strip() or None
+    if connector_name is None:
+        raise _tool_error("missing_param", "connector_name is required.")
+
+    identity = _identity()
+    # THE one resolution (audit 12, P1-2): `_identity()` returns the token
+    # `sub`, a `person_<ULID>` in canonical mode, and the allow-list is keyed
+    # by email -- the raw comparison that stood here could never pass.
+    from core.super_admin import identity_is_super_admin  # noqa: PLC0415
+
+    if not identity_is_super_admin(identity):
+        raise _tool_error("not_found", "Resource not found.")
+
+    import os as _os  # noqa: PLC0415
+
+    environment = _os.environ.get("TOOROW_ENVIRONMENT", "production").strip() or "production"
+
+    try:
+        from core.connector_domain import get_domain_config  # noqa: PLC0415
+        from core.db import get_connection  # noqa: PLC0415
+
+        with get_connection() as conn:
+            read_model = get_domain_config(
+                conn,
+                environment=environment,
+                connector_name=connector_name,
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "operations_mcp: get_connector_domain_config cn=%s: %s",
+            connector_name,
+            exc,
+        )
+        raise _tool_error("server_error", "Domain configuration is unavailable.") from exc
+
+    if read_model is None:
+        data = {
+            "connector_name": connector_name,
+            "environment": environment,
+            "configured": False,
+            "safe_next_action": (
+                "platform_admin: POST domain config to configure receiving domain"
+            ),
+        }
+    else:
+        data = {
+            "connector_name": connector_name,
+            "environment": environment,
+            "configured": True,
+            **read_model,
+        }
+
+    configured = data.get("configured", False)
+    summary = (
+        f"Connector domain configuration for {connector_name!r}: "
+        f"{'configured' if configured else 'not configured'} (environment={environment})."
+    )
+    return _result(summary, data)
+
+
+# ---- Read: connector verification status (Story 38.4, AC4) ------------------
+def get_connector_verification_status(connector_name: str):
+    """Read secret-free platform connector verification evidence.
+
+    The Operations profile controls discovery. Call-time authorization
+    separately enforces the platform-administrator audience, matching REST.
+    """
+    connector_name = (connector_name or "").strip() or None
+    if connector_name is None:
+        raise _tool_error("missing_param", "connector_name is required.")
+
+    identity = _identity()
+    # THE one resolution (audit 12, P1-2): `_identity()` returns the token
+    # `sub`, a `person_<ULID>` in canonical mode, and the allow-list is keyed
+    # by email -- the raw comparison that stood here could never pass.
+    from core.super_admin import identity_is_super_admin  # noqa: PLC0415
+
+    if not identity_is_super_admin(identity):
+        raise _tool_error("not_found", "Resource not found.")
+
+    import os as _os  # noqa: PLC0415
+
+    environment = _os.environ.get("TOOROW_ENVIRONMENT", "production").strip() or "production"
+
+    try:
+        from core.connector_verification import get_verification_state  # noqa: PLC0415
+        from core.db import get_connection  # noqa: PLC0415
+
+        with get_connection() as conn:
+            read_model = get_verification_state(
+                conn,
+                environment=environment,
+                connector_name=connector_name,
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "operations_mcp: get_connector_verification_status cn=%s: %s",
+            connector_name,
+            exc,
+        )
+        raise _tool_error("server_error", "Verification state is unavailable.") from exc
+
+    if read_model is None:
+        data = {
+            "connector_name": connector_name,
+            "environment": environment,
+            "verified": False,
+            "safe_next_action": ("platform_admin: POST /verify to run the first verification"),
+        }
+    else:
+        data = {
+            "connector_name": connector_name,
+            "environment": environment,
+            "verified": True,
+            **read_model,
+        }
+
+    outcome = data.get("last_outcome", "unverified")
+    summary = (
+        f"Connector {connector_name!r} verification: {outcome} (environment={environment})."
+    )
+    return _result(summary, data)
+
+
+# ---- Read: connector activation status (Story 38.5, AC2) -------------------
+def get_connector_activation_status(connector_name: str, org_id: str):
+    """Read one org-scoped connector activation state."""
+
+    connector_name = (connector_name or "").strip() or None
+    org_id = (org_id or "").strip() or None
+    if connector_name is None:
+        raise _tool_error("missing_param", "connector_name is required.")
+    if org_id is None:
+        raise _tool_error("missing_param", "org_id is required.")
+
+    import os as _os  # noqa: PLC0415
+
+    environment = _os.environ.get("TOOROW_ENVIRONMENT", "production").strip() or "production"
+    identity = _identity()
+    denied = False
+    try:
+        from core.connector_activation import get_activation  # noqa: PLC0415
+        from core.db import request_connection  # noqa: PLC0415
+        from core.project_access import identity_has_org_access  # noqa: PLC0415
+
+        with request_connection(identity) as conn:
+            if not identity_has_org_access(org_id, identity, conn):
+                denied = True
+                read_model = None
+            else:
+                read_model = get_activation(
+                    conn,
+                    org_id=org_id,
+                    connector_name=connector_name,
+                    environment=environment,
+                )
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "operations_mcp: get_connector_activation_status cn=%s org=%s: %s",
+            connector_name,
+            org_id,
+            exc,
+        )
+        raise _tool_error("server_error", "Activation state is unavailable.") from exc
+
+    if denied:
+        raise _tool_error("not_found", "Activation state not found.")
+
+    if read_model is None:
+        data = {
+            "connector_name": connector_name,
+            "org_id": org_id,
+            "environment": environment,
+            "activated": False,
+            "safe_next_action": (
+                "org_owner: POST /activation to activate the connector for this org"
+            ),
+        }
+    else:
+        data = {
+            "connector_name": connector_name,
+            "environment": environment,
+            "activated": read_model["state"] == "ACTIVE",
+            **read_model,
+        }
+
+    activated = data.get("activated", False)
+    state = data.get("state", "not_activated")
+    summary = (
+        f"Connector {connector_name!r} activation for org {org_id!r}: "
+        f"{state} ({'active' if activated else 'inactive'})."
+    )
+    return _result(summary, data)
+
+
+# ---- Read: import template catalog (Story 38.6, AC4 MCP parity) ------------
+def list_inbound_templates():
+    """Catalogue des contrats de fichiers immuables disponibles (profil Operations, lecture).
+
+    Retourne le modele de lecture securise du catalogue de templates
+    (template_code, version, title, required_fields, optional_fields,
+    identity_keys, grain, is_generic, created_at). Aucun secret, aucune
+    donnee inter-tenant. Le catalogue est une reference de plateforme --
+    chaque entree est immuable (AC3 : un changement = nouvelle version).
+    Guard strict : profil Operations requis. Identique au GET REST (AC4 :
+    meme evidence). is_generic=TRUE signale le mode decouverte-dabord.
+    """
+    try:
+        from core.db import get_connection  # noqa: PLC0415
+        from core.import_templates import list_templates  # noqa: PLC0415
+
+        with get_connection() as conn:
+            templates = list_templates(conn)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("operations_mcp: list_inbound_templates: %s", exc)
+        raise _tool_error("server_error", "Template catalogue unavailable.") from exc
+
+    summary = f"Import template catalogue: {len(templates)} template(s) available."
+    return _result(summary, {"templates": templates, "count": len(templates)})
+
+
+# ---- Read: inbound credential status (Story 38.7, AC2/Task 4) ---------------
+def get_inbound_credential_status(datastream_id: str, credential_id: str):
+    """Return the secret-free status of one inbound delivery credential.
+
+    The Operations profile and Datastream view capability are required.
+    The access lock and credential read share one transaction. The result
+    never contains a raw token or token hash, and absence is intentionally
+    indistinguishable from cross-tenant denial.
+    """
+    datastream_id = (datastream_id or "").strip() or None
+    credential_id = (credential_id or "").strip() or None
+    if datastream_id is None:
+        raise _tool_error("missing_param", "datastream_id is required.")
+    if credential_id is None:
+        raise _tool_error("missing_param", "credential_id is required.")
+
+    identity = _identity()
+    try:
+        from core.db import request_connection  # noqa: PLC0415
+        from core.inbound_credentials import get_credential_state  # noqa: PLC0415
+
+        with request_connection(identity) as conn:
+            _guard_datastream(
+                datastream_id,
+                identity,
+                minimum_capability="view",
+                conn=conn,
+                not_found_message="Credential not found.",
+            )
+            read_model = get_credential_state(
+                conn,
+                credential_id=credential_id,
+                datastream_id=datastream_id,
+            )
+    except Exception as exc:  # noqa: BLE001
+        if exc.__class__.__name__ == "ToolError":
+            raise
+        logger.error(
+            "operations_mcp: get_inbound_credential_status ds=%s cred=%s: %s",
+            datastream_id,
+            credential_id,
+            exc,
+        )
+        raise _tool_error("server_error", "Credential status is unavailable.") from exc
+
+    if read_model is None:
+        raise _tool_error("not_found", "Credential not found.")
+
+    data = {"datastream_id": datastream_id, **read_model}
+    state = data.get("state", "unknown")
+    summary = (
+        f"Credential {credential_id!r} for Datastream {datastream_id!r}: "
+        f"state {state}, version {data.get('version')}."
+    )
+    return _result(summary, data)
 
 
 def register(mcp) -> None:
@@ -523,764 +1350,103 @@ def register(mcp) -> None:
     boot-time validator sees these operations tools. Every tool is registered via
     ``mcp_profiles.register_profiled`` so the capability middleware filters it:
     reads are ``effect="read"``/``confirmation_mode="none"``; the write-effect
-    ``confirm_datastream_recovery`` is ``effect="write"``/``confirmation_mode="human"``.
+    ``confirm_datastream_recovery`` is ``effect="confirmed_write"``/``confirmation_mode="human"``.
     None is ever ``profile="insights"`` (that stays Insights read-only).
     """
     from core.mcp_profiles import register_profiled  # noqa: PLC0415
 
-    # ---- Read: run history (delegates to the sanitized diagnosis read model) ----
-    def list_datastream_runs(datastream_id: str, cursor: int = 0, page_size: int = 50):
-        """Historique BORNE des executions/pulls d'UN flux (profil Operations, lecture).
-
-        Compose le meme modele de lecture sanitise que ``datastream_pull_history``
-        (E36-NFR05 : aucune deuxieme source de verite) : chronologie bornee et
-        paginee, serialiseur allow-list (classe d'erreur canonique, rejouabilite,
-        tentatives, intervalle, identifiants de correlation copiables). Guard strict
-        AD-5 (vue) ; flux etranger -> not_found. Ne mute AUCUN pointeur (lecture pure).
-        """
-        datastream_id = (datastream_id or "").strip() or None
-        if datastream_id is None:
-            raise _tool_error("missing_param", "datastream_id est requis.")
-        identity = _identity()
-        _guard_datastream(datastream_id, identity, minimum_capability="view")
-        from core.datastream_diagnosis import (  # noqa: PLC0415
-            _assemble_timeline,
-            _bound_offset,
-            _bound_page_size,
-            _collect_events,
-        )
-        from core.db import get_connection  # noqa: PLC0415
-
-        try:
-            with get_connection() as conn:
-                events, context = _collect_events(conn, datastream_id)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("operations_mcp: runs failed ds=%s: %s", datastream_id, exc)
-            raise _tool_error("server_error", "Erreur serveur.") from exc
-        timeline = _assemble_timeline(
-            events, cursor=_bound_offset(cursor), page_size=_bound_page_size(page_size)
-        )
-        summary = (
-            f"Executions du flux {context.get('datastream_id')!r} : "
-            f"{timeline['page']['size']} sur {timeline['total']}."
-        )
-        return _result(summary, {"context": context, "timeline": timeline})
-
-    # ---- Read: readiness (recovery-oriented view of the diagnosis) --------------
-    def get_datastream_readiness(datastream_id: str):
-        """Etat de preparation/recuperation d'UN flux (profil Operations, lecture).
-
-        Derive le diagnostic canonique (E36-FR08) via le modele de lecture partage
-        (``datastream_diagnosis._diagnose``) et expose l'etat de recuperation :
-        classe d'erreur, rejouabilite, action recommandee, presence d'une execution
-        active (verrou), et pointeur publie courant (LU, jamais mute). Guard strict
-        AD-5 (vue) ; flux etranger -> not_found. Aucune donnee brute retournee.
-        """
-        datastream_id = (datastream_id or "").strip() or None
-        if datastream_id is None:
-            raise _tool_error("missing_param", "datastream_id est requis.")
-        identity = _identity()
-        _guard_datastream(datastream_id, identity, minimum_capability="view")
-        from core.datastream_diagnosis import _collect_events, _diagnose  # noqa: PLC0415
-        from core.db import get_connection  # noqa: PLC0415
-
-        try:
-            with get_connection() as conn:
-                events, context = _collect_events(conn, datastream_id)
-                target = _load_target(conn, datastream_id)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("operations_mcp: readiness failed ds=%s: %s", datastream_id, exc)
-            raise _tool_error("server_error", "Erreur serveur.") from exc
-        diagnosis = _diagnose(events)
-        readiness = {
-            "diagnosis": diagnosis,
-            "has_active_execution": bool(target and target.get("active_execution_id")),
-            "current_published_execution_id": (
-                target.get("current_published_execution_id") if target else None
-            ),
-            "recoverable_kinds": sorted(_RECOVERY_KINDS),
-        }
-        summary = (
-            f"Preparation du flux {context.get('datastream_id')!r} : "
-            f"verdict {diagnosis.get('verdict')}."
-        )
-        return _result(summary, {"context": context, "readiness": readiness})
-
-    # ---- Write-effect: prepare an immutable recovery proposal (AD-27) -----------
-    def prepare_datastream_recovery(
-        datastream_id: str,
-        kind: str,
-        date_from: str | None = None,
-        date_to: str | None = None,
-        execution_id: str | None = None,
-        estimated_points: int = 0,
-    ):
-        """Prepare une PROPOSITION IMMUABLE de recuperation bornee (AD-27, prepare).
-
-        Produit une proposition immuable (``app.operation_preparations``) rendant
-        VISIBLE : flux cible, versions (plan/mapping) figees, intervalle borne,
-        impact attendu, quota/cout estime, verrou, chemin de rollback et cle
-        d'idempotence. Ne cree AUCUNE operation durable et ne declenche AUCUN
-        dispatch (c'est ``confirm_datastream_recovery`` qui, sur confirmation de
-        confiance, route UNE operation via Story 36.2). ``kind`` in
-        {retry, refetch, reconcile} : la publication de mapping et l'autorite sur le
-        pointeur publie sont EXCLUES de ce profil. Guard strict AD-5 (edition
-        requise) ; flux etranger -> not_found. Intervalle refetch borne a
-        ``_MAX_REFETCH_DAYS`` jours (au-dela = forbidden_interval).
-        """
-        datastream_id = (datastream_id or "").strip() or None
-        kind = (kind or "").strip()
-        if datastream_id is None:
-            raise _tool_error("missing_param", "datastream_id est requis.")
-        if kind not in _RECOVERY_KINDS:
-            raise _tool_error("invalid_kind", "Type de recuperation non autorise.")
-        identity = _identity()
-        decision = _guard_datastream(datastream_id, identity, minimum_capability="edit")
-        org_id = str(decision.org_id)
-
-        # Bound / normalize the interval per kind (forbidden_interval refuses here).
-        interval: dict | None = None
-        if kind == "refetch":
-            interval = _bounded_interval(date_from, date_to)
-        elif kind == "reconcile":
-            execution_id = (execution_id or "").strip() or None
-            if execution_id is None:
-                raise _tool_error("missing_param", "execution_id est requis pour reconcile.")
-            interval = {"execution_id": execution_id}
-
-        from core.db import get_connection  # noqa: PLC0415
-
-        try:
-            with get_connection() as conn:
-                target = _load_target(conn, datastream_id)
-                if target is None:
-                    raise _tool_error("not_found", "Flux introuvable.")
-                target_versions = {
-                    "plan_version_id": target.get("plan_version_id"),
-                    "mapping_version_id": target.get("mapping_version_id"),
-                    "policy_version": _current_policy_version(),
-                }
-                quota = _quota_estimate(target.get("platform"), estimated_points)
-                impact = {
-                    "kind": kind,
-                    "interval": interval,
-                    "touches_published_pointer": False,  # Operations NEVER publishes.
-                    "candidate_only": kind in {"retry", "refetch"},
-                }
-                lock_ref = target.get("active_execution_id")
-                rollback_ref = target.get("current_published_execution_id")
-                fingerprint = _proposal_fingerprint(
-                    {
-                        "datastream_id": datastream_id,
-                        "kind": kind,
-                        "interval": interval,
-                        "target_versions": target_versions,
-                    }
-                )
-                idempotency_key = _recovery_idempotency_key(
-                    org_id, datastream_id, kind, fingerprint
-                )
-                proposal = {
-                    "org_id": org_id,
-                    "project_id": target.get("project_id"),
-                    "datastream_id": datastream_id,
-                    "kind": kind,
-                    "actor": identity,
-                    "target_versions": target_versions,
-                    "interval": interval,
-                    "impact": impact,
-                    "quota": quota,
-                    "lock_ref": lock_ref,
-                    "rollback_ref": rollback_ref,
-                }
-                preparation_id = _insert_preparation(conn, proposal, idempotency_key)
-                conn.commit()
-        except Exception as exc:  # noqa: BLE001
-            if isinstance(exc, Exception) and exc.__class__.__name__ == "ToolError":
-                raise
-            logger.error("operations_mcp: prepare failed ds=%s: %s", datastream_id, exc)
-            raise _tool_error("server_error", "Preparation indisponible.") from exc
-
-        data = {
-            "preparation_id": preparation_id,
-            "target": {
-                "datastream_id": datastream_id,
-                "project_id": proposal["project_id"],
-            },
-            "kind": kind,
-            "target_versions": target_versions,
-            "interval": interval,
-            "impact": impact,
-            "quota": quota,
-            "lock_ref": lock_ref,
-            "rollback_ref": rollback_ref,
-            "expires_in_seconds": _PREPARATION_TTL_SECONDS,
-        }
-        summary = (
-            f"Proposition de recuperation {kind!r} preparee pour le flux "
-            f"{datastream_id!r} (immuable, a confirmer)."
-        )
-        return _result(summary, data)
-
-    # ---- Write-effect: confirm -> ONE durable operation + dispatch (AD-27) ------
-    def confirm_datastream_recovery(preparation_id: str):
-        """Confirme une proposition et route UNE operation durable (AD-27, commit).
-
-        Sur confirmation de confiance, RE-VERIFIE tous les preconditions
-        d'autorisation : versions plan/mapping perimees, politique changee,
-        intervalle interdit, exposition de compte manquante, violation de quota,
-        conflit de verrou -> AUCUN dispatch (AC4). Sinon, cree EXACTEMENT UNE
-        operation durable via Story 36.2 (etat+audit+outbox atomiques) et le
-        dispatch la reutilise. Un confirm en double / timeout / retry renvoie
-        l'operation ORIGINALE + son etat (jamais de doublon, AC5). Guard strict
-        AD-5 (edition) ; proposition etrangere/perimee/deja consommee -> not_found.
-        Ne publie JAMAIS de mapping et ne mute JAMAIS le pointeur publie.
-        """
-        preparation_id = (preparation_id or "").strip() or None
-        if preparation_id is None:
-            raise _tool_error("missing_param", "preparation_id est requis.")
-        identity = _identity()
-
-        from core.db import get_connection  # noqa: PLC0415
-        from core.operations import (  # noqa: PLC0415
-            OperationSpec,
-            _sha256,
-            execute_operation,
-        )
-
-        try:
-            with get_connection() as conn:
-                prep = _load_preparation(conn, preparation_id)
-                if prep is None:
-                    raise _tool_error("not_found", "Proposition introuvable.")
-                # Re-authorize the resource at CALL time (fail closed, edit floor).
-                decision = _guard_datastream(
-                    prep["datastream_id"], identity, minimum_capability="edit"
-                )
-                if str(decision.org_id) != prep["org_id"]:
-                    raise _tool_error("not_found", "Proposition introuvable.")
-                # Stale / consumed / expired proposal -> refuse (no dispatch).
-                if prep["state"] != "prepared" or prep["expired"]:
-                    raise _tool_error("stale_preparation", "Proposition perimee ou deja traitee.")
-
-                target = _load_target(conn, prep["datastream_id"])
-                if target is None:
-                    raise _tool_error("not_found", "Flux introuvable.")
-
-                # (a) stale plan/mapping versions -> refuse.
-                if not _versions_match(prep["target_versions"], target):
-                    raise _tool_error("stale_versions", "Versions plan/mapping perimees.")
-                # (b) changed policy -> refuse.
-                if prep["target_versions"].get("policy_version") != _current_policy_version():
-                    raise _tool_error("policy_changed", "Politique modifiee depuis la preparation.")
-                # (c) forbidden interval (revalidate the bounded refetch window).
-                if prep["kind"] == "refetch":
-                    _bounded_interval(
-                        (prep.get("interval") or {}).get("from"),
-                        (prep.get("interval") or {}).get("to"),
-                    )
-                # (d) missing account exposure -> refuse. No live connection ref =>
-                # the account exposure was revoked/never granted (fail closed).
-                if not target.get("platform"):
-                    raise _tool_error("missing_exposure", "Exposition de compte manquante.")
-                # (e) quota violation -> refuse (re-run the pre-check, not the cache).
-                quota_now = _quota_estimate(
-                    target.get("platform"),
-                    int((prep.get("quota") or {}).get("estimated_points", 0)),
-                )
-                if not quota_now.get("can_proceed"):
-                    raise _tool_error("quota_violation", "Budget quota insuffisant.")
-                # (f) lock conflict -> refuse. A retry/refetch needs a free lock; a
-                # newly-active execution that is not our own rollback target blocks.
-                if prep["kind"] in {"retry", "refetch"} and target.get("active_execution_id"):
-                    raise _tool_error("lock_conflict", "Une execution est deja active.")
-
-                # All rechecks pass: route EXACTLY ONE durable operation (Story 36.2).
-                # The idempotency key is rebuilt from the SAME immutable proposal
-                # fingerprint so a duplicate confirm replays the original operation.
-                fingerprint = _proposal_fingerprint(
-                    {
-                        "datastream_id": prep["datastream_id"],
-                        "kind": prep["kind"],
-                        "interval": prep["interval"],
-                        "target_versions": prep["target_versions"],
-                    }
-                )
-                idempotency_key = _recovery_idempotency_key(
-                    prep["org_id"], prep["datastream_id"], prep["kind"], fingerprint
-                )
-                # Defence in depth: the raw key must hash to the value pinned at
-                # prepare -- otherwise the confirmed proposal was tampered with.
-                if _sha256(idempotency_key) != prep["idempotency_key_hash"]:
-                    raise _tool_error("stale_preparation", "Proposition alteree.")
-
-                spec = OperationSpec(
-                    command_type=f"operations.recovery.{prep['kind']}",
-                    actor=identity,
-                    effective_org_id=prep["org_id"],
-                    resource_path=(
-                        f"organization:{prep['org_id']}",
-                        f"flux:{prep['datastream_id']}",
-                    ),
-                    idempotency_key=idempotency_key,
-                    host_context={},
-                    versions={
-                        "policy": prep["target_versions"].get("policy_version"),
-                        "catalog": _current_policy_version(),
-                        "tool": "confirm_datastream_recovery",
-                    },
-                    request_payload={
-                        "kind": prep["kind"],
-                        "interval": prep["interval"],
-                        "plan_version_id": prep["target_versions"].get("plan_version_id"),
-                        "mapping_version_id": prep["target_versions"].get("mapping_version_id"),
-                    },
-                    provider_references={},
-                    confirmation_mode="human",
-                    confirmation_reference=preparation_id,
-                    trace_id=None,
-                )
-
-                op_result = execute_operation(
-                    conn,
-                    spec,
-                    mutation=lambda c, op_id: _dispatch_recovery(c, op_id, prep, target),
-                )
-                # Link the durable operation back to the immutable proposal (lifecycle
-                # only). On a REPLAY the proposal is already confirmed -> no-op.
-                _mark_preparation_confirmed(conn, preparation_id, op_result.operation_id)
-                conn.commit()
-        except Exception as exc:  # noqa: BLE001
-            if exc.__class__.__name__ == "ToolError":
-                raise
-            logger.error("operations_mcp: confirm failed prep=%s: %s", preparation_id, exc)
-            raise _tool_error("server_error", "Confirmation indisponible.") from exc
-
-        data = {
-            "preparation_id": preparation_id,
-            "operation_id": op_result.operation_id,
-            "outcome": op_result.outcome,
-            "replayed": op_result.replayed,
-            "result": op_result.result,
-        }
-        replayed = " (rejeu de l'operation originale)" if op_result.replayed else ""
-        summary = (
-            f"Recuperation {prep['kind']!r} confirmee : operation "
-            f"{op_result.operation_id} ({op_result.outcome}){replayed}."
-        )
-        return _result(summary, data)
-
-    # ---- Read: connector installation status (Story 38.2, AC2) -----------------
-    def get_connector_installation_status(connector_name: str):
-        """Etat d'installation d'un connecteur plateforme (profil Operations, lecture).
-
-        Retourne le modele de lecture securise (state, safe_next_action,
-        responsible_actor, blocking_cause, last_verified_at, catalog_availability)
-        pour le connecteur identifie par son nom technique. Aucun secret, aucune
-        donnee inter-tenant. Guard strict : profil Operations requis (fail closed
-        sur decouverte et appel). Identique au GET REST (AC2 : meme evidence).
-        """
-        connector_name = (connector_name or "").strip() or None
-        if connector_name is None:
-            raise _tool_error("missing_param", "connector_name est requis.")
-
-        import os as _os  # noqa: PLC0415
-
-        environment = _os.environ.get("TOOROW_ENVIRONMENT", "production").strip() or "production"
-
-        try:
-            from core.connector_installation import get_installation_state  # noqa: PLC0415
-            from core.db import get_connection  # noqa: PLC0415
-
-            with get_connection() as conn:
-                read_model = get_installation_state(
-                    conn,
-                    environment=environment,
-                    connector_name=connector_name,
-                )
-        except Exception as exc:  # noqa: BLE001
-            logger.error(
-                "operations_mcp: get_connector_installation_status cn=%s: %s",
-                connector_name,
-                exc,
-            )
-            raise _tool_error("server_error", "Etat d'installation indisponible.") from exc
-
-        if read_model is None:
-            # Connector has never been installed in this environment.
-            data = {
-                "connector_name": connector_name,
-                "environment": environment,
-                "state": "NOT_INSTALLED",
-                "safe_next_action": (
-                    "platform_admin: apply installation to advance to DOMAIN_PENDING"
-                ),
-                "responsible_actor": "platform_admin",
-                "blocking_cause": None,
-                "last_verified_at": None,
-                "catalog_availability": "unavailable",
-            }
-        else:
-            state = read_model["state"]
-            data = {
-                "connector_name": connector_name,
-                "environment": environment,
-                **read_model,
-                "catalog_availability": "selectable" if state == "READY" else "unavailable",
-            }
-
-        summary = (
-            f"Installation du connecteur {connector_name!r} : "
-            f"etat {data['state']} / disponibilite {data['catalog_availability']}."
-        )
-        return _result(summary, data)
-
     # ---- Register every tool under profile="operations" -------------------------
     register_profiled(
-        mcp, list_datastream_runs,
-        profile="operations", effect="read",
-        data_class="operational", confirmation_mode="none",
+        mcp,
+        list_datastream_runs,
+        profile="operations",
+        effect="read",
+        data_class="operational",
+        confirmation_mode="none",
     )
     register_profiled(
-        mcp, get_datastream_readiness,
-        profile="operations", effect="read",
-        data_class="operational", confirmation_mode="none",
+        mcp,
+        get_datastream_readiness,
+        profile="operations",
+        effect="read",
+        data_class="operational",
+        confirmation_mode="none",
     )
     # prepare writes an immutable proposal row (app.operation_preparations) -- it is a
-    # preparation WRITE, not a read (review H2). The consequential dispatch stays on the
-    # separate human-confirmed `confirm` tool, so prepare itself needs no confirmation.
+    # preparation, not a read (review H2). The consequential dispatch stays on the
+    # separate human-confirmed `confirm` tool, so prepare itself authorizes nothing.
     register_profiled(
-        mcp, prepare_datastream_recovery,
-        profile="operations", effect="write",
-        data_class="operational", confirmation_mode="none",
+        mcp,
+        prepare_datastream_recovery,
+        profile="operations",
+        effect="prepare",
+        data_class="operational",
+        confirmation_mode="none",
     )
     register_profiled(
-        mcp, confirm_datastream_recovery,
-        profile="operations", effect="write",
-        data_class="operational", confirmation_mode="human",
+        mcp,
+        confirm_datastream_recovery,
+        profile="operations",
+        effect="confirmed_write",
+        data_class="operational",
+        confirmation_mode="human",
     )
     # Story 38.2: connector installation status read (same safe model as REST GET).
     register_profiled(
-        mcp, get_connector_installation_status,
-        profile="operations", effect="read",
-        data_class="operational", confirmation_mode="none",
+        mcp,
+        get_connector_installation_status,
+        profile="operations",
+        effect="read",
+        data_class="operational",
+        confirmation_mode="none",
     )
-
-    # ---- Read: connector domain config (Story 38.3, AC2) -------------------------
-    def get_connector_domain_config(connector_name: str):
-        """Configuration de domaine d'un connecteur plateforme (profil Operations, lecture).
-
-        Retourne le modele de lecture securise (domain, provider_adapter,
-        webhook_endpoint_version, dns_evidence_class, config_version,
-        safe_next_action, configured_at) pour le connecteur identifie par son nom
-        technique. Aucun secret (signing_secret_ref, dns_evidence_hash), aucune
-        donnee inter-tenant. Guard strict : profil Operations requis.
-        Identique au GET REST (AC2 : meme evidence).
-        """
-        connector_name = (connector_name or "").strip() or None
-        if connector_name is None:
-            raise _tool_error("missing_param", "connector_name est requis.")
-
-        import os as _os  # noqa: PLC0415
-
-        environment = _os.environ.get("TOOROW_ENVIRONMENT", "production").strip() or "production"
-
-        try:
-            from core.connector_domain import get_domain_config  # noqa: PLC0415
-            from core.db import get_connection  # noqa: PLC0415
-
-            with get_connection() as conn:
-                read_model = get_domain_config(
-                    conn,
-                    environment=environment,
-                    connector_name=connector_name,
-                )
-        except Exception as exc:  # noqa: BLE001
-            logger.error(
-                "operations_mcp: get_connector_domain_config cn=%s: %s",
-                connector_name,
-                exc,
-            )
-            raise _tool_error("server_error", "Configuration de domaine indisponible.") from exc
-
-        if read_model is None:
-            data = {
-                "connector_name": connector_name,
-                "environment": environment,
-                "configured": False,
-                "safe_next_action": (
-                    "platform_admin: POST domain config to configure receiving domain"
-                ),
-            }
-        else:
-            data = {
-                "connector_name": connector_name,
-                "environment": environment,
-                "configured": True,
-                **read_model,
-            }
-
-        configured = data.get("configured", False)
-        summary = (
-            f"Configuration de domaine du connecteur {connector_name!r} : "
-            f"{'configuree' if configured else 'non configuree'} (env={environment})."
-        )
-        return _result(summary, data)
 
     # Story 38.3: connector domain config read (same safe model as REST GET).
     register_profiled(
-        mcp, get_connector_domain_config,
-        profile="operations", effect="read",
-        data_class="operational", confirmation_mode="none",
+        mcp,
+        get_connector_domain_config,
+        profile="operations",
+        effect="read",
+        data_class="operational",
+        confirmation_mode="none",
     )
-
-    # ---- Read: connector verification status (Story 38.4, AC4) ------------------
-    def get_connector_verification_status(connector_name: str):
-        """Etat de verification d'un connecteur plateforme (profil Operations, lecture).
-
-        Retourne le modele de lecture securise de la derniere verification
-        (installation_state, last_outcome, evidence_class, first_seen_at,
-        last_run_at, blocking_reason, synthetic_delivery, safe_next_action)
-        pour le connecteur identifie par son nom technique. Aucun secret
-        (evidence_hash, DNS token, cle de signature), aucune donnee inter-tenant.
-        Guard strict : profil Operations requis. Identique au GET REST (AC4 :
-        meme evidence). Retourne verified:false quand aucun run n'existe encore.
-        """
-        connector_name = (connector_name or "").strip() or None
-        if connector_name is None:
-            raise _tool_error("missing_param", "connector_name est requis.")
-
-        import os as _os  # noqa: PLC0415
-
-        environment = _os.environ.get("TOOROW_ENVIRONMENT", "production").strip() or "production"
-
-        try:
-            from core.connector_verification import get_verification_state  # noqa: PLC0415
-            from core.db import get_connection  # noqa: PLC0415
-
-            with get_connection() as conn:
-                read_model = get_verification_state(
-                    conn,
-                    environment=environment,
-                    connector_name=connector_name,
-                )
-        except Exception as exc:  # noqa: BLE001
-            logger.error(
-                "operations_mcp: get_connector_verification_status cn=%s: %s",
-                connector_name,
-                exc,
-            )
-            raise _tool_error("server_error", "Etat de verification indisponible.") from exc
-
-        if read_model is None:
-            data = {
-                "connector_name": connector_name,
-                "environment": environment,
-                "verified": False,
-                "safe_next_action": (
-                    "platform_admin: POST /verify to run the first verification"
-                ),
-            }
-        else:
-            data = {
-                "connector_name": connector_name,
-                "environment": environment,
-                "verified": True,
-                **read_model,
-            }
-
-        outcome = data.get("last_outcome", "unverified")
-        summary = (
-            f"Verification du connecteur {connector_name!r} : "
-            f"resultat {outcome} (env={environment})."
-        )
-        return _result(summary, data)
 
     # Story 38.4: connector verification status read (same safe model as REST GET).
     register_profiled(
-        mcp, get_connector_verification_status,
-        profile="operations", effect="read",
-        data_class="operational", confirmation_mode="none",
+        mcp,
+        get_connector_verification_status,
+        profile="operations",
+        effect="read",
+        data_class="operational",
+        confirmation_mode="none",
     )
-
-    # ---- Read: connector activation status (Story 38.5, AC2) -------------------
-    def get_connector_activation_status(connector_name: str, org_id: str):
-        """Etat d'activation d'un connecteur pour une organisation (profil Operations, lecture).
-
-        Retourne le modele de lecture securise (state, activated_at,
-        deactivated_at) pour l'organisation identifiee par org_id et le
-        connecteur identifie par connector_name. Aucun secret, aucune donnee
-        inter-tenant. L'activation est exposee comme couche distincte de
-        l'installation (AC2 : les deux couches restent independantes). Guard
-        strict : profil Operations requis. Identique au GET REST (AC2 : meme
-        evidence). Retourne activated:false quand aucun enregistrement n'existe.
-        """
-        connector_name = (connector_name or "").strip() or None
-        org_id = (org_id or "").strip() or None
-        if connector_name is None:
-            raise _tool_error("missing_param", "connector_name est requis.")
-        if org_id is None:
-            raise _tool_error("missing_param", "org_id est requis.")
-
-        import os as _os  # noqa: PLC0415
-
-        environment = _os.environ.get("TOOROW_ENVIRONMENT", "production").strip() or "production"
-
-        # AC4 cross-org isolation: the caller must have access to org_id, or the
-        # activation is nondisclosingly "not found" (never another org's state).
-        identity = _identity()
-        denied = False
-        try:
-            from core.connector_activation import get_activation  # noqa: PLC0415
-            from core.db import get_connection  # noqa: PLC0415
-            from core.project_access import identity_has_org_access  # noqa: PLC0415
-
-            with get_connection() as conn:
-                if not identity_has_org_access(org_id, identity, conn):
-                    denied = True
-                    read_model = None
-                else:
-                    read_model = get_activation(
-                        conn,
-                        org_id=org_id,
-                        connector_name=connector_name,
-                        environment=environment,
-                    )
-        except Exception as exc:  # noqa: BLE001
-            logger.error(
-                "operations_mcp: get_connector_activation_status cn=%s org=%s: %s",
-                connector_name,
-                org_id,
-                exc,
-            )
-            raise _tool_error("server_error", "Etat d'activation indisponible.") from exc
-
-        if denied:
-            raise _tool_error("not_found", "Etat d'activation introuvable.")
-
-        if read_model is None:
-            data = {
-                "connector_name": connector_name,
-                "org_id": org_id,
-                "environment": environment,
-                "activated": False,
-                "safe_next_action": (
-                    "org_owner: POST /activation to activate the connector for this org"
-                ),
-            }
-        else:
-            data = {
-                "connector_name": connector_name,
-                "environment": environment,
-                "activated": read_model["state"] == "ACTIVE",
-                **read_model,
-            }
-
-        activated = data.get("activated", False)
-        state = data.get("state", "not_activated")
-        summary = (
-            f"Activation du connecteur {connector_name!r} pour org {org_id!r} : "
-            f"etat {state} ({'active' if activated else 'inactif'})."
-        )
-        return _result(summary, data)
 
     # Story 38.5: connector activation status read (same safe model as REST GET).
     register_profiled(
-        mcp, get_connector_activation_status,
-        profile="operations", effect="read",
-        data_class="operational", confirmation_mode="none",
+        mcp,
+        get_connector_activation_status,
+        profile="operations",
+        effect="read",
+        data_class="operational",
+        confirmation_mode="none",
     )
-
-    # ---- Read: import template catalog (Story 38.6, AC4 MCP parity) ------------
-    def list_inbound_templates():
-        """Catalogue des contrats de fichiers immuables disponibles (profil Operations, lecture).
-
-        Retourne le modele de lecture securise du catalogue de templates
-        (template_code, version, title, required_fields, optional_fields,
-        identity_keys, grain, is_generic, created_at). Aucun secret, aucune
-        donnee inter-tenant. Le catalogue est une reference de plateforme --
-        chaque entree est immuable (AC3 : un changement = nouvelle version).
-        Guard strict : profil Operations requis. Identique au GET REST (AC4 :
-        meme evidence). is_generic=TRUE signale le mode decouverte-dabord.
-        """
-        try:
-            from core.db import get_connection  # noqa: PLC0415
-            from core.import_templates import list_templates  # noqa: PLC0415
-
-            with get_connection() as conn:
-                templates = list_templates(conn)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("operations_mcp: list_inbound_templates: %s", exc)
-            raise _tool_error("server_error", "Catalogue de templates indisponible.") from exc
-
-        summary = (
-            f"Catalogue de templates d'import : {len(templates)} template(s) disponible(s)."
-        )
-        return _result(summary, {"templates": templates, "count": len(templates)})
 
     # Story 38.6: import template catalog read (same safe model as REST GET).
     register_profiled(
-        mcp, list_inbound_templates,
-        profile="operations", effect="read",
-        data_class="operational", confirmation_mode="none",
+        mcp,
+        list_inbound_templates,
+        profile="operations",
+        effect="read",
+        data_class="operational",
+        confirmation_mode="none",
     )
-
-    # ---- Read: inbound credential status (Story 38.7, AC2/Task 4) ---------------
-    def get_inbound_credential_status(datastream_id: str, credential_id: str):
-        """Etat d'un credential de livraison entrant (profil Operations, lecture).
-
-        Retourne le modele de lecture securise (credential_id, datastream_id,
-        channel, safe_suffix, state, version, expires_at, overlap_until,
-        issued_by, created_at) pour le credential identifie. AUCUN secret
-        (token_hash, raw token) n'est jamais retourne -- le show-once invariant
-        (AC2, E38-NFR03) interdit toute divulgation secondaire. Guard strict :
-        profil Operations requis. Identique au GET REST (AC2 : meme evidence).
-        Retourne not_found si le credential est absent ou appartient a un autre flux.
-        """
-        datastream_id = (datastream_id or "").strip() or None
-        credential_id = (credential_id or "").strip() or None
-        if datastream_id is None:
-            raise _tool_error("missing_param", "datastream_id est requis.")
-        if credential_id is None:
-            raise _tool_error("missing_param", "credential_id est requis.")
-
-        try:
-            from core.db import get_connection  # noqa: PLC0415
-            from core.inbound_credentials import get_credential_state  # noqa: PLC0415
-
-            with get_connection() as conn:
-                read_model = get_credential_state(
-                    conn,
-                    credential_id=credential_id,
-                    datastream_id=datastream_id,
-                )
-        except Exception as exc:  # noqa: BLE001
-            logger.error(
-                "operations_mcp: get_inbound_credential_status ds=%s cred=%s: %s",
-                datastream_id,
-                credential_id,
-                exc,
-            )
-            raise _tool_error("server_error", "Etat du credential indisponible.") from exc
-
-        if read_model is None:
-            raise _tool_error("not_found", "Credential introuvable.")
-
-        # The read_model is the safe projection: no token_hash, no raw token.
-        data = {
-            "datastream_id": datastream_id,
-            **read_model,
-        }
-        state = data.get("state", "unknown")
-        summary = (
-            f"Credential {credential_id!r} du flux {datastream_id!r} : "
-            f"etat {state}, version {data.get('version')}."
-        )
-        return _result(summary, data)
 
     # Story 38.7: inbound credential status read (safe model only, no secret).
     register_profiled(
-        mcp, get_inbound_credential_status,
-        profile="operations", effect="read",
-        data_class="operational", confirmation_mode="none",
+        mcp,
+        get_inbound_credential_status,
+        profile="operations",
+        effect="read",
+        data_class="operational",
+        confirmation_mode="none",
     )

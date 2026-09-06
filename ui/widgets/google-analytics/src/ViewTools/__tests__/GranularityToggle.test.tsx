@@ -45,12 +45,12 @@ describe("GranularityToggle", () => {
   });
 
   it("does not call onChange when the already-selected button is clicked", async () => {
-    // MUI ToggleButtonGroup passes null on deselection of exclusive value.
+    // ToggleButtonGroup passes null on deselection of an exclusive value.
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(<GranularityToggle value="day" onChange={onChange} />);
     await user.click(screen.getByRole("button", { name: "Jour" }));
-    // onChange should not be called (MUI sends null, we guard against it).
+    // onChange should not be called (the group sends null, we guard against it).
     expect(onChange).not.toHaveBeenCalled();
   });
 });

@@ -20,6 +20,36 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+test("uses the passive shell frame while the browser session resolves", () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      () =>
+        new Promise<Response>(() => {
+          // Keep the request pending so the transient entry state is observable.
+        }),
+    ),
+  );
+
+  render(
+    <BrowserAuthGate>
+      <div>Protected application</div>
+    </BrowserAuthGate>,
+  );
+
+  const status = screen.getByRole("status", { name: "Opening toorow" });
+  expect(status).toHaveAttribute("aria-busy", "true");
+  expect(status).toHaveClass("entry-boot-shell");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  expect(status.querySelector("input, select, textarea")).toBeNull();
+  expect(screen.queryByText(/workspace/i)).not.toBeInTheDocument();
+  expect(screen.queryByText("Checking your session")).not.toBeInTheDocument();
+  expect(screen.queryByText("Protected application")).not.toBeInTheDocument();
+});
+
 test("accepts a valid HttpOnly OIDC session without loading Google GIS", async () => {
   const fetchMock = vi
     .fn()
@@ -152,4 +182,75 @@ test("keeps the explicit static development mode closed without a token", async 
   await waitFor(() => {
     expect(screen.queryByText("Protected application")).not.toBeInTheDocument();
   });
+});
+
+// ---------------------------------------------------------------------------
+// Le client id OAuth vient du SERVEUR (2026-08-04)
+//
+// Il n'etait lu qu'au build (`VITE_GOOGLE_CLIENT_ID`). Un bundle construit sans
+// lui a deploye en production un ecran de connexion qui ne pouvait pas aboutir :
+// « VITE_GOOGLE_CLIENT_ID is not set at build time ». Les tests tournant sans
+// cette variable, l'ancienne lecture rendait l'erreur -- ce qui rend ces deux
+// tests capables d'echouer si on revenait en arriere.
+// ---------------------------------------------------------------------------
+
+test("initialises Google with the client id the SERVER served, not a build value", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      response(200, {
+        mode: "google_gis",
+        client_id: "example-client-id.apps.googleusercontent.com",
+      }),
+    ),
+  );
+  const initialize = vi.fn();
+  vi.stubGlobal("google", {
+    accounts: { id: { initialize, renderButton: vi.fn() } },
+  });
+  // `initializeGoogle` n'est appele qu'une fois le script GIS present.
+  const script = document.createElement("script");
+  script.id = "gsi-script";
+  document.head.appendChild(script);
+
+  render(
+    <BrowserAuthGate>
+      <div>Protected application</div>
+    </BrowserAuthGate>,
+  );
+
+  await waitFor(() =>
+    expect(initialize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        client_id: "example-client-id.apps.googleusercontent.com",
+      }),
+    ),
+  );
+  // Et surtout : plus aucune accusation portee contre le build.
+  expect(screen.queryByText(/not set at build time/i)).not.toBeInTheDocument();
+  script.remove();
+});
+
+test("names the SERVER variable when no client id is available at all", async () => {
+  // `ui/admin/.env` fournit la variable en local : sans la neutraliser, ce test
+  // passerait pour de mauvaises raisons et n'attraperait jamais le defaut.
+  vi.stubEnv("VITE_GOOGLE_CLIENT_ID", "");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      response(200, { mode: "google_gis", reason: "oidc_client_id_missing" }),
+    ),
+  );
+
+  render(
+    <BrowserAuthGate>
+      <div>Protected application</div>
+    </BrowserAuthGate>,
+  );
+
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent(/TOOROW_OIDC_CLIENT_ID/);
+  // L'ancien message accusait le build d'une valeur que le serveur n'avait pas.
+  expect(alert).not.toHaveTextContent(/VITE_GOOGLE_CLIENT_ID/);
+  vi.unstubAllEnvs();
 });

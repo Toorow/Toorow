@@ -10,6 +10,11 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+
+# Import au niveau module (et non paresseux comme les appels a `core` dans les
+# fonctions) : les classes d'exception ci-dessous en HERITENT, donc il doit etre
+# resolu au moment ou le fichier est lu.
+from core import pull_errors
 from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
@@ -55,12 +60,51 @@ STATIC_FIELDS = {
 }
 
 
-class TaboolaOnboardingError(RuntimeError):
-    """Backstage credentials cannot access a selectable advertiser account."""
+class TaboolaOnboardingError(pull_errors.PermissionDeniedError):
+    """Backstage credentials cannot access a selectable advertiser account.
+
+    `permission_denied` : le credential est authentifie et n'atteint rien. L'action
+    juste est de se reconnecter avec les bons droits, et c'est `permission_denied`
+    qui la fait remonter a l'ecran (`user_action="reconnect"`).
+
+    Avant le 2026-08-01 cette classe heritait d'un `RuntimeError` nu : le worker la
+    voyait `unclassified`, la rejouait jusqu'au `dead_letter` contre un credential
+    qui ne marchera jamais, et n'affichait aucune action.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message)
 
 
-class TaboolaCompatibilityError(ValueError):
-    """The report/dimension/filter/metadata shape is not supported."""
+class TaboolaNotConfiguredError(TaboolaOnboardingError):
+    """Le credential va bien -- c'est la requete qui ne peut pas etre formee.
+
+    Derive de l'erreur d'onboarding pour qu'un `except TaboolaOnboardingError` existant continue de
+    l'attraper, mais porte `invalid_request` : dire << reconnecte-toi >> enverrait
+    l'operateur au mauvais ecran, puisque le compte se choisit dans l'assistant
+    Datastream et pas sur la connexion.
+    """
+
+    error_class = pull_errors.INVALID_REQUEST
+    user_action = pull_errors.SELECT_SOURCE_ACCOUNT
+
+
+class TaboolaCompatibilityError(pull_errors.InvalidRequestError, ValueError):
+    """The report/dimension/filter/metadata shape is not supported.
+
+    `invalid_request` : rejouer la meme requete redonne la meme reponse, et c'est
+    aussi le signal `pull_invalid_request_drift` -- une forme devenue illegale est
+    une derive du catalogue. `ValueError` reste dans les bases, des
+    appelants et des tests l'attrapent sous ce nom.
+    """
+
+    #: -> `Mapping` : le plan demande ce que la source ne rend plus
+    #: (datastream-workbench-and-wizard.md:107). L'operateur a un endroit
+    #: ou aller, contrairement a une derive de version d'API.
+    user_action = pull_errors.REVIEW_MAPPING
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message)
 
 
 def _manifest() -> dict:
@@ -120,15 +164,22 @@ def discover_accounts(connection_id: str, *, _client=None, _token_value=None) ->
     client = _client or httpx.Client()
     payload = _request(client, "GET", "/users/current/allowed-accounts/", token).json()
     accounts = payload.get("results") or payload.get("accounts") or []
+    # `id` et `label` sont les DEUX seules cles que core retient
+    # (core/account_topology.py::_flatten_account_ids / _label_for_account) : `id`
+    # est stocke verbatim dans app.connection_account_scope puis repasse a pull()
+    # sous le nom declare par account_topology.pull_parameter. Il doit donc etre
+    # l'account_id Backstage lui-meme -- un identifiant synthetique de rang
+    # ('taboola_selection_1') ferait viser /taboola_selection_1/reports/...
     selections = [
         {
-            "id": f"taboola_selection_{index}",
+            "id": str(item.get("account_id") or item.get("id") or ""),
+            "label": item.get("name") or str(item.get("account_id") or item.get("id") or ""),
             "account_id": str(item.get("account_id") or item.get("id") or ""),
             "display_name": item.get("name") or str(item.get("account_id") or ""),
             "timezone": item.get("timezone") or "",
             "currency": item.get("currency") or "",
         }
-        for index, item in enumerate(accounts, start=1)
+        for item in accounts
         if item.get("account_id") or item.get("id")
     ]
     if not selections:
@@ -228,6 +279,15 @@ CREATE TABLE IF NOT EXISTS raw_taboola_daily (
  pull_id VARCHAR, loaded_at VARCHAR, project_id VARCHAR
 )
 """
+
+_KPI_INSERT_SQL = """
+INSERT INTO raw_taboola_daily
+    (account_id, report, dimension, date, campaign_id, item_id, site_id, breakdown_json,
+    metric, value, non_additive, timezone, currency, update_time, pull_id, loaded_at,
+    project_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+
 _HISTORY_DDL = """
 CREATE TABLE IF NOT EXISTS raw_taboola_history (
  account_id VARCHAR, dimension VARCHAR, record_id VARCHAR, change_time VARCHAR,
@@ -236,9 +296,16 @@ CREATE TABLE IF NOT EXISTS raw_taboola_history (
 )
 """
 
+_HISTORY_INSERT_SQL = """
+INSERT INTO raw_taboola_history
+    (account_id, dimension, record_id, change_time, change_type, entity_id, payload_json,
+    pull_id, loaded_at, project_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+
 
 def _land_kpi(result, context):
-    import duckdb  # noqa: PLC0415
+    from core import warehouse_write  # noqa: PLC0415
 
     path = os.environ.get("TOOROW_DUCKDB_PATH", str(Path(__file__).parent / "local.duckdb"))
     loaded_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
@@ -282,18 +349,16 @@ def _land_kpi(result, context):
                     context["project_id"],
                 )
             )
-    connection = duckdb.connect(path)
+    connection = warehouse_write.open_raw_writer(path, project_id=context["project_id"])
     connection.execute(_KPI_DDL)
     if values:
-        connection.executemany(
-            "INSERT INTO raw_taboola_daily VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", values
-        )
+        connection.executemany(_KPI_INSERT_SQL, values)
     connection.close()
     return len(values)
 
 
 def _land_history(result, context):
-    import duckdb  # noqa: PLC0415
+    from core import warehouse_write  # noqa: PLC0415
 
     path = os.environ.get("TOOROW_DUCKDB_PATH", str(Path(__file__).parent / "local.duckdb"))
     loaded_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
@@ -313,19 +378,47 @@ def _land_history(result, context):
                 context["project_id"],
             )
         )
-    connection = duckdb.connect(path)
+    connection = warehouse_write.open_raw_writer(path, project_id=context["project_id"])
     connection.execute(_HISTORY_DDL)
     if values:
-        connection.executemany(
-            "INSERT INTO raw_taboola_history VALUES (?,?,?,?,?,?,?,?,?,?)", values
-        )
+        connection.executemany(_HISTORY_INSERT_SQL, values)
     connection.close()
     return len(values)
 
 
-def _pull_profile(connection_id, date_from, date_to, project_id, pull_id, profile, selection):
-    if not selection:
-        raise TaboolaOnboardingError("A Taboola advertiser account selection is required")
+def _require_account_id(account_id):
+    """Refuse explicitement l'absence de compte -- sans repli d'environnement.
+
+    Un `TABOOLA_ACCOUNT_ID` de deploiement ferait tirer le MEME annonceur pour
+    tous les projets, et rien du tout quand la variable manque :
+    `core/account_topology.py:514` declare ces replis deprecies. L'erreur est
+    typee (TaboolaOnboardingError) et nomme le parametre, pour que l'operateur
+    sache que le geste attendu est une SELECTION dans l'assistant.
+    """
+    if not account_id:
+        raise TaboolaNotConfiguredError(
+            "No Taboola advertiser account selected for this connection: the "
+            "operator picks one in the Datastream wizard (discover_accounts lists "
+            "what the Backstage credentials can reach) and the worker passes it as "
+            "`account_id` (account_topology.pull_parameter). Backstage addresses "
+            "every report as /{account_id}/reports/..., and there is no "
+            "deployment-wide default -- one would pull the same advertiser for "
+            "every project."
+        )
+    return str(account_id)
+
+
+def _pull_profile(
+    connection_id, date_from, date_to, project_id, pull_id, profile, account_id, selection
+):
+    # Le compte n'est PLUS lu dans `selection`. Deux objets portent ce nom : celui
+    # que le plan fournit (core/schemas/datastream-intent.schema.json,
+    # $defs.selection -- selection_mode / metrics / dimensions / grain / filters,
+    # additionalProperties: false) ne porte aucun compte, et core/queue.py ne
+    # remplit jamais job["selection"]. Le reste de `selection` (dimension,
+    # filters, page_size) continue d'etre lu : seule la lecture du COMPTE bouge.
+    account_id = _require_account_id(account_id)
+    selection = selection or {}
     token = _token(connection_id)
     report = {
         "campaign_summary": "campaign_summary",
@@ -344,7 +437,7 @@ def _pull_profile(connection_id, date_from, date_to, project_id, pull_id, profil
     result = fetch_report(
         httpx.Client(),
         token,
-        selection["account_id"],
+        account_id,
         report,
         dimension,
         filters=filters,
@@ -352,6 +445,7 @@ def _pull_profile(connection_id, date_from, date_to, project_id, pull_id, profil
     )
     context = {
         **selection,
+        "account_id": account_id,
         "report": report,
         "dimension": dimension,
         "date_from": date_from,
@@ -374,29 +468,70 @@ def _pull_profile(connection_id, date_from, date_to, project_id, pull_id, profil
     }
 
 
-def pull(connection_id, date_from, date_to, project_id, pull_id, selection=None):
+# `account_id` est OPTIONNEL, jamais positionnel requis : la signature ratifiee
+# est pull(connection_id, date_from, date_to, project_id, pull_id) et le worker
+# ne passe le compte QUE si une selection existe (core/queue.py:636-637). Requis,
+# il leverait un `TypeError: pull() missing 1 required positional argument` --
+# une erreur nue, hors de toute taxonomie -- des que la selection est vide.
+
+
+def pull(
+    connection_id, date_from, date_to, project_id, pull_id, account_id=None, selection=None
+):
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "campaign_summary", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "campaign_summary",
+        account_id,
+        selection,
     )
 
 
-def pull_campaign_summary(connection_id, date_from, date_to, project_id, pull_id, selection=None):
+def pull_campaign_summary(
+    connection_id, date_from, date_to, project_id, pull_id, account_id=None, selection=None
+):
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "campaign_summary", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "campaign_summary",
+        account_id,
+        selection,
     )
 
 
 def pull_top_campaign_content(
-    connection_id, date_from, date_to, project_id, pull_id, selection=None
+    connection_id, date_from, date_to, project_id, pull_id, account_id=None, selection=None
 ):
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "top_campaign_content", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "top_campaign_content",
+        account_id,
+        selection,
     )
 
 
-def pull_campaign_history(connection_id, date_from, date_to, project_id, pull_id, selection=None):
+def pull_campaign_history(
+    connection_id, date_from, date_to, project_id, pull_id, account_id=None, selection=None
+):
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "campaign_history", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "campaign_history",
+        account_id,
+        selection,
     )
 
 

@@ -1,0 +1,14 @@
+[
+  {"field_id": "date", "source_field": "values.end_time", "kind": "dimension", "data_type": "date", "section": "DIMENSION", "description": "Provider reporting date derived from the insight end timestamp."},
+  {"field_id": "account_id", "source_field": "ig_user_id", "kind": "dimension", "data_type": "string", "section": "DIMENSION", "description": "Selected Instagram professional account id."},
+  {"field_id": "media_id", "source_field": "id", "kind": "dimension", "data_type": "string", "section": "DIMENSION", "description": "Owned Instagram media id."},
+  {"field_id": "media_type", "source_field": "media_type", "kind": "dimension", "data_type": "string", "section": "DIMENSION", "description": "Provider media type."},
+  {"field_id": "media_product_type", "source_field": "media_product_type", "kind": "dimension", "data_type": "string", "section": "DIMENSION", "description": "Instagram product surface such as FEED or REELS."},
+  {"field_id": "permalink", "source_field": "permalink", "kind": "dimension", "data_type": "string", "section": "DIMENSION", "description": "Public media permalink when exposed."},
+  {"field_id": "caption", "source_field": "caption", "kind": "dimension", "data_type": "string", "section": "DIMENSION", "description": "Media caption when exposed."},
+  {"field_id": "published_at", "source_field": "timestamp", "kind": "dimension", "data_type": "datetime", "section": "DIMENSION", "description": "UTC media publication timestamp."},
+  {"field_id": "account_reach", "source_field": "reach", "kind": "metric", "data_type": "integer", "section": "NON_ADDITIVE", "description": "Unique accounts reached during the provider day."},
+  {"field_id": "account_profile_views", "source_field": "profile_views", "kind": "metric", "data_type": "integer", "section": "METRIC", "description": "Profile views during the provider day."},
+  {"field_id": "media_shares", "source_field": "shares", "kind": "metric", "data_type": "integer", "section": "NON_ADDITIVE", "description": "Current lifetime media shares at pull time."},
+  {"field_id": "media_comments", "source_field": "comments", "kind": "metric", "data_type": "integer", "section": "NON_ADDITIVE", "description": "Current lifetime media comments at pull time."}
+]

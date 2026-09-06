@@ -97,9 +97,21 @@ models:
           - not_null
 
       - name: value
-        description: "Additive metric value (DOUBLE). AD-4: never a ratio."
+        description: >
+          Additive metric value in the reporting currency. AD-4: never a ratio.
+          NULLABLE SINCE STORY 48.3, and deliberately: `fx_convert_at_read`
+          propagates NULL rather than converting at parity when no rate resolves,
+          and the row is KEPT with `native_value` / `native_currency` / a
+          `money_gap_code` -- dropping it would erase the evidence that something
+          needs repairing. A bare `not_null` here contradicted that design and
+          had never run (the fixture could not build), so it read as green.
         tests:
-          - not_null
+          # The real invariant, and it is STRICTER than the `not_null` it
+          # replaces: a NULL value must be EXPLAINED. `value IS NULL` without a
+          # `money_gap_code` is a silent hole -- exactly what 48.3 forbids -- and
+          # a converted `value` that still carries a gap code is a contradiction.
+          - value_null_iff_money_gap:
+              name: fact_kpi_value_null_iff_money_gap
 
       - name: pull_id
         description: "Provenance ID (pull_<ULID>). Links back to the raw load batch (AD-7)."
@@ -321,13 +333,17 @@ models:
           - not_null
           - unique
       - name: canonical_currency
-        description: "ISO-4217 currency code for cost normalization (e.g. EUR)."
-        tests:
-          - not_null
+        description: >
+          ISO-4217 currency chosen for this Project. NULLABLE since migration 144
+          (Story 48.3) dropped the 'EUR' default: a reporting currency is CHOSEN,
+          and a silent default is one client's currency applied to every other
+          client's totals. NULL means "not configured yet". The invariant that
+          replaced not_null is tests/test_money_declares_its_currency_and_timezone.sql
+          -- money facts without a declared currency are the failure, a NULL is not.
       - name: reporting_timezone
-        description: "IANA timezone name for date-labeling policy (e.g. Europe/Paris)."
-        tests:
-          - not_null
+        description: >
+          IANA timezone chosen for date-labeling. NULLABLE for the same reason and
+          guarded by the same test as canonical_currency.
       - name: verification_source_type
         description: >
           Story 17.1: type de source de vérification absolue des conversions.
@@ -392,6 +408,25 @@ models:
         description: "Trailing rolling average over ANOMALY_BASELINE_WINDOW preceding rows."
       - name: rolling_stddev
         description: "Trailing rolling sample stddev. NULL when fewer than 2 data points."
+      - name: observation_count
+        description: >
+          Story 53.8 (CAV-13): number of observations INSIDE the estimator's own
+          window, over the identical PARTITION BY / ORDER BY / ROWS frame as
+          rolling_mean and rolling_stddev.
+          It exists because the detector's silence had no state. The window
+          includes the tested observation, which bounds |z| at (n-1)/sqrt(n) --
+          so no data whatsoever can reach the configured threshold below a
+          derived minimum n (11 at ANOMALY_Z_THRESHOLD=3.0, 27 at 5.0). Below
+          that n the honest answer is "insufficient observations (n/N)", not
+          "no anomaly"; anomalies_daily cannot carry it because it keeps only
+          rows that already cleared the threshold. This mart has one row per
+          project x connector x metric x date, INCLUDING the quiet days, which
+          is where the state has to be readable.
+          The minimum is DERIVED from the configured threshold by
+          core.anomaly_alerts.minimum_observations_for_threshold -- never a
+          literal, which would become a lie the day the env var is edited.
+        tests:
+          - not_null
 
   - name: anomalies_daily
     description: >
@@ -694,9 +729,32 @@ models:
         tests:
           - not_null
       - name: revenue_total
-        description: "Deduplicated revenue value from the priority source (Rule P)."
+        description: >
+          Deduplicated revenue value from the priority source (Rule P), in the
+          reporting currency. NULLABLE, and for the same reason
+          `fact_daily_kpi.value` is (Story 48.3): the winning source's rows are
+          converted at read, an unconvertible row yields NULL rather than a
+          conversion at parity, and a day whose revenue could not be converted
+          therefore states NO total instead of a partial one. The bare `not_null`
+          that used to sit here accused the model of a defect that was the model
+          telling the truth -- measured 2026-08-24, 106 of its 108 rows over a
+          warehouse with no reporting currency.
         tests:
-          - not_null
+          # The same pair `fact_daily_kpi` carries, and it is STRICTER than the
+          # `not_null` it replaces: a withheld total must be EXPLAINED, and a
+          # stated total may not carry a reason it could not be computed.
+          - value_null_iff_money_gap:
+              name: cross_source_revenue_total_null_iff_money_gap
+              arguments:
+                key_columns: ['project_id', 'date', 'revenue_source']
+      - name: money_gap_code
+        description: >
+          Why this day states no total, CARRIED from the contributing
+          `fact_daily_kpi` row that could not convert -- never minted here, so a
+          warehouse reader and an application reader keep one vocabulary for the
+          gap (`native_currency_missing`, an FX governance refusal,
+          `fx_rate_unavailable`). NULL on every day whose total is stated: the
+          column is the explanation, not a flag.
       - name: revenue_source
         description: "Connector that provided the value ('shopify' or 'stripe')."
         tests:

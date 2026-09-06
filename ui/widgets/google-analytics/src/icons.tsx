@@ -10,7 +10,7 @@
  *   arrow_upward   (positive delta, AC2)
  *   arrow_downward (negative delta, AC2)
  *
- * `currentColor` is used for fill so icons inherit MUI theme text/success/error
+ * `currentColor` is used for fill so icons inherit the theme text/success/error
  * colors (AD-11 — no hardcoded hex).
  */
 

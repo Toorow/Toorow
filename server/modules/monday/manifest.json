@@ -2,10 +2,14 @@
   "schema_version": "1.2",
   "name": "monday",
   "display_name": "monday.com",
+  "business_domain": "product",
   "public_catalog": {
     "visibility": "public",
     "category": "business_context",
-    "onboarding_modes": ["connector_pull", "context_source"],
+    "onboarding_modes": [
+      "connector_pull",
+      "context_source"
+    ],
     "verification": {
       "status": "blocked",
       "reason_code": "live_evidence_not_ratified",
@@ -20,37 +24,63 @@
   "report_profiles": [
     {
       "id": "board_snapshot",
+      "raw_relation": "raw_monday_board_snapshot",
+      "staging_relation": "stg_monday_board_snapshot",
       "display_name": "Board item snapshot",
       "landing": "fact_daily_kpi",
       "metrics": [],
-      "dimensions": ["board_id", "item_id", "item_name", "group_id", "parent_item_id", "updated_at", "column_values", "column_id", "column_type", "column_raw_value"],
-      "extraction_capabilities": {"row_limit": null, "filters_supported": true, "realtime": false},
+      "dimensions": [
+        "board_id",
+        "item_id",
+        "item_name",
+        "group_id",
+        "parent_item_id",
+        "updated_at",
+        "column_values",
+        "column_id",
+        "column_type",
+        "column_raw_value"
+      ],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": true,
+        "realtime": false
+      },
       "verification_expected_rows_per_day": null
     },
     {
       "id": "board_events",
+      "raw_relation": null,
+      "staging_relation": null,
       "display_name": "Board updates and webhook events",
       "landing": "context_events",
       "metrics": [],
-      "dimensions": ["event_date", "event_label"],
-      "events": ["monday_change"],
-      "extraction_capabilities": {"row_limit": 100, "filters_supported": true, "realtime": true},
+      "dimensions": [
+        "event_date",
+        "event_label"
+      ],
+      "events": [
+        "monday_change"
+      ],
+      "extraction_capabilities": {
+        "row_limit": 100,
+        "filters_supported": true,
+        "realtime": true
+      },
       "verification_expected_rows_per_day": null
     }
   ],
   "error_map": {
-    "COMPLEXITY_BUDGET_EXHAUSTED": "rate_limited",
-    "DAILY_LIMIT_EXCEEDED": "rate_limited",
-    "MINUTE_LIMIT_EXCEEDED": "rate_limited",
-    "CONCURRENCY_LIMIT_EXCEEDED": "rate_limited",
-    "IP_RATE_LIMIT_EXCEEDED": "rate_limited",
-    "UNAUTHENTICATED": "auth_expired",
-    "AUTHENTICATION_ERROR": "auth_expired",
-    "FORBIDDEN": "permission_denied",
-    "PERMISSION_DENIED": "permission_denied",
-    "NOT_FOUND": "resource_not_found",
-    "RESOURCE_PROTECTION": "rate_limited"
+    "400:Bad request": "invalid_request",
+    "400:JsonParseException": "invalid_request",
+    "401:Unauthorized": "auth_revoked",
+    "401:Your ip is restricted": "permission_denied",
+    "403:USER_ACCESS_DENIED": "permission_denied",
+    "403:UserUnauthorizedException": "permission_denied",
+    "404:ResourceNotFoundException": "permission_denied",
+    "500:Internal Server Error": "provider_transient"
   },
+  "_error_map_note": "Reference: monday.com 'Error codes' (developer.monday.com/api-reference/docs/errors), the published table of error code + HTTP status. PAYLOAD SHAPE: a handled monday failure answers {\"error_code\": \"<code>\", \"status_code\": <int>, \"error_message\": \"...\", \"error_data\": {...}} -- a top-level 'error_code', which core.pull_errors._extract_provider_codes already reads first among top-level keys, so NO normalisation is needed here and the keys are the documented codes verbatim. ONLY the codes carried on a NON-2xx status are keyed: monday's GraphQL-layer codes (COMPLEXITY_BUDGET_EXHAUSTED, UNAUTHENTICATED, ...) ride on HTTP 200 and are handled in connector.graphql_request + connector._ERROR_CODES, where they belong -- a 200 never reaches classify_http_error, so keying them here would be a dead key (the AI-114 defect). WHAT THE KEYS BUY: '401:Unauthorized' becomes auth_revoked rather than auth_expired -- a monday OAuth access token has no expiry and there is no refresh token, so a rejected token is one the user or the admin revoked and the repair is to reconnect, not to wait for a refresh; '401:Your ip is restricted' becomes permission_denied, because reconnecting cannot lift an account IP allowlist and telling the operator to reconnect would send them round a loop; '404:ResourceNotFoundException' becomes permission_denied because the published table reads 'invalid user ID OR insufficient access' and core would otherwise leave it 'unclassified', i.e. retried forever. THE 401/403 BRANCHES NOW ROUTE THROUGH classify_http_error: they used to raise MondayGraphQLError('auth_expired'/'permission_denied') before core saw them, so no key on those statuses could ever have fired. 429 and the rate-limit codes keep the core.quota.RateLimitError breaker path and are never keyed here. Remaining and NOT smuggled in here: MondayGraphQLError still carries non-canonical class strings (rate_limited, resource_not_found, provider_error, invalid_response) on the HTTP 200 path. ORIGINAL AI-114 NOTE (2026-08-01, kept for the record): monday is the case where the contract itself cannot express the vocabulary -- not a case where nobody looked. monday is a GraphQL API: it answers HTTP 200 and puts the failure in errors[].extensions.code (COMPLEXITY_BUDGET_EXHAUSTED, DAILY_LIMIT_EXCEEDED, MINUTE_LIMIT_EXCEEDED, CONCURRENCY_LIMIT_EXCEEDED, IP_RATE_LIMIT_EXCEEDED, UNAUTHENTICATED, AUTHENTICATION_ERROR, FORBIDDEN, PERMISSION_DENIED, NOT_FOUND, RESOURCE_PROTECTION). error_map's grammar is '<status>:<provider_code>' and its reader is core.pull_errors.classify_http_error, which is only ever called on a NON-2xx response -- so there is no HTTP status to key these codes on, and the eleven bare keys removed here could never be read by anything. They were also a verbatim duplicate of connector._ERROR_CODES, which is the live mapping and the one to edit; and two of their values (rate_limited, resource_not_found) are not in core.pull_errors.ERROR_CLASSES at all, so classify_http_error would have dropped them in silence even with a readable key. WHAT IS STILL WRONG, AND IT IS NOT THIS FILE: connector.MondayGraphQLError carries its own class strings (rate_limited, resource_not_found, provider_error, invalid_response) instead of the canonical taxonomy, so a monday failure reaches the worker without a canonical error_class and the per-class retry policy cannot apply. Rewiring it is a story of its own (the rate-limit path feeds the quota breaker and is pinned by tests); it must not be smuggled in as a manifest edit.",
   "canonical_metric_mapping": {},
   "canonical_dimension_mapping": {
     "board_id": "board_id",
@@ -66,60 +96,364 @@
     "event_date": "date",
     "event_label": "label"
   },
-  "canonical_event_mapping": {"monday_change": "milestone"},
+  "canonical_event_mapping": {
+    "monday_change": "milestone"
+  },
   "quota": {
     "window_seconds": 60,
     "budget_points": 5000000,
     "read_cost": 1,
     "write_cost": 1,
-    "daily_limit_by_plan": {"free": 1000, "basic": 1000, "pro": 10000, "enterprise": 25000},
-    "minute_queries_by_plan": {"free": 1000, "basic": 1000, "pro": 2500, "enterprise": 5000},
-    "concurrency_by_plan": {"free": 40, "basic": 40, "pro": 100, "enterprise": 250},
+    "daily_limit_by_plan": {
+      "free": 1000,
+      "basic": 1000,
+      "pro": 10000,
+      "enterprise": 25000
+    },
+    "minute_queries_by_plan": {
+      "free": 1000,
+      "basic": 1000,
+      "pro": 2500,
+      "enterprise": 5000
+    },
+    "concurrency_by_plan": {
+      "free": 40,
+      "basic": 40,
+      "pro": 100,
+      "enterprise": 250
+    },
     "ip_per_10s": 5000
   },
   "source_capabilities": {
     "contract_version": "1",
-    "field_discovery": {"mode": "runtime", "allowed_targets": ["board"]},
+    "field_discovery": {
+      "mode": "runtime",
+      "allowed_targets": [
+        "board"
+      ]
+    },
     "fields": [
-      {"field_id": "board_id", "source_field": "boards.id", "kind": "dimension", "physical_type": "string", "description": "Opaque monday board identifier.", "semantic_hints": ["board", "identifier"], "canonical_target": "board_id", "aggregation": "none", "non_additive": false},
-      {"field_id": "item_id", "source_field": "items_page.items.id", "kind": "dimension", "physical_type": "string", "description": "Opaque monday item identifier.", "semantic_hints": ["item", "identifier"], "canonical_target": "item_id", "aggregation": "none", "non_additive": false},
-      {"field_id": "item_name", "source_field": "items_page.items.name", "kind": "dimension", "physical_type": "string", "description": "Item display name.", "semantic_hints": ["item", "name"], "canonical_target": "item_name", "aggregation": "none", "non_additive": false},
-      {"field_id": "group_id", "source_field": "items_page.items.group.id", "kind": "dimension", "physical_type": "string", "description": "Board group identifier.", "semantic_hints": ["group", "identifier"], "canonical_target": "group_id", "aggregation": "none", "non_additive": false},
-      {"field_id": "parent_item_id", "source_field": "items_page.items.parent_item.id", "kind": "dimension", "physical_type": "string", "description": "Parent item identifier for subitems.", "semantic_hints": ["subitem", "parent"], "canonical_target": "parent_item_id", "aggregation": "none", "non_additive": false},
-      {"field_id": "updated_at", "source_field": "items_page.items.updated_at", "kind": "dimension", "physical_type": "datetime", "description": "Last item update timestamp.", "semantic_hints": ["updated_at", "datetime"], "canonical_target": "updated_at", "aggregation": "none", "non_additive": false},
-      {"field_id": "column_values", "source_field": "items_page.items.column_values", "kind": "dimension", "physical_type": "json", "description": "Typed board-specific column values with raw JSON preserved.", "semantic_hints": ["dynamic", "typed_json"], "canonical_target": "column_values", "aggregation": "none", "non_additive": false},
-      {"field_id": "column_id", "source_field": "items_page.items.column_values.id", "kind": "dimension", "physical_type": "string", "description": "Runtime board column identifier.", "semantic_hints": ["column", "identifier"], "canonical_target": "column_id", "aggregation": "none", "non_additive": false},
-      {"field_id": "column_type", "source_field": "items_page.items.column_values.type", "kind": "dimension", "physical_type": "string", "description": "Runtime monday column type.", "semantic_hints": ["column", "type"], "canonical_target": "column_type", "aggregation": "none", "non_additive": false},
-      {"field_id": "column_raw_value", "source_field": "items_page.items.column_values.value", "kind": "dimension", "physical_type": "json", "description": "Uncoerced typed column JSON at item-column grain.", "semantic_hints": ["column", "raw_json"], "canonical_target": "column_raw_value", "aggregation": "none", "non_additive": false},
-      {"field_id": "event_date", "source_field": "updates.updated_at", "kind": "dimension", "physical_type": "date", "description": "Date of a monday board change.", "semantic_hints": ["date", "event"], "canonical_target": "date", "aggregation": "none", "non_additive": false},
-      {"field_id": "event_label", "source_field": "updates.id", "kind": "dimension", "physical_type": "string", "description": "Stable label for a monday change.", "semantic_hints": ["label", "event"], "canonical_target": "label", "aggregation": "none", "non_additive": false},
-      {"field_id": "monday_change", "source_field": "updates", "kind": "event", "physical_type": "datetime", "description": "Board update or validated webhook change.", "semantic_hints": ["event", "change"], "canonical_target": "milestone", "aggregation": "none", "non_additive": false, "label_source_field": "updates.id"}
+      {
+        "field_id": "board_id",
+        "source_field": "boards.id",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Opaque monday board identifier.",
+        "semantic_hints": [
+          "board",
+          "identifier"
+        ],
+        "canonical_target": "board_id",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "item_id",
+        "source_field": "items_page.items.id",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Opaque monday item identifier.",
+        "semantic_hints": [
+          "item",
+          "identifier"
+        ],
+        "canonical_target": "item_id",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "item_name",
+        "source_field": "items_page.items.name",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Item display name.",
+        "semantic_hints": [
+          "item",
+          "name"
+        ],
+        "canonical_target": "item_name",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "group_id",
+        "source_field": "items_page.items.group.id",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Board group identifier.",
+        "semantic_hints": [
+          "group",
+          "identifier"
+        ],
+        "canonical_target": "group_id",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "parent_item_id",
+        "source_field": "items_page.items.parent_item.id",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Parent item identifier for subitems.",
+        "semantic_hints": [
+          "subitem",
+          "parent"
+        ],
+        "canonical_target": "parent_item_id",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "updated_at",
+        "source_field": "items_page.items.updated_at",
+        "kind": "dimension",
+        "physical_type": "datetime",
+        "description": "Last item update timestamp.",
+        "semantic_hints": [
+          "updated_at",
+          "datetime"
+        ],
+        "canonical_target": "updated_at",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "column_values",
+        "source_field": "items_page.items.column_values",
+        "kind": "dimension",
+        "physical_type": "json",
+        "description": "Typed board-specific column values with raw JSON preserved.",
+        "semantic_hints": [
+          "dynamic",
+          "typed_json"
+        ],
+        "canonical_target": "column_values",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "column_id",
+        "source_field": "items_page.items.column_values.id",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Runtime board column identifier.",
+        "semantic_hints": [
+          "column",
+          "identifier"
+        ],
+        "canonical_target": "column_id",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "column_type",
+        "source_field": "items_page.items.column_values.type",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Runtime monday column type.",
+        "semantic_hints": [
+          "column",
+          "type"
+        ],
+        "canonical_target": "column_type",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "column_raw_value",
+        "source_field": "items_page.items.column_values.value",
+        "kind": "dimension",
+        "physical_type": "json",
+        "description": "Uncoerced typed column JSON at item-column grain.",
+        "semantic_hints": [
+          "column",
+          "raw_json"
+        ],
+        "canonical_target": "column_raw_value",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "event_date",
+        "source_field": "updates.updated_at",
+        "kind": "dimension",
+        "physical_type": "date",
+        "description": "Date of a monday board change.",
+        "semantic_hints": [
+          "date",
+          "event"
+        ],
+        "canonical_target": "date",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "event_label",
+        "source_field": "updates.id",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Stable label for a monday change.",
+        "semantic_hints": [
+          "label",
+          "event"
+        ],
+        "canonical_target": "label",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "monday_change",
+        "source_field": "updates",
+        "kind": "event",
+        "physical_type": "datetime",
+        "description": "Board update or validated webhook change.",
+        "semantic_hints": [
+          "event",
+          "change"
+        ],
+        "canonical_target": "milestone",
+        "aggregation": "none",
+        "non_additive": false,
+        "label_source_field": "updates.id"
+      }
     ],
     "reports": [
       {
-        "id": "board_snapshot", "landing": "fact_daily_kpi", "selection_mode": "exact_bundle", "availability": {"status": "selectable"}, "dispatch": {"callable": "pull_board_snapshot"},
-        "metrics": [], "dimensions": ["board_id", "item_id", "item_name", "group_id", "parent_item_id", "updated_at", "column_values", "column_id", "column_type", "column_raw_value"],
-        "supported_grains": [["board_id", "item_id", "column_id"]], "compatibility": [],
-        "filters": [{"field_id": "board_id", "operators": ["eq"]}],
-        "pagination": {"mode": "cursor", "completeness": "complete", "max_pages": null, "row_limit": null, "truncation_signal": "none"},
-        "quota_cost": {"read_points": 1, "unit": "GraphQL query plus computed complexity"},
-        "incremental": {"mode": "full_refresh", "cursor_field": null},
-        "cadence": {"minimum_interval_minutes": 60, "supported_modes": ["manual", "hourly", "daily"]}
+        "id": "board_snapshot",
+        "landing": "fact_daily_kpi",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "dispatch": {
+          "callable": "pull_board_snapshot"
+        },
+        "metrics": [],
+        "dimensions": [
+          "board_id",
+          "item_id",
+          "item_name",
+          "group_id",
+          "parent_item_id",
+          "updated_at",
+          "column_values",
+          "column_id",
+          "column_type",
+          "column_raw_value"
+        ],
+        "supported_grains": [
+          [
+            "board_id",
+            "item_id",
+            "column_id"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "board_id",
+            "operators": [
+              "eq"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "cursor",
+          "completeness": "complete",
+          "max_pages": null,
+          "row_limit": null,
+          "truncation_signal": "none"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "GraphQL query plus computed complexity"
+        },
+        "incremental": {
+          "mode": "full_refresh",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 60,
+          "supported_modes": [
+            "manual",
+            "hourly",
+            "daily"
+          ]
+        }
       },
       {
-        "id": "board_events", "landing": "context_events", "selection_mode": "exact_bundle", "availability": {"status": "selectable"}, "dispatch": {"callable": "pull_board_events"},
-        "metrics": [], "dimensions": ["event_date", "event_label"], "events": ["monday_change"],
-        "supported_grains": [["event_date", "event_label"]], "compatibility": [],
-        "filters": [{"field_id": "event_date", "operators": ["gte", "lte"]}],
-        "pagination": {"mode": "cursor", "completeness": "bounded", "max_pages": 1, "row_limit": 100, "truncation_signal": "logged"},
-        "quota_cost": {"read_points": 1, "unit": "GraphQL query plus computed complexity"},
-        "incremental": {"mode": "date_window", "cursor_field": null},
-        "cadence": {"minimum_interval_minutes": 5, "supported_modes": ["manual", "hourly", "daily"]}
+        "id": "board_events",
+        "landing": "context_events",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "dispatch": {
+          "callable": "pull_board_events"
+        },
+        "metrics": [],
+        "dimensions": [
+          "event_date",
+          "event_label"
+        ],
+        "events": [
+          "monday_change"
+        ],
+        "supported_grains": [
+          [
+            "event_date",
+            "event_label"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "event_date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "cursor",
+          "completeness": "bounded",
+          "max_pages": 1,
+          "row_limit": 100,
+          "truncation_signal": "logged"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "GraphQL query plus computed complexity"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 5,
+          "supported_modes": [
+            "manual",
+            "hourly",
+            "daily"
+          ]
+        }
       }
     ]
   },
   "account_topology": {
     "selection_level": "board",
-    "discovery": {"callable": "discover_accounts"}
-  }
+    "discovery": {
+      "callable": "discover_accounts"
+    },
+    "pull_parameter": "board_id",
+    "levels": [
+      {
+        "id": "board",
+        "label": "Board"
+      }
+    ],
+    "_comment": "2026-07-31: `levels` etait ABSENT, donc validate_topology echouait, donc get_topology() rendait None et discover_accounts etait injoignable -- la decouverte de tableaux etait morte et l'ecran ne proposait rien. Le seul niveau declare est celui que selection_level nommait deja (`board`) : aucune hierarchie n'est inventee ici."
+  },
+  "_max_provider_backfill_days_note": "No max_provider_backfill_days is declared: this provider's published reporting window has not been established as of 2026-08-17. The key is left absent rather than filled with an estimate -- an invented re-collection bound promises the operator a history the provider never committed to. Establishing it means reading the provider's own documentation and recording the URL here, as the modules that do declare one have done."
 }

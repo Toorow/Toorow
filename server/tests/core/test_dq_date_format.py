@@ -87,7 +87,7 @@ def test_date_format_fires_when_rejected_rows_gt_threshold():
             yesterday=date(2026, 7, 12),
         )
 
-    assert result is True
+    assert bool(result) is True
     mock_fire.assert_called_once()
     kwargs = mock_fire.call_args[1]
     assert kwargs["alert_type"] == "dq_date_format"
@@ -114,7 +114,7 @@ def test_date_format_no_fire_when_zero_rejected():
             yesterday=date(2026, 7, 12),
         )
 
-    assert result is False
+    assert bool(result) is False
     mock_fire.assert_not_called()
 
 
@@ -138,7 +138,7 @@ def test_date_format_no_fire_when_within_threshold():
             yesterday=date(2026, 7, 12),
         )
 
-    assert result is False
+    assert bool(result) is False
     mock_fire.assert_not_called()
 
 
@@ -155,7 +155,7 @@ def test_date_format_db_error_returns_false():
             yesterday=date(2026, 7, 12),
         )
 
-    assert result is False
+    assert bool(result) is False
 
 
 # ---------------------------------------------------------------------------

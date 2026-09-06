@@ -3,7 +3,7 @@ version: 2
 sources:
   - name: raw_ias
     description: "Immutable raw landing zone for Integral Ad Science data (AD-7: append-only)."
-    schema: main
+    schema: "{{ var('raw_schema', 'main') }}"  # 24.4 AC2: org_<wslug>_raw injected by orchestrator, 'main' without var (bit-identique)
     tables:
       - name: raw_ias_daily
         description: "Raw IAS daily measurement (viewability / IVT / brand safety) at campaign grain. Append-only (AD-7)."

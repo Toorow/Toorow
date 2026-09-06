@@ -82,7 +82,14 @@ SELECT
     a.matched_count,
     -- coverage_rate = matched / reconcilable Shopify orders. NULL (never 0) when there are
     -- no reconcilable Shopify orders -- honest "cannot measure" (AD-9 / F-7).
-    a.matched_count::DOUBLE / NULLIF(a.shopify_orders_with_txn, 0) AS coverage_rate,
+    -- `::DOUBLE` was here, and BigQuery has neither the operator nor the type --
+    -- *Syntax error: expected end of input but got ":"*. Measured 2026-08-24 by a
+    -- BigQuery dry run of this compiled model (0 bytes, free): the model could
+    -- not be built on the engine production runs, which fails the nightly and
+    -- takes every mart of that Project with it. Same dialect obligation, same
+    -- repair as the empty branches: dbt's own type macro (AI-314).
+    CAST(a.matched_count AS {{ dbt.type_float() }})
+        / NULLIF(a.shopify_orders_with_txn, 0)       AS coverage_rate,
     -- F-7 blind spot, measured separately (never folded into the rate).
     COALESCE(n.shopify_orders_without_txn, 0)        AS shopify_orders_without_txn,
     -- AD-9: this is a MEASURED overlap, not an aggregate estimate and not an attribution.

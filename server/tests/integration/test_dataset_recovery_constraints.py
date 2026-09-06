@@ -25,6 +25,11 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
+from tests.migration_ledger import (  # noqa: E402
+    apply_migrations_absent_from_the_ledger,
+    rearm_the_erasure_hatch,
+)
+
 MIGRATIONS = ROOT / "infra" / "nango" / "migrations"
 INTENT_MIGRATION = MIGRATIONS / "030_versioned_datastream_intents.sql"
 MAPPING_MIGRATION = MIGRATIONS / "032_datastream_field_mappings.sql"
@@ -36,7 +41,22 @@ requires_postgres = pytest.mark.skipif(
     reason="TEST_POSTGRES_DSN not set -- live Postgres constraint test skipped",
 )
 
-_ULID_SAMPLE = "01J8ZC4Q0N7R2K3W5X6Y7Z8A9B"
+#: A ULID-SHAPED prefix, unique PER RUN. It used to be a fixed literal, so every
+#: `dse_`/`dplog_` id this module builds was the same on every execution: the
+#: second run against a base that still held the first raised `UniqueViolation`
+#: on the primary key, and eight tests failed for the run before them rather than
+#: for anything they assert.
+#:
+#: The shape still matters -- these ids are read as ULIDs downstream -- so only
+#: the tail is randomised, from Crockford's alphabet, and the length is unchanged.
+def _ulid_sample() -> str:
+    import random
+
+    alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+    return "01J8ZC" + "".join(random.choice(alphabet) for _ in range(20))
+
+
+_ULID_SAMPLE = _ulid_sample()
 
 
 def _id(prefix: str) -> str:
@@ -49,15 +69,20 @@ def _dse(index: int) -> str:
 
 
 def _apply_migrations(conn) -> None:
-    with conn.cursor() as cur:
-        for path in (
+    """Ne rejouer que ce que le ledger ne porte pas -- voir `tests.migration_ledger`.
+
+    `030`, `032`, `042` et `081` sont ANTERIEURES a la `099` : les rejouer contre
+    une base migree recree leurs gardes DELETE SANS la clause `rgpd_erasure`.
+    """
+    apply_migrations_absent_from_the_ledger(
+        conn,
+        (
             INTENT_MIGRATION,
             MAPPING_MIGRATION,
             REGISTRY_MIGRATION,
             ROLLBACK_MIGRATION,
-        ):
-            cur.execute(path.read_text(encoding="utf-8"))
-    conn.commit()
+        ),
+    )
 
 
 def _seed(conn, project_id: str, ds_id: str, plan_id: str, mapping_id: str) -> None:
@@ -67,11 +92,21 @@ def _seed(conn, project_id: str, ds_id: str, plan_id: str, mapping_id: str) -> N
             "VALUES (%s, %s, %s, 'story-12.12-test', 'org_test_fixture')",
             (project_id, project_id, project_id),
         )
+        # `enabled = TRUE`, because that is what this fixture actually describes:
+        # every test below gives this row a live `current_published_execution_id`
+        # and published executions behind it, and a Datastream in that state is a
+        # RUNNING one. The literal used to be FALSE, which mattered from
+        # 2026-08-21: `rollback_dataset` now asks the org's trial allowance before
+        # it writes `enabled = TRUE`, and these tests all share the trial org
+        # `org_test_fixture` and all COMMIT, so a STOPPED seed made the whole file
+        # fail on the fourth accumulated row -- for the cap, not for the pointer
+        # swap each test is about. The stopped-then-restored journey has its own
+        # org and its own file: tests/integration/test_trial_limit_rollback_journey_pg.py.
         cur.execute(
             """
             INSERT INTO app.datastreams
                 (id, project_id, name, module_name, source_kind, enabled, created_by, org_id)
-            VALUES (%s, %s, 'DS', 'generic', 'connector_pull', FALSE, 'test', 'org_test_fixture')
+            VALUES (%s, %s, 'DS', 'generic', 'connector_pull', TRUE, 'test', 'org_test_fixture')
             """,
             (ds_id, project_id),
         )
@@ -102,9 +137,17 @@ def _seed(conn, project_id: str, ds_id: str, plan_id: str, mapping_id: str) -> N
 
 
 def _insert_published_execution(
-    conn, exec_id, ds_id, project_id, plan_id, mapping_id, *, content_hash, row_count
+    conn, exec_id, ds_id, project_id, plan_id, mapping_id, *, content_hash, row_count,
+    rollback_deadline_sql="NOW() + INTERVAL '30 days'",
 ):
-    """Insert a PUBLISHED execution + its publication-log row (a prior version)."""
+    """Insert a PUBLISHED execution + its publication-log row (a prior version).
+
+    `rollback_deadline_sql` is written AT INSERT, never patched afterwards. The
+    log is append-only and refuses UPDATE (`reject_publication_log_mutation`),
+    correctly -- a publication record that can be edited is not a record. A test
+    that wants an expired deadline must therefore publish one, which is also what
+    the passage of time does in production.
+    """
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -123,7 +166,9 @@ def _insert_published_execution(
                  mapping_version_id, content_hash, row_count, published_by,
                  rollback_deadline, retained)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'test',
-                    NOW() + INTERVAL '30 days', TRUE)
+                    """
+            + rollback_deadline_sql
+            + """, TRUE)
             """,
             (log_id, exec_id, ds_id, project_id, plan_id, mapping_id, content_hash, row_count),
         )
@@ -158,8 +203,17 @@ def test_migration_081_has_no_backfill_update_on_the_publication_log() -> None:
     sql = ROLLBACK_MIGRATION.read_text(encoding="utf-8")
     lowered = sql.lower()
     assert "update app.datastream_publication_log" not in lowered
-    # And the old 30-day hardcode backfill is gone.
-    assert "interval '30 days'" not in lowered
+    # And the old 30-day hardcode backfill is gone -- FROM THE STATEMENTS.
+    #
+    # This read the whole file, comments included, and the migration's header
+    # now EXPLAINS why the backfill was removed -- quoting the interval it used
+    # to write. A check that cannot tell an explanation from an instruction
+    # forces the explanation out of the file, which is how the next reader
+    # re-adds the very UPDATE this test exists to forbid.
+    statements = chr(10).join(
+        line.split("--", 1)[0] for line in lowered.splitlines()
+    )
+    assert "interval '30 days'" not in statements
 
 
 # ---------------------------------------------------------------------------
@@ -227,9 +281,12 @@ def test_rollback_disabled_when_deadline_expired(live_postgres) -> None:
     plan_id, mapping_id = _id("dsp_"), _id("dmap_")
     prior, current = _dse(3), _dse(4)
     _seed(conn, project_id, ds_id, plan_id, mapping_id)
+    # The prior version is published with its window ALREADY behind it: the log
+    # is append-only, so an expired deadline is written, never patched in.
     _insert_published_execution(
         conn, prior, ds_id, project_id, plan_id, mapping_id,
         content_hash="a" * 64, row_count=90,
+        rollback_deadline_sql="NOW() - INTERVAL '1 hour'",
     )
     _insert_published_execution(
         conn, current, ds_id, project_id, plan_id, mapping_id,
@@ -239,12 +296,6 @@ def test_rollback_disabled_when_deadline_expired(live_postgres) -> None:
         cur.execute(
             "UPDATE app.datastreams SET current_published_execution_id = %s WHERE id = %s",
             (current, ds_id),
-        )
-        # Force the target's rollback deadline into the past.
-        cur.execute(
-            "UPDATE app.datastream_publication_log "
-            "SET rollback_deadline = NOW() - INTERVAL '1 hour' WHERE execution_id = %s",
-            (prior,),
         )
     conn.commit()
 
@@ -504,10 +555,9 @@ def test_migration_081_applies_on_populated_publication_log(live_postgres) -> No
     # 081 on a POPULATED log must NOT raise. A backfill UPDATE would fire the 042
     # append-only trigger for the seeded row and abort; the fixed ADD-COLUMN-only 081
     # applies cleanly, and the seeded row's rollback_deadline stays NULL (no backfill).
-    with conn.cursor() as cur:
-        for path in (INTENT_MIGRATION, MAPPING_MIGRATION, REGISTRY_MIGRATION):
-            cur.execute(path.read_text(encoding="utf-8"))
-    conn.commit()
+    apply_migrations_absent_from_the_ledger(
+        conn, (INTENT_MIGRATION, MAPPING_MIGRATION, REGISTRY_MIGRATION)
+    )
 
     project_id, ds_id = _id("proj_"), _id("ds_")
     plan_id, mapping_id = _id("dsp_"), _id("dmap_")
@@ -537,9 +587,15 @@ def test_migration_081_applies_on_populated_publication_log(live_postgres) -> No
     conn.commit()
 
     # Apply 081 on the POPULATED log -- this must NOT raise (no backfill UPDATE).
+    # THE REPLAY IS THE SUBJECT HERE, so it cannot go through the ledger helper --
+    # skipping it would make this assertion vacuous. But `081` recreates
+    # `trg_datastream_publication_log_immutable`, which `099` had given the
+    # `rgpd_erasure` clause, so the hatch is re-armed immediately after: without
+    # that line this test alone breaks org erasure for the rest of the session.
     with conn.cursor() as cur:
         cur.execute(ROLLBACK_MIGRATION.read_text(encoding="utf-8"))
     conn.commit()
+    rearm_the_erasure_hatch(conn)
 
     # The new columns exist and the pre-existing row is untouched (deadline still NULL).
     with conn.cursor() as cur:

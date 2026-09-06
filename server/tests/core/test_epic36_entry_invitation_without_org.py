@@ -30,11 +30,16 @@ import asyncio
 import json
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from core import (
+    invitations_api,  # AD-43 : le handler vit chez son sujet
+    organizations_api,  # AD-43 : le handler vit chez son sujet
+)
 from starlette.requests import Request
+
+from tests.conftest import REPO_ROOT
 
 
 def _request(path: str, body: dict, *, path_params=None, headers=None) -> Request:
@@ -74,6 +79,20 @@ def _conn(*rows):
 # ---------------------------------------------------------------------------
 # Issuance
 # ---------------------------------------------------------------------------
+
+
+
+def _invited_principal(verified_email: str):
+    """The canonical person an invitation transition resolves its caller to."""
+    from core.api_auth import ResolvedPrincipal
+
+    return ResolvedPrincipal(
+        person_id="person_invited",
+        issuer="static://toorow",
+        subject=verified_email,
+        verified_email=verified_email,
+        display_name="Invited",
+    )
 
 
 def test_issue_without_org_is_platform_scoped_and_stores_no_org(monkeypatch):
@@ -166,7 +185,7 @@ def test_issue_without_org_refuses_to_grant_anything(monkeypatch):
 
 
 def _issue_api(monkeypatch, *, identity: str, super_admins: str):
-    from core import admin_api, db, invitations, project_access
+    from core import admin_api, db, invitations
 
     conn, _ = _conn()
 
@@ -182,7 +201,6 @@ def _issue_api(monkeypatch, *, identity: str, super_admins: str):
         admin_api, "_check_invitation_identity", AsyncMock(return_value=(False, ""))
     )
     monkeypatch.setattr(admin_api, "write_audit_row", MagicMock())
-    monkeypatch.setattr(project_access, "epic36_production_access_enabled", lambda: True)
     issue = MagicMock(
         return_value=invitations.InvitationIssueResult(
             invitation_id="invite-1",
@@ -196,7 +214,7 @@ def _issue_api(monkeypatch, *, identity: str, super_admins: str):
     )
     monkeypatch.setattr(invitations, "issue_invitation", issue)
     response = asyncio.run(
-        admin_api._issue_invitation(
+        invitations_api._issue_invitation(
             _request(
                 "/api/invitations",
                 {"invited_identity": "candidate@example.com", "role": "owner"},
@@ -238,7 +256,7 @@ def test_deny_by_default_when_the_allow_list_is_empty(monkeypatch):
 
 def test_an_org_scoped_invitation_still_requires_org_membership(monkeypatch):
     """Nothing is relaxed for the invitation that names an organization."""
-    from core import admin_api, db, invitations, project_access
+    from core import admin_api, db, invitations
     from starlette.responses import JSONResponse
 
     conn, _ = _conn()
@@ -254,7 +272,6 @@ def test_an_org_scoped_invitation_still_requires_org_membership(monkeypatch):
     monkeypatch.setattr(
         admin_api, "_check_auth", AsyncMock(return_value=(True, "admin@toorow.test"))
     )
-    monkeypatch.setattr(project_access, "epic36_production_access_enabled", lambda: True)
     monkeypatch.setattr(
         admin_api,
         "_enforce_org_manage",
@@ -264,7 +281,7 @@ def test_an_org_scoped_invitation_still_requires_org_membership(monkeypatch):
     monkeypatch.setattr(invitations, "issue_invitation", issue)
 
     response = asyncio.run(
-        admin_api._issue_invitation(
+        invitations_api._issue_invitation(
             _request(
                 "/api/organizations/org-1/invitations",
                 {"invited_identity": "user@example.com", "role": "member"},
@@ -355,6 +372,13 @@ def test_acceptance_with_org_still_materializes_the_membership(monkeypatch):
         (0,),  # resource_grants count
         None,  # no existing membership
         ("proj-org",),
+        # Story 46.4 put `bootstrap_project_journey` inside acceptance, and it reads
+        # twice more: the project's org, then any active journey. The sequence was
+        # never extended, so the mock ran out and raised StopIteration -- the same
+        # class as the C-6 finding, in a fixture instead of in production.
+        ("org-1",),     # bootstrap: SELECT org_id -- must MATCH the invitation's org,
+                        # which is what `bootstrap_project_journey` verifies
+        None,           # bootstrap: no active setup_journeys row -> it inserts one
     )
     monkeypatch.setattr(
         invitations,
@@ -377,11 +401,15 @@ def test_acceptance_with_org_still_materializes_the_membership(monkeypatch):
     sql = " ".join(call.args[0] for call in cur.execute.call_args_list)
     assert "INSERT INTO app.org_members" in sql
     assert result.org_id == "org-1"
-    assert result.next_url == "/p/proj-org/overview/getting-started"
+    # The canonical route model (Story 46.1) scopes the landing by organization
+    # AND project: `invitations.py:788` builds
+    # `/org/{org_id}/project/{project_id}/getting-started`. The old `/p/{id}/...`
+    # shape predates it.
+    assert result.next_url == "/org/org-1/project/proj-org/getting-started"
 
 
 def test_accept_api_reports_no_organization_without_inventing_one(monkeypatch):
-    from core import admin_api, db, invitations, project_access
+    from core import admin_api, db, invitations
 
     conn, _ = _conn()
 
@@ -391,10 +419,14 @@ def test_accept_api_reports_no_organization_without_inventing_one(monkeypatch):
 
     monkeypatch.setenv("TOOROW_AUTH_MODE", "static")
     monkeypatch.setattr(db, "get_connection", get_connection)
+    # An invitation transition binds a PERSON, not just an address. Patching
+    # `_check_invitation_identity` here stopped meaning anything on 2026-08-24:
+    # `_check_invitation_principal` no longer has a branch that calls it.
     monkeypatch.setattr(
-        admin_api, "_check_invitation_identity", AsyncMock(return_value=(True, "user@example.com"))
+        admin_api,
+        "_check_canonical_principal",
+        AsyncMock(return_value=(True, _invited_principal("user@example.com"))),
     )
-    monkeypatch.setattr(project_access, "epic36_production_access_enabled", lambda: True)
     monkeypatch.setattr(
         invitations,
         "accept_invitation",
@@ -413,7 +445,7 @@ def test_accept_api_reports_no_organization_without_inventing_one(monkeypatch):
     )
 
     response = asyncio.run(
-        admin_api._accept_invitation(
+        invitations_api._accept_invitation(
             Request(
                 {
                     "type": "http",
@@ -464,21 +496,33 @@ def _create_org_response(monkeypatch, membership_count):
         "_check_invitation_identity",
         AsyncMock(return_value=(True, "newcomer@example.com")),
     )
-    monkeypatch.setattr(admin_api, "_count_active_memberships", lambda _keys: membership_count)
+    # Le plancher vit dans `org_lifecycle`, mais `_create_org` le resout dans SON
+    # module -- AD-43. Patcher la source serait un no-op vert.
+    monkeypatch.setattr(
+        organizations_api, "_count_active_memberships", lambda _keys: membership_count
+    )
+    # A VALID name, so the one-org cap is what answers. The name used to be empty,
+    # on the reasoning that a 422 proves the cap was passed -- but `_create_org`
+    # validates the body BEFORE counting memberships, so the 422 arrived whatever
+    # the count and the "still refuses a second organization" test below could never
+    # reach its own subject.
     return asyncio.run(
-        admin_api._create_org(_request("/api/organizations", {"name": ""}, headers=[]))
+        organizations_api._create_org(
+            _request("/api/organizations", {"name": "Newcomer Org"}, headers=[])
+        )
     )
 
 
 def test_the_one_org_cap_does_not_block_someone_who_accepted_an_entry_invitation(monkeypatch):
     """Accepting an entry invitation creates no membership -> the cap sees 0.
 
-    The nominal case must go through. The response is a 422 on the empty name
-    (the body is deliberately invalid): what matters is that it is NOT the 409
-    ``organization_limit_reached`` -- the gate was passed.
+    The nominal case must go through. What matters is only that the answer is NOT
+    the 409 ``organization_limit_reached``: the gate was passed. What happens after
+    it -- the create itself -- needs a database and belongs to the pg-gated suite.
     """
     response = _create_org_response(monkeypatch, 0)
-    assert response.status_code == 422
+    assert response.status_code != 409, response.body
+    assert b"organization_limit_reached" not in response.body
 
 
 def test_the_one_org_cap_still_refuses_a_second_organization(monkeypatch):
@@ -523,7 +567,7 @@ def test_entry_invitation_routes_are_registered():
 
 
 def test_migration_109_makes_the_org_optional_without_inventing_one():
-    sql = Path("infra/nango/migrations/109_entry_invitation_without_org.sql").read_text(
+    sql = (REPO_ROOT / "infra/nango/migrations/109_entry_invitation_without_org.sql").read_text(
         encoding="utf-8"
     )
     assert "ALTER TABLE app.invitations ALTER COLUMN org_id DROP NOT NULL" in sql

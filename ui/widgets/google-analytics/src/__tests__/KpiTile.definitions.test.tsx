@@ -16,10 +16,11 @@
 
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ThemeProvider, createTheme } from "@mui/material";
+
 import KpiTile from "../KpiTile";
 import KpiTileRow from "../KpiTileRow";
 import type { MetricDefinition, Row } from "../types";
+import { ThemeProvider, createTheme } from "@toorow/shell";
 
 const theme = createTheme();
 
@@ -136,8 +137,8 @@ describe("KpiTile — hero value (rule 3, Story 8.8)", () => {
   it("renders the hero value in the kpi-hero-value element", () => {
     wrap(<KpiTile label="Sessions" currentValue={1234} deltaPct={null} />);
     const hero = screen.getByTestId("kpi-hero-value");
-    // fr-FR locale formats 1234 as "1 234" or "1 234"
-    expect(hero.textContent).toMatch(/1[\s ]?234/);
+    // FORMATTER_LOCALE (story 76-8): one convention on the whole report.
+    expect(hero.textContent).toBe("1,234");
   });
 
   it("renders the delta text in the kpi-delta-text element", () => {

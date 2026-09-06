@@ -26,8 +26,8 @@ export const FIXTURE_ENVELOPE: CardEnvelope = {
     provenance: {
       source_system: "google-analytics",
       source_field: "fact_daily_kpi",
-      pull_id: "pull_01KXSAWDF50RBD1H3JX1YD1A7T",
-      pull_ids: ["pull_01KXSAW8VQQQK21J01JNXJGEH8", "pull_01KXSAWCBAG1SEF5SAEXN83Z2A", "pull_01KXSAWDF50RBD1H3JX1YD1A7T"],
+      pull_id: "pull_U_FIXTURE0000000000002",
+      pull_ids: ["pull_U_FIXTURE0000000000000", "pull_U_FIXTURE0000000000001", "pull_U_FIXTURE0000000000002"],
     },
     alerts: [],
     trace_id: null,
@@ -50,8 +50,8 @@ export const FIXTURE_ENVELOPE: CardEnvelope = {
   data: {
     card_id: "usertypes",
     card_type: "usertypes",
-    title: "Types d'utilisateurs",
-    answers_question: "Qui sont mes utilisateurs (Nouveaux vs fidèles, appareil, pays) ?",
+    title: "User Types",
+    answers_question: "Who are my users (new vs returning, device, country)?",
     date_range: { start: "2026-06-17", end: "2026-07-16" },
     connectors: ["google-analytics"],
     metrics: {
@@ -62,7 +62,7 @@ export const FIXTURE_ENVELOPE: CardEnvelope = {
         period: "sem. préc.",
         source_system: "google-analytics",
         source_field: "sessions",
-        pull_id: "pull_01KXSAWDF50RBD1H3JX1YD1A7T",
+        pull_id: "pull_U_FIXTURE0000000000002",
       },
       active_users: {
         value: 221102.0,
@@ -71,13 +71,13 @@ export const FIXTURE_ENVELOPE: CardEnvelope = {
         period: "sem. préc.",
         source_system: "google-analytics",
         source_field: "active_users",
-        pull_id: "pull_01KXSAWCBAG1SEF5SAEXN83Z2A",
+        pull_id: "pull_U_FIXTURE0000000000001",
       },
     },
     series: {},
     rendered_comment:
-      "Type dominant : « Fidèles » (61.1 % des utilisateurs actifs) (connector:fact_daily_kpi, pull_01KXSAWDF50RBD1H3JX1YD1A7T)\n" +
-      "Premier pays : « FR » (72 063 utilisateurs actifs) (connector:fact_daily_kpi, pull_01KXSAWDF50RBD1H3JX1YD1A7T)\n" +
+      "Type dominant : « Fidèles » (61.1 % des utilisateurs actifs) (connector:fact_daily_kpi, pull_U_FIXTURE0000000000002)\n" +
+      "Premier pays : « FR » (72 063 utilisateurs actifs) (connector:fact_daily_kpi, pull_U_FIXTURE0000000000002)\n" +
       "Contexte manquant pour cette période.",
     metric_definitions: {
       active_users: { definition: "Utilisateurs actifs sur la période.", unit: "utilisateurs", direction: "up_good" },
@@ -162,8 +162,8 @@ export const FIXTURE_ENVELOPE: CardEnvelope = {
         binding: { metrics: "*" },
         data: {
           text:
-            "Type dominant : « Fidèles » (61.1 % des utilisateurs actifs) (connector:fact_daily_kpi, pull_01KXSAWDF50RBD1H3JX1YD1A7T)\n" +
-            "Premier pays : « FR » (72 063 utilisateurs actifs) (connector:fact_daily_kpi, pull_01KXSAWDF50RBD1H3JX1YD1A7T)\n" +
+            "Type dominant : « Fidèles » (61.1 % des utilisateurs actifs) (connector:fact_daily_kpi, pull_U_FIXTURE0000000000002)\n" +
+            "Premier pays : « FR » (72 063 utilisateurs actifs) (connector:fact_daily_kpi, pull_U_FIXTURE0000000000002)\n" +
             "Contexte manquant pour cette période.",
         },
       },

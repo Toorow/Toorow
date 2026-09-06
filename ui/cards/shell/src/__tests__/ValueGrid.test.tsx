@@ -1,16 +1,17 @@
 /**
  * Tests ValueGrid — Story 23.4.
  *
- * Convention : ThemeProvider avec createTheme() nu (MUI defaults, sans branding).
+ * Convention : ThemeProvider avec createTheme() nu (jetons toorow, sans branding).
  * Vitest + @testing-library/react. Strings françaises (UX-DR10).
  */
 
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { ThemeProvider, createTheme, decomposeColor } from "@mui/material/styles";
+
 import ValueGrid from "../ValueGrid";
 import type { ValueGridCell } from "../ValueGrid";
 import { getVizPalette } from "../vizTheme";
+import { ThemeProvider, createTheme, decomposeColor } from "@toorow/shell";
 
 const theme = createTheme();
 const viz = getVizPalette(theme);
@@ -25,7 +26,6 @@ function rgbOf(color: string): number[] {
 function cellBg(el: HTMLElement): string {
   return getComputedStyle(el).backgroundColor;
 }
-
 
 function renderGrid(props: Parameters<typeof ValueGrid>[0]) {
   return render(
@@ -69,7 +69,7 @@ describe("ValueGrid — rendu des cellules", () => {
     const cells: ValueGridCell[] = [{ value: 1 }, { value: 2 }, { value: 3 }];
     renderGrid({ cells, columns: 5 });
     const grid = screen.getByTestId("value-grid");
-    // style inline via MUI sx → vérifié sur l'attribut style ou className
+    // style inline via sx → vérifié sur l'attribut style ou className
     expect(grid).toBeInTheDocument();
   });
 });

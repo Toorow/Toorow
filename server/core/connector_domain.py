@@ -46,7 +46,19 @@ from typing import Any
 
 from ulid import ULID
 
+from core.audit import declare_action
 from core.operations import MutationResult, OperationSpec, execute_operation
+
+# --- LES ACTIONS QUE CE MODULE ECRIT ------------------------------------
+#
+# AD-42 (2026-08-12) : declarees ICI, a cote du code qui les ecrit, et non
+# dans `core/audit.py`. Ce fichier etait un carrefour -- 43 editions de 29
+# sujets depuis juin, dont 34 n'ajoutaient qu'une constante -- et 45 % des
+# actions reellement ecrites en production n'y etaient meme pas declarees,
+# parce que la liste etait trop loin pour valoir le detour. `write_audit_row`
+# refuse desormais une action que personne n'a declaree.
+ACTION_CONNECTOR_DOMAIN_CONFIGURED = declare_action("connector.domain.configured")
+
 
 # ---------------------------------------------------------------------------
 # Constants (AC1, AC3, Task 2).
@@ -63,18 +75,21 @@ ALLOWED_PROVIDER_ADAPTERS: frozenset[str] = frozenset({
     "adapter_us_v2",
 })
 
-#: Minimum installation state required before a domain config may be applied.
-#: The installation must have moved past NOT_INSTALLED (i.e. be at or after
-#: DOMAIN_PENDING). States that are too early reject the configure call.
-_STATES_TOO_EARLY: frozenset[str] = frozenset({"NOT_INSTALLED"})
-
-#: Disabled installation cannot accept a new domain config.
-_STATES_DISABLED: frozenset[str] = frozenset({"DISABLED"})
+#: Domain configuration is a pre-verification operation. The installation row
+#: is locked and must remain exactly DOMAIN_PENDING through the write.
+_CONFIGURABLE_INSTALLATION_STATE = "DOMAIN_PENDING"
 
 #: Simple domain shape: at least one dot, no scheme, no path, no port.
 _DOMAIN_RE = re.compile(
     r"^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)+$"
 )
+_SECRET_REF_RE = re.compile(
+    r"^(?:secret-ref-[A-Za-z0-9_-]{1,200}|projects/[a-z0-9][a-z0-9-]{4,62}/"
+    r"secrets/[A-Za-z0-9_-]{1,255}/versions/(?:[1-9][0-9]*|latest))$"
+)
+_EVIDENCE_CLASS_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_EVIDENCE_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
+_WEBHOOK_VERSION_RE = re.compile(r"^v[1-9][0-9]{0,2}$")
 
 # Safe next-action for a configured domain (no verification yet; 38.4 owns that).
 _SAFE_NEXT_ACTION_CONFIGURED = (
@@ -163,6 +178,7 @@ def configure_domain(
     idempotency_key: str,
     host_context: dict[str, Any],
     trace_id: str | None,
+    dns_evidence_hash: str | None = None,
 ) -> dict[str, Any]:
     """Configure the domain and adapter route for an installed connector.
 
@@ -174,8 +190,7 @@ def configure_domain(
     Fail-closed validation BEFORE SQL (review H1 / AC3):
       - domain shape must match ``_DOMAIN_RE``.
       - provider_adapter must be in ``ALLOWED_PROVIDER_ADAPTERS``.
-      - The installation must exist and be at/after DOMAIN_PENDING (not
-        NOT_INSTALLED or DISABLED).
+      - The installation must exist and be exactly DOMAIN_PENDING.
       - Duplicate domain in this environment raises ``ConnectorDomainConflict``.
       - Domain already bound in a DIFFERENT environment raises
         ``ConnectorDomainConflict`` (cross-env guard, AC3).
@@ -206,7 +221,33 @@ def configure_domain(
     connector_name = connector_name.strip()
     domain = domain.strip().lower()
     provider_adapter = provider_adapter.strip()
-    webhook_endpoint_version = (webhook_endpoint_version or "v1").strip() or "v1"
+    actor = actor.strip()
+    idempotency_key = idempotency_key.strip()
+    if len(idempotency_key) > 255:
+        raise ConnectorDomainValidationError("idempotency_key is too long")
+    if not isinstance(webhook_endpoint_version, str):
+        raise ConnectorDomainValidationError("webhook_endpoint_version must be a string")
+    webhook_endpoint_version = webhook_endpoint_version.strip() or "v1"
+    if not _WEBHOOK_VERSION_RE.fullmatch(webhook_endpoint_version):
+        raise ConnectorDomainValidationError("webhook_endpoint_version is invalid")
+    if signing_secret_ref is not None:
+        if not isinstance(signing_secret_ref, str) or not _SECRET_REF_RE.fullmatch(
+            signing_secret_ref.strip()
+        ):
+            raise ConnectorDomainValidationError("signing_secret_ref must be a version reference")
+        signing_secret_ref = signing_secret_ref.strip()
+    if dns_evidence_class is not None:
+        if not isinstance(dns_evidence_class, str) or not _EVIDENCE_CLASS_RE.fullmatch(
+            dns_evidence_class.strip()
+        ):
+            raise ConnectorDomainValidationError("dns_evidence_class is invalid")
+        dns_evidence_class = dns_evidence_class.strip()
+    if dns_evidence_hash is not None:
+        if not isinstance(dns_evidence_hash, str) or not _EVIDENCE_HASH_RE.fullmatch(
+            dns_evidence_hash.strip().lower()
+        ):
+            raise ConnectorDomainValidationError("dns_evidence_hash must be a SHA-256 digest")
+        dns_evidence_hash = dns_evidence_hash.strip().lower()
 
     if not _DOMAIN_RE.match(domain):
         raise ConnectorDomainValidationError(
@@ -224,7 +265,7 @@ def configure_domain(
     with conn.cursor() as cur:
         cur.execute(
             "SELECT id, state FROM app.connector_installations "
-            "WHERE environment = %s AND connector_name = %s",
+            "WHERE environment = %s AND connector_name = %s FOR UPDATE",
             (environment, connector_name),
         )
         inst_row = cur.fetchone()
@@ -235,13 +276,9 @@ def configure_domain(
         )
 
     installation_id, inst_state = inst_row
-    if inst_state in _STATES_TOO_EARLY:
+    if inst_state != _CONFIGURABLE_INSTALLATION_STATE:
         raise ConnectorDomainUnavailable(
-            "installation is in NOT_INSTALLED state; advance to DOMAIN_PENDING first"
-        )
-    if inst_state in _STATES_DISABLED:
-        raise ConnectorDomainUnavailable(
-            "installation is DISABLED; re-apply installation before configuring domain"
+            "connector installation is not available for domain configuration"
         )
 
     # ------------------------------------------------------------------
@@ -264,8 +301,7 @@ def configure_domain(
         # a DIFFERENT binding exists.
         if not (ex_env == environment and ex_name == connector_name):
             raise ConnectorDomainConflict(
-                f"domain {domain!r} is already bound in environment {ex_env!r} "
-                f"for connector {ex_name!r} -- cross-environment binding refused"
+                "domain is already bound to another platform installation"
             )
 
     # ------------------------------------------------------------------
@@ -294,9 +330,9 @@ def configure_domain(
     # The new row id is generated at write time INSIDE the mutation closure.
     # ------------------------------------------------------------------
     spec = OperationSpec(
-        command_type="connector.domain.configured",
+        command_type=ACTION_CONNECTOR_DOMAIN_CONFIGURED,
         actor=actor,
-        effective_org_id="platform",
+        effective_org_id=None,
         resource_path=(
             "platform:connector-domain-configs",
             f"environment:{environment}",
@@ -316,16 +352,16 @@ def configure_domain(
             "domain": domain,
             "provider_adapter": provider_adapter,
             "webhook_endpoint_version": webhook_endpoint_version,
-            "config_version": next_version,
             # signing_secret_ref is a reference id (safe to include as a ref);
             # the value is never included (E38-NFR03).
             "signing_secret_ref": signing_secret_ref,
             "dns_evidence_class": dns_evidence_class,
+            "dns_evidence_hash": dns_evidence_hash,
         },
         provider_references={},
         confirmation_mode="server",
         confirmation_reference=(
-            f"connector-domain:{environment}:{connector_name}:v{next_version}"
+            f"connector-domain:{environment}:{connector_name}:configure"
         ),
         trace_id=trace_id,
     )
@@ -405,7 +441,7 @@ def configure_domain(
                 "provider_adapter, webhook_endpoint_version, signing_secret_ref, "
                 "dns_evidence_class, dns_evidence_hash, config_version, "
                 "superseded_by, operation_id) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, %s, NULL, %s) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, %s) "
                 "ON CONFLICT DO NOTHING",
                 (
                     new_config_id,
@@ -417,6 +453,7 @@ def configure_domain(
                     webhook_endpoint_version,
                     signing_secret_ref,
                     dns_evidence_class,
+                    dns_evidence_hash,
                     next_version,
                     operation_id,
                 ),

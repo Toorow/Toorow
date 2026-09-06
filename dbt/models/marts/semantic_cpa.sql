@@ -13,8 +13,11 @@
 --   DISPLAY units BEFORE the ratio divide: if 'cost' is declared native_unit='micros' in
 --   dbt/seeds/money_metric_units.csv it lands canonical micros in the mart, so its SUM is
 --   divided by 1e6 ONCE (view-level, outside the SUM). 'cost' is declared 'decimal' today
---   (AD-6 FX-at-staging lands decimal into fact_daily_kpi), so the /1e6 branch is NEVER
---   taken and the output is BYTE-IDENTICAL for the currently-wired connectors (E39-NFR06).
+--   (FX-at-read, Story 39.10 repaired by 48.3: staging keeps the immutable source-currency
+--   DECIMAL amount and fact_daily_kpi converts it ONCE through the fx_convert_at_read macro,
+--   so what reaches this view is a reporting-currency decimal — never micros), so the /1e6
+--   branch is NEVER taken and the output is BYTE-IDENTICAL for the currently-wired
+--   connectors (E39-NFR06).
 --   The DENOMINATOR 'conversions' is a COUNT (non-money) — its math is unchanged. The 1e6
 --   divide and the ratio divide both stay OUTSIDE the SUM (NFR01: sum-then-divide). The
 --   provenance columns carry the display-unit-normalized components.

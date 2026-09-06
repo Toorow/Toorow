@@ -50,11 +50,18 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import httpx
+
+# Import au niveau module (et non paresseux comme les appels a `core` dans les
+# fonctions) : les classes d'exception ci-dessous en HERITENT, donc il doit etre
+# resolu au moment ou le fichier est lu.
+from core import pull_errors
 from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-# Module-level FastMCP instance -- the public surface the loader mounts.
+# Module-level FastMCP instance, kept as the conformance surface (AD-1 envelope,
+# validated by server/tests/conformance/test_envelope.py). Since AD-42 the core
+# no longer mounts it: execution uses the Datastream-parameterized core tools.
 mcp_app = FastMCP("hubspot")
 
 # ---------------------------------------------------------------------------
@@ -105,12 +112,12 @@ def _query_bigquery(sql: str, params: dict) -> list[dict]:
     return [dict(zip(cols, row)) for row in result]
 
 
-def _get_mart_table(db_mode: str) -> str:
+def _get_mart_table(db_mode: str, project_id: str | None) -> str:
     """Reference qualifiee du mart fact_daily_kpi selon le moteur."""
     if db_mode == "duckdb":
         from core import warehouse_tenancy  # noqa: PLC0415
 
-        return f"{warehouse_tenancy.mart_prefix(None)}fact_daily_kpi"
+        return f"{warehouse_tenancy.mart_prefix(project_id)}fact_daily_kpi"
     dataset = os.environ.get("BQ_MARTS_DATASET", "marts")
     gcp_project = os.environ.get("GCP_PROJECT", "")
     prefix = f"{gcp_project}.{dataset}" if gcp_project else dataset
@@ -181,7 +188,7 @@ def _query_mart(
     #      deals_daily -> deals_created, deals_closed, deal_amount).
     """
     db_mode = _get_db_mode()
-    table = _get_mart_table(db_mode)
+    table = _get_mart_table(db_mode, project_id)
     metric_clause, metric_params = _build_metric_filter(report_profile, db_mode)
 
     if db_mode == "duckdb":
@@ -519,8 +526,15 @@ def _build_date_filter(property_name: str, date_str: str) -> dict:
     }
 
 
-class IncompleteSearchError(RuntimeError):
-    """The provider bound cannot be split further without losing completeness."""
+class IncompleteSearchError(pull_errors.InvalidRequestError):
+    """The provider bound cannot be split further without losing completeness.
+
+    `invalid_request` : la fenetre ne peut plus etre coupee, donc rejouer redonne
+    le meme depassement -- ce n'est pas un incident passager.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message)
 
 
 def _build_half_open_date_filter(
@@ -908,11 +922,11 @@ def _insert_raw_contacts(
     duckdb_path: str,
     project_id: str | None = None,
 ) -> int:
-    """Insere les lignes contacts dans raw_hubspot_contacts_daily (DuckDB only at P-dev)."""
-    if db_mode != "duckdb":
+    """Insere les lignes contacts dans raw_hubspot_contacts_daily (DuckDB et BigQuery)."""
+    if db_mode not in ("duckdb", "bigquery"):
         raise ValueError(
-            f"_insert_raw_contacts: db_mode {db_mode!r} non supporte a P-dev "
-            "(BigQuery non encore implemente)"
+            f"_insert_raw_contacts: db_mode {db_mode!r} non supporte "
+            "(attendu: duckdb ou bigquery)"
         )
     from core import warehouse_write  # noqa: PLC0415
 
@@ -941,11 +955,11 @@ def _insert_raw_deals(
     duckdb_path: str,
     project_id: str | None = None,
 ) -> int:
-    """Insere les lignes deals dans raw_hubspot_deals_daily (DuckDB only at P-dev)."""
-    if db_mode != "duckdb":
+    """Insere les lignes deals dans raw_hubspot_deals_daily (DuckDB et BigQuery)."""
+    if db_mode not in ("duckdb", "bigquery"):
         raise ValueError(
-            f"_insert_raw_deals: db_mode {db_mode!r} non supporte a P-dev "
-            "(BigQuery non encore implemente)"
+            f"_insert_raw_deals: db_mode {db_mode!r} non supporte "
+            "(attendu: duckdb ou bigquery)"
         )
     from core import warehouse_write  # noqa: PLC0415
 
@@ -1321,11 +1335,13 @@ def _insert_raw_catalog(
     db_mode: str,
     duckdb_path: str,
 ) -> int:
-    """Land projected property rows into raw_hubspot_catalog_daily (DuckDB only at P-dev)."""
-    if db_mode != "duckdb":
+    """Land projected property rows into raw_hubspot_catalog_daily."""
+    if db_mode not in ("duckdb", "bigquery"):
         raise ValueError(f"_insert_raw_catalog: unsupported db_mode {db_mode!r}")
     from core import warehouse_write  # noqa: PLC0415
 
+    # BOTH BACKENDS, ONE PATH. `open_raw_writer` resolves DuckDB or BigQuery
+    # from TOOROW_DB_MODE itself, so the same executemany/close lands on either.
     con = warehouse_write.open_raw_writer(duckdb_path, project_id=project_id)
     con.execute(_RAW_CATALOG_DDL)
     values = [

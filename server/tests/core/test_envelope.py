@@ -10,6 +10,8 @@ Covers:
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from core.envelope import build_canonical_envelope, derive_meta_from_rows
 
 # ---------------------------------------------------------------------------
@@ -243,3 +245,284 @@ def test_envelope_existing_callers_unaffected():
     assert "provenance" in envelope["meta"]
     assert isinstance(envelope["meta"]["alerts"], list)
     assert "rows" in envelope["data"]
+
+
+# ---------------------------------------------------------------------------
+# Cross-source freshness: `last_pull` is the OPTIMISTIC end of the range.
+#
+# `overview.md:63` fixes the rule for Project posture -- "never the newest
+# timestamp from one isolated source" -- and core.project_overview obeys it with
+# min(). This builder is the other surface and used to publish only the max, so a
+# source refreshed minutes ago hid one frozen for days on a figure that adds both.
+# ---------------------------------------------------------------------------
+
+
+def _two_speed_rows():
+    return [
+        {"connector": "fast-source", "pull_id": "p_fast",
+         "loaded_at": "2026-07-31T06:00:00"},
+        {"connector": "slow-source", "pull_id": "p_slow",
+         "loaded_at": "2026-07-22T06:00:00"},
+    ]
+
+
+def test_freshness_exposes_the_oldest_contributing_source_too():
+    from core.envelope import derive_meta_from_rows
+
+    freshness, _ = derive_meta_from_rows(_two_speed_rows(), [])
+
+    assert freshness["last_pull"] == "2026-07-31T06:00:00"
+    # The nine-day-old source is no longer invisible.
+    assert freshness["complete_through"] == "2026-07-22T06:00:00"
+    assert freshness["per_connector"] == {
+        "fast-source": "2026-07-31T06:00:00",
+        "slow-source": "2026-07-22T06:00:00",
+    }
+
+
+def test_unevaluated_staleness_is_flagged_as_unevaluated():
+    """A null nobody computed must not read as "evaluated, and fresh"."""
+    from core.envelope import derive_meta_from_rows
+
+    freshness, _ = derive_meta_from_rows(_two_speed_rows(), [])
+    assert freshness["stale_since"] is None
+    assert freshness["stale_since_evaluated"] is False
+
+
+def test_card_and_report_builders_declare_staleness_unevaluated():
+    """The five hardcoded `stale_since: None` sites say so explicitly.
+
+    core.health_enrichment is the only code that evaluates staleness, and it is
+    reached from get_daily_report alone -- never from get_card / get_report, the
+    surfaces that get frozen into a Render and shared.
+    """
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parents[2] / "core"
+    for name in ("cards.py", "reports.py"):
+        src = (root / name).read_text(encoding="utf-8")
+        bare = re.findall(r'"stale_since": None,\s*\n(?!\s*"stale_since_evaluated")', src)
+        assert not bare, f"{name} still claims an unevaluated stale_since without saying so"
+
+
+# ---------------------------------------------------------------------------
+# Health enrichment reads the connections that CONTRIBUTED, and the worst wins.
+#
+# It used to read one row -- `ORDER BY r.created_at LIMIT 1`, the organization's
+# oldest credential -- whichever connectors produced the figures. A two-source
+# report could therefore be judged on a connection that contributed nothing,
+# while a genuinely frozen contributor stayed invisible.
+# ---------------------------------------------------------------------------
+
+
+def _envelope_from(*connectors):
+    return {"meta": {"provenance": [{"source_system": c, "pull_id": "p"} for c in connectors]}}
+
+
+def test_contributing_connectors_are_read_from_the_envelope_provenance():
+    from core.health_enrichment import _contributing_connectors
+
+    assert _contributing_connectors(_envelope_from("gsc", "google-ads")) == [
+        "google-ads", "gsc",
+    ]
+    assert _contributing_connectors({"meta": {}}) == []
+    assert _contributing_connectors({}) == []
+
+
+def test_the_worst_contributing_connection_decides_not_the_first():
+    from datetime import datetime, timezone
+
+    from core.health_enrichment import _worst_health
+
+    old = datetime(2026, 7, 1, tzinfo=timezone.utc)
+    new = datetime(2026, 7, 31, tzinfo=timezone.utc)
+    rows = [
+        ("ok", new, new),        # a healthy, freshly-pulled connection...
+        ("stale", old, old),     # ...must not hide this one.
+    ]
+    assert _worst_health(rows)[0] == "stale"
+    assert _worst_health(list(reversed(rows)))[0] == "stale"
+
+
+def test_revoked_outranks_stale_and_stale_outranks_ok():
+    from datetime import datetime, timezone
+
+    from core.health_enrichment import _worst_health
+
+    t = datetime(2026, 7, 1, tzinfo=timezone.utc)
+    assert _worst_health([("stale", t, t), ("revoked", t, t)])[0] == "revoked"
+    assert _worst_health([("ok", t, t), ("stale", t, t)])[0] == "stale"
+
+
+def test_a_tie_on_status_breaks_on_the_stalest_fetch():
+    from datetime import datetime, timezone
+
+    from core.health_enrichment import _worst_health
+
+    old = datetime(2026, 7, 1, tzinfo=timezone.utc)
+    new = datetime(2026, 7, 31, tzinfo=timezone.utc)
+    assert _worst_health([("ok", new, new), ("ok", old, old)])[1] == old
+
+
+def test_an_unknown_health_never_masks_a_known_bad_one():
+    """A connection whose poller has not run cannot be the reason, nor hide one."""
+    from datetime import datetime, timezone
+
+    from core.health_enrichment import _worst_health
+
+    t = datetime(2026, 7, 1, tzinfo=timezone.utc)
+    assert _worst_health([(None, None, t), ("revoked", t, t)])[0] == "revoked"
+
+
+def test_a_row_of_another_shape_declines_rather_than_raising():
+    """Best-effort posture: never raise inside a report over an unexpected row."""
+    from core.health_enrichment import _worst_health
+
+    assert _worst_health([(0.95,)]) is None
+    assert _worst_health([("gsc", 0.95)]) is None
+    assert _worst_health([]) is None
+    assert _worst_health(None) is None
+
+
+# ---------------------------------------------------------------------------
+# CAV-17: an envelope says WHICH analytical path produced it.
+#
+# Toorow answers the same business question through two paths reading two
+# different relations: this builder reads the `fact_daily_kpi` mart, while
+# `core.query_execution` reads the Datastream's published output relation and
+# pins a Semantic View + Query Spec version. Nothing linked them, so two numbers
+# for one question were indistinguishable from one number seen twice.
+# ---------------------------------------------------------------------------
+
+
+def test_the_envelope_declares_the_path_and_relation_it_read():
+    from core.envelope import build_canonical_envelope
+
+    envelope = build_canonical_envelope(
+        rows=[], meta_freshness={}, meta_provenance=[],
+        date_range={"start": "2026-07-01", "end": "2026-07-02"}, connectors=[],
+    )
+    path = envelope["meta"]["analytical_path"]
+
+    assert path["path"] == "mart"
+    assert path["relation"] == "fact_daily_kpi"
+    # It must NOT claim to be the governed Result path.
+    assert path["governed_result"] is False
+
+
+def test_the_declaration_is_a_copy_so_one_envelope_cannot_mutate_another():
+    from core.envelope import ANALYTICAL_PATH_MART, build_canonical_envelope
+
+    first = build_canonical_envelope(
+        rows=[], meta_freshness={}, meta_provenance=[], date_range={}, connectors=[],
+    )
+    first["meta"]["analytical_path"]["relation"] = "tampered"
+
+    second = build_canonical_envelope(
+        rows=[], meta_freshness={}, meta_provenance=[], date_range={}, connectors=[],
+    )
+    assert second["meta"]["analytical_path"]["relation"] == "fact_daily_kpi"
+    assert ANALYTICAL_PATH_MART["relation"] == "fact_daily_kpi"
+
+
+class _Cursor:
+    """Minimal cursor: records SQL, answers nothing. Enough to run an execution."""
+
+    def __init__(self):
+        self.executed: list[tuple] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def execute(self, sql, params=None):
+        self.executed.append((sql, params))
+
+    def fetchone(self):
+        return None
+
+    def fetchall(self):
+        return []
+
+
+class _Conn:
+    def __init__(self):
+        self.cursors: list[_Cursor] = []
+
+    def cursor(self):
+        cur = _Cursor()
+        self.cursors.append(cur)
+        return cur
+
+    @property
+    def calls(self):
+        return [(sql, params) for cur in self.cursors for sql, params in cur.executed]
+
+
+def test_the_governed_path_pins_what_the_mart_path_cannot():
+    """The asymmetry this field exists to expose, asserted from both sides.
+
+    This test used to read `inspect.getsource(query_execution)` and assert that
+    the strings `semantic_view_version_id`, `query_spec_version_id` and
+    `relation` appeared somewhere in it -- three substrings that survive any
+    rewrite, including one that stops writing them to the Result. What is checked
+    here instead is the artefact a reader can actually inspect: the manifest a
+    real execution PERSISTS, and the mart envelope that persists none of it.
+    """
+    import json
+
+    from core import query_execution
+
+    conn = _Conn()
+    plan = {
+        "relation": "ds_output_relation",
+        "columns": {"sc_clicks": "clicks", "sc_date": "date"},
+        "grain": ["date"],
+        "datastream_id": "ds_EXAMPLE",
+        "mapping_version_id": "dmap_1",
+        "pull_id": "pull_1",
+    }
+    spec = {
+        "measures": [{"id": "sc_clicks", "version_id": "scv_clicks"}],
+        "dimensions": [{"id": "sc_date", "version_id": "scv_date"}],
+        "filters": [], "sort": [], "grain": "day", "row_limit": 500, "time": {},
+    }
+    with (
+        patch.object(query_execution, "resolve_physical_plan", return_value=plan),
+        patch("core.warehouse._db_mode", return_value="duckdb"),
+        patch("core.warehouse._query_duckdb", return_value=[{"date": "2026-07-01", "clicks": 7}]),
+    ):
+        outcome = query_execution.run_execution(
+            conn,
+            attempt={"attempt_id": "qea_1", "result_id": "qr_1", "query_spec_version_id": "qsv_1"},
+            org_id="org_1",
+            project_id="proj_EXAMPLE",
+            spec=spec,
+            semantic_view_version_id="sv_ver_1",
+        )
+    assert outcome["outcome"] == "success"
+
+    payload = next(
+        params for sql, params in conn.calls if "INSERT INTO app.query_result_payloads" in sql
+    )
+    manifest = json.loads(payload[5])
+    # The governed path pins all three, on the Result, for good.
+    assert manifest["semantic_view_version_id"] == "sv_ver_1"
+    assert manifest["query_spec_version_id"] == "qsv_1"
+    assert manifest["relation"] == "ds_output_relation"
+
+    # The mart path pins none of them, and says so rather than staying silent.
+    mart = build_canonical_envelope(
+        rows=[], meta_freshness={}, meta_provenance=[],
+        date_range={"start": "2026-07-01", "end": "2026-07-01"}, connectors=[],
+    )
+    for pin in ("semantic_view_version_id", "query_spec_version_id"):
+        assert pin not in mart["meta"], f"the mart envelope must not claim to pin {pin}"
+    assert mart["meta"]["analytical_path"]["governed_result"] is False
+    assert mart["meta"]["analytical_path"]["relation"] != manifest["relation"], (
+        "the two paths read the same relation; the disclosure would be describing "
+        "a divergence that no longer exists"
+    )

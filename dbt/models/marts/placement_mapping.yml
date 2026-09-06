@@ -1,0 +1,58 @@
+version: 2
+
+# The declarations of the Placement Mapping aggregation. A FILE OF ITS OWN, not
+# a block appended to `schema.yml`: that file is the shared one every subject
+# reaches into by adding a line, and `docs/product-architecture/module-boundaries.md`
+# asks such a file to be relieved by INVERTING the registration -- each subject
+# declaring itself at home -- rather than grown. `int_country_daily_kpi.yml`,
+# the other capability that adds a column to an aggregation, is the precedent.
+
+models:
+  - name: placement_mapped_spend_daily
+    description: >
+      Observed campaign cost over a media plan's perimeter, carrying the two
+      columns Placement Mapping adds to an aggregation: plan_line_key (the stable
+      app.media_plan_lines.line_key of the matched line) and plan_line_label (its
+      label at the plan's active version). Both are NULL, together, on a row no
+      active plan line matched -- those rows are the spend nobody budgeted, and
+      they are listed rather than hidden.
+    columns:
+      - name: project_id
+        tests: [not_null]
+      - name: plan_id
+        description: The plan whose perimeter this row is read against.
+        tests: [not_null]
+      - name: plan_version_id
+        description: The ACTIVE version of that plan, which is the one the label is read at.
+        tests: [not_null]
+      - name: connector
+        tests: [not_null]
+      - name: campaign_ref
+        description: fact_daily_kpi.breakdown_value at breakdown_dimension='campaign_id'.
+        tests: [not_null]
+      - name: day
+        tests: [not_null]
+      - name: plan_line_key
+        description: >
+          app.media_plan_lines.line_key of the matched line -- the STABLE
+          cross-version identity, never the versioned row id, so the column
+          survives a re-import of the plan. NULL when no active plan line matched
+          this campaign on this day, and never 0, an empty string or an Unmapped
+          sentinel: each of those would make unplanned spend look planned.
+      - name: plan_line_label
+        description: >
+          app.media_plan_lines.label of the same line, read at the plan's active
+          version. NULL exactly when plan_line_key is, and never on its own -- a
+          label with no key would name a match nobody can look up.
+      - name: split_weight
+        description: >
+          The share of this campaign's spend the matched line receives, from
+          app.plan_line_mappings. NULL on an unmatched row. This is the ONE
+          ventilation -- the same weight plan_vs_actual_daily applies -- and no
+          second one is introduced here.
+      - name: spend_micros
+        description: >
+          Exact integer micros. NULL, never 0, when a contributing fact row could
+          not be converted; money_gap_code then says why.
+      - name: money_gap_code
+        description: Why no amount is stated. NULL when the amount could be stated.

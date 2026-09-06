@@ -44,7 +44,56 @@ def _pg_reachable() -> bool:
 
 pg_available = pytest.mark.skipif(not _pg_reachable(), reason="platform Postgres not reachable")
 
-_AUTH = ("core.admin_api._check_auth", (True, "tester@example.com"))
+# ONE ORGANIZATION PER PERSON, enforced on CREATION (decision Jean, 2026-07-25,
+# `organizations_api._create_org`). Every live-Postgres test below creates an org, and
+# they all used to do it as the SAME `tester@example.com`: the first creation in a
+# run succeeded and every one after it answered
+#     409 {"code":"organization_limit_reached", ...}
+# -- and once one run had left a membership behind, even the first one did. That
+# is what the 19 failures + 12 errors of 2026-08-05 were; NOT the hosted ENTRY
+# scope, which never fires here because these tests run with
+# TOOROW_AUTH_MODE unset (`deployment_mode()` -> hosted, auth_mode -> disabled).
+#
+# The cap is product behaviour and is tested on purpose elsewhere
+# (`test_epic36_entry_invitation_without_org.py`). It is not the subject here, so
+# each test gets a caller who has never created anything. `_AUTH` stays
+# INDEXABLE so the 22 `patch(_AUTH[0], return_value=_AUTH[1])` call sites read
+# exactly as they did.
+_CALLER = {"identity": "tester@example.com"}
+
+
+class _Auth:
+    """``_AUTH[0]`` is the patch target, ``_AUTH[1]`` the CURRENT caller."""
+
+    target = "core.admin_api._check_auth"
+
+    def __getitem__(self, index: int):
+        return self.target if index == 0 else (True, _CALLER["identity"])
+
+
+_AUTH = _Auth()
+
+
+@pytest.fixture(autouse=True)
+def _a_caller_who_owns_nothing():
+    """A never-before-used identity per test, and no membership left behind.
+
+    Cleaning by SLUG alone was never enough: `_drop_org_by_slug` removes the org
+    (and cascades its members), but a test that fails midway leaves the membership
+    that then blocks the NEXT run of the whole file.
+    """
+    _CALLER["identity"] = f"tester-{uuid.uuid4().hex[:12]}@example.com"
+    yield
+    if not _pg_reachable():
+        return
+    from core.db import get_connection
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM app.org_members WHERE identity = %s", (_CALLER["identity"],)
+            )
+        conn.commit()
 
 
 def _post_request(body: dict) -> MagicMock:
@@ -74,23 +123,43 @@ def _patch_request(org_id: str, body: dict) -> MagicMock:
     return req
 
 
+def _drop_org(org_id: str) -> None:
+    """Erase an org THE WAY PRODUCTION DOES -- `org_purge`, not a bare DELETE.
+
+    "org_members has ON DELETE CASCADE" was true and beside the point: creating an
+    org PROVISIONS a tree (mdm_business_domains, warehouse tenancy rows, ...), and
+    those FKs do not cascade. So the bare DELETE raised
+
+        ForeignKeyViolation: ... viole la contrainte
+        « mdm_business_domains_org_id_fkey » de la table « mdm_business_domains »
+
+    IN THE CLEANUP -- after the assertions had already passed. Every such test
+    reported a failure it had not actually suffered, and left the org behind for
+    the next run. `purge_org_tree` is the same walker `DELETE /api/organizations`
+    uses, append-only escape hatch included, so this harness erases exactly what
+    the product erases.
+    """
+    from core.db import get_connection
+
+    from tests.conftest import purge_fixture_org
+
+    with get_connection() as conn:
+        try:
+            purge_fixture_org(conn, org_id)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
+
 def _drop_org_by_slug(slug: str) -> None:
     from core.db import get_connection
 
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            # org_members has ON DELETE CASCADE from organizations.
-            cur.execute("DELETE FROM app.organizations WHERE slug = %s", (slug,))
-        conn.commit()
-
-
-def _drop_org(org_id: str) -> None:
-    from core.db import get_connection
-
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM app.organizations WHERE id = %s", (org_id,))
-        conn.commit()
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT id FROM app.organizations WHERE slug = %s", (slug,))
+        row = cur.fetchone()
+    if row is not None:
+        _drop_org(row[0])
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +169,7 @@ def _drop_org(org_id: str) -> None:
 
 @pytest.mark.anyio
 async def test_create_org_requires_name():
-    from core.admin_api import _create_org
+    from core.organizations_api import _create_org  # noqa: PLC0415
 
     with patch(_AUTH[0], return_value=_AUTH[1]):
         resp = await _create_org(_post_request({"name": "   "}))
@@ -109,7 +178,7 @@ async def test_create_org_requires_name():
 
 @pytest.mark.anyio
 async def test_create_org_invalid_slug():
-    from core.admin_api import _create_org
+    from core.organizations_api import _create_org  # noqa: PLC0415
 
     with patch(_AUTH[0], return_value=_AUTH[1]):
         resp = await _create_org(_post_request({"name": "Acme", "slug": "Not A Slug!"}))
@@ -118,7 +187,7 @@ async def test_create_org_invalid_slug():
 
 @pytest.mark.anyio
 async def test_patch_org_no_updatable_fields_422():
-    from core.admin_api import _patch_org
+    from core.organizations_api import _patch_org  # noqa: PLC0415
 
     with patch(_AUTH[0], return_value=_AUTH[1]):
         resp = await _patch_org(_patch_request("org_whatever", {"unknown": "x"}))
@@ -126,39 +195,40 @@ async def test_patch_org_no_updatable_fields_422():
 
 
 @pytest.mark.anyio
-async def test_add_member_requires_identity():
-    from core.admin_api import _add_org_member
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"identity": ""},
+        {"identity": "u@e.com", "role": "superuser"},
+        {"identity": "u@e.com", "status": "banned"},
+        {"identity": "u@e.com", "role": "member", "status": "active"},
+    ],
+)
+async def test_add_member_refuses_every_body_and_names_the_gesture(body):
+    """REPLACES the three `test_add_member_invalid_*` body-validation tests.
+
+    Those tests validated the enrolment BODY -- identity length, role enum,
+    status enum -- because the route wrote that body into
+    `app.org_members.identity`. It no longer writes anything (2026-08-24,
+    67-17): membership is created by accepting an invitation, which binds the
+    person a token proves instead of a string a caller typed.
+
+    A well-formed body is in the table on purpose. If a future change re-opens
+    the write path, THAT row is the one that stops being a 409.
+    """
+    from core.org_members_api import _add_org_member  # noqa: PLC0415
 
     with patch(_AUTH[0], return_value=_AUTH[1]):
-        resp = await _add_org_member(_member_request("org_x", {"identity": ""}))
-    assert resp.status_code == 422
-
-
-@pytest.mark.anyio
-async def test_add_member_invalid_role():
-    from core.admin_api import _add_org_member
-
-    with patch(_AUTH[0], return_value=_AUTH[1]):
-        resp = await _add_org_member(
-            _member_request("org_x", {"identity": "u@e.com", "role": "superuser"})
-        )
-    assert resp.status_code == 422
-
-
-@pytest.mark.anyio
-async def test_add_member_invalid_status():
-    from core.admin_api import _add_org_member
-
-    with patch(_AUTH[0], return_value=_AUTH[1]):
-        resp = await _add_org_member(
-            _member_request("org_x", {"identity": "u@e.com", "status": "banned"})
-        )
-    assert resp.status_code == 422
+        resp = await _add_org_member(_member_request("org_x", body))
+    assert resp.status_code == 409
+    payload = json.loads(resp.body)
+    assert payload["code"] == "invitation_required"
+    assert "invitation" in payload["message"].lower()
 
 
 @pytest.mark.anyio
 async def test_create_org_requires_auth():
-    from core.admin_api import _create_org
+    from core.organizations_api import _create_org  # noqa: PLC0415
 
     with patch(_AUTH[0], return_value=(False, "")):
         resp = await _create_org(_post_request({"name": "Acme"}))
@@ -173,7 +243,7 @@ async def test_create_org_requires_auth():
 @pg_available
 @pytest.mark.anyio
 async def test_create_get_list_org():
-    from core.admin_api import _create_org, _get_org, _list_orgs
+    from core.organizations_api import _create_org, _get_org, _list_orgs  # noqa: PLC0415
 
     slug = f"acme-{uuid.uuid4().hex[:8]}"
     _drop_org_by_slug(slug)
@@ -201,7 +271,7 @@ async def test_create_get_list_org():
 @pg_available
 @pytest.mark.anyio
 async def test_create_org_duplicate_slug_conflict():
-    from core.admin_api import _create_org
+    from core.organizations_api import _create_org  # noqa: PLC0415
 
     slug = f"dupe-{uuid.uuid4().hex[:8]}"
     _drop_org_by_slug(slug)
@@ -224,7 +294,7 @@ async def test_create_org_duplicate_slug_conflict():
 async def test_patch_org_updates_name_slug_untouched():
     """Story 24.1: name stays editable; the slug NEVER changes (it names the
     org's warehouse datasets -- epic 24 decision 6)."""
-    from core.admin_api import _create_org, _patch_org
+    from core.organizations_api import _create_org, _patch_org  # noqa: PLC0415
 
     slug = f"patch-{uuid.uuid4().hex[:8]}"
     _drop_org_by_slug(slug)
@@ -247,7 +317,7 @@ async def test_patch_org_updates_name_slug_untouched():
 @pg_available
 @pytest.mark.anyio
 async def test_patch_org_not_found_404():
-    from core.admin_api import _patch_org
+    from core.organizations_api import _patch_org  # noqa: PLC0415
 
     with patch(_AUTH[0], return_value=_AUTH[1]):
         resp = await _patch_org(_patch_request("org_does_not_exist", {"name": "X"}))
@@ -258,7 +328,7 @@ async def test_patch_org_not_found_404():
 async def test_patch_org_slug_immutable_422():
     """Story 24.1: any PATCH containing 'slug' is rejected BEFORE the DB with
     an explicit 422 slug_immutable (the slug names the warehouse datasets)."""
-    from core.admin_api import _patch_org
+    from core.organizations_api import _patch_org  # noqa: PLC0415
 
     with patch(_AUTH[0], return_value=_AUTH[1]):
         resp = await _patch_org(_patch_request("org_any", {"slug": "new-slug"}))
@@ -275,8 +345,8 @@ async def test_create_org_sanitised_slug_collision_409():
     scenario is an out-of-band slug (direct SQL, legacy import) containing '_':
     creating its kebab twin via the API must 409, or both orgs would resolve to
     the same warehouse datasets (org_<wslug>_*)."""
-    from core.admin_api import _create_org
     from core.db import get_connection
+    from core.organizations_api import _create_org  # noqa: PLC0415
 
     base = f"col-{uuid.uuid4().hex[:8]}"
     twin = base.replace("-", "_")  # not creatable via the API (422 charset)
@@ -301,49 +371,41 @@ async def test_create_org_sanitised_slug_collision_409():
             _drop_org_by_slug(s)
 
 
-@pg_available
-@pytest.mark.anyio
-async def test_add_member_success_and_duplicate_conflict():
-    from core.admin_api import _add_org_member, _create_org
-
-    slug = f"mem-{uuid.uuid4().hex[:8]}"
-    _drop_org_by_slug(slug)
-    oid = None
-    try:
-        with patch(_AUTH[0], return_value=_AUTH[1]):
-            r = await _create_org(_post_request({"name": "MemOrg", "slug": slug}))
-            oid = json.loads(r.body)["id"]
-
-            m1 = await _add_org_member(
-                _member_request(oid, {"identity": "carole@acme", "role": "member"})
-            )
-            assert m1.status_code == 201
-            member = json.loads(m1.body)
-            assert member["id"].startswith("omem_")
-            assert member["role"] == "member"
-            assert member["status"] == "active"
-            assert member["joined_at"] is not None
-
-            m2 = await _add_org_member(
-                _member_request(oid, {"identity": "carole@acme", "role": "viewer"})
-            )
-            assert m2.status_code == 409
-    finally:
-        if oid:
-            _drop_org(oid)  # cascades org_members
-        _drop_org_by_slug(slug)
+# `test_add_member_success_and_duplicate_conflict` was DELETED here on 2026-08-24
+# (67-17), not ported. It proved the route inserting `carole@acme` into
+# `app.org_members.identity` and answering 201, then 409 on the duplicate. Both
+# halves are gone with the write path: the column holds a `person_<ULID>` that
+# only `resolve_canonical_identity` mints, and there is no longer a first insert
+# for a second one to conflict with. What replaced its subject is
+# `test_add_member_refuses_every_body_and_names_the_gesture` above, and the
+# membership that DOES get created is covered by the invitation-acceptance
+# suites (`test_epic36_invitation_acceptance.py`).
 
 
 @pg_available
 @pytest.mark.anyio
-async def test_add_member_org_not_found_404():
-    from core.admin_api import _add_org_member
+async def test_add_member_does_not_disclose_whether_the_org_exists():
+    """REPLACES `test_add_member_org_not_found_404` (2026-08-24, 67-17).
+
+    That test asserted 404 for an unknown org, which proved the route LOOKED the
+    org up. It no longer looks anything up: it refuses every caller with the same
+    409 before touching the database. Asserting a 404 would now be asserting a
+    disclosure -- an org id that answers differently from an unknown one tells an
+    unauthorized caller which organizations exist.
+
+    Kept pg-gated on purpose: this is the case where a database IS reachable, so
+    a re-opened lookup would be observable here and nowhere else.
+    """
+    from core.org_members_api import _add_org_member  # noqa: PLC0415
 
     with patch(_AUTH[0], return_value=_AUTH[1]):
-        resp = await _add_org_member(
+        unknown = await _add_org_member(
             _member_request("org_does_not_exist", {"identity": "x@e.com"})
         )
-    assert resp.status_code == 404
+        known = await _add_org_member(_member_request("org_default", {"identity": "x@e.com"}))
+
+    assert unknown.status_code == known.status_code == 409
+    assert unknown.body == known.body
 
 
 @pg_available
@@ -399,85 +461,58 @@ def test_projects_org_fk_rejects_orphan():
         conn.rollback()
 
 
-# The migration's backfill statements (kept in sync with 035_organizations.sql).
-# Exercised twice by test_backfill_idempotent_double_apply to PROVE AC6's
-# headline claim (a re-run is a no-op) against the real schema.
-_BACKFILL_SQL = (
-    "INSERT INTO app.organizations (id, name, slug, status, created_by) "
-    "SELECT 'org_' || p.id, p.name, p.slug, 'active', 'system' "
-    "FROM app.projects p ON CONFLICT (id) DO NOTHING",
-    "UPDATE app.projects p SET org_id = 'org_' || p.id WHERE p.org_id IS NULL",
-    "INSERT INTO app.org_members (id, org_id, identity, role, status, joined_at) "
-    "SELECT 'omem_' || pm.id, 'org_' || pm.project_id, pm.identity, 'owner', 'active', NOW() "
-    "FROM app.project_members pm ON CONFLICT DO NOTHING",
-)
+# `_BACKFILL_SQL` STOOD HERE AND IS GONE (2026-08-16). It carried migration 035's
+# backfill statements, and its last executor was retired when migration 100 made
+# `app.projects.org_id` NOT NULL -- the docstring below tells that story. What
+# made it worth removing rather than leaving: its third statement read
+# `FROM app.project_members`, a table migration 132 DROPPED, so the constant was
+# SQL nobody could run against a table nobody has. A dead fixture naming a dead
+# relation is how the next reader concludes the table still exists.
 
 
 @pg_available
-def test_backfill_idempotent_double_apply():
-    """AC6 (headline): running the backfill TWICE is a no-op -- no dup, no error.
+def test_the_state_the_backfill_repaired_can_no_longer_be_created():
+    """AC6, held by the SCHEMA now -- an orphan project is refused, not repaired.
 
-    Seeds a legacy project (org_id NULL) + a project_member, applies the backfill
-    block twice, and asserts exactly one org and one membership exist after each
-    run. Proves the derived-id + ON CONFLICT DO NOTHING scheme is idempotent
-    against BOTH unique axes (PK and composite).
+    This test used to seed a legacy project with ``org_id = NULL`` and apply
+    migration 035's backfill statements twice to prove idempotence. Migration 100
+    (``100_org_chain_not_null.sql``) closed that door: *"un projet orphelin -- sans
+    entrepot ou atterrir, hors de tout cloisonnement -- est reste techniquement
+    possible. C'est cette porte que la migration ferme."* Measured on the real
+    schema:
+
+        SELECT is_nullable FROM information_schema.columns
+        WHERE table_schema='app' AND table_name='projects' AND column_name='org_id'
+        -> NO
+
+    So the seed raised ``NotNullViolation`` and the test failed while asserting
+    nothing -- the sole reason it was red on 2026-08-05. Fabricating the row
+    anyway (deferring or dropping the constraint) would have tested a state the
+    product forbids.
+
+    The guarantee is stronger stated this way round: the backfill's job is done by
+    a constraint, and if anyone ever relaxes it back to nullable, THIS fails and
+    the orphan door is open again. Idempotence of the derived-id + ON CONFLICT
+    scheme itself is still covered, on reachable rows, by
+    ``test_backfill_endpoint_idempotent`` above.
     """
+    import psycopg
     from core.db import get_connection
 
     suffix = uuid.uuid4().hex[:8]
     proj_id = f"proj_bf_{suffix}"
-    pmem_id = f"pmem_bf_{suffix}"
-    org_id = f"org_{proj_id}"
-    ident = f"bf-{suffix}@e.com"
 
-    def _counts(cur) -> tuple[int, int]:
-        cur.execute("SELECT count(*) FROM app.organizations WHERE id = %s", (org_id,))
-        orgs = cur.fetchone()[0]
-        cur.execute(
-            "SELECT count(*) FROM app.org_members WHERE org_id = %s AND identity = %s",
-            (org_id, ident),
-        )
-        return orgs, cur.fetchone()[0]
-
-    try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
+    with get_connection() as conn:
+        try:
+            with conn.cursor() as cur, pytest.raises(psycopg.errors.NotNullViolation):
                 cur.execute(
                     "INSERT INTO app.projects (id, name, slug, created_by, org_id) "
                     "VALUES (%s, %s, %s, 'system', NULL)",
                     (proj_id, "Backfill", f"bf-{suffix}"),
                 )
-                cur.execute(
-                    "INSERT INTO app.project_members (id, project_id, identity, role) "
-                    "VALUES (%s, %s, %s, 'owner')",
-                    (pmem_id, proj_id, ident),
-                )
-            conn.commit()
-
-            with conn.cursor() as cur:
-                for sql in _BACKFILL_SQL:
-                    cur.execute(sql)
-            conn.commit()
-            with conn.cursor() as cur:
-                first = _counts(cur)
-
-            # Second apply MUST NOT raise and MUST NOT duplicate.
-            with conn.cursor() as cur:
-                for sql in _BACKFILL_SQL:
-                    cur.execute(sql)
-            conn.commit()
-            with conn.cursor() as cur:
-                second = _counts(cur)
-
-        assert first == (1, 1)
-        assert second == (1, 1)
-    finally:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                # projects delete cascades project_members; org delete cascades org_members.
-                cur.execute("DELETE FROM app.projects WHERE id = %s", (proj_id,))
-                cur.execute("DELETE FROM app.organizations WHERE id = %s", (org_id,))
-            conn.commit()
+        finally:
+            # The refused INSERT aborted the transaction; nothing to clean.
+            conn.rollback()
 
 
 # ---------------------------------------------------------------------------
@@ -496,7 +531,7 @@ async def test_create_org_provisions_schemas_resolve_ok():
     (org_<wslug>_raw / org_<wslug>_marts).
     """
     from core import warehouse_tenancy as wt
-    from core.admin_api import _create_org
+    from core.organizations_api import _create_org  # noqa: PLC0415
 
     slug = f"prov-{uuid.uuid4().hex[:8]}"
     _drop_org_by_slug(slug)
@@ -524,7 +559,8 @@ async def test_create_org_provisions_schemas_resolve_ok():
 @pytest.mark.anyio
 async def test_backfill_endpoint_idempotent():
     """T9: calling the backfill endpoint twice returns 0 errors both times."""
-    from core.admin_api import _backfill_warehouse_schemas, _create_org
+    from core.organizations_api import _create_org  # noqa: PLC0415
+    from core.platform_maintenance_api import _backfill_warehouse_schemas  # noqa: PLC0415
 
     slug = f"bfill-{uuid.uuid4().hex[:8]}"
     _drop_org_by_slug(slug)
@@ -560,8 +596,8 @@ async def test_backfill_endpoint_idempotent():
 @pytest.mark.anyio
 async def test_delete_org_requires_confirmation_pg():
     """T9 (pg-gated): DELETE without header -> 422, org NOT deleted."""
-    from core.admin_api import _create_org, _delete_org
     from core.db import get_connection
+    from core.organizations_api import _create_org, _delete_org  # noqa: PLC0415
 
     slug = f"del-noconf-{uuid.uuid4().hex[:8]}"
     _drop_org_by_slug(slug)
@@ -596,8 +632,8 @@ async def test_delete_org_requires_confirmation_pg():
 @pytest.mark.anyio
 async def test_delete_org_full_lifecycle_pg():
     """T9 (pg-gated): create org + confirm delete -> row disappears from DB."""
-    from core.admin_api import _create_org, _delete_org
     from core.db import get_connection
+    from core.organizations_api import _create_org, _delete_org  # noqa: PLC0415
 
     slug = f"del-full-{uuid.uuid4().hex[:8]}"
     _drop_org_by_slug(slug)

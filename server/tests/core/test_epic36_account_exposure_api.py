@@ -4,6 +4,7 @@ import asyncio
 from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock
 
+from core import credential_accounts_api  # AD-43 : le handler vit chez son sujet
 from starlette.requests import Request
 
 
@@ -37,7 +38,7 @@ def _request(headers: list[tuple[bytes, bytes]]) -> Request:
 
 
 def test_rest_exposure_uses_atomic_operation_and_skips_best_effort_audit(monkeypatch):
-    from core import account_exposure, admin_api, db, project_access
+    from core import account_exposure, admin_api, db
     from core.operations import OperationResult
 
     conn = MagicMock()
@@ -56,7 +57,6 @@ def test_rest_exposure_uses_atomic_operation_and_skips_best_effort_audit(monkeyp
         admin_api, "_check_auth", AsyncMock(return_value=(True, "owner-1"))
     )
     monkeypatch.setattr(admin_api, "_enforce_org_manage", lambda *_a: None)
-    monkeypatch.setattr(project_access, "epic36_production_access_enabled", lambda: True)
     best_effort = MagicMock()
     monkeypatch.setattr(admin_api, "write_audit_row", best_effort)
     operation = MagicMock(
@@ -79,7 +79,7 @@ def test_rest_exposure_uses_atomic_operation_and_skips_best_effort_audit(monkeyp
     monkeypatch.setattr(account_exposure, "expose_account", operation)
 
     response = asyncio.run(
-        admin_api._create_account_grant(
+        credential_accounts_api._create_account_grant(
             _request(
                 [
                     (b"idempotency-key", b"request-1"),
@@ -98,7 +98,7 @@ def test_rest_exposure_uses_atomic_operation_and_skips_best_effort_audit(monkeyp
 
 
 def test_rest_exposure_requires_idempotency_key_when_gate_is_enabled(monkeypatch):
-    from core import admin_api, db, project_access
+    from core import admin_api, db
 
     conn = MagicMock()
     cur = MagicMock()
@@ -116,8 +116,7 @@ def test_rest_exposure_requires_idempotency_key_when_gate_is_enabled(monkeypatch
         admin_api, "_check_auth", AsyncMock(return_value=(True, "owner-1"))
     )
     monkeypatch.setattr(admin_api, "_enforce_org_manage", lambda *_a: None)
-    monkeypatch.setattr(project_access, "epic36_production_access_enabled", lambda: True)
-    response = asyncio.run(admin_api._create_account_grant(_request([])))
+    response = asyncio.run(credential_accounts_api._create_account_grant(_request([])))
     assert response.status_code == 422
     assert b"missing_idempotency_key" in response.body
     conn.commit.assert_not_called()

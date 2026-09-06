@@ -16,8 +16,32 @@ __pycache__
 # Virtual environments
 .venv
 
-# Frontend / UI
-ui/
+# Frontend / UI -- only the shared runtime build graph enters the context.
+ui/*
+!ui/package.json
+!ui/pnpm-lock.yaml
+!ui/pnpm-workspace.yaml
+!ui/tokens/
+!ui/tokens/**
+!ui/scripts/
+!ui/scripts/**
+!ui/shell/
+!ui/shell/**
+!ui/cards/
+ui/cards/*
+!ui/cards/shell/
+!ui/cards/shell/**
+!ui/admin/
+ui/admin/*
+!ui/admin/package.json
+!ui/admin/src/
+ui/admin/src/*
+!ui/admin/src/styles/
+ui/admin/src/styles/*
+!ui/admin/src/styles/theme.css
+ui/**/node_modules/
+ui/**/dist/
+ui/**/coverage/
 
 # dbt (included via COPY in Dockerfile only for workspace resolution)
 # Note: dbt/ IS copied in the builder stage for uv workspace sync.
@@ -27,8 +51,9 @@ ui/
 # Infrastructure code — not needed at runtime, WITH ONE EXCEPTION:
 # adaptation_executor spawns infra/sandbox/worker.py while serving, so that one
 # directory is runtime code and must reach the image.
-infra/
-!infra/sandbox
+infra/*
+!infra/sandbox/
+!infra/sandbox/**
 
 # BMAD planning artifacts
 _bmad-output/

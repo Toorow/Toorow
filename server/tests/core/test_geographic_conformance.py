@@ -8,17 +8,34 @@ the DQ surfacing, and the anti-hardcode rule.
 from __future__ import annotations
 
 from core import geographic_conformance as gc
+from core.country_registry import MARKET, REST_OF_WORLD, build_projection, rest_of_world_payload
 from core.country_vocabulary import CANONICAL_COUNTRY_DIMENSION, normalize_country_value
-from core.geographic_reporting import GeographicPosture, Market
-from core.geographic_semantics import UNKNOWN_MARKET, group_market_reporting_rows
+from core.geographic_semantics import group_geography_reporting_rows
+from core.master_data import Membership
 
-LOCAL = "local_markets"
+HEXAGONE = "mdnode_HEX"
+ROW_NODE = "mdnode_RW"
 
 
-def _posture() -> GeographicPosture:
-    return GeographicPosture(
-        mode=LOCAL,
-        markets=(Market(id="hexagone", label="Hexagone", country_codes=("FR",)),),
+def _posture():
+    """One governed Market holding FR, inside a published hierarchy version.
+
+    Story 48.2 replaced the mutable posture this file used to build; the
+    conformance behaviour it proves is unchanged, which is the point of
+    re-pointing the fixture instead of rewriting the assertions.
+    """
+
+    return build_projection(
+        hierarchy_version_id="mdver_CONF",
+        vocabulary_version_id="mdvoc_1",
+        registry_id="mdreg_1",
+        memberships=[Membership(parent_node_id=HEXAGONE, child_value="FR")],
+        nodes=[
+            {"id": HEXAGONE, "label": "Hexagone", "node_kind": MARKET},
+            {"id": ROW_NODE, "label": "Rest of World", "node_kind": REST_OF_WORLD},
+        ],
+        canonical_values=("FR", "DE", "US"),
+        rest_of_world=rest_of_world_payload(node_id=ROW_NODE),
     )
 
 
@@ -48,9 +65,10 @@ def test_unknown_spelling_is_not_resolved_by_the_shared_seed() -> None:
 
 
 def test_unmapped_value_stays_unknown_and_emits_repairable_evidence() -> None:
-    result = group_market_reporting_rows([_row("Zzz Not A Country")], _posture())
+    result = group_geography_reporting_rows([_row("Zzz Not A Country")], _posture())
 
-    assert [row["market_id"] for row in result.rows] == [UNKNOWN_MARKET]
+    # Unknown is evidence/provenance, not a third primary report segment.
+    assert result.rows == ()
     assert len(result.data_quality) == 1
     evidence = result.data_quality[0]
     assert evidence["code"] == "country_value_unmapped"
@@ -63,15 +81,14 @@ def test_confirmed_client_mapping_reclassifies_at_read_without_touching_facts() 
     """A resolution repaired ONCE reclassifies retained rows on the next read."""
 
     facts = [_row("Frankreich")]
-    before = group_market_reporting_rows(facts, _posture())
-    assert [row["market_id"] for row in before.rows] == [UNKNOWN_MARKET]
+    before = group_geography_reporting_rows(facts, _posture())
+    assert before.rows == ()
+    assert len(before.data_quality) == 1
 
-    resolver = gc.make_country_resolver(
-        conformance={("acme-source", "Frankreich"): "FR"}
-    )
-    after = group_market_reporting_rows(facts, _posture(), resolver=resolver)
+    resolver = gc.make_country_resolver(conformance={("acme-source", "Frankreich"): "FR"})
+    after = group_geography_reporting_rows(facts, _posture(), resolver=resolver)
 
-    assert [row["market_id"] for row in after.rows] == ["hexagone"]
+    assert [row["market_id"] for row in after.rows] == [HEXAGONE]
     assert after.data_quality == ()
     # No fact rewrite: the input rows are untouched.
     assert facts == [_row("Frankreich")]
@@ -96,9 +113,7 @@ def test_resolution_is_per_connector_not_global() -> None:
 def test_confirmed_mapping_outside_the_iso_set_is_refused() -> None:
     """The seed owns the LEGAL set; a client mapping cannot invent a value."""
 
-    resolver = gc.make_country_resolver(
-        conformance={("acme-source", "Frankreich"): "Freedonia"}
-    )
+    resolver = gc.make_country_resolver(conformance={("acme-source", "Frankreich"): "Freedonia"})
     assert resolver("Frankreich", "acme-source") is None
 
 
@@ -205,8 +220,14 @@ def test_dq_firing_payload_carries_the_gap_and_the_repair_surface() -> None:
     assert meta["distinct_unmapped_values"] == 2
     assert meta["unmapped_row_count"] == 4
     assert meta["without_candidate"] == 1
-    assert meta["repair"]["surface"] == "dimension_conformance"
-    assert meta["repair"]["scope_level"] == "PROJECT"
+    # The repair is an ADDRESS the console resolves, not the name of the module
+    # that holds the store -- `tests/conformance/
+    # test_a_dq_alert_names_a_repair_the_console_can_open.py` holds the class.
+    assert meta["repair"]["surface"] == "project"
+    assert meta["repair"]["workspace"] == "governance"
+    assert meta["repair"]["section"] == "semantic-model"
+    assert meta["repair"]["lens"] == "value-tables"
+    assert meta["repair_scope_level"] == "PROJECT"
 
 
 def test_geography_alert_type_is_registered_on_the_dq_surfaces() -> None:
@@ -268,5 +289,5 @@ def test_conformance_load_failure_degrades_to_seed_only(monkeypatch) -> None:
 
     monkeypatch.setattr(dcm, "resolve_dimension_conformance", _boom)
     resolver = gc.make_country_resolver(project_id="prj_1")
-    assert resolver("FR", "acme") == "FR"           # seed still works
-    assert resolver("Frankreich", "acme") is None    # honest Unknown
+    assert resolver("FR", "acme") == "FR"  # seed still works
+    assert resolver("Frankreich", "acme") is None  # honest Unknown

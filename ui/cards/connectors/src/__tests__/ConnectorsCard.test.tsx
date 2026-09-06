@@ -5,7 +5,7 @@
  * - Table renders 3 rows with French connector names and statuses.
  * - Status cells: correct French labels + status dot present for each status bucket.
  * - Comment block renders (cited comment text).
- * - Designed empty state: "Aucun connecteur configuré" when rows=[].
+ * - Designed empty state: "No Connector configured" when rows=[].
  * - Feedback bar present (CardShell chrome).
  * - Partial fixture (single row) renders without crash.
  */
@@ -27,7 +27,7 @@ import type { CardEnvelope } from "@toorow/card-shell";
 describe("Connectors card — fixture renders without throwing", () => {
   it("renders the card title", () => {
     render(<App envelope={FIXTURE_ENVELOPE} />);
-    expect(screen.getByTestId("card-title")).toHaveTextContent("Connecteurs");
+    expect(screen.getByTestId("card-title")).toHaveTextContent("Connectors");
   });
 
   it("renders the connectors table", () => {
@@ -144,14 +144,14 @@ describe("Connectors card — designed empty state (FIXTURE_ENVELOPE_EMPTY)", ()
     render(<App envelope={FIXTURE_ENVELOPE_EMPTY} />);
     expect(screen.getByTestId("connectors-table-empty")).toBeInTheDocument();
     expect(screen.getByTestId("connectors-table-empty")).toHaveTextContent(
-      "Aucun connecteur configuré",
+      "No Connector configured",
     );
   });
 
   it("shows a muted hint in the empty state", () => {
     render(<App envelope={FIXTURE_ENVELOPE_EMPTY} />);
     expect(screen.getByTestId("connectors-table-empty")).toHaveTextContent(
-      "Configurez un datastream",
+      "Configure a Datastream",
     );
   });
 
@@ -162,7 +162,7 @@ describe("Connectors card — designed empty state (FIXTURE_ENVELOPE_EMPTY)", ()
 
   it("card title still renders in empty state (never blank)", () => {
     render(<App envelope={FIXTURE_ENVELOPE_EMPTY} />);
-    expect(screen.getByTestId("card-title")).toHaveTextContent("Connecteurs");
+    expect(screen.getByTestId("card-title")).toHaveTextContent("Connectors");
   });
 });
 
@@ -199,7 +199,7 @@ describe("Connectors card — unknown status fallback", () => {
         composition: [
           {
             type: "table",
-            title: "Connecteurs",
+            title: "Connectors",
             binding: {},
             data: {
               columns: [

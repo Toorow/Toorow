@@ -76,9 +76,13 @@ export const FIXTURE_ENVELOPE: CardEnvelope = {
         binding: { numerator: "cost", denominator: "conversions", direction: "down_good", unit: "EUR" },
         title: "CPA vs objectif",
         data: {
+          // No objective: this fixture project defines no `cpa_target` and the block binds
+          // none, so the server emits target=null / target_source="unset". It carried
+          // 50.0 / "default" -- the platform constant deleted in 34cd021 -- which painted a
+          // green verdict against a number nobody chose (CAV-08). Do not restore it.
           value: 30.0,
-          target: 50.0,
-          target_source: "default",
+          target: null,
+          target_source: "unset",
           unit: "EUR",
           direction: "down_good",
           label: "CPA vs objectif",
@@ -108,8 +112,9 @@ export const FIXTURE_ENVELOPE: CardEnvelope = {
         binding: {},
         data: {
           text:
-            "Google Ads est le canal leader avec 200 conversions (62,5 %) à un CPA de 30 € — " +
-            "sous l'objectif de 50 € (google-analytics:fact_daily_kpi, pull_CV_FIXTURE0000000000000).\n\n" +
+            "Google Ads est le canal leader avec 200 conversions (62,5 %) à un CPA de 30 € " +
+            "(google-analytics:fact_daily_kpi, pull_CV_FIXTURE0000000000000). " +
+            "Aucun objectif de CPA n'est défini pour ce projet.\n\n" +
             "Contexte manquant pour cette période.",
         },
       },

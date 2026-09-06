@@ -9,12 +9,22 @@
 PORT ?= 8000
 export PORT
 
+# The interpreter the dependency-free guards run on. Resolved rather than named:
+# the CI `guards` job checks out and runs nothing else, so it has the runner's
+# `python3` and no `uv`; Git Bash on Windows has `python`. A guard that needs a
+# synced environment is a guard that will be dropped from the fast job.
+PYTHON ?= $(shell command -v python3 2>/dev/null || command -v python 2>/dev/null)
+
 .DEFAULT_GOAL := help
 
-.PHONY: help dev install-server install-ui test lint check-migration-catalog apply-migrations build-widget bundle-check smoke tf-validate check-non-additive-guard check-narrative-no-raw audit-public publish-public retention-apply retention-check
+.PHONY: context context-check help dev install-server install-ui test lint check-migration-catalog apply-migrations build-widget bundle-check smoke tf-validate check-non-additive-guard check-metric-formula-parity check-mdm-invariants check-canonical-classification check-decomposed-citations check-narrative-no-raw check-core-source-agnostic check-mcp-tool-surface audit-public publish-public retention-apply retention-check
 
 help: ## Show this help
 	@echo "toorow targets:"
+	@echo ""
+	@echo "  TOOLBOX.md  <- ce que le depot sait faire, et ce que chaque outil EXIGE"
+	@echo "              (genere : python scripts/toolbox_index.py)"
+	@echo ""
 	@echo "  make dev            Start the MCP server (streamable HTTP) on 0.0.0.0:$(PORT)"
 	@echo "  make install-server Sync Python deps via uv"
 	@echo "  make install-ui     Install UI deps via pnpm"
@@ -40,7 +50,26 @@ install-ui: ## Install UI workspace deps
 dev: ## Start the FastMCP server over streamable HTTP, bind 0.0.0.0:$PORT
 	uv run --package toorow-server python -m core.main
 
-test: ## Run the server test suite
+test: ## Run the server test suite (SKIPS the pg-gated files unless a DSN is set)
+	@if [ -z "$$TEST_POSTGRES_DSN" ]; then \
+	  echo "WARNING: TEST_POSTGRES_DSN is unset."; \
+	  echo "  216 test files under server/tests gate themselves on it and will SKIP."; \
+	  echo "  A green run here does NOT mean the pg-gated guarantees hold."; \
+	  echo "  For the full suite:  make test-full   (see scripts/disposable_postgres.py)"; \
+	  echo ""; \
+	fi
+	uv run pytest server/tests -q
+
+test-full: ## Run the server test suite against a live Postgres (REFUSES without a DSN)
+	@if [ -z "$$TEST_POSTGRES_DSN" ]; then \
+	  echo "TEST_POSTGRES_DSN is unset -- refusing to report a full run that is not one."; \
+	  echo ""; \
+	  echo "  python scripts/disposable_postgres.py up"; \
+	  echo "  eval \"\$$(python scripts/disposable_postgres.py env)\""; \
+	  echo "  make test-full"; \
+	  echo ""; \
+	  exit 1; \
+	fi
 	uv run pytest server/tests -q
 
 lint: ## Lint the server package
@@ -48,6 +77,19 @@ lint: ## Lint the server package
 
 check-migration-catalog: ## Validate migration names, unique IDs, and continuity
 	uv run python scripts/check_migration_catalog.py
+
+
+context: ## Regenerer TOUT le contexte derive (index, etats, attentes)
+	@python scripts/bmad_index.py
+	@python scripts/surface_state.py
+	@python scripts/screen_expectations.py
+	@python scripts/toolbox_index.py
+
+context-check: ## Verifier que le contexte derive n'est pas perime (ce que le hook Stop lance)
+	@python scripts/bmad_index.py --gate
+	@python scripts/surface_state.py --gate
+	@python scripts/screen_expectations.py --gate
+	@python scripts/toolbox_index.py --gate
 
 apply-migrations: ## Apply pending migrations with PLATFORM_DB_URL
 	uv run python scripts/apply_migrations.py
@@ -76,22 +118,39 @@ retention-check: ## Show current image / build-artefact retention (read-only)
 retention-apply: ## Apply retention so deploy artefacts stop billing forever
 	bash infra/scripts/apply_retention.sh
 
-check-non-additive-guard: ## AD-4 guard: fail if SUM(average_position) appears in mart SQL (non-comment lines)
-	@echo "Checking for naive SUM(average_position) in mart SQL (non-comment lines)..."
-	@if grep -rP "^[^-].*SUM\(average_position\)" dbt/models/marts/ 2>/dev/null; then \
-		echo "ERROR: average_position must NEVER be summed in marts. Use semantic_avg_position view."; \
-		exit 1; \
-	fi
-	@echo "OK: no SUM(average_position) in non-comment SQL lines in dbt/models/marts/"
+check-non-additive-guard: ## AD-4 guard: no non-additive metric is summed on its own in mart SQL
+	@$(PYTHON) scripts/check_non_additive_guard.py --gate
 
-check-narrative-no-raw: ## AD-1 guard: narrative.py must not import warehouse or reference raw tables (Story 6.4, AC8)
-	@echo "Checking narrative.py for AD-1 violations (no warehouse import, no raw table refs)..."
-	@if grep -E "^(import|from)\s+(server\.core\.warehouse|core\.warehouse|warehouse)" server/core/narrative.py; then \
-		echo "ERROR: narrative.py must not import warehouse. AD-1 violation."; \
+check-metric-formula-parity: ## Epic 66 guard: a ratio's formula says the same thing in dim_metric.csv and in its mart
+	@$(PYTHON) scripts/check_metric_formula_parity.py --gate
+
+check-canonical-classification: ## AI-288 ratchet: a canonical target is classified, or it is refused
+	@$(PYTHON) scripts/check_canonical_target_classification.py --gate
+
+check-decomposed-citations: ## AI-250 ratchet: no NEW `path:line` citation into a file whose content moved out
+	@$(PYTHON) scripts/check_line_citations.py --ratchet
+
+check-mdm-invariants: ## Epic 66 guard: a common key version is immutable, and one module writes it
+	@echo "Checking MDM common key invariants (static)..."
+	@if grep -rnE "(UPDATE|DELETE FROM)\s+app\.mdm_common_key_versions" server/core/ 2>/dev/null; then \
+		echo "ERROR: a common key version is immutable -- a new version replaces it, never an edit."; \
+		echo "       The DB trigger trg_mdm_common_key_versions_immutable (migration 258) refuses it too;"; \
+		echo "       code that tries is code that will fail in production instead of at review."; \
 		exit 1; \
 	fi
-	@if grep -nE "fact_daily_kpi|raw_gsc|raw_meta|raw_ga4|\.rows\b" server/core/narrative.py; then \
-		echo "ERROR: narrative.py must not reference raw table names. AD-1 violation."; \
+	@if [ "$$(grep -rl --include='*.py' 'INSERT INTO app.mdm_common_key_versions' server/core/ | wc -l)" -gt 1 ]; then \
+		echo "ERROR: more than one module writes app.mdm_common_key_versions."; \
+		echo "       Ordered components + content_hash are the identity: two writers is two identities."; \
+		grep -rl --include='*.py' 'INSERT INTO app.mdm_common_key_versions' server/core/; \
 		exit 1; \
 	fi
-	@echo "OK: narrative.py has no warehouse import and no raw table references."
+	@echo "OK: common key versions are append-only in code, with a single writer."
+
+check-narrative-no-raw: ## AD-1 guard: narrative.py never READS data (no data-access import, no SQL, no raw_/stg_ refs) — the citation token stays allowed (Story 6.4, AC8)
+	@$(PYTHON) scripts/check_narrative_no_raw.py --gate
+
+check-core-source-agnostic: ## AD-2 guard: core never imports a module, loads dynamically only in adjudicated seams, and never branches on a module slug
+	@$(PYTHON) scripts/check_core_source_agnostic.py --gate
+
+check-mcp-tool-surface: ## MCP catalog growth bound: assembled/wire/bytes stay under the budgets in scripts/mcp_tool_surface_report.py
+	@$(PYTHON) scripts/mcp_tool_surface_report.py --gate

@@ -62,9 +62,9 @@ export const FIXTURE_ENVELOPE: CardEnvelope = {
   data: {
     card_id: "dedup",
     card_type: "dedup",
-    title: "Déduplication",
+    title: "Deduplication",
     answers_question:
-      "Mes conversions sont-elles comptées en double par les régies ?",
+      "Are my conversions being double-counted by ad platforms?",
     date_range: { start: "2026-06-17", end: "2026-07-16" },
     connectors: ["google-ads", "linkedin-ads", "meta-ads"],
     rendered_comment:

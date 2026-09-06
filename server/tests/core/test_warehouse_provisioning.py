@@ -362,7 +362,7 @@ def test_duckdb_remains_the_default_when_the_flag_is_absent(monkeypatch):
 @pytest.mark.anyio
 async def test_delete_org_requires_confirmation():
     """AC5: DELETE without X-Confirm-Delete header -> 422 confirmation_required."""
-    from core.admin_api import _delete_org
+    from core.organizations_api import _delete_org  # noqa: PLC0415
 
     with patch(_AUTH[0], return_value=_AUTH[1]):
         resp = await _delete_org(_delete_request("org_123", confirm=False))
@@ -378,7 +378,7 @@ async def test_delete_org_blocks_when_active_projects():
     New transactional flow (F-2): a single connection is kept open; get_connection()
     is called once and pg_conn = cm.__enter__() is used directly.
     """
-    from core.admin_api import _delete_org
+    from core.organizations_api import _delete_org  # noqa: PLC0415
 
     # Simulate: org exists, no manage-denial, active project found.
     org_row = ("org_01", "Test Org", "test-org")
@@ -416,7 +416,7 @@ async def test_delete_org_full_flow_emits_audit_in_order():
     """AC5 (F-2/F-7): successful delete emits org_schemas_dropped THEN org_deleted,
     both via insert_audit_row on the same open transaction (not write_audit_row).
     """
-    from core.admin_api import _delete_org
+    from core.organizations_api import _delete_org  # noqa: PLC0415
 
     org_row = ("org_01", "Test Org", "test-org")
 
@@ -462,7 +462,7 @@ async def test_delete_org_full_flow_emits_audit_in_order():
 @pytest.mark.anyio
 async def test_delete_org_skipped_drop_emits_only_org_deleted():
     """F-7: when drop is skipped (no_duckdb_path), only org_deleted is emitted."""
-    from core.admin_api import _delete_org
+    from core.organizations_api import _delete_org  # noqa: PLC0415
 
     org_row = ("org_01", "Test Org", "test-org")
 
@@ -511,7 +511,7 @@ async def test_delete_org_blocks_when_drop_raises():
     F-2: in the new transactional flow, pg_conn is rolled back when drop raises,
     so the DELETE (already issued) is undone -- org row stays intact.
     """
-    from core.admin_api import _delete_org
+    from core.organizations_api import _delete_org  # noqa: PLC0415
 
     org_row = ("org_01", "Test Org", "test-org")
     call_count = [0]
@@ -557,7 +557,7 @@ async def test_delete_org_blocks_when_drop_raises():
 @pytest.mark.anyio
 async def test_backfill_calls_provision_for_each_org():
     """AC3: backfill calls provision_org_schemas once per org returned by DB."""
-    from core.admin_api import _backfill_warehouse_schemas
+    from core.platform_maintenance_api import _backfill_warehouse_schemas  # noqa: PLC0415
 
     org_rows = [("org_01",), ("org_02",), ("org_03",)]
 
@@ -593,7 +593,7 @@ async def test_backfill_calls_provision_for_each_org():
 @pytest.mark.anyio
 async def test_backfill_counts_skipped_and_errors():
     """AC3: mix of ok/skipped/error correctly reflected in response."""
-    from core.admin_api import _backfill_warehouse_schemas
+    from core.platform_maintenance_api import _backfill_warehouse_schemas  # noqa: PLC0415
 
     org_rows = [("org_01",), ("org_02",), ("org_03",)]
 
@@ -638,7 +638,7 @@ async def test_backfill_counts_skipped_and_errors():
 @pytest.mark.anyio
 async def test_provision_org_warehouse_404_when_not_found():
     """AC4: org not found -> 404."""
-    from core.admin_api import _provision_org_warehouse
+    from core.organizations_api import _provision_org_warehouse  # noqa: PLC0415
 
     cur = MagicMock()
     cur.fetchone.return_value = None
@@ -660,7 +660,7 @@ async def test_provision_org_warehouse_404_when_not_found():
 @pytest.mark.anyio
 async def test_provision_org_warehouse_success_emits_audit():
     """AC4: successful manual provision emits org_schemas_provisioned."""
-    from core.admin_api import _provision_org_warehouse
+    from core.organizations_api import _provision_org_warehouse  # noqa: PLC0415
 
     cur = MagicMock()
     cur.fetchone.return_value = ("org_01",)  # org exists
@@ -681,7 +681,7 @@ async def test_provision_org_warehouse_success_emits_audit():
             return_value={"status": "ok", "raw": "org_x_raw", "marts": "org_x_marts"},
         ),
         patch(
-            "core.admin_api.write_audit_row",
+            "core.organizations_api.write_audit_row",
             side_effect=lambda **kw: audit_calls.append(kw["action"]),
         ),
     ):

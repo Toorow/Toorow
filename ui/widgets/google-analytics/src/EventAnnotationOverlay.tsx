@@ -15,7 +15,7 @@
  *   cross     — × mark (operations: incident)
  *
  * Design decisions:
- *  - All paths use `currentColor` fill/stroke — callers pass `color` (from MUI
+ *  - All paths use `currentColor` fill/stroke — callers pass `color` (from the
  *    theme via categoryPaletteKey) so the overlay respects light/dark mode (AD-11).
  *  - Markers are rendered at bottom of the chart area (y = chartH) pointing upward,
  *    so they sit on the x-axis and never occlude the data lines.
@@ -26,7 +26,7 @@
  */
 
 import { useMemo } from "react";
-import { useTheme } from "@mui/material/styles";
+
 import type { ContextEventMeta } from "./types";
 import {
   resolveMarkerShape,
@@ -35,6 +35,7 @@ import {
   dateToX,
   type MarkerShape,
 } from "./eventMarkers";
+import { useTheme } from "@toorow/shell";
 
 // Marker geometry constants (px, relative to the marker anchor at the x-axis).
 const MARKER_H = 10; // height of the marker above the axis

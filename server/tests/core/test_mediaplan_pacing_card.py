@@ -293,8 +293,8 @@ def test_comment_formula_cited():
         context_events=[],
     )
     assert "Pace" in comment
-    assert "réel" in comment
-    assert "prévu" in comment
+    assert "actual" in comment
+    assert "planned" in comment
 
 
 def test_comment_as_of_day_cited():
@@ -391,9 +391,9 @@ def test_comment_under_3_lines():
 def test_unmapped_actuals_block_present_with_honest_note_when_unavailable(card_db):
     """E1-F-2 : le bloc [Unmapped Actuals] existe TOUJOURS, jamais omis en silence.
 
-    Dans le harnais offline, ni le PG réel (MagicMock) ni fact_daily_kpi ne sont
+    Dans le harnais offline, ni le PG actual (MagicMock) ni fact_daily_kpi ne sont
     disponibles -> le bloc est rendu avec la note honnête « Périmètre non
-    vérifiable », JAMAIS absent (un bloc manquant lirait « 100 % mappé »).
+    vérifiable », JAMAIS absent (un bloc missing lirait « 100 % mappé »).
     """
     from core.cards import get_template  # noqa: PLC0415
 
@@ -404,9 +404,9 @@ def test_unmapped_actuals_block_present_with_honest_note_when_unavailable(card_d
     composition = envelope["data"]["composition"]
     block = next(b for b in composition if b["binding"]["source"] == "plan_unmapped_actuals")
     assert block["data"]["verifiable"] is False
-    assert "non vérifiable" in block["data"]["note"]
+    assert "not verifiable" in block["data"]["note"]
     # Le résumé LLM cite le périmètre non mappé en 1 ligne.
-    assert "Actuals non mappés" in summary
+    assert "Unmapped actuals" in summary
 
 
 def test_pace_null_never_displayed_as_zero(card_db):
@@ -446,7 +446,7 @@ def test_ai54_fixture_get_card_snapshot(card_db):
     assert envelope["data"]["plan_id"] == PLAN_ID
     assert envelope["data"]["plan_version_id"] == VERSION_ID
     assert envelope["data"]["as_of_day"] == "2026-03-10"
-    # Composition : 4 blocs (3 tables dont « Actuals non mappés » + 1 comment).
+    # Composition : 4 blocs (3 tables dont « Unmapped actuals » + 1 comment).
     assert len(envelope["data"]["composition"]) == 4
     types = [b["type"] for b in envelope["data"]["composition"]]
     assert types == ["table", "table", "table", "comment"]
@@ -455,7 +455,7 @@ def test_ai54_fixture_get_card_snapshot(card_db):
         b for b in envelope["data"]["composition"]
         if b["binding"]["source"] == "plan_unmapped_actuals"
     )
-    assert unmapped_block["title"] == "Actuals non mappés"
+    assert unmapped_block["title"] == "Unmapped actuals"
     # pacing_meta (AD-9 provenance sur l'envelope).
     pacing_meta = envelope["data"]["pacing_meta"]
     assert pacing_meta["plan_version_id"] == VERSION_ID

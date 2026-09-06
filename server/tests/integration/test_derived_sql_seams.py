@@ -38,10 +38,12 @@ from __future__ import annotations
 import os
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
+from tests.conftest import purge_fixture_project
 
 # Detect live DB at module import time -- shared skip guard for the whole file.
 _DSN = os.environ.get("TEST_POSTGRES_DSN") or os.environ.get("PLATFORM_DB_URL")
@@ -202,7 +204,9 @@ def _cleanup_ledger(conn, project_id, conn_ref_id, ds_id):
         cur.execute("DELETE FROM app.pull_jobs WHERE datastream_id=%s", (ds_id,))
         cur.execute("DELETE FROM app.datastreams WHERE id=%s", (ds_id,))
         cur.execute("DELETE FROM app.connection_ref WHERE id=%s", (conn_ref_id,))
-        cur.execute("DELETE FROM app.projects WHERE id=%s", (project_id,))
+        # AI-291: le graphe prend le relais si une table gouvernee
+        # ajoutee depuis retient le projet en ON DELETE RESTRICT.
+        purge_fixture_project(cur.connection, project_id)
     conn.commit()
 
 
@@ -222,7 +226,7 @@ def test_ledger_multi_day_multi_range_correct_statuses_through_build_asgi_app():
                     "core.admin_api._check_auth",
                     new=AsyncMock(return_value=(True, "test@test")),
                 ),
-                patch("core.project_access.identity_has_project_access", return_value=True),
+                patch("core.project_access.identity_can_read_project", return_value=True),
             ):
                 client = _build_client()
                 resp = client.get(
@@ -323,7 +327,7 @@ def test_ledger_running_and_failed_pull_statuses_through_build_asgi_app():
                     "core.admin_api._check_auth",
                     new=AsyncMock(return_value=(True, "test@test")),
                 ),
-                patch("core.project_access.identity_has_project_access", return_value=True),
+                patch("core.project_access.identity_can_read_project", return_value=True),
             ):
                 client = _build_client()
                 resp = client.get(
@@ -345,7 +349,9 @@ def test_ledger_running_and_failed_pull_statuses_through_build_asgi_app():
                 cur.execute("DELETE FROM app.pull_jobs WHERE datastream_id=%s", (ds_id,))
                 cur.execute("DELETE FROM app.datastreams WHERE id=%s", (ds_id,))
                 cur.execute("DELETE FROM app.connection_ref WHERE id=%s", (conn_ref_id,))
-                cur.execute("DELETE FROM app.projects WHERE id=%s", (project_id,))
+                # AI-291: le graphe prend le relais si une table gouvernee
+                # ajoutee depuis retient le projet en ON DELETE RESTRICT.
+                purge_fixture_project(cur.connection, project_id)
             pg.commit()
 
 
@@ -429,7 +435,9 @@ def _cleanup_chain(conn, project_id, conn_ref_id, ds_ids):
             cur.execute("DELETE FROM app.datastream_mappings WHERE datastream_id=%s", (ds_id,))
             cur.execute("DELETE FROM app.datastreams WHERE id=%s", (ds_id,))
         cur.execute("DELETE FROM app.connection_ref WHERE id=%s", (conn_ref_id,))
-        cur.execute("DELETE FROM app.projects WHERE id=%s", (project_id,))
+        # AI-291: le graphe prend le relais si une table gouvernee
+        # ajoutee depuis retient le projet en ON DELETE RESTRICT.
+        purge_fixture_project(cur.connection, project_id)
     conn.commit()
 
 
@@ -460,7 +468,7 @@ def test_report_chain_multi_metric_multi_datastream_statuses_through_build_asgi_
                     "core.admin_api._check_auth",
                     new=AsyncMock(return_value=(True, "test@test")),
                 ),
-                patch("core.project_access.identity_has_project_access", return_value=True),
+                patch("core.project_access.identity_can_read_project", return_value=True),
                 patch("core.flows._base_report_doc", return_value=merged_doc),
                 patch("core.flows._fetch_report_override", return_value=None),
                 patch("core.flows._merge_report", return_value=merged_doc),
@@ -523,7 +531,7 @@ def test_report_chain_all_not_in_dictionary_when_no_target_fields_match():
                     "core.admin_api._check_auth",
                     new=AsyncMock(return_value=(True, "test@test")),
                 ),
-                patch("core.project_access.identity_has_project_access", return_value=True),
+                patch("core.project_access.identity_can_read_project", return_value=True),
                 patch("core.flows._base_report_doc", return_value=merged_doc),
                 patch("core.flows._fetch_report_override", return_value=None),
                 patch("core.flows._merge_report", return_value=merged_doc),
@@ -544,229 +552,38 @@ def test_report_chain_all_not_in_dictionary_when_no_target_fields_match():
 
 
 # ---------------------------------------------------------------------------
-# (c) DQ ISSUES -- GET /api/dq/issues
+# (c) DQ ISSUES -- retired with the routes they exercised (Story 49.4).
 #
-# Seed shape:
-#   - 3 dq_volume firings for the project (days: today, yesterday, 2 days ago)
-#   - 2 dq_timeliness firings for the project (today, yesterday)
-#   - 1 dq_volume firing is acknowledged
-#   - 1 dq_* firing belongs to a DIFFERENT project (must NOT appear)
-#   Total for our project: 5 firings (4 open, 1 acked)
+# Two tests lived here: one drove `GET /api/dq/issues` through the full ASGI
+# stack across filters and cross-project isolation, the other drove
+# `POST /api/dq/issues/{id}/acknowledge`. Both routes were unmounted by Story
+# 49.4, which moved DQ issues off `app.alert_firings` (where an "issue" was a
+# firing whose identity was parsed out of a MESSAGE STRING) onto governed
+# `app.dq_issues` rows with an explicit workflow.
 #
-# Assertions:
-#   GET /api/dq/issues?project_id=  -> total=5, 4 open + 1 acked
-#   GET /api/dq/issues?monitor=dq_volume -> total=3
-#   GET /api/dq/issues?status=open   -> total=4
-#   GET /api/dq/issues?status=acknowledged -> total=1
-#   Cross-project firing NEVER appears.
+# The coverage did not disappear; it moved, and this comment exists so the move
+# is findable rather than looking like a deletion:
+#
+#   * the issue list, including CLOSED issues so a recurrence does not read as
+#     new -> `core.governance_read_model._dq_issue_list`, rendered by
+#     `MonitorIssuesTab`, tested in `ui/admin/src/__tests__/ControlsQualityTabs`;
+#   * acknowledgement -> `core.dq_governance.transition_issue`, which is now a
+#     SUPPRESSION and refuses one without an end date, tested in
+#     `tests/core/test_controls_quality.py`;
+#   * cross-project isolation -> `resolve_strict_resource_access` on the
+#     Governance surface, tested in `test_controls_quality_seam.py`.
+#
+# What replaces them here is one assertion: the doors are gone. A retired route
+# that quietly came back would otherwise be invisible.
 # ---------------------------------------------------------------------------
 
 
-def _seed_dq_project(conn):
-    """Seed project + 5 dq_* alert_firings (+ 1 cross-project decoy)."""
-    project_id = _uid("proj_dq_")
-    other_project_id = _uid("proj_other_")
-    now = datetime.now(tz=timezone.utc)
+def test_the_retired_dq_routes_are_absent_from_the_router_the_app_forwards_to():
+    from core.admin_api import router
 
-    with conn.cursor() as cur:
-        for pid in (project_id, other_project_id):
-            cur.execute(
-                "INSERT INTO app.projects (id, name, slug, created_by, org_id) "
-                "VALUES (%s,%s,%s,'test', 'org_test_fixture') ON CONFLICT DO NOTHING",
-                (pid, pid, pid),
-            )
-
-        def _insert_firing(fid, proj, ftype, days_ago, acked=False):
-            fired_at = now - timedelta(days=days_ago)
-            window = (now - timedelta(days=days_ago)).date()
-            ack_val = now if acked else None
-            cur.execute(
-                "INSERT INTO app.alert_firings "
-                "(id, definition_id, type, project_id, metric, fired_at, "
-                " observed_value, threshold, pull_ids, window_date, severity, message"
-                + (", acknowledged_at" if acked else "")
-                + ") "
-                "VALUES (%s,NULL,%s,%s,'row_count',%s,0,0,'{}', %s,'warning',%s"
-                + (",%s" if acked else "")
-                + ")",
-                (fid, ftype, proj, fired_at, window, f"Test firing {fid}")
-                + ((ack_val,) if acked else ()),
-            )
-
-        # 3 dq_volume firings for our project (1 acked)
-        fire_v1 = _uid("fire_")
-        fire_v2 = _uid("fire_")
-        fire_v3 = _uid("fire_")
-        _insert_firing(fire_v1, project_id, "dq_volume", 0)  # today, open
-        _insert_firing(fire_v2, project_id, "dq_volume", 1)  # yesterday, open
-        _insert_firing(fire_v3, project_id, "dq_volume", 2, acked=True)  # 2 days ago, acked
-
-        # 2 dq_timeliness firings for our project
-        fire_t1 = _uid("fire_")
-        fire_t2 = _uid("fire_")
-        _insert_firing(fire_t1, project_id, "dq_timeliness", 0)  # today, open
-        _insert_firing(fire_t2, project_id, "dq_timeliness", 1)  # yesterday, open
-
-        # 1 decoy firing for OTHER project (must not appear in our queries)
-        fire_decoy = _uid("fire_")
-        _insert_firing(fire_decoy, other_project_id, "dq_volume", 0)
-
-    conn.commit()
-    return project_id, other_project_id
-
-
-def _cleanup_dq(conn, project_id, other_project_id):
-    with conn.cursor() as cur:
-        cur.execute(
-            "DELETE FROM app.alert_firings WHERE project_id IN (%s,%s)",
-            (project_id, other_project_id),
-        )
-        for pid in (project_id, other_project_id):
-            cur.execute("DELETE FROM app.projects WHERE id=%s", (pid,))
-    conn.commit()
-
-
-def test_dq_issues_multi_day_multi_monitor_counts_and_ack_state_through_build_asgi_app():
-    """AI-45(c): GET /api/dq/issues returns correct total, per-monitor filtering,
-    open/acknowledged filtering, and cross-project isolation through the full ASGI stack.
-
-    Exercises all filters the endpoint supports with multi-day, multi-monitor seed data.
-    """
-    with _live_conn() as pg:
-        project_id, other_project_id = _seed_dq_project(pg)
-        try:
-            with patch(
-                "core.admin_api._check_auth",
-                new=AsyncMock(return_value=(True, "test@test")),
-            ):
-                client = _build_client()
-
-                # 1. No filter -> all 5 firings for our project
-                resp_all = client.get(f"/api/dq/issues?project_id={project_id}")
-                assert resp_all.status_code == 200, (
-                    f"No-filter returned {resp_all.status_code}: {resp_all.text}"
-                )
-                body_all = resp_all.json()
-                assert body_all["total"] == 5, f"Expected total=5, got {body_all['total']}"
-
-                # 2. monitor=dq_volume -> 3 firings
-                resp_vol = client.get(f"/api/dq/issues?project_id={project_id}&monitor=dq_volume")
-                assert resp_vol.status_code == 200
-                body_vol = resp_vol.json()
-                assert body_vol["total"] == 3, (
-                    f"Expected dq_volume total=3, got {body_vol['total']}"
-                )
-                assert all(iss["type"] == "dq_volume" for iss in body_vol["issues"]), (
-                    "Non-dq_volume issue leaked through monitor filter"
-                )
-
-                # 3. status=open -> 4 firings (vol_1, vol_2, til_1, til_2)
-                resp_open = client.get(f"/api/dq/issues?project_id={project_id}&status=open")
-                assert resp_open.status_code == 200
-                body_open = resp_open.json()
-                assert body_open["total"] == 4, (
-                    f"Expected status=open total=4, got {body_open['total']}"
-                )
-                assert all(not iss["acknowledged"] for iss in body_open["issues"]), (
-                    "Acknowledged issue leaked through status=open filter"
-                )
-
-                # 4. status=acknowledged -> 1 firing (vol_3)
-                resp_ack = client.get(f"/api/dq/issues?project_id={project_id}&status=acknowledged")
-                assert resp_ack.status_code == 200
-                body_ack = resp_ack.json()
-                assert body_ack["total"] == 1, (
-                    f"Expected status=acknowledged total=1, got {body_ack['total']}"
-                )
-                assert body_ack["issues"][0]["acknowledged"] is True, (
-                    "Acked issue should have acknowledged=True"
-                )
-                assert body_ack["issues"][0]["acknowledged_at"] is not None, (
-                    "Acked issue should have a non-null acknowledged_at"
-                )
-
-                # 5. Cross-project isolation: other_project_id must return 0 results
-                resp_other = client.get(f"/api/dq/issues?project_id={other_project_id}")
-                # The decoy firing is for other_project_id but our assertions must
-                # confirm cross-project leakage is impossible.
-                # (The 'other' project has 1 firing; we only check it doesn't appear
-                # when we query our project -- already confirmed by total==5 above.)
-                assert resp_other.status_code == 200
-                body_other = resp_other.json()
-                our_ids = {iss["id"] for iss in body_all["issues"]}
-                other_ids = {iss["id"] for iss in body_other["issues"]}
-                assert our_ids.isdisjoint(other_ids), (
-                    f"Cross-project leakage detected: shared ids = {our_ids & other_ids}"
-                )
-        finally:
-            _cleanup_dq(pg, project_id, other_project_id)
-
-
-def test_dq_issues_acknowledge_endpoint_marks_firing_and_reflects_in_issues_list():
-    """AI-45(c) supplementary: POST /api/dq/issues/{id}/acknowledge marks the firing;
-    subsequent GET /api/dq/issues?status=open no longer returns it.
-
-    Exercises the round-trip: seed open -> ack via POST -> verify via GET.
-    """
-    with _live_conn() as pg:
-        project_id = _uid("proj_dq_ack_")
-        fire_id = _uid("fire_")
-        now = datetime.now(tz=timezone.utc)
-        today = now.date()
-
-        with pg.cursor() as cur:
-            cur.execute(
-                "INSERT INTO app.projects (id, name, slug, created_by, org_id) "
-                "VALUES (%s,%s,%s,'test', 'org_test_fixture') ON CONFLICT DO NOTHING",
-                (project_id, project_id, project_id),
-            )
-            cur.execute(
-                "INSERT INTO app.alert_firings "
-                "(id, definition_id, type, project_id, metric, fired_at, "
-                " observed_value, threshold, pull_ids, window_date, severity, message) "
-                "VALUES (%s,NULL,'dq_timeliness',%s,'row_count',%s,0,0,'{}', %s,'warning','test')",
-                (fire_id, project_id, now, today),
-            )
-        pg.commit()
-
-        try:
-            with patch(
-                "core.admin_api._check_auth",
-                new=AsyncMock(return_value=(True, "test@test")),
-            ):
-                client = _build_client()
-
-                # Confirm it starts open
-                resp_before = client.get(f"/api/dq/issues?project_id={project_id}&status=open")
-                assert resp_before.status_code == 200
-                assert resp_before.json()["total"] == 1, "Expected 1 open before ack"
-
-                # Acknowledge it
-                resp_ack = client.post(
-                    f"/api/dq/issues/{fire_id}/acknowledge?project_id={project_id}",
-                )
-                assert resp_ack.status_code == 200, (
-                    f"Acknowledge returned {resp_ack.status_code}: {resp_ack.text}"
-                )
-                ack_body = resp_ack.json()
-                assert ack_body["id"] == fire_id
-                assert ack_body["acknowledged_at"] is not None
-
-                # Confirm it no longer appears in open issues
-                resp_after = client.get(f"/api/dq/issues?project_id={project_id}&status=open")
-                assert resp_after.status_code == 200
-                assert resp_after.json()["total"] == 0, (
-                    "Acked firing should not appear in status=open"
-                )
-
-                # Confirm it appears in acknowledged
-                resp_acked = client.get(
-                    f"/api/dq/issues?project_id={project_id}&status=acknowledged"
-                )
-                assert resp_acked.status_code == 200
-                assert resp_acked.json()["total"] == 1
-        finally:
-            with pg.cursor() as cur:
-                cur.execute("DELETE FROM app.alert_firings WHERE id=%s", (fire_id,))
-                cur.execute("DELETE FROM app.projects WHERE id=%s", (project_id,))
-            pg.commit()
+    leftovers = sorted(
+        path
+        for path in (getattr(route, "path", "") for route in router.routes)
+        if path.startswith("/api/dq/")
+    )
+    assert leftovers == [], leftovers

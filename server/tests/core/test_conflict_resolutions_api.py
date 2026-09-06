@@ -40,7 +40,7 @@ _RES = {
 _CONFLICT = {
     "field": {
         "name": "cost",
-        "display_name": "Coût",
+        "display_name": "Cost",
         "data_type": "currency",
         "field_kind": "metric",
         "measure": "sum",
@@ -141,7 +141,7 @@ class TestListConflicts:
             mock_gc.return_value.__exit__ = MagicMock(return_value=False)
             resp = client_cross_project.get("/api/mdm/conflicts?project_id=proj_other")
         assert resp.status_code == 404
-        assert "Projet introuvable" in resp.text
+        assert "Project not found" in resp.text
 
 
 # ---------------------------------------------------------------------------

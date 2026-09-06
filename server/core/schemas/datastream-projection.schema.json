@@ -19,12 +19,26 @@
     "issues"
   ],
   "properties": {
-    "projection_contract_version": { "const": "1" },
-    "mapping_version_id": { "type": "string", "minLength": 1 },
-    "plan_version_id": { "type": "string", "minLength": 1 },
-    "source_schema_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "projection_contract_version": {
+      "const": "1"
+    },
+    "mapping_version_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "plan_version_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_schema_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
     "capability_fingerprint": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "pattern": "^[0-9a-f]{64}$"
     },
     "executable": {
@@ -34,7 +48,10 @@
     "grain": {
       "type": "array",
       "description": "The declared joint grain (ordered field_ids). Every selected dimension is preserved in the full-grain relation.",
-      "items": { "type": "string", "minLength": 1 },
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
       "uniqueItems": true
     },
     "full_grain_relation": {
@@ -43,20 +60,70 @@
     "additive_measures": {
       "type": "array",
       "description": "Measures accepted into fact_daily_kpi. A measure is accepted ONLY iff aggregation='sum' AND non_additive=false via app.mdm_canonical_fields.",
-      "items": { "$ref": "#/$defs/additive_measure" }
+      "items": {
+        "$ref": "#/$defs/additive_measure"
+      }
     },
     "governed_dimension_projection": {
       "description": "The SINGLE governed dimension projected into the canonical breakdown_dimension/breakdown_value slot, or null when no dimension is projected. Never more than one.",
       "oneOf": [
-        { "type": "null" },
-        { "$ref": "#/$defs/governed_dimension_projection" }
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/governed_dimension_projection"
+        }
       ]
     },
-    "estimate": { "$ref": "#/$defs/estimate" },
+    "estimate": {
+      "$ref": "#/$defs/estimate"
+    },
     "issues": {
       "type": "array",
       "description": "Closed set of deterministic compile-time rejection issues. Non-empty => not executable => blocks publication.",
-      "items": { "$ref": "#/$defs/issue" }
+      "items": {
+        "$ref": "#/$defs/issue"
+      }
+    },
+    "produced_columns": {
+      "type": "array",
+      "description": "Story 60.6. Every column the mapping version's column_treatments PRODUCE, and the source columns each one is built from -- so a reader of the warehouse can say a joined value came from three NAMED columns instead of guessing. Not in `required`: a plan compiled before 60.6, or from a mapping that declares no treatment, carries no key rather than an empty list standing in for a measure nobody took.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "target",
+          "kind",
+          "sources"
+        ],
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "enum": [
+              "join",
+              "split",
+              "schema_split",
+              "schema_split_provenance"
+            ]
+          },
+          "sources": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "origin": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Story 63.7. WHY the execution carrying this plan exists -- a key of server/core/run_origins.py, stamped by run_origins.stamp_origin AFTER compilation and never by the compiler. It is declared here because this schema is additionalProperties:false: the four update paths (mapping change, plan change, first candidate, country activation) carry a compiled projection, and a plan that named its origin had to stay re-validatable. The vocabulary is NOT repeated here -- the registry owns it, and tests/conformance/test_run_origin_registry.py refuses a writer that invents a key."
     }
   },
   "$defs": {
@@ -72,11 +139,21 @@
         "loaded_at"
       ],
       "properties": {
-        "execution_id": { "const": "execution_id" },
-        "pull_id": { "const": "pull_id" },
-        "mapping_version_id": { "const": "mapping_version_id" },
-        "plan_version_id": { "const": "plan_version_id" },
-        "loaded_at": { "const": "loaded_at" }
+        "execution_id": {
+          "const": "execution_id"
+        },
+        "pull_id": {
+          "const": "pull_id"
+        },
+        "mapping_version_id": {
+          "const": "mapping_version_id"
+        },
+        "plan_version_id": {
+          "const": "plan_version_id"
+        },
+        "loaded_at": {
+          "const": "loaded_at"
+        }
       }
     },
     "full_grain_relation": {
@@ -97,10 +174,22 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["field_id", "type_class"],
+            "required": [
+              "field_id",
+              "type_class"
+            ],
             "properties": {
-              "field_id": { "type": "string", "minLength": 1 },
-              "type_class": { "enum": ["date", "numeric", "string"] }
+              "field_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type_class": {
+                "enum": [
+                  "date",
+                  "numeric",
+                  "string"
+                ]
+              }
             }
           }
         },
@@ -111,12 +200,22 @@
         "source_fields": {
           "type": "array",
           "description": "Every selected source measure/field kept as its own typed column (not aggregated away).",
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
-        "provenance": { "$ref": "#/$defs/provenance" },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
         "scope_columns": {
           "type": "array",
-          "items": { "enum": ["project_id", "connector"] },
+          "items": {
+            "enum": [
+              "project_id",
+              "connector"
+            ]
+          },
           "minItems": 2,
           "uniqueItems": true
         }
@@ -125,36 +224,62 @@
     "additive_measure": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["field_id", "metric", "mdm_target", "aggregation", "non_additive"],
+      "required": [
+        "field_id",
+        "metric",
+        "mdm_target",
+        "aggregation",
+        "non_additive"
+      ],
       "properties": {
-        "field_id": { "type": "string", "minLength": 1 },
+        "field_id": {
+          "type": "string",
+          "minLength": 1
+        },
         "metric": {
           "type": "string",
           "minLength": 1,
           "description": "Canonical metric name landing in fact_daily_kpi.metric."
         },
         "mdm_target": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "pattern": "^mdm_[0-9A-HJKMNP-TV-Z]{26}$"
         },
-        "aggregation": { "const": "sum" },
-        "non_additive": { "const": false }
+        "aggregation": {
+          "const": "sum"
+        },
+        "non_additive": {
+          "const": false
+        }
       }
     },
     "governed_dimension_projection": {
       "type": "object",
       "additionalProperties": false,
       "description": "Exactly one governed source dimension mapped to the canonical breakdown slot. It must sort so MIN(breakdown_dimension) never selects it (a parallel series, not a new canonical slot).",
-      "required": ["field_id", "breakdown_dimension", "mdm_target"],
+      "required": [
+        "field_id",
+        "breakdown_dimension",
+        "mdm_target"
+      ],
       "properties": {
-        "field_id": { "type": "string", "minLength": 1 },
+        "field_id": {
+          "type": "string",
+          "minLength": 1
+        },
         "breakdown_dimension": {
           "type": "string",
           "minLength": 1,
           "description": "Value landing in fact_daily_kpi.breakdown_dimension for this projected series."
         },
         "mdm_target": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "pattern": "^mdm_[0-9A-HJKMNP-TV-Z]{26}$"
         }
       }
@@ -170,33 +295,71 @@
         "max_scan_bytes",
         "over_limit",
         "expensive_fields",
-        "threshold_source"
+        "threshold_source",
+        "cardinality_is_measured",
+        "unprofiled_grain_fields"
       ],
       "properties": {
-        "estimated_grain_cardinality": { "type": "integer", "minimum": 0 },
-        "estimated_scan_bytes": { "type": "integer", "minimum": 0 },
-        "max_grain_cardinality": { "type": "integer", "minimum": 1 },
-        "max_scan_bytes": { "type": "integer", "minimum": 1 },
-        "over_limit": { "type": "boolean" },
+        "estimated_grain_cardinality": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "estimated_scan_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_grain_cardinality": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_scan_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "over_limit": {
+          "type": "boolean"
+        },
         "expensive_fields": {
           "type": "array",
           "description": "Concrete field_ids driving the estimate over the limit (named, never silently dropped).",
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
         "threshold_source": {
-          "enum": ["project_preference", "documented_default"],
+          "enum": [
+            "project_preference",
+            "documented_default"
+          ],
           "description": "project_preference when app.project_preferences supplied the value; documented_default otherwise (no platform-wide hardcode leaks silently)."
         },
         "approved": {
           "type": "boolean",
           "description": "True when the operator supplied the explicit governed approval flag/reason for an over-limit projection."
+        },
+        "cardinality_is_measured": {
+          "type": "boolean",
+          "description": "True when EVERY grain dimension carries a cardinality profile. False means the estimate is a PRODUCT OF DEFAULT VALUES -- an absence of measurement, not a high measurement -- and the refusal then offers to profile the columns rather than to approve a figure nobody measured."
+        },
+        "unprofiled_grain_fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The grain dimensions carrying no cardinality profile, named rather than folded into the product that refused the plan."
         }
       }
     },
     "issue": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["code", "path", "field_ids", "repair"],
+      "required": [
+        "code",
+        "path",
+        "field_ids",
+        "repair"
+      ],
       "properties": {
         "code": {
           "enum": [
@@ -210,12 +373,19 @@
             "mapping_drift"
           ]
         },
-        "path": { "type": "string", "minLength": 1 },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
         "field_ids": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
-        "repair": { "type": "object" }
+        "repair": {
+          "type": "object"
+        }
       }
     }
   }

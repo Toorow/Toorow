@@ -32,8 +32,10 @@ Each item in `questions` must conform to the following fields:
 | `tags` | list[string] | Yes | Keywords (e.g. `ga4`, `sessions`, `additive`, `grain_trap`) |
 | `reference_queries` | list[QueryEntry] | Yes | 1..N query entries (see below) |
 | `expected_citations` | list[Citation] | Yes | List of expected citations (`[]` for write-ack / catalog tools) |
+| `expected_business_routes` | list[BusinessRoute] | No | Semantic business route expected in report evidence; route hashes are optional drift baselines. |
 | `grain_trap_note` | string | Conditional | Required when `surface == "grain_trap"` |
 | `procedure_ref` | string | No | Optional tool call signature reference |
+| `report_ref` | string | No | `"{module_name}/{report_def_id}"`. Its presence resolves the question to **`get_report`** instead of `get_daily_report` — the only tool whose envelope carries `meta.business_context_paths`, so the only surface on which `expected_business_routes` can be evaluated. |
 | `tool_invocation` | ToolInvocation \| absent | No | Story 14.2 addendum: a deterministic MCP tool call + result selector, present ONLY when the question resolves mechanically (see below). Absent => the runner marks it `tool_replay: skipped`. |
 | `updated_at` | string | Yes | ISO 8601 timestamp |
 
@@ -43,8 +45,8 @@ Added by `build_eval_corpus_and_fixtures.py::derive_tool_invocation` as a **mech
 
 | Field | Type | Required | Description / Rules |
 | ----- | ---- | -------- | ------------------- |
-| `tool` | string | Yes | MCP tool name. Enum (v1): `get_daily_report`. |
-| `args` | mapping | Yes | Tool arguments: `project_id` (`default`), `connectors` (list, 1 entry), `date_range` (`{start, end}` ISO dates), optional `as_of` (ISO-8601 datetime, imposed for replay surfaces). |
+| `tool` | string | Yes | MCP tool name. Enum: `get_daily_report`, `get_report`. |
+| `args` | mapping | Yes | For `get_daily_report`: `project_id` (`default`), `connectors` (list, 1 entry), `date_range` (`{start, end}` ISO dates), optional `as_of` (ISO-8601 datetime, imposed for replay surfaces). For `get_report`: `project_id` (`default`), `report_id` (`<module>/<report_id>`), `date_from` / `date_to` (ISO dates) — and **none** of `connectors` / `date_range` / `as_of`, which that tool does not accept. |
 | `result_selector` | ResultSelector | Yes | How to extract the comparable value(s) from `structuredContent` (see below). |
 
 #### ResultSelector vocabulary
@@ -57,6 +59,8 @@ Added by `build_eval_corpus_and_fixtures.py::derive_tool_invocation` as a **mech
 | `breakdown_dimension` | string | Yes | The **pinned** grain — the runner re-aggregates on THIS dimension only, so a naive sum over all breakdowns (a grain trap) can never masquerade as correct. |
 | `round` | int \| null | Yes | Mirrors the reference `ROUND(.,N)`. `null` => whole aggregate, EXACT equality. An int => bounded float tolerance. |
 
+The same vocabulary serves both tools: measured 2026-08-24, `get_report` carries the raw `fact_daily_kpi` rows on its envelope with the identical column shape, so the selector reads it unchanged. A second vocabulary for the same rows would only have been a second thing to keep true.
+
 ### QueryEntry Sub-schema (`reference_queries[*]`)
 
 | Field | Type | Required | Description / Rules |
@@ -68,7 +72,11 @@ Added by `build_eval_corpus_and_fixtures.py::derive_tool_invocation` as a **mech
 | `fixture_sha256` | string | Yes | 64-hex SHA-256 of canonical fixture JSON |
 | `expected_empty` | boolean | No | Default `false`. Set `true` **only** when the query is expected to return **exactly 0 rows** by design (e.g. `GROUP BY` over absent data, `SELECT … WHERE` with no matching rows where the result set is genuinely empty). **Never set for aggregate queries** (`COUNT(*)`, `SUM()`, `AVG()` without `GROUP BY`): those always return exactly one row (with value `0` or `NULL`), which is real data that must be captured in the fixture with `expected_empty: false`. Validated strictly: the test asserts `len(rows) == 0` — no soft null/zero aggregate exception. |
 
-### Citation Sub-schema (`expected_citations[*]`)
+
+### BusinessRoute Sub-schema (`expected_business_routes[*]`)
+
+`domain_id`, `target_type`, and `target_id` are required strings. `classification_id` narrows the expected route. `baseline_path_key` is optional and detects version drift without replacing the semantic route.
+### Citation Sub-schema (expected_citations[*])
 
 | Field | Type | Required | Description / Rules |
 | ----- | ---- | -------- | ------------------- |

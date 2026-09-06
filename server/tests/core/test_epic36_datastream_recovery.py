@@ -37,7 +37,13 @@ def test_every_table_procedure_is_in_the_fixed_allowed_set():
         assert proc.procedure in dr._ALLOWED_PROCEDURES, cls
         # A write-effect operations route must carry a concrete operations kind.
         if proc.route == dr._ROUTE_OPERATIONS:
-            assert proc.operations_kind in {"retry", "refetch", "reconcile"}
+            # THE VOCABULARY IS THE MODULE'S, NEVER RETYPED HERE. This held a
+            # literal `{"retry", "refetch", "reconcile"}`, and `rollback` joined
+            # `_ALLOWED_PROCEDURES` without joining the literal -- so the test
+            # went red about a verb the module legitimately declares. A list
+            # retyped in a test drifts from the contract it defends, which is the
+            # same class as the tab list repaired in `inbound_health`.
+            assert proc.operations_kind in dr._ALLOWED_PROCEDURES
 
 
 def test_map_error_class_returns_exactly_one_allowed_procedure_per_class():
@@ -523,7 +529,22 @@ def test_real_pipeline_mapping_drift_reaches_governance_replace(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_recovery_mcp_registers_one_operations_read_tool():
+def test_recovery_mcp_registers_the_read_and_the_reprocess_pair():
+    """Amended 2026-08-17 (67-15b): the module gained the `Reprocess` MCP door.
+
+    Three tools, and their effects are the contract the capability middleware
+    filters on: the bridge READS, the preparation writes an immutable proposal
+    and authorizes nothing, and only the confirm is a consequential write behind
+    a human confirmation. A prepare registered as a read -- or a confirm without
+    `confirmation_mode="human"` -- is exactly what `validate_catalog` exists to
+    refuse at boot.
+
+    They live here rather than on `operations_mcp`'s prepare/confirm pair because
+    that pair re-checks account exposure and quota budget before dispatching, and
+    a reprocess calls no provider and spends nothing: it would have to be excused
+    from both, and a confirm carrying two verbs' worth of exceptions is how a
+    gate comes to be skipped for the wrong one.
+    """
     from core import mcp_profiles, recovery_mcp
 
     mcp_profiles.reset_registry_for_tests()
@@ -532,13 +553,23 @@ def test_recovery_mcp_registers_one_operations_read_tool():
         recorder.tool = MagicMock()
         recovery_mcp.register(recorder)
         decls = {d.name: d for d in mcp_profiles.registered_declarations()}
-        assert set(decls) == {"propose_datastream_recovery"}
-        d = decls["propose_datastream_recovery"]
-        assert d.profile == "operations"
-        assert d.effect == "read"
-        assert d.confirmation_mode == "none"
-        # Boot validation accepts it (no insights/write or read/confirmation contradiction).
+        assert set(decls) == {
+            "propose_datastream_recovery",
+            "prepare_datastream_reprocess",
+            "confirm_datastream_reprocess",
+        }
+        expected = {
+            "propose_datastream_recovery": ("read", "none"),
+            "prepare_datastream_reprocess": ("prepare", "none"),
+            "confirm_datastream_reprocess": ("confirmed_write", "human"),
+        }
+        for name, (effect, confirmation) in expected.items():
+            assert decls[name].profile == "operations", name
+            assert decls[name].effect == effect, name
+            assert decls[name].confirmation_mode == confirmation, name
+        # Boot validation accepts all three (no insights/write and no
+        # read/confirmation contradiction).
         validated = {x.name for x in mcp_profiles.validate_catalog()}
-        assert "propose_datastream_recovery" in validated
+        assert set(expected) <= validated
     finally:
         mcp_profiles.reset_registry_for_tests()

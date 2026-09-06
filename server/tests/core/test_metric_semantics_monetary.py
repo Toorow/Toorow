@@ -22,6 +22,7 @@ import csv as _csv
 import os
 import uuid
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -31,6 +32,8 @@ os.environ.setdefault("SCHEDULER_ENABLED", "false")
 
 from core import datamodel  # noqa: E402
 from core import metric_semantics as ms  # noqa: E402
+
+from tests.support.updated_at_trigger import ensure_set_updated_at
 
 # ---------------------------------------------------------------------------
 # Postgres availability check (calqué sur test_metric_semantics.py)
@@ -261,18 +264,182 @@ def test_monetary_cascades_project_over_platform():
     assert resolved["cost"]["monetary"] is False  # project wins
 
 
-def test_is_metric_monetary_platform_fallback():
-    """§10: is_metric_monetary (no project) -> classifier fallback when DB has no row.
+def test_is_metric_monetary_platform_fallback(monkeypatch):
+    """§10: is_metric_monetary (no project) -> classifier fallback when NO store answers.
 
-    With no reachable/loaded PLATFORM row, is_metric_monetary fails soft to _classify_monetary:
-    revenue -> True, sessions -> False."""
+    THE TWO STORES ABOVE THE CLASSIFIER ARE SILENCED EXPLICITLY, since 2026-08-31.
+    This test used to rely on "no reachable/loaded PLATFORM row", which stopped
+    being true the day the platform path started asking the Semantic Model: a
+    cluster at migration 142 carries a published platform Concept for `revenue`
+    whose seeded `value_type` is `decimal`, so the answer came from a store the
+    test never named. Naming them is the difference between measuring the
+    fallback and measuring the fixture."""
+    monkeypatch.setattr(ms, "_semantic_model_declares_money", lambda name, project: None)
+    monkeypatch.setattr(ms, "get_metric_definition", lambda **kw: None)
     assert ms.is_metric_monetary("revenue") is True
     assert ms.is_metric_monetary("sessions") is False
 
 
 def test_is_metric_monetary_unknown_fail_soft():
-    """§11: is_metric_monetary on an unknown name -> False (fail-soft, no crash)."""
+    """§11: is_metric_monetary on an unknown name -> False (fail-soft, no crash).
+
+    No store is silenced here on purpose: a name no Concept and no definition row
+    carries must reach the classifier whatever the cluster holds.
+    """
     assert ms.is_metric_monetary("made_up_metric") is False
+
+
+# ---------------------------------------------------------------------------
+# Story 49.3 AC1 -- the SEMANTIC MODEL answers first (2026-08-25).
+#
+# `is_metric_monetary` read `app.metric_definitions` and nothing else, while its
+# own header called itself `resolve_declared_additivity`'s twin -- and that twin
+# has put the Semantic Model first since story 60.2. The authoring doors onto the
+# lower store are retired, so a Project that reclassifies a metric now does it on
+# a Concept, and E39-NFR04 ("a project that reclassified a custom metric wins")
+# only holds if this reader looks there.
+#
+# `governance.md` names the same rule in its *Incomplete if*: "a render reads
+# `app.metric_definitions` without going through the reader that puts the
+# Semantic Model first".
+# ---------------------------------------------------------------------------
+
+
+def test_a_published_concept_declares_money_and_wins_over_the_lower_store(monkeypatch):
+    """`value_type = 'money'` on a published version beats `monetary = False` below."""
+    monkeypatch.setattr(ms, "_semantic_model_declares_money", lambda name, project: True)
+    monkeypatch.setattr(
+        ms, "resolve_metric_definitions",
+        lambda project: {"weird_name": {"monetary": False}},
+    )
+
+    assert ms.is_metric_monetary("weird_name", project_id="proj_EXAMPLE") is True
+
+
+def test_a_published_concept_that_is_not_money_also_wins(monkeypatch):
+    """The precedence goes BOTH ways, or it is not a precedence.
+
+    A declaration that a metric is NOT money has to be able to take the label away,
+    exactly as it can give it -- otherwise the lower store still decides half the
+    question and the two would disagree on a screen.
+    """
+    monkeypatch.setattr(ms, "_semantic_model_declares_money", lambda name, project: False)
+    monkeypatch.setattr(
+        ms, "resolve_metric_definitions",
+        lambda project: {"revenue": {"monetary": True}},
+    )
+
+    assert ms.is_metric_monetary("revenue", project_id="proj_EXAMPLE") is False
+
+
+def test_no_published_concept_falls_through_to_the_lower_store(monkeypatch):
+    """`None` means "no Concept carries this name", never "not money"."""
+    monkeypatch.setattr(ms, "_semantic_model_declares_money", lambda name, project: None)
+    monkeypatch.setattr(
+        ms, "resolve_metric_definitions",
+        lambda project: {"cost": {"monetary": True}},
+    )
+
+    assert ms.is_metric_monetary("cost", project_id="proj_EXAMPLE") is True
+
+
+def test_an_unreadable_semantic_model_falls_through_instead_of_deciding(monkeypatch):
+    """Fail-soft: an unreachable store never widens NOR narrows the answer."""
+
+    def _boom(name, project):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(ms, "_semantic_model_declares_money", _boom)
+    monkeypatch.setattr(
+        ms, "resolve_metric_definitions",
+        lambda project: {"cost": {"monetary": True}},
+    )
+
+    assert ms.is_metric_monetary("cost", project_id="proj_EXAMPLE") is True
+
+
+# ---------------------------------------------------------------------------
+# 2026-08-31 -- the NULL-project carve-out is GONE, and it was measured.
+#
+# This block used to hold `test_without_a_project_no_concept_is_consulted`, which
+# pinned the opposite: without a Project, `is_metric_monetary` skipped the
+# Semantic Model entirely and let `app.metric_definitions` (then the name
+# classifier) decide. Measured against a published Concept declaring
+# `value_type = 'money'`: *semantic model asked: False*.
+#
+# The carve-out's stated reason -- "a Concept is scoped to a Project or to the
+# platform catalogue, and asking without a Project would answer from a scope the
+# caller never named" -- is refuted by the query itself, which carries
+# `OR c.project_id IS NULL`: with no Project it reads the PLATFORM catalogue and
+# nothing else, which IS the scope a caller who named no Project is asking about.
+# The path is reachable from `datamodel.get_target_field` and
+# `currency_refusal._is_monetary_metric`, so the defect was on screens.
+# ---------------------------------------------------------------------------
+
+
+def test_without_a_project_the_platform_catalogue_is_still_asked(monkeypatch):
+    """The Semantic Model answers FIRST on both paths, or it is not first."""
+    asked: list[tuple[str, str | None]] = []
+    monkeypatch.setattr(
+        ms, "_semantic_model_declares_money",
+        lambda name, project: asked.append((name, project)) or True,
+    )
+    monkeypatch.setattr(ms, "get_metric_definition", lambda **kw: {"monetary": False})
+
+    assert ms.is_metric_monetary("revenue") is True
+    assert asked == [("revenue", None)]
+
+
+def test_without_a_project_a_silent_catalogue_still_falls_to_the_lower_store(monkeypatch):
+    """`None` is still "no Concept carries this name", never "not money"."""
+    monkeypatch.setattr(ms, "_semantic_model_declares_money", lambda name, project: None)
+    monkeypatch.setattr(ms, "get_metric_definition", lambda **kw: {"monetary": False})
+
+    assert ms.is_metric_monetary("revenue") is False
+
+
+def test_without_a_project_an_unreadable_catalogue_never_decides(monkeypatch):
+    """Fail-soft holds on the platform path too: the honest fallback stays."""
+
+    def _boom(name, project):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(ms, "_semantic_model_declares_money", _boom)
+    monkeypatch.setattr(ms, "get_metric_definition", lambda **kw: {"monetary": True})
+
+    assert ms.is_metric_monetary("cost") is True
+
+
+def test_the_platform_query_reaches_platform_rows_with_no_project(monkeypatch):
+    """The SQL that refuted the carve-out, executed rather than quoted.
+
+    The reader is handed a connection double and the row it would have read; what
+    is proven is that `project_id = None` is passed straight through to a query
+    whose scope clause already carries `OR c.project_id IS NULL`.
+    """
+    seen: list[tuple[Any, ...]] = []
+
+    class _Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def execute(self, sql, params):
+            seen.append((sql, params))
+
+        def fetchone(self):
+            return ("money",)
+
+    class _Conn:
+        def cursor(self):
+            return _Cursor()
+
+    assert ms._semantic_model_declares_money("cost", None, _Conn()) is True
+    sql, params = seen[0]
+    assert "c.project_id IS NULL" in sql
+    assert params == (None, "cost")
 
 
 # ===========================================================================
@@ -407,16 +574,8 @@ def _apply_migration(conn, path: Path) -> None:
 
 
 def _ensure_set_updated_at(conn) -> None:
-    with conn.cursor() as cur:
-        cur.execute("CREATE SCHEMA IF NOT EXISTS app")
-        cur.execute(
-            """
-            CREATE OR REPLACE FUNCTION app.set_updated_at() RETURNS trigger AS $$
-            BEGIN NEW.updated_at = now(); RETURN NEW; END;
-            $$ LANGUAGE plpgsql
-            """
-        )
-    conn.commit()
+    """See `tests.support.updated_at_trigger`: ask before replacing."""
+    ensure_set_updated_at(conn)
 
 
 def _bootstrap(conn) -> None:
@@ -427,6 +586,7 @@ def _bootstrap(conn) -> None:
 
 
 @pg_available
+@pytest.mark.pg_owner
 def test_083_ddl_adds_monetary_column_replayable():
     """§17: after 083, monetary is BOOLEAN NOT NULL DEFAULT FALSE; re-applying 083 is a no-op."""
     from core.db import get_connection
@@ -454,6 +614,7 @@ def test_083_ddl_adds_monetary_column_replayable():
 
 
 @pg_available
+@pytest.mark.pg_owner
 def test_import_writes_five_monetary_defaults():
     """§18: import writes exactly 5 monetary PLATFORM defaults (the rest FALSE)."""
     from core.db import get_connection
@@ -473,6 +634,7 @@ def test_import_writes_five_monetary_defaults():
 
 
 @pg_available
+@pytest.mark.pg_owner
 def test_import_monetary_is_idempotent():
     """§19: a second import changes no monetary value and emits no monetary-flip audit."""
     from core.db import get_connection
@@ -501,13 +663,88 @@ def test_import_monetary_is_idempotent():
     assert audit_after == audit_before  # no upserted audit on the stable classification
 
 
+def test_a_published_platform_concept_answers_money_with_no_project(live_postgres):
+    """The repair of 2026-08-31, against a real database rather than a double.
+
+    A published PLATFORM Concept declaring `value_type = 'money'` answers `True`
+    with no Project named, one declaring something else answers `False`, and a
+    name no Concept carries still answers `None` -- silence, never "not money".
+    Before the carve-out was removed this function was not called at all on that
+    path, so the name classifier decided: a metric whose name the classifier does
+    not recognise was reported non-monetary however the governed catalogue
+    declared it.
+
+    The names are synthetic and unique: `uq_semantic_concepts_name_platform`
+    refuses a duplicate, and reusing `cost` would make the assertion depend on
+    what the cluster's migration-142 seed happens to carry -- which on a database
+    that has never run `--repair-only` is `decimal`.
+
+    `live_postgres` rolls back at teardown; a published version cannot be deleted
+    (`trg_semantic_concept_versions_immutable`), so nothing here may commit.
+    """
+    from ulid import ULID  # noqa: PLC0415
+
+    def _publish(name: str, value_type: str) -> None:
+        concept_id, version_id = f"sc_{ULID()}", f"scv_{ULID()}"
+        with live_postgres.cursor() as cur:
+            cur.execute(
+                "INSERT INTO app.semantic_concepts (id, project_id, kind, name, "
+                "lifecycle_status, current_version_id, created_by) "
+                "VALUES (%s, NULL, 'metric', %s, 'published', %s, 'qa-harness')",
+                (concept_id, name, version_id),
+            )
+            cur.execute(
+                """
+                INSERT INTO app.semantic_concept_versions
+                    (id, concept_id, project_id, version_number, status, kind, name,
+                     label, value_type, expression, aggregation, additivity_class,
+                     content_hash, created_by)
+                VALUES (%s, %s, NULL, 1, 'published', 'metric', %s, %s, %s, %s::jsonb,
+                        '{"function": "sum"}'::jsonb, 'additive', %s, 'qa-harness')
+                """,
+                (
+                    version_id,
+                    concept_id,
+                    name,
+                    name,
+                    value_type,
+                    '{"op": "source_measure", "concept": "%s"}' % name,
+                    "0" * 64,
+                ),
+            )
+
+    money_name = f"monetary_probe_{str(ULID())[:10].lower()}"
+    other_name = f"counted_probe_{str(ULID())[:10].lower()}"
+    _publish(money_name, "money")
+    _publish(other_name, "integer")
+
+    assert ms._semantic_model_declares_money(money_name, None, live_postgres) is True
+    assert ms._semantic_model_declares_money(other_name, None, live_postgres) is False
+    assert ms._semantic_model_declares_money("no_concept_carries_this", None, live_postgres) is None
+
+
 @pg_available
-def test_monetary_cascade_project_override_live():
+@pytest.mark.pg_owner
+def test_monetary_cascade_project_override_live(monkeypatch):
     """§20: a PROJECT cost definition with monetary=FALSE overrides the PLATFORM TRUE.
 
     resolve_metric_definitions(project)["cost"]["monetary"] == False, and
-    is_metric_monetary("cost", project_id=project) == False."""
+    is_metric_monetary("cost", project_id=project) == False.
+
+    THE LAYER ABOVE IS SILENCED, DELIBERATELY AND BY NAME (2026-08-31). This test
+    measures `app.metric_definitions`, which is layer TWO; the Semantic Model
+    answers first on both paths since the NULL-project carve-out was removed, and
+    a cluster at migration 142 carries a published platform Concept for `cost`
+    whose seeded `value_type` is `decimal` -- the seed defect the 2026-08-25
+    amendment of `governance.md` documents and repairs with `provision_platform_
+    semantic_concepts.py --repair-only`. Left unsilenced, both assertions below
+    would read `False` from a store this test is not about, and the second one
+    would PASS for the wrong reason. Layer one is proved by the four tests of the
+    block above and by `test_platform_semantic_concepts_pg.py`.
+    """
     from core.db import get_connection
+
+    monkeypatch.setattr(ms, "_semantic_model_declares_money", lambda name, project: None)
 
     suffix = uuid.uuid4().hex[:8]
     org_id = f"mon_org_{suffix}"
@@ -525,9 +762,13 @@ def test_monetary_cascade_project_override_live():
                 (org_id, f"MonOrg-{suffix}", f"mon-org-{suffix}"),
             )
             cur.execute(
-                "INSERT INTO app.projects (id, org_id, name, created_by) "
-                "VALUES (%s, %s, %s, 'system')",
-                (project_id, org_id, f"MonProj-{suffix}"),
+                # `slug` is NOT NULL -- a Project is addressed by it -- and this
+                # insert never named it. The column has no default, so the row was
+                # refused; the id doubles as the slug here, as every other fixture
+                # in this suite does.
+                "INSERT INTO app.projects (id, org_id, name, slug, created_by) "
+                "VALUES (%s, %s, %s, %s, 'system')",
+                (project_id, org_id, f"MonProj-{suffix}", project_id),
             )
         conn.commit()
     try:
@@ -547,13 +788,19 @@ def test_monetary_cascade_project_override_live():
         assert resolved["cost"]["monetary"] is False
         assert ms.is_metric_monetary("cost", project_id=project_id) is False
     finally:
+        # `DELETE FROM app.organizations` alone dies on `fk_projects_org`: this
+        # fixture creates a Project, and the FK does not cascade. The shared
+        # purge walks the same foreign-key graph production walks, so a table
+        # added by a later migration is torn down without anyone editing here.
+        from tests.conftest import purge_fixture_org  # noqa: PLC0415
+
         with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM app.organizations WHERE id = %s", (org_id,))
+            purge_fixture_org(conn, org_id)
             conn.commit()
 
 
 @pg_available
+@pytest.mark.pg_owner
 def test_backfill_safety_pre083_row_defaults_false():
     """§21: a row inserted WITHOUT monetary reads FALSE (NOT NULL default holds), never NULL."""
     from core.db import get_connection

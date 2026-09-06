@@ -478,7 +478,7 @@ def get_fresh_token(connection_id: str, provider: str | None = None) -> str:
     resolved = token_service.resolve_connection_by_nango_id(connection_id)
     if resolved is not None and resolved.auth_path == token_service.AUTH_PATH_GOOGLE_DIRECT:
         # Scheduled pulls are a SYSTEM context (not tenant-exposed): identity='system'.
-        # A future tenant-exposed caller MUST gate identity_has_project_access first
+        # A future tenant-exposed caller MUST gate identity_can_read_project first
         # and pass the real subject (see token_service docstring).
         return token_service.get_fresh_google_token(resolved, identity="system")
 

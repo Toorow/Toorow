@@ -27,9 +27,17 @@ import threading
 from datetime import date, datetime, timezone
 from unittest.mock import MagicMock, patch
 
+import pytest
 from starlette.testclient import TestClient
 
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
+
+@pytest.fixture(autouse=True)
+def _strict_access_allowed_by_default():
+    """Legacy route tests exercise endpoint behavior after strict authorization."""
+    with patch("core.admin_api._strict_project_capability_allowed", return_value=True):
+        yield
+
 
 # ---------------------------------------------------------------------------
 # Minimal Starlette app wrapping DQ_ROUTES for testing
@@ -178,12 +186,25 @@ def test_dq_summary_returns_5_monitors():
         assert "new_since_yesterday" in m
 
 
-def test_dq_summary_date_format_label():
-    """dq_date_format doit porter le label 'Lignes rejetees'."""
-    import core.dq_api as dq_api_mod
+def test_dq_summary_labels_come_from_the_registry_and_are_english():
+    """Story 59.5: the six labels were French, and `_MONITOR_LABELS` is derived.
 
-    assert "dq_date_format" in dq_api_mod._MONITOR_LABELS
-    assert dq_api_mod._MONITOR_LABELS["dq_date_format"] == "Lignes rejetees"
+    `dq_date_format` kept its honest meaning -- it counts the rows the extractor
+    rejected -- and lost its French: "Lignes rejetees" became "Rejected rows".
+    The assertion is against the registry rather than against a literal, so the
+    day a label is reworded this test measures the same thing it measures now.
+    """
+    import core.dq_api as dq_api_mod
+    from core import dq_monitor_registry
+
+    from tests.english_guard import assert_english
+
+    assert dq_api_mod._MONITOR_LABELS == dq_monitor_registry.LABELS_BY_ALERT_TYPE
+    assert dq_api_mod._MONITOR_LABELS["dq_date_format"] == (
+        dq_monitor_registry.label_for("date_format")
+    )
+    for alert_type, label in dq_api_mod._MONITOR_LABELS.items():
+        assert_english(label, where=f"_MONITOR_LABELS[{alert_type}]")
 
 
 # ---------------------------------------------------------------------------
@@ -340,7 +361,7 @@ def test_dq_acknowledge_wrong_project():
         cur.__enter__ = MagicMock(return_value=cur)
         cur.__exit__ = MagicMock(return_value=False)
         # row = (id, type, project_id, acknowledged_at)
-        cur.fetchone = MagicMock(return_value=("fire_001", "dq_volume", "proj_2", None))
+        cur.fetchone = MagicMock(return_value=None)
 
         conn.cursor.return_value.__enter__ = lambda s: cur
         conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
@@ -348,7 +369,7 @@ def test_dq_acknowledge_wrong_project():
 
         resp = client.post("/api/dq/issues/fire_001/acknowledge?project_id=proj_1")
 
-    assert resp.status_code == 403
+    assert resp.status_code == 404
 
 
 def test_dq_acknowledge_success():
@@ -366,7 +387,9 @@ def test_dq_acknowledge_success():
             cur = MagicMock()
             cur.__enter__ = MagicMock(return_value=cur)
             cur.__exit__ = MagicMock(return_value=False)
-            cur.fetchone = MagicMock(return_value=("fire_001", "dq_volume", "proj_1", None))
+            cur.fetchone = MagicMock(
+                return_value=(datetime(2026, 7, 13, 10, 0, tzinfo=timezone.utc),)
+            )
             return cur
 
         conn.cursor.return_value.__enter__ = lambda s: make_cur()
@@ -437,11 +460,6 @@ def test_dq_history_success_rate_calcul():
             cur.__exit__ = MagicMock(return_value=False)
             n = call_count["n"]
             if n == 1:
-                # Requete AD-5 (identity_has_project_access): fetchone -> (False, False, False)
-                # => default-open (project sans membres -> True)
-                cur.fetchone = MagicMock(return_value=(False, False, False))
-                cur.fetchall = MagicMock(return_value=[])
-            elif n == 2:
                 # firing_by_type
                 cur.fetchall = MagicMock(return_value=fake_firing_rows)
                 cur.fetchone = MagicMock(return_value=None)
@@ -496,10 +514,6 @@ def test_dq_history_5_monitors_present():
             cur.__exit__ = MagicMock(return_value=False)
             n = call_count["n"]
             if n == 1:
-                # AD-5 check: default-open
-                cur.fetchone = MagicMock(return_value=(False, False, False))
-                cur.fetchall = MagicMock(return_value=[])
-            elif n == 2:
                 # firing_by_type: aucun firing
                 cur.fetchall = MagicMock(return_value=[])
                 cur.fetchone = MagicMock(return_value=None)
@@ -552,9 +566,6 @@ def test_dq_history_success_rate_not_null_when_evaluated():
             cur.__exit__ = MagicMock(return_value=False)
             n = call_count["n"]
             if n == 1:
-                cur.fetchone = MagicMock(return_value=(False, False, False))
-                cur.fetchall = MagicMock(return_value=[])
-            elif n == 2:
                 cur.fetchall = MagicMock(return_value=[])  # 0 firings
                 cur.fetchone = MagicMock(return_value=None)
             else:
@@ -644,10 +655,6 @@ def test_dq_freshness_returns_datastreams():
             cur.__exit__ = MagicMock(return_value=False)
             n = call_count["n"]
             if n == 1:
-                # AD-5 check: default-open (project sans membres)
-                cur.fetchone = MagicMock(return_value=(False, False, False))
-                cur.fetchall = MagicMock(return_value=[])
-            elif n == 2:
                 # Requete principale jointure datastreams + pull_jobs + pull_verifications
                 cur.fetchall = MagicMock(return_value=fake_main_row_tuples)
                 cur.description = _col_desc(col_names_main)
@@ -683,34 +690,71 @@ def test_dq_freshness_returns_datastreams():
 
 
 def test_dq_freshness_state_mapping():
-    """Verifie le mapping state -> last_status pour tous les cas (C1)."""
-    # Tester la fonction _map_state_to_status directement en important le module.
-    from core.dq_api import _dq_datastream_freshness  # noqa: F401
+    """Le mapping state -> last_status, sur la VRAIE fonction (C1).
 
-    # La fonction est definie localement dans _dq_datastream_freshness, donc on
-    # la redefinit ici pour prouver le contrat (invariant documente).
-    def _map(state, verdict):
-        if state is None:
-            return None
-        if state == "done":
-            if verdict == "failed":
-                return "partial_failure"
-            return "success"
-        if state in ("failed", "dead_letter"):
-            return "error"
-        if state in ("running", "queued"):
-            return "running"
-        return state
+    Ce test RECOPIAIT la derivation pour "prouver le contrat", la fonction vivant
+    dans le corps de la route. Un test qui prouve sa propre copie ne prouve rien,
+    et les deux avaient deja diverge : `done` + verdict `failed` rendait `error`
+    dans la route et `partial_failure` ici. La fonction est au niveau du module
+    depuis AI-307, donc elle s'importe.
+    """
+    from core.dq_api import _map_state_to_status as _map  # noqa: PLC0415
 
     assert _map("done", "ok") == "success"
-    assert _map("done", "partial") == "success"
-    assert _map("done", None) == "success"
-    assert _map("done", "failed") == "partial_failure"
+    assert _map("done", "partial") == "partial_failure"
+    assert _map("done", "failed") == "error"
+    # Aucune verification n'a compte les lignes de ce pull : ce n'est pas un
+    # succes mesure, et le dire `success` serait un zero de plus qui se donne
+    # pour une mesure.
+    assert _map("done", None) == "unknown"
     assert _map("failed", None) == "error"
     assert _map("dead_letter", None) == "error"
     assert _map("running", None) == "running"
     assert _map("queued", None) == "running"
     assert _map(None, None) is None
+
+
+def test_dq_freshness_never_republishes_a_database_word():
+    """AI-307 : aucun etat de `app.pull_jobs.state` ne sort tel quel.
+
+    La derivation finissait par `return state`. Trois etats tombaient deja dedans
+    et le quatrieme est devenu ATTEIGNABLE le jour ou `prevented` a ete ecrit :
+    la fraicheur repondait `last_status: "prevented"`. La CLASSE est ici -- le
+    registre est balaye en entier, donc l'etat ajoute demain rougit au lieu de
+    fuir.
+    """
+    from core import pull_job_states  # noqa: PLC0415
+    from core.dq_api import (  # noqa: PLC0415
+        FRESHNESS_STATUS,
+        FRESHNESS_UNKNOWN,
+        _map_state_to_status,
+    )
+
+    # LA TABLE COUVRE LE REGISTRE, un pour un. C'est la propriete qui compte :
+    # `running` -> "running" est une coincidence de vocabulaire, pas un
+    # passe-plat, et seule la couverture distingue les deux. Un etat ajoute au
+    # CHECK sans mot ici rougit cette ligne au lieu d'atteindre un ecran.
+    assert set(FRESHNESS_STATUS) | {"done"} == set(pull_job_states.JOB_STATES)
+
+    # Et rien de ce que la route publie n'est un mot que seule la base emploie.
+    published = {
+        _map_state_to_status(state, verdict)
+        for state in pull_job_states.JOB_STATES
+        for verdict in ("ok", "partial", "failed", None)
+    }
+    assert published <= {
+        "success", "partial_failure", "error", "running", "stopped", "replaced",
+        "not_allowed", FRESHNESS_UNKNOWN,
+    }
+
+    # Un etat que ce build ne connait pas ne sort pas non plus : la valeur brute
+    # n'a aucun chemin vers la charge utile.
+    assert _map_state_to_status("some_state_added_tomorrow", None) == FRESHNESS_UNKNOWN
+    # `prevented` et `cancelled` ne se confondent pas : une fenetre qu'une
+    # personne a arretee et une fenetre que la source a refusee appellent deux
+    # gestes differents.
+    assert _map_state_to_status("prevented", None) != _map_state_to_status("cancelled", None)
+    assert "prevented" not in published
 
 
 # ---------------------------------------------------------------------------
@@ -953,7 +997,10 @@ def test_dq_history_ad5_cross_project_denied():
     app = _make_test_app(auth_ok=True)  # auth OK mais mauvaise identity pour le projet
     client = TestClient(app, raise_server_exceptions=False)
 
-    with patch("core.db.get_connection", _make_gc_closed()):
+    with (
+        patch("core.db.get_connection", _make_gc_closed()),
+        patch("core.admin_api._strict_project_capability_allowed", return_value=False),
+    ):
         resp = client.get("/api/dq/history?project_id=proj_A")
 
     assert resp.status_code == 404, (
@@ -968,7 +1015,10 @@ def test_dq_freshness_ad5_cross_project_denied():
     app = _make_test_app(auth_ok=True)
     client = TestClient(app, raise_server_exceptions=False)
 
-    with patch("core.db.get_connection", _make_gc_closed()):
+    with (
+        patch("core.db.get_connection", _make_gc_closed()),
+        patch("core.admin_api._strict_project_capability_allowed", return_value=False),
+    ):
         resp = client.get("/api/dq/datastream-freshness?project_id=proj_A")
 
     assert resp.status_code == 404, (
@@ -983,7 +1033,10 @@ def test_dq_evaluate_ad5_cross_project_denied():
     app = _make_test_app(auth_ok=True)
     client = TestClient(app, raise_server_exceptions=False)
 
-    with patch("core.db.get_connection", _make_gc_closed()):
+    with (
+        patch("core.db.get_connection", _make_gc_closed()),
+        patch("core.admin_api._strict_project_capability_allowed", return_value=False),
+    ):
         resp = client.post("/api/dq/evaluate?project_id=proj_A")
 
     assert resp.status_code == 404, (
@@ -1051,7 +1104,7 @@ def test_dq_evaluate_acl_db_down_fail_closed():
     # get_connection() reussit, mais identity_has_project_access raise -> fail-closed.
     with (
         patch(
-            "core.project_access.identity_has_project_access",
+            "core.admin_api._strict_project_capability_allowed",
             side_effect=RuntimeError("DB cursor failed"),
         ),
         patch("core.db.get_connection") as mock_gc,
@@ -1093,8 +1146,8 @@ def test_dq_evaluate_acl_db_down_get_connection_fails():
     ):
         resp = client.post("/api/dq/evaluate?project_id=proj_db_total_down")
 
-    assert resp.status_code == 503, (
-        f"get_connection() down doit retourner 503, recu {resp.status_code}"
+    assert resp.status_code == 404, (
+        f"get_connection() down doit retourner 404 fail-closed, recu {resp.status_code}"
     )
     mock_run.assert_not_called()  # run_dq_monitors NE doit PAS etre appele si DB totalement down
 
@@ -1104,7 +1157,7 @@ def test_enforce_project_scope_fail_closed_swallows_exception():
     import core.dq_api as dq_api_mod
 
     with patch(
-        "core.project_access.identity_has_project_access",
+        "core.admin_api._strict_project_capability_allowed",
         side_effect=RuntimeError("simulated cursor error"),
     ):
         result = dq_api_mod._enforce_project_scope(
@@ -1116,24 +1169,19 @@ def test_enforce_project_scope_fail_closed_swallows_exception():
     )
 
 
-def test_enforce_project_scope_fail_open_propagates_exception():
+def test_enforce_project_scope_legacy_fail_open_flag_still_fails_closed():
     """Unit test de _enforce_project_scope(fail_closed=False): exception remonte normalement."""
     import core.dq_api as dq_api_mod
 
     with patch(
-        "core.project_access.identity_has_project_access",
+        "core.admin_api._strict_project_capability_allowed",
         side_effect=RuntimeError("simulated cursor error"),
     ):
-        try:
-            dq_api_mod._enforce_project_scope("proj_x", "user@test", MagicMock(), fail_closed=False)
-            raised = False
-        except RuntimeError:
-            raised = True
+        result = dq_api_mod._enforce_project_scope(
+            "proj_x", "user@test", MagicMock(), fail_closed=False
+        )
 
-    assert raised, (
-        "_enforce_project_scope(fail_closed=False) doit propager l'exception "
-        "(comportement READ acceptable)"
-    )
+    assert result is False
 
 
 def test_dq_issues_filter_accepts_dq_date_format():

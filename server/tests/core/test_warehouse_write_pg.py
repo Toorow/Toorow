@@ -26,9 +26,19 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture()
 def pg_conn():
-    import psycopg2  # type: ignore[import]
+    """`psycopg` -- the driver this repository ships, not `psycopg2`.
 
-    conn = psycopg2.connect(TEST_POSTGRES_DSN)
+    The fixture imported `psycopg2`, which is in no dependency of this project:
+    the server has been on psycopg3 since `384d0ed9` (2026-07-11). With a live
+    DSN set the import raised `ModuleNotFoundError` and the test reported an
+    ERROR at setup -- the shape that reads like an environment problem and is
+    not one. It was the last `psycopg2` import under `server/`; the only one left
+    in the tree is `scripts/export_project_preferences.py`, which already refuses
+    by name when it is absent.
+    """
+    import psycopg  # noqa: PLC0415
+
+    conn = psycopg.connect(TEST_POSTGRES_DSN)
     yield conn
     conn.close()
 

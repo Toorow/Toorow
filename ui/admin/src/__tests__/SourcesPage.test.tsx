@@ -1,181 +1,75 @@
-/**
- * Sources — the page must never open on invented provider accounts.
- *
- * The defect this pins: `if (!resp.ok) return; // keep mockup literals` plus
- * `if (connections.length > 0)` meant a failed load AND a genuinely empty
- * account list both rendered four fictional accounts ("Acme Ads", "Northwind
- * Search", …) with credential expiry dates, and the summary cards counted them.
- */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import Sources from "../shell/pages/Sources";
 
-function stubConnections(result: { ok: boolean; body?: unknown; status?: number }) {
-  const fetchMock = vi.fn().mockImplementation(() =>
-    Promise.resolve({
-      ok: result.ok,
-      status: result.status ?? (result.ok ? 200 : 500),
-      json: async () => result.body ?? {},
-      text: async () => "{}",
-    }),
-  );
+function envelope(items: unknown[]) {
+  return {
+    schema_version: "data-sources.v1",
+    project_ref: { object_type: "project", id: "p1" },
+    generated_at: "2026-07-29T10:00:00Z",
+    evidence_as_of: "2026-07-29T09:00:00Z",
+    items,
+    unavailable_reasons: [],
+    allowed_actions: [],
+  };
+}
+
+const ACCOUNT = {
+  object_ref: { object_type: "source-account", id: "sacct_1" },
+  connector_ref: { object_type: "connector", id: "generic" },
+  label: "Real Source Account",
+  states: { availability: "available", freshness: "observed", usage: "used" },
+  evidence: { used_by_count: 2, last_seen_at: "2026-07-29T09:00:00Z" },
+  evidence_as_of: "2026-07-29T09:00:00Z",
+  links: {},
+};
+
+function response(body: unknown, ok = true, status = ok ? 200 : 503): Response {
+  return { ok, status, json: async () => body, text: async () => JSON.stringify(body) } as Response;
+}
+
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+it("renders the Source Account inventory with Connect Source button and without credential management controls", async () => {
+  const fetchMock = vi.fn((url: string) => {
+    if (url.includes("/api/connectors/available")) return Promise.resolve(response([]));
+    return Promise.resolve(response(envelope([ACCOUNT])));
+  });
   vi.stubGlobal("fetch", fetchMock);
-  return fetchMock;
-}
-
-const FICTION = [/Acme Ads/i, /Northwind Search/i, /Northwind Studio/i, /Acme Growth/i, /Acme Group/i];
-
-function expectNoFiction() {
-  for (const pattern of FICTION) {
-    expect(screen.queryByText(pattern)).not.toBeInTheDocument();
-  }
-}
-
-afterEach(() => {
-  vi.restoreAllMocks();
+  render(<Sources projectId="p1" />);
+  expect(await screen.findByText("Real Source Account")).toBeInTheDocument();
+  expect(screen.getByText("sacct_1")).toBeInTheDocument();
+  // DEUX entrées, et elles sont nommées séparément. `/Connect/i` en attrapait
+  // une seule quand il n'y en avait qu'une, et rougissait le jour où la seconde
+  // est arrivée — sans jamais dire laquelle manquait. Google a son propre bouton
+  // parce que la pile Google passe par un consentement OAuth direct et non par
+  // Nango ; les deux doivent être là, et un test qui n'en épingle aucune par son
+  // nom laisserait disparaître l'une des deux en silence.
+  expect(screen.getByRole("button", { name: "Connect Google" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Connect another source" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Manage|Reconnect|Revoke/i })).not.toBeInTheDocument();
+  expect(fetchMock).toHaveBeenCalledWith("/api/projects/p1/source-accounts", expect.objectContaining({ cache: "no-store" }));
 });
 
-describe("Sources — load failure", () => {
-  it("says the accounts could not be loaded and lists none", async () => {
-    stubConnections({ ok: false });
-    render(<Sources projectId="p1" />);
-
-    await waitFor(() => {
-      expect(screen.getByText(/Could not load the provider accounts/i)).toBeInTheDocument();
-    });
-    expect(screen.getByRole("alert")).toHaveTextContent(/not an empty account list/i);
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
-    expectNoFiction();
-  });
-
-  it("reports no summary figure for a load that failed", async () => {
-    stubConnections({ ok: false });
-    render(<Sources projectId="p1" />);
-
-    await waitFor(() => {
-      expect(screen.getByText(/Could not load the provider accounts/i)).toBeInTheDocument();
-    });
-    // "4 usable / 3 healthy / 1 needs attention" used to be reported here.
-    expect(screen.queryByText("4")).not.toBeInTheDocument();
-    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(3);
-  });
+it("never renders raw provider, credential or Nango identifiers", async () => {
+  vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(response(envelope([{ ...ACCOUNT, external_account_id: "raw-account", credential_id: "conn-secret", nango_connection_id: "nango-raw" }])))));
+  render(<Sources projectId="p1" />);
+  expect(await screen.findByText("Real Source Account")).toBeInTheDocument();
+  expect(screen.queryByText("raw-account")).not.toBeInTheDocument();
+  expect(screen.queryByText("conn-secret")).not.toBeInTheDocument();
+  expect(screen.queryByText("nango-raw")).not.toBeInTheDocument();
 });
 
-describe("Sources — empty account list", () => {
-  it("renders an empty list as empty", async () => {
-    stubConnections({ ok: true, body: { connections: [] } });
-    render(<Sources projectId="p1" />);
-
-    await waitFor(() => {
-      expect(
-        screen.getByText(/No provider account is connected to this project yet/i),
-      ).toBeInTheDocument();
-    });
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
-    expectNoFiction();
-    // The counts are the real zero, not the literal four.
-    expect(screen.getAllByText("0").length).toBeGreaterThanOrEqual(3);
-  });
+it("opens the Source Account workbench through its supplied owner callback", async () => {
+  vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(response(envelope([ACCOUNT])))));
+  const open = vi.fn();
+  render(<Sources projectId="p1" onOpenSourceAccount={open} />);
+  fireEvent.click(await screen.findByText("Real Source Account"));
+  expect(open).toHaveBeenCalledWith("sacct_1");
 });
 
-describe("Sources — real accounts", () => {
-  it("renders the accounts the API returned", async () => {
-    stubConnections({
-      ok: true,
-      body: {
-        connections: [
-          {
-            id: "c1",
-            provider: "meta",
-            nango_connection_id: "meta-real-1",
-            health: { status: "ok" },
-            active_datastream_count: 2,
-            exposure: "owned",
-            owner_org_name: "Real Org",
-          },
-        ],
-      },
-    });
-    render(<Sources projectId="p1" />);
-
-    await waitFor(() => {
-      expect(screen.getByText("meta-real-1")).toBeInTheDocument();
-    });
-    expect(screen.getByText("Real Org")).toBeInTheDocument();
-    expect(screen.getByText("2 Datastreams")).toBeInTheDocument();
-    expectNoFiction();
-  });
-
-  it("mounts the real connection action without inventing a provider filter", async () => {
-    stubConnections({ ok: true, body: { connections: [] } });
-    render(<Sources projectId="p1" />);
-
-    await waitFor(() => {
-      expect(
-        screen.getByText(/No provider account is connected to this project yet/i),
-      ).toBeInTheDocument();
-    });
-    expect(screen.getByRole("button", { name: /Add connection/i })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /All providers/i })).not.toBeInTheDocument();
-  });
-});
-describe("Sources — scope and account actions", () => {
-  it("renders access denial separately from an operational error", async () => {
-    stubConnections({ ok: false, status: 403 });
-    render(<Sources projectId="private-project" />);
-
-    await waitFor(() => expect(screen.getByText(/Access denied/i)).toBeInTheDocument());
-    expect(screen.queryByText(/Could not load the provider accounts/i)).not.toBeInTheDocument();
-  });
-
-  it("uses the selected provider account label and exposes owner management", async () => {
-    const fetchMock = stubConnections({
-      ok: true,
-      body: {
-        connections: [{
-          id: "c1",
-          provider: "meta",
-          nango_connection_id: "technical-id",
-          account_label: "Real provider account",
-          auth_path: "nango",
-          can_manage: true,
-          health: { status: "stale" },
-          exposure: "owned",
-          owner_org_name: "Real Org",
-        }],
-      },
-    });
-    render(<Sources projectId="p1" />);
-
-    await waitFor(() => expect(screen.getByText("Real provider account")).toBeInTheDocument());
-    expect(screen.queryByText("technical-id")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Manage" }));
-    expect(screen.getByRole("region", { name: /Manage Real provider account/i })).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Reconnect" })).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "Revoke" })).toBeInTheDocument();
-    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(3));
-  });
-
-  it("does not expose credential mutations for a beneficiary organization", async () => {
-    stubConnections({
-      ok: true,
-      body: {
-        connections: [{
-          id: "shared-c1",
-          provider: "meta",
-          nango_connection_id: "shared-id",
-          account_label: "Shared account",
-          can_manage: false,
-          health: { status: "stale" },
-          exposure: "provided_by_org",
-          owner_org_name: "Provider Org",
-        }],
-      },
-    });
-    render(<Sources projectId="p1" />);
-
-    await waitFor(() => expect(screen.getByText("Shared account")).toBeInTheDocument());
-    expect(screen.queryByRole("button", { name: "Manage" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Reconnect" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Revoke" })).not.toBeInTheDocument();
-  });
+it("states denied or unavailable reads without substituting accounts", async () => {
+  vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(response({ code: "not_found" }, false, 404))));
+  render(<Sources projectId="private-project" />);
+  expect(await screen.findByRole("alert")).toHaveTextContent(/Sources unavailable/i);
+  expect(screen.queryByText("Real Source Account")).not.toBeInTheDocument();
 });

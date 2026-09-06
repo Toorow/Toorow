@@ -13,6 +13,16 @@
       "fetched_at": "2026-07-22"
     }
   ],
-  "field_discovery": {"mode": "runtime", "allowed_targets": ["board"]},
-  "default_tier": "core"
+  "field_discovery": {
+    "mode": "runtime",
+    "allowed_targets": [
+      "board"
+    ]
+  },
+  "default_tier": "core",
+  "probe": {
+    "request_style": "fields_param",
+    "batch_size": 20,
+    "structural_note": "Monday.com GraphQL API query fetching board columns and item field values. Fields are verified against board schema and returned object presence."
+  }
 }

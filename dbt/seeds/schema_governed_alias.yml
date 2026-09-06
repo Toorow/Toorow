@@ -1,0 +1,80 @@
+version: 2
+
+# Story 64.10 (AI-232) -- the governed-alias fixture declares itself HERE and not
+# in dbt/seeds/schema.yml, which is frozen by
+# tests/conformance/test_epic41_verification_overlay_additive.py
+# (`_SHARED_CONFIG_FILES`): a story adds its seed entries in its OWN schema file.
+
+seeds:
+  - name: governed_alias_fixture
+    description: >
+      Story 64.10 governed-alias fixture. It carries the column list of
+      `mirror.master_data_aliases_dim` (migration 233) so
+      test_governed_node_resolution.sql can replay `resolve_governed_node` over
+      versioned rows instead of depending on a mirror somebody remembered to
+      sync -- the lesson `test_country_bucket_absence.sql` states in its own
+      header. Every row is one refusal the resolver must keep making: a close
+      match that must not be promoted to an equality, a recorded contradiction
+      that must not be resolved by query order, two exact aliases with
+      OVERLAPPING closed windows (a legal state, since
+      uq_master_data_aliases_live_exact covers only `effective_to IS NULL`) that
+      must refuse rather than let a LIMIT 1 pick one, two windows that do not
+      contain the as-of date, an org-wide alias every project may use, an alias
+      of another project that must never leak across, and the same spelling in
+      another namespace. The namespaced keys (org_GOVALIAS / __gov_ns__) keep it
+      out of every production relation.
+    columns:
+      - name: node_id
+        description: The governed identity this spelling names.
+        tests: [not_null]
+      - name: namespace
+        description: >
+          Where the spelling comes from -- a connector, a locale catalogue, a
+          client spreadsheet. The same word in two namespaces is two claims.
+        tests: [not_null]
+      - name: normalized_value
+        description: >
+          Case folded, whitespace runs collapsed. Written by
+          core.master_data.normalize_alias_value; the SQL twin lives in the
+          `governed_alias_normalized` macro.
+        tests: [not_null]
+      - name: relation
+        description: >
+          SKOS relation. Only `exact` resolves -- a close match is not
+          transitive, and a similarity win is recorded as `close`, never `exact`.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['exact', 'close', 'broader', 'narrower', 'related', 'negative']
+      - name: conflict_state
+        description: >
+          A collision or a contradiction is RECORDED upstream, never resolved by
+          write order. The resolver refuses both rather than picking a side.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['none', 'collision', 'contradiction']
+      - name: effective_from
+        description: The alias resolves at the ROW's date, never at today.
+        tests: [not_null]
+      - name: scenario
+        description: Which refusal this row exists to prove.
+        tests: [not_null]
+    config:
+      column_types:
+        org_id: STRING
+        project_id: STRING
+        node_id: STRING
+        namespace: STRING
+        locale: STRING
+        raw_value: STRING
+        normalized_value: STRING
+        relation: STRING
+        confidence: "{{ 'NUMERIC' if target.type == 'bigquery' else 'DECIMAL(5,4)' }}"
+        effective_from: DATE
+        effective_to: DATE
+        provenance: STRING
+        conflict_state: STRING
+        scenario: STRING

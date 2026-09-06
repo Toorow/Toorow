@@ -76,12 +76,12 @@ def _touch_identity(cur, issuer: str, subject: str, verified_email: str | None) 
                 ELSE verified_email
             END,
             verified_email_at = CASE
-                WHEN verified_email IS NULL AND %s IS NOT NULL THEN NOW()
+                WHEN verified_email IS NULL AND %s::text IS NOT NULL THEN NOW()
                 ELSE verified_email_at
             END,
             last_seen_at = NOW()
         WHERE issuer = %s AND subject = %s
-          AND (%s IS NULL OR verified_email IS NULL OR verified_email = %s)
+          AND (%s::text IS NULL OR verified_email IS NULL OR verified_email = %s)
         RETURNING person_id, verified_email
         """,
         (
@@ -159,7 +159,7 @@ def resolve_canonical_identity(
                     INSERT INTO app.person_identities
                         (id, person_id, issuer, subject, verified_email, verified_email_at)
                     VALUES (%s, %s, %s, %s, %s,
-                            CASE WHEN %s IS NULL THEN NULL ELSE NOW() END)
+                            CASE WHEN %s::text IS NULL THEN NULL ELSE NOW() END)
                     ON CONFLICT (issuer, subject) DO NOTHING
                     RETURNING person_id, verified_email
                     """,

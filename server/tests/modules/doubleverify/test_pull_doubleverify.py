@@ -187,6 +187,53 @@ def test_pull_401_raises_auth_expired_with_payload(connector, tmp_path, monkeypa
 
 
 # ---------------------------------------------------------------------------
+# 404 -> InvalidRequestError (AI-114: a judgment that used to be DEAD)
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_pull_404_is_invalid_request_not_a_retryable_unknown(
+    connector, tmp_path, monkeypatch
+):
+    """AI-114 (2026-08-01): this verdict is NEW because the old one never fired.
+
+    manifest.error_map carried a bare "404" key. Its only reader,
+    core.pull_errors.classify_http_error, looks up "<status>:<provider_code>"
+    and nothing else -- so the key was never found and a 404 came out
+    `unclassified`, whose retryable flag is True. DV expires a request id after
+    30 days: the worker was set up to retry, on a schedule, a request id that
+    can never come back. The judgment now lives in connector._STATUS_OVERRIDES,
+    where it applies: an unknown/expired request id is a malformed request and
+    is NOT retried.
+    """
+    monkeypatch.setenv("TOOROW_DB_MODE", "duckdb")
+    monkeypatch.setenv("TOOROW_DUCKDB_PATH", str(tmp_path / "dv_404.duckdb"))
+
+    body = {"error": "unknown request id"}
+    respx.post(_REQUEST_URL).mock(return_value=httpx.Response(404, json=body))
+
+    from core.pull_errors import InvalidRequestError, classify_http_error
+
+    with patch("core.nango_client.get_fresh_token", return_value="hash"):
+        with pytest.raises(InvalidRequestError) as exc_info:
+            connector.pull(
+                connection_id="conn_dv_test",
+                date_from="2026-07-01",
+                date_to="2026-07-01",
+                project_id="jean-dv",
+                pull_id="pull_dv_404",
+            )
+
+    err = exc_info.value
+    assert err.error_class == "invalid_request"
+    assert err.retryable is False
+    assert err.provider_status == 404
+    assert err.provider_payload == body
+    # What core would have said on its own -- i.e. what the dead key produced.
+    assert classify_http_error(404, body).error_class == "unclassified"
+
+
+# ---------------------------------------------------------------------------
 # 429 -> RateLimitError (breaker path, never classify_http_error)
 # ---------------------------------------------------------------------------
 

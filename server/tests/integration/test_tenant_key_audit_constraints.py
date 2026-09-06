@@ -27,10 +27,24 @@ _pg_reachable = pytest.mark.skipif(
 
 
 def _check_reachable() -> bool:
+    """Probe the DSN without ever being able to block collection.
+
+    This runs at IMPORT time (the skipif below is evaluated at decoration), so a
+    connect that hangs hangs `pytest --collect-only` for the WHOLE server suite --
+    the project's designated pre-deploy gate. That is exactly what happened on
+    2026-07-27: with no DSN configured this fell back to the hardcoded localhost
+    default, where something accepts the TCP connection on 5432 but never
+    completes the startup handshake, so the connect blocked forever and the suite
+    looked merely "slow" for over an hour.
+
+    connect_timeout matches the house convention used by every _pg_reachable()
+    probe in server/tests/core (2 seconds). A reachability probe that can wait
+    indefinitely does not answer the question it was written to answer.
+    """
     try:
         import psycopg  # noqa: PLC0415
 
-        conn = psycopg.connect(_DSN)
+        conn = psycopg.connect(_DSN, connect_timeout=2)
         conn.close()
         return True
     except Exception:

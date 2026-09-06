@@ -25,7 +25,7 @@ questions:
       project_id = 'default' AND connector = 'google-analytics' AND metric = 'sessions'
       AND breakdown_dimension = 'country' AND date BETWEEN '2026-06-16' AND '2026-07-15'
     expected_result_fixture: fixtures/daily_report_ga4_sessions_30d.json
-    fixture_sha256: 393b4e9f71f15e3e02fa2b9c5b048f1ac69d73e3d589b814f6137a826d151123
+    fixture_sha256: e38288c988594534d8cba14b5b1db59d301f45929fb2a7ae345c8a746183ec88
     role: canonical_correct
     note: Standard 30-day GA4 sessions via country breakdown
   tool_invocation:
@@ -63,7 +63,7 @@ questions:
       project_id = 'default' AND connector = 'meta-ads' AND metric = 'cost' AND breakdown_dimension
       = 'campaign_id' AND date BETWEEN '2026-06-16' AND '2026-07-15'
     expected_result_fixture: fixtures/daily_report_meta_cost_30d.json
-    fixture_sha256: 00d250891bc244887253a05e94a5186aadd5cd40e7189daff2cfd9cc048d8e8c
+    fixture_sha256: 413e2b6733b373a05c06643f706dd418830d9110d5545989b0c118caf0af1528
     role: canonical_correct
     note: Total Meta Ads spend at CAMPAIGN data_level
   tool_invocation:
@@ -101,7 +101,7 @@ questions:
       project_id = 'default' AND connector = 'gsc' AND metric = 'clicks' AND breakdown_dimension
       = 'page' AND date BETWEEN '2026-06-16' AND '2026-07-15'
     expected_result_fixture: fixtures/daily_report_gsc_clicks_30d.json
-    fixture_sha256: 023e081ecc005da763f1cb8947a24d451cbad4c36988c0127bf8812743a55e14
+    fixture_sha256: e9790e16328963441b513e01dec008d2a31c90bc54e4c4fe01d4a1498f632dd5
     role: canonical_correct
     note: Total GSC clicks via page breakdown
   tool_invocation:
@@ -145,12 +145,12 @@ questions:
       BETWEEN '2026-07-09' AND '2026-07-15' GROUP BY connector, metric ORDER BY connector,
       metric
     expected_result_fixture: fixtures/daily_report_cross_connector_sessions_conversions.json
-    fixture_sha256: c6537cfa7ec5e0ee703c3d6eb1584a03dbcf923a4821d6978e9e29b9e30f6347
+    fixture_sha256: e79c431e6e460b4522dc7a2890482fd9f0900ca448b5e3dbdbe6bdea94565f22
     role: canonical_correct
     note: Cross-connector daily report split by connector
 - id: daily_report_freshness_edge
-  question: Quel est le volume de sessions GA4 enregistré le dernier jour disponible
-    (2026-07-15) ?
+  question: Quel est le volume de sessions GA4 le 2026-07-15, c'est-a-dire le jour
+    qui suit le dernier jour couvert ?
   as_of: '2026-07-15'
   surface: daily_report
   difficulty: easy
@@ -168,9 +168,10 @@ questions:
       project_id = 'default' AND connector = 'google-analytics' AND metric = 'sessions'
       AND breakdown_dimension = 'country' AND date = '2026-07-15' GROUP BY date
     expected_result_fixture: fixtures/daily_report_freshness_edge.json
-    fixture_sha256: 379adfbe733da9f1935eae0d17396a88c8e2351780a3a57e666b5239a0952111
+    fixture_sha256: 4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945
     role: canonical_correct
-    note: GA4 sessions on exact as_of date
+    note: 'GA4 sessions on exact as_of date -- EMPTY on the anchored corpus: GA4 rows
+      stop at 2026-07-14 (anchor 2026-07-15, exclusive)'
   tool_invocation:
     tool: get_daily_report
     args:
@@ -180,6 +181,45 @@ questions:
       date_range:
         start: '2026-07-15'
         end: '2026-07-15'
+    result_selector:
+      kind: fact_sum_by_date
+      connector: google-analytics
+      metric: sessions
+      breakdown_dimension: country
+      round: null
+- id: daily_report_freshness_last_day
+  question: Quel est le volume de sessions GA4 enregistre le dernier jour couvert
+    (2026-07-14) ?
+  as_of: '2026-07-15'
+  surface: daily_report
+  difficulty: easy
+  tags:
+  - ga4
+  - freshness
+  - single_day
+  expected_citations:
+  - source_system: google-analytics
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-08-23T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT date, SUM(value) AS sessions FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'google-analytics' AND metric = 'sessions'
+      AND breakdown_dimension = 'country' AND date = '2026-07-14' GROUP BY date
+    expected_result_fixture: fixtures/daily_report_freshness_last_day.json
+    fixture_sha256: b3b34b66e39661ea575c1f5a6cd4001e866714753e26e3ba88b9c92966ec2be9
+    role: canonical_correct
+    note: GA4 sessions on the last covered day -- the non-empty half of the freshness
+      boundary
+  tool_invocation:
+    tool: get_daily_report
+    args:
+      project_id: default
+      connectors:
+      - google-analytics
+      date_range:
+        start: '2026-07-14'
+        end: '2026-07-14'
     result_selector:
       kind: fact_sum_by_date
       connector: google-analytics
@@ -229,7 +269,7 @@ questions:
     note: 'Non-existent project SUM returns one null row — fixture is [{total_sessions:
       null}]'
 - id: daily_report_provenance_pull_id_check
-  question: Quel est le total de conversions GA4 sur les 30 derniers jours avec vérification
+  question: Quel est le total de conversions GA4 sur les 30 derniers jours avec verification
     de provenance ?
   as_of: '2026-07-15'
   surface: daily_report
@@ -249,7 +289,7 @@ questions:
       'conversions' AND breakdown_dimension = 'country' AND date BETWEEN '2026-06-16'
       AND '2026-07-15'
     expected_result_fixture: fixtures/daily_report_provenance_pull_id_check.json
-    fixture_sha256: 88953f26b0474267c3d2be1d587b1cece2ee085e7a5cc33f765d5b4c3a11e2b8
+    fixture_sha256: 5e100c16511291a9575a7ba9d3f909776545768a213e0c3349d736ba7119997f
     role: canonical_correct
     note: GA4 30-day conversions for citation checking
   tool_invocation:
@@ -287,7 +327,7 @@ questions:
       'active_users' AND breakdown_dimension = 'country' AND date BETWEEN '2026-06-16'
       AND '2026-07-15'
     expected_result_fixture: fixtures/daily_report_ga4_users_30d.json
-    fixture_sha256: 96091a541bf9302c98e36fcfd894bdb6eba683bab02d0bd940aea64f55f4a313
+    fixture_sha256: 12ce249cf4fb8c5ee41d4446e7cf4590026421e07f540a7c1ba43d3d0e05f8b3
     role: canonical_correct
     note: Active users sum via country breakdown
   tool_invocation:
@@ -323,7 +363,7 @@ questions:
       WHERE project_id = 'default' AND connector = 'gsc' AND metric = 'impressions'
       AND breakdown_dimension = 'page' AND date BETWEEN '2026-06-16' AND '2026-07-15'
     expected_result_fixture: fixtures/daily_report_gsc_impressions_30d.json
-    fixture_sha256: b9ad858d7d9849d222cc762840166682b1b19324f33f733366868f07fa62b7ba
+    fixture_sha256: 37cb5b6b5938b408ddfffb0d458dee238973b45d03b47729619cbca7012ab316
     role: canonical_correct
     note: GSC impressions sum via page breakdown
   tool_invocation:
@@ -361,7 +401,7 @@ questions:
       0), 2) AS overall_avg_position FROM marts.semantic_avg_position WHERE project_id
       = 'default' AND connector = 'gsc' AND date BETWEEN '2026-06-16' AND '2026-07-15'
     expected_result_fixture: fixtures/expert_report_gsc_position_movements.json
-    fixture_sha256: 6266126194a385973f590493ff73c7ff70b967b5691ce83f4de149b9e17d903e
+    fixture_sha256: 634acafcbcb19b23b8be1d2d281a9ad5030323641beb4370f196d0312a8514d5
     role: canonical_correct
     note: 'Impression-weighted overall GSC average position: SUM(average_position
       * impressions_weight) / NULLIF(SUM(impressions_weight), 0) — one scalar for
@@ -388,7 +428,7 @@ questions:
       AND date BETWEEN '2026-06-16' AND '2026-07-15' GROUP BY breakdown_value, metric
       ORDER BY breakdown_value, metric
     expected_result_fixture: fixtures/expert_report_meta_campaign_breakdown.json
-    fixture_sha256: 190ecaf4340e8271f7e06516e9f5c91bb44565b06f723576c07f42364c7057dd
+    fixture_sha256: 7f75ce201fdb310636fea26f96a70f7a539761aaf8c3212e70d637f66e09d14b
     role: canonical_correct
     note: Meta Ads spend and impressions by campaign
 - id: expert_report_post_deploy_regressions
@@ -431,7 +471,7 @@ questions:
       AND breakdown_dimension = 'country' AND date BETWEEN '2026-05-19' AND '2026-06-01'
       GROUP BY date ORDER BY date
     expected_result_fixture: fixtures/expert_report_as_of_override_replay.json
-    fixture_sha256: 153fa79ef393ae3ecd963b2bc3751bdae0d46ef677c0f57f415c2c5818c4f589
+    fixture_sha256: 780001070d1b07b816960408545c4f1bc1fed77e7d4799833de699cd38b55c0c
     role: canonical_correct
     note: Replayed 14-day window ending on June 1 2026
   tool_invocation:
@@ -472,7 +512,7 @@ questions:
       WHERE project_id = 'default' AND metric = 'conversions' AND date BETWEEN '2026-06-16'
       AND '2026-07-15' GROUP BY connector ORDER BY connector
     expected_result_fixture: fixtures/expert_report_cross_connector_attribution.json
-    fixture_sha256: e7502bc33fc43220c543b598a2116c5c54dfa6257edcc723ff52b6387603d86f
+    fixture_sha256: b5075231328866ddeeb6aac719c7fb8a54cfdca243cbde60bc7963ad1fcfffe1
     role: canonical_correct
     note: Total conversions by connector
 - id: expert_report_ga4_user_acquisition_channels
@@ -497,7 +537,7 @@ questions:
       date BETWEEN '2026-06-16' AND '2026-07-15' GROUP BY breakdown_value ORDER BY
       sessions DESC
     expected_result_fixture: fixtures/expert_report_ga4_user_acquisition_channels.json
-    fixture_sha256: df20dcbf358eaf605d55d4010484fd82f79fa42b893dde8bdbf53ed30486ab69
+    fixture_sha256: be4968732417c22f1d6744a27124aecb7994b754dd930a5dde8e62099311cfcf
     role: canonical_correct
     note: GA4 sessions breakdown by session_source_medium
 - id: expert_report_meta_conversion_performance
@@ -518,7 +558,7 @@ questions:
       WHERE project_id = 'default' AND connector = 'meta-ads' AND metric = 'conversions'
       AND breakdown_dimension = 'campaign_id' AND date BETWEEN '2026-06-16' AND '2026-07-15'
     expected_result_fixture: fixtures/expert_report_meta_conversion_performance.json
-    fixture_sha256: dc36065d68f5cd793a48cee8e1c1b8daef60e820a749c07db5c8c2377d4e1dba
+    fixture_sha256: 8cd6a5bfe71229148615158ce5fc0bfa461383d1d2e1dc5d8ab2b03b8dc55e6e
     role: canonical_correct
     note: Meta Ads 30-day conversions total at campaign_id grain
   tool_invocation:
@@ -556,7 +596,7 @@ questions:
       breakdown_dimension = 'page' AND date BETWEEN '2026-06-16' AND '2026-07-15'
       GROUP BY breakdown_value ORDER BY clicks DESC LIMIT 5
     expected_result_fixture: fixtures/expert_report_gsc_top_pages_by_clicks.json
-    fixture_sha256: c7d2debb8e7b00620991f2f1694550fb758ae36ac77bd2126cb60031c9d4cea2
+    fixture_sha256: e1d3f319bcbc3d524eaadc607520537817ab9b0a78df7a3d6f782b2ff5ebe47d
     role: canonical_correct
     note: Top 5 GSC pages by total clicks
 - id: expert_report_ga4_landing_pages
@@ -579,7 +619,7 @@ questions:
       '2026-06-16' AND '2026-07-15' GROUP BY breakdown_value ORDER BY sessions DESC
       LIMIT 5
     expected_result_fixture: fixtures/expert_report_ga4_landing_pages.json
-    fixture_sha256: b39a6d97d9cc7f9950afbdad630758e3ad52fdc839708156dde15cad09d24be0
+    fixture_sha256: 51d1854c995dc03283c5aafdc4785cd63249fd31d340e3e0e6d1c86c74eb7f3f
     role: canonical_correct
     note: GA4 landing page sessions top 5 — breakdown_dimension='landing_page' (entry
       pages)
@@ -604,9 +644,87 @@ questions:
       date BETWEEN '2026-06-16' AND '2026-07-15' GROUP BY breakdown_value, metric
       ORDER BY breakdown_value, metric
     expected_result_fixture: fixtures/expert_report_meta_adset_performance.json
-    fixture_sha256: fd5d96c402204d508ea0c4f25ae9bc4a878fca6f3cc639503dd302558a158dfe
+    fixture_sha256: 87163cddb1278ff112a4e51a8a13871e45da8c640d81a818756cfdbddee40f7c
     role: canonical_correct
     note: Meta Ads performance by adset_id
+- id: expert_report_entity_views_by_content_type
+  question: What are my video views by content type, under the classification rule
+    I published?
+  as_of: '2026-07-15'
+  surface: expert_report
+  difficulty: hard
+  tags:
+  - entity-spine
+  - managed-feed
+  - mdm
+  - derived-attribute
+  - cross-read
+  expected_citations: []
+  updated_at: '2026-08-24T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT attribute_value AS content_type, SUM(value) AS views FROM
+      marts.semantic_fact_by_entity_attribute WHERE attribute = 'content_type' AND
+      attribute_origin = 'derived' AND metric = 'views' GROUP BY attribute_value ORDER
+      BY attribute_value
+    expected_result_fixture: fixtures/expert_report_entity_views_by_content_type.json
+    fixture_sha256: 58ee236af4249de43ec7bf50d750807ae7fc913d8712300b87a661e0ebbb5e40
+    role: canonical_correct
+    note: 'Views by user-owned classification, crossed at read time: the attribute
+      never descends into fact_daily_kpi (FR8), so this view is the only place the
+      question has an answer'
+  - reference_sql: SELECT COUNT(*) AS crossed_rows, COUNT(pull_id) AS rows_naming_an_execution,
+      COUNT(rule_set_version_id) AS rows_naming_a_rule_version FROM marts.semantic_fact_by_entity_attribute
+      WHERE attribute = 'content_type' AND attribute_origin = 'derived' AND metric
+      = 'views'
+    expected_result_fixture: fixtures/expert_report_entity_views_by_content_type__citability.json
+    fixture_sha256: 4b8378daac5fab89f2836000756e4ac14d886ec8974d9c983bb9e0616021a84c
+    role: supplementary
+    note: Every crossed row names the execution that landed it and the rule version
+      that classified it -- counted, not asserted
+- id: expert_report_governed_route_ga4_overview
+  question: Show me the Google Analytics daily overview report for the last 30 days,
+    and which business domain it answers for.
+  as_of: '2026-07-15'
+  surface: expert_report
+  difficulty: medium
+  tags:
+  - ga4
+  - sessions
+  - report
+  - business-path
+  - governed-route
+  report_ref: google-analytics/overview_daily
+  expected_business_routes:
+  - domain_id: bdm_EVALUATION_ACQUISITION
+    target_type: report_view
+    target_id: google-analytics/overview_daily
+  expected_citations:
+  - source_system: google-analytics
+    source_field: fact_daily_kpi
+    pull_id_required: true
+  updated_at: '2026-08-24T00:00:00Z'
+  reference_queries:
+  - reference_sql: SELECT SUM(value) AS total_sessions FROM marts.fact_daily_kpi WHERE
+      project_id = 'default' AND connector = 'google-analytics' AND metric = 'sessions'
+      AND breakdown_dimension = 'country' AND date BETWEEN '2026-06-16' AND '2026-07-15'
+    expected_result_fixture: fixtures/expert_report_governed_route_ga4_overview.json
+    fixture_sha256: e38288c988594534d8cba14b5b1db59d301f45929fb2a7ae345c8a746183ec88
+    role: canonical_correct
+    note: GA4 sessions on the report's own window, pinned at the country grain --
+      the mart's answer, so the report cannot be its own proof
+  tool_invocation:
+    tool: get_report
+    args:
+      project_id: default
+      report_id: google-analytics/overview_daily
+      date_from: '2026-06-16'
+      date_to: '2026-07-15'
+    result_selector:
+      kind: fact_sum
+      connector: google-analytics
+      metric: sessions
+      breakdown_dimension: country
+      round: null
 - id: card_kpi_summary_ga4_sessions
   question: Affiche la carte Synthèse KPI des sessions GA4 sur les 30 derniers jours.
   as_of: '2026-07-15'
@@ -627,7 +745,7 @@ questions:
       project_id = 'default' AND connector = 'google-analytics' AND metric = 'sessions'
       AND breakdown_dimension = 'country' AND date BETWEEN '2026-06-16' AND '2026-07-15'
     expected_result_fixture: fixtures/card_kpi_summary_ga4_sessions.json
-    fixture_sha256: 393b4e9f71f15e3e02fa2b9c5b048f1ac69d73e3d589b814f6137a826d151123
+    fixture_sha256: e38288c988594534d8cba14b5b1db59d301f45929fb2a7ae345c8a746183ec88
     role: canonical_correct
     note: Card template KPI sessions query
   tool_invocation:
@@ -667,7 +785,7 @@ questions:
       AND breakdown_dimension = 'page' AND date BETWEEN '2026-06-16' AND '2026-07-15'
       GROUP BY metric ORDER BY metric
     expected_result_fixture: fixtures/card_keywords_gsc_clicks_impressions.json
-    fixture_sha256: 817ef4ef69c1817cb49d125ad33b4ab7d6fe18aacec606505a735fc5298d2119
+    fixture_sha256: 5ac2a5f0e16a6847d1f7bfe734661b1168e1350c8192a87fd0012b6ad6494d07
     role: canonical_correct
     note: Card template keywords query
 - id: card_conversions_cpa_cross_source
@@ -693,7 +811,7 @@ questions:
       WHERE project_id = 'default' AND metric = 'conversions' AND date BETWEEN '2026-06-16'
       AND '2026-07-15'
     expected_result_fixture: fixtures/card_conversions_cpa_cross_source.json
-    fixture_sha256: c25c2b313dd21c561218bf7a543dde622d607443aacf96c4513c957f4dbda867
+    fixture_sha256: 78895a1550ced048632e288cd4c84d86fcde6d55e3e25d12722890a45ce7fec3
     role: canonical_correct
     note: Card template conversions total
 - id: card_usertypes_new_returning
@@ -717,7 +835,7 @@ questions:
       AND metric = 'sessions' AND breakdown_dimension = 'user_type' AND date BETWEEN
       '2026-06-16' AND '2026-07-15' GROUP BY breakdown_value ORDER BY breakdown_value
     expected_result_fixture: fixtures/card_usertypes_new_returning.json
-    fixture_sha256: 562fea38fcf956e5776ba01486b6b98d9b76a1b29198585ef846c8b13ae168eb
+    fixture_sha256: f81c9eba856cccb5fab47b6ef124c75278016627ae8d40c259b8e3a3849a335f
     role: canonical_correct
     note: Card template user_type sessions donut
 - id: card_journey_entry_top_pages
@@ -742,7 +860,7 @@ questions:
       'screen_page_views' AND breakdown_dimension = 'page' AND date BETWEEN '2026-06-16'
       AND '2026-07-15' GROUP BY breakdown_value ORDER BY views DESC LIMIT 10
     expected_result_fixture: fixtures/card_journey_entry_top_pages.json
-    fixture_sha256: 449465a22a7aa259236c68ed29d65f18524d333c068155c669f77cd6906864c1
+    fixture_sha256: 7ff23386f05c45b04c859f885afe593f219b51fb4d8dfd396c67a80928b63908
     role: canonical_correct
     note: Card template journey — top pages by screen_page_views (breakdown_dimension='page')
 - id: card_attribution_session_source
@@ -768,7 +886,7 @@ questions:
       AND date BETWEEN '2026-06-16' AND '2026-07-15' GROUP BY breakdown_value ORDER
       BY conversions DESC
     expected_result_fixture: fixtures/card_attribution_session_source.json
-    fixture_sha256: 718f37645f5aca5f2ca66d38c8e8a3c7140fe27867a5bea431036832de9c20c9
+    fixture_sha256: 76158eca50b56af115df6b53e63438b23143b8a9b483fdd3c092413b090d652f
     role: canonical_correct
     note: Card template attribution by source/medium
 - id: card_connectors_context
@@ -787,7 +905,7 @@ questions:
   - reference_sql: SELECT DISTINCT connector FROM marts.fact_daily_kpi WHERE project_id
       = 'default' ORDER BY connector
     expected_result_fixture: fixtures/card_connectors_context.json
-    fixture_sha256: bdb1166dec58cd2f5a3fdb60a80e19328c333338dee203aadc26e912882acf43
+    fixture_sha256: a678de8457b4bfb3de8c643863ec4c1fb3a130028ef374a8325f9c2f71009b51
     role: canonical_correct
     note: Card template active connectors enumeration
 - id: card_dedup_context
@@ -849,7 +967,7 @@ questions:
   - reference_sql: SELECT DISTINCT connector FROM marts.fact_daily_kpi WHERE project_id
       = 'default' AND date BETWEEN '2026-07-01' AND '2026-07-15' ORDER BY connector
     expected_result_fixture: fixtures/card_catalog_connectors_explicit_only.json
-    fixture_sha256: bdb1166dec58cd2f5a3fdb60a80e19328c333338dee203aadc26e912882acf43
+    fixture_sha256: 07bf7acd5e89c16a981d655647b1cd7f0ce7d45e23d74a2efd98cacb203c9ce2
     role: canonical_correct
     note: Explicit connector verification query
 - id: card_kpi_summary_meta_cost
@@ -872,7 +990,7 @@ questions:
       project_id = 'default' AND connector = 'meta-ads' AND metric = 'cost' AND breakdown_dimension
       = 'campaign_id' AND date BETWEEN '2026-06-16' AND '2026-07-15'
     expected_result_fixture: fixtures/card_kpi_summary_meta_cost.json
-    fixture_sha256: 00d250891bc244887253a05e94a5186aadd5cd40e7189daff2cfd9cc048d8e8c
+    fixture_sha256: 413e2b6733b373a05c06643f706dd418830d9110d5545989b0c118caf0af1528
     role: canonical_correct
     note: Meta Ads 30-day spend for KPI summary card
   tool_invocation:
@@ -911,7 +1029,7 @@ questions:
       date BETWEEN '2026-06-16' AND '2026-07-15' GROUP BY breakdown_value ORDER BY
       conversions DESC
     expected_result_fixture: fixtures/card_attribution_campaign.json
-    fixture_sha256: 839d2f00f404380fa75ff8077db27255b94b27603b062dbd1e1e2adafa600c01
+    fixture_sha256: fc803a7b57619c2321868733cc70d49ea45673820a44bd07dc0d890a49548d07
     role: canonical_correct
     note: Attribution by session_campaign
 - id: dq_stale_data_detection
@@ -934,7 +1052,7 @@ questions:
       project_id = 'default' AND connector = 'google-analytics' AND date BETWEEN '2026-07-13'
       AND '2026-07-15'
     expected_result_fixture: fixtures/dq_stale_data_detection.json
-    fixture_sha256: d288a70571272941721ff2e7d8f107f204e726be8335cda60e36e8f9e1a2a847
+    fixture_sha256: 85e80725f07a93e77d7ba11837db8e9695b72852deb0ebfbd2b567ddf9312bc8
     role: canonical_correct
     note: Recent row count check for freshness validation
 - id: dq_connector_disabled_check
@@ -976,7 +1094,7 @@ questions:
       zscore FROM marts.anomalies_daily WHERE project_id = 'default' AND connector
       = 'google-analytics' AND metric = 'sessions' ORDER BY zscore DESC LIMIT 1
     expected_result_fixture: fixtures/dq_ga4_anomaly_day_75.json
-    fixture_sha256: 1b2cb4fab8e99f721b3e5115b2becf7cc6a441e57966cf98c9c10fa8147054f9
+    fixture_sha256: 0c842eb03166e0805ffd568eba8565e3655fd09e7192dbdc90646fd184a59978
     role: canonical_correct
     note: Highest z_score anomaly query
 - id: dq_provenance_gap_null_pull_id
@@ -1014,7 +1132,7 @@ questions:
       WHERE project_id = 'default' AND connector = 'google-analytics' AND metric =
       'sessions'
     expected_result_fixture: fixtures/dq_baseline_deviation_check.json
-    fixture_sha256: b2044ee8ec54fdbf28bea5a895120b8ea3c30f2b4f15bbacb30e764a4824a420
+    fixture_sha256: 5d4882b189e70326a71e688f9d1ae468bf3ccee562ee1afa79bfadf03319a33f
     role: canonical_correct
     note: Baseline deviation evaluation query
 - id: as_of_ga4_sessions_historical_replay
@@ -1037,7 +1155,7 @@ questions:
       AND breakdown_dimension = 'country' AND date BETWEEN '2026-06-01' AND '2026-06-30'
       GROUP BY date ORDER BY date
     expected_result_fixture: fixtures/as_of_ga4_sessions_historical_replay.json
-    fixture_sha256: 808cea60d6dbf09f72af809c07106fe7baa1cdc91e58e368f64156a8005daaac
+    fixture_sha256: 45b6897bf32aad77521fe6834b9c5ca9b84e533e32d188806bbd82eecd04560c
     role: canonical_correct
     note: GA4 daily sessions replayed as of June 30 2026
   tool_invocation:
@@ -1077,9 +1195,10 @@ questions:
       = 'campaign_id' AND date BETWEEN '2026-06-02' AND '2026-06-15' GROUP BY date
       ORDER BY date
     expected_result_fixture: fixtures/as_of_meta_cost_replay.json
-    fixture_sha256: 0446020d69a043f996199458821a09d3e524bf0c1ce5d43e03dd644f6b6d369d
+    fixture_sha256: 4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945
     role: canonical_correct
-    note: Meta cost replayed as of June 15 2026
+    note: 'Meta cost replayed as of June 15 2026 -- EMPTY on the anchored corpus:
+      meta-ads covers 2026-03-01..03-10 and 2026-06-20..07-19'
   tool_invocation:
     tool: get_daily_report
     args:
@@ -1115,7 +1234,7 @@ questions:
       = 'default' AND connector = 'gsc' AND metric = 'clicks' AND breakdown_dimension
       = 'page' AND date BETWEEN '2026-05-01' AND '2026-05-31'
     expected_result_fixture: fixtures/as_of_gsc_clicks_historical.json
-    fixture_sha256: 0be7e8c5cd185ad7563b8304d3275bae65ce8d25d89135c6a27372ec318b1eab
+    fixture_sha256: a5a3afda54528b4cc424df85de5475837434939833a9445c3eb906cdec5defce
     role: canonical_correct
     note: GSC clicks total for May 2026 as_of anchor
   tool_invocation:
@@ -1154,7 +1273,7 @@ questions:
       'conversions' AND breakdown_dimension = 'country' AND date BETWEEN '2026-06-16'
       AND '2026-06-30' GROUP BY date ORDER BY date
     expected_result_fixture: fixtures/as_of_notebook_execution_window.json
-    fixture_sha256: ed0342845c350437f95c627e93bce566004cb57133f1dffde93a3150bb96dc5c
+    fixture_sha256: a7b184a2641895990fd9d26b92b84c5e31ce73dd6e618001c49d675f1e6a14ad
     role: canonical_correct
     note: Notebook execution window as of June 30 2026
   tool_invocation:
@@ -1192,7 +1311,7 @@ questions:
       project_id = 'default' AND connector = 'gsc' AND metric = 'impressions' AND
       breakdown_dimension = 'page' AND date BETWEEN '2026-06-01' AND '2026-06-30'
     expected_result_fixture: fixtures/as_of_gsc_impressions_replay.json
-    fixture_sha256: 6e67df9863335dd8130afb5570bc7e935938966f920e190a6746928b578cc5fb
+    fixture_sha256: 6ad74313ca72aebf096a24a8874350ac4c0a5ea575b2b51d7aa1236eb4504342
     role: canonical_correct
     note: GSC impressions total for June 2026 as_of anchor
   tool_invocation:
@@ -1232,14 +1351,14 @@ questions:
       WHERE project_id = 'default' AND connector = 'google-analytics' AND metric =
       'sessions' AND date BETWEEN '2026-06-01' AND '2026-06-30'
     expected_result_fixture: fixtures/grain_trap_ga4_sessions_multi_breakdown__naive_wrong.json
-    fixture_sha256: e3ef46e47bc20fd5208057bd5e7b613862226a6a05f65a7b616ef74702245fbc
+    fixture_sha256: 5dae26bb59b01dc0d9f17c20c8d522eaf9c035fbc80c7e408c81121a9947abe2
     role: naive_wrong
     note: Naive sum across all breakdown_dimensions — produces 3x the correct total
   - reference_sql: SELECT SUM(value) AS total_sessions FROM marts.fact_daily_kpi WHERE
       project_id = 'default' AND connector = 'google-analytics' AND metric = 'sessions'
       AND breakdown_dimension = 'country' AND date BETWEEN '2026-06-01' AND '2026-06-30'
     expected_result_fixture: fixtures/grain_trap_ga4_sessions_multi_breakdown__canonical_correct.json
-    fixture_sha256: d5393aba65ea26b6871dd6f564046cb3c414b212c33e1251a26b71dbe21aa930
+    fixture_sha256: 27cd6d3ff9bad8606ce4cb9c259589c5ace66f04c8a87f16877864df5533247e
     role: canonical_correct
     note: Pin to country breakdown — the lexicographic MIN for GA4
   tool_invocation:
@@ -1279,7 +1398,7 @@ questions:
       WHERE project_id = 'default' AND connector = 'google-analytics' AND metric =
       'conversions' AND date BETWEEN '2026-06-01' AND '2026-06-30'
     expected_result_fixture: fixtures/grain_trap_ga4_conversions_attribution__naive_wrong.json
-    fixture_sha256: 7a74ecfbb898d67865c65be887ebff605876a97972a5025e02655030930a97cc
+    fixture_sha256: ce8dbf3bbd5190424de44aef612b78eb98d10f81f56bffd3d0dfc8c553a14947
     role: naive_wrong
     note: Naive sum across all attribution breakdowns
   - reference_sql: SELECT SUM(value) AS total_conversions FROM marts.fact_daily_kpi
@@ -1287,7 +1406,7 @@ questions:
       'conversions' AND breakdown_dimension = 'country' AND date BETWEEN '2026-06-01'
       AND '2026-06-30'
     expected_result_fixture: fixtures/grain_trap_ga4_conversions_attribution__canonical_correct.json
-    fixture_sha256: 6b3829194b40edec842197373b4a5a1f1f17a1ef379426b40d4a2943c905df56
+    fixture_sha256: 78ab6931a8f07c1cea5c019ea5c371d68dc855e29c5715e9fd28a79fa53541d4
     role: canonical_correct
     note: Pin to country breakdown — canonical series for GA4
   tool_invocation:
@@ -1335,7 +1454,7 @@ questions:
       0), 2) AS overall_avg_position FROM marts.semantic_avg_position WHERE project_id
       = 'default' AND connector = 'gsc' AND date BETWEEN '2026-06-01' AND '2026-06-30'
     expected_result_fixture: fixtures/grain_trap_gsc_average_position__canonical_correct.json
-    fixture_sha256: 512d1996921e5f34b8578dc85a704c9d8f30f4d53f40b6f67917135850be0019
+    fixture_sha256: 6266126194a385973f590493ff73c7ff70b967b5691ce83f4de149b9e17d903e
     role: canonical_correct
     note: 'Impression-weighted overall average position: SUM(average_position * impressions_weight)
       / NULLIF(SUM(impressions_weight), 0) — one scalar for June 2026, matching the
@@ -1369,7 +1488,7 @@ questions:
       WHERE project_id = 'default' AND connector = 'meta-ads' AND date BETWEEN '2026-06-01'
       AND '2026-06-30' ORDER BY date, breakdown_dimension, breakdown_value
     expected_result_fixture: fixtures/grain_trap_meta_ctr_ratio__canonical_correct.json
-    fixture_sha256: 046150e2df02d6e02e369c137f1cce61dd4ae57a00fbd10ae0ff0c43c1ea36c7
+    fixture_sha256: 7ab290872b8dd4b12b1b7d6a442a4f716fe6ac7bfb406e2eea20d4a4f091824b
     role: canonical_correct
     note: Query dedicated semantic_ctr mart for ratio-of-sums (real rows with actual
       CTR values)
@@ -1393,14 +1512,14 @@ questions:
       project_id = 'default' AND connector = 'meta-ads' AND metric = 'clicks' AND
       date BETWEEN '2026-06-01' AND '2026-06-30'
     expected_result_fixture: fixtures/grain_trap_meta_data_level_double_count__naive_wrong.json
-    fixture_sha256: 2a71283844477b1c8e7a5724954fa3cb84af25d9070112b559520c8948605684
+    fixture_sha256: 941756fcff68aedfeaeb8ccbcf366a0743e9a93726f15de03069e040bdbdc27d
     role: naive_wrong
     note: Naive sum across all data_levels — triples total
   - reference_sql: SELECT SUM(value) AS total_clicks FROM marts.fact_daily_kpi WHERE
       project_id = 'default' AND connector = 'meta-ads' AND metric = 'clicks' AND
       breakdown_dimension = 'campaign_id' AND date BETWEEN '2026-06-01' AND '2026-06-30'
     expected_result_fixture: fixtures/grain_trap_meta_data_level_double_count__canonical_correct.json
-    fixture_sha256: d2b340598fb559c00ce3207bc0fe10cedc1124df35fcc3e163f31f0499b7e3a9
+    fixture_sha256: d1cb175ac1f41e557cda483e310995b0f2aad80323dd9f5a031ff6da53babd55
     role: canonical_correct
     note: Pin breakdown_dimension = 'campaign_id'
   tool_invocation:
@@ -1442,7 +1561,7 @@ questions:
       WHERE project_id = 'default' AND metric = 'conversions' AND date BETWEEN '2026-06-01'
       AND '2026-06-30'
     expected_result_fixture: fixtures/grain_trap_cross_source_conversions_dedup__naive_wrong.json
-    fixture_sha256: ebf95770ca574fe6e0612e57dac5f843b5607a538c7b8e39d3a4093b83d26dda
+    fixture_sha256: a812b9fe8db1f27d4aee9004fe108463210979fdf98d763dd68de78c2fc44528
     role: naive_wrong
     note: Naive sum across ALL connectors and ALL breakdown dims — over-counts cross-régie
       attributions by N× the number of parallel series
@@ -1450,7 +1569,7 @@ questions:
       marts.cross_source_conversions WHERE project_id = 'default' AND date BETWEEN
       '2026-06-01' AND '2026-06-30'
     expected_result_fixture: fixtures/grain_trap_cross_source_conversions_dedup__canonical_correct.json
-    fixture_sha256: 7d434c722554e77de09d03ca063a4311f4b8d95a8ee096c7f82d054506638c49
+    fixture_sha256: 9616a9b3c1a8f770f1cb2eaccc4afe26dc2c0c28f5038039e047bff6fa2ae4ae
     role: canonical_correct
     note: 'Rule P dedup via marts.cross_source_conversions: one winning connector
       per (project_id, date), summed over June 2026 — a real substantive number, strictly
@@ -1510,7 +1629,7 @@ questions:
       project_id = 'default' AND connector = 'linkedin-ads' AND metric = 'cost' AND
       breakdown_dimension = 'campaign_id' AND date BETWEEN '2026-06-01' AND '2026-06-30'
     expected_result_fixture: fixtures/grain_trap_linkedin_campaign_vs_group__canonical_correct.json
-    fixture_sha256: 24ef0333bedf9cfbe60077467614779d20acb3545a981c4cb293033b43ebad4f
+    fixture_sha256: dfd228fd5b4f9498f59fdcd6bda4baf2f2e6f0b0e5078b9f08cb5424f607ebe6
     role: canonical_correct
     note: Pin breakdown_dimension = 'campaign_id'
   tool_invocation:

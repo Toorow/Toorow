@@ -10,6 +10,11 @@ from pathlib import Path
 from urllib.parse import quote
 
 import httpx
+
+# Import au niveau module (et non paresseux comme les appels a `core` dans les
+# fonctions) : les classes d'exception ci-dessous en HERITENT, donc il doit etre
+# resolu au moment ou le fichier est lu.
+from core import pull_errors
 from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
@@ -20,12 +25,51 @@ RESTLI_VERSION = "2.0.0"
 MAX_VERSION_AGE_MONTHS = 12
 
 
-class LinkedInPagesOnboardingError(RuntimeError):
-    """Community Management approval/scope/admin access is unavailable."""
+class LinkedInPagesOnboardingError(pull_errors.PermissionDeniedError):
+    """Community Management approval/scope/admin access is unavailable.
+
+    `permission_denied` : le credential est authentifie et n'atteint rien. L'action
+    juste est de se reconnecter avec les bons droits, et c'est `permission_denied`
+    qui la fait remonter a l'ecran (`user_action="reconnect"`).
+
+    Avant le 2026-08-01 cette classe heritait d'un `RuntimeError` nu : le worker la
+    voyait `unclassified`, la rejouait jusqu'au `dead_letter` contre un credential
+    qui ne marchera jamais, et n'affichait aucune action.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message)
 
 
-class LinkedInPagesCompatibilityError(ValueError):
-    """The requested profile/window/facet combination is illegal."""
+class LinkedInPagesNotConfiguredError(LinkedInPagesOnboardingError):
+    """Le credential va bien -- c'est la requete qui ne peut pas etre formee.
+
+    Derive de l'erreur d'onboarding pour qu'un `except LinkedInPagesOnboardingError`
+    existant continue de l'attraper, mais porte `invalid_request` : dire
+    << reconnecte-toi >> enverrait l'operateur au mauvais ecran, puisque le compte se
+    choisit dans l'assistant Datastream et pas sur la connexion.
+    """
+
+    error_class = pull_errors.INVALID_REQUEST
+    user_action = pull_errors.SELECT_SOURCE_ACCOUNT
+
+
+class LinkedInPagesCompatibilityError(pull_errors.InvalidRequestError, ValueError):
+    """The requested profile/window/facet combination is illegal.
+
+    `invalid_request` : rejouer la meme requete redonne la meme reponse, et c'est
+    aussi le signal `pull_invalid_request_drift` -- une forme devenue illegale est
+    une derive du catalogue. `ValueError` reste dans les bases, des
+    appelants et des tests l'attrapent sous ce nom.
+    """
+
+    #: -> `Mapping` : le plan demande ce que la source ne rend plus
+    #: (datastream-workbench-and-wizard.md:107). L'operateur a un endroit
+    #: ou aller, contrairement a une derive de version d'API.
+    user_action = pull_errors.REVIEW_MAPPING
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message)
 
 
 def _manifest() -> dict:
@@ -105,6 +149,14 @@ def discover_accounts(connection_id: str, *, _client=None, _token_value=None) ->
         token,
         params={"q": "roleAssignee", "role": "ADMINISTRATOR", "state": "APPROVED"},
     ).json()
+    # `id` et `label` sont les DEUX seules cles que core retient
+    # (core/account_topology.py::_flatten_account_ids / _label_for_account) : `id`
+    # est stocke verbatim dans app.connection_account_scope puis repasse a pull()
+    # sous le nom declare par account_topology.pull_parameter. Il doit donc etre
+    # l'URN COMPLETE (`urn:li:organization:<id>`) : c'est la valeur que LinkedIn
+    # attend pour organizationalEntity, et la seule qui ne demande aucune
+    # reconstruction cote connecteur. Un id synthetique de rang
+    # ('linkedin_pages_selection_1') produirait un INVALID_URN a chaque pull.
     selections = []
     for item in payload.get("elements") or []:
         urn = str(item.get("organization") or item.get("organizationalTarget") or "")
@@ -112,7 +164,8 @@ def discover_accounts(connection_id: str, *, _client=None, _token_value=None) ->
             continue
         selections.append(
             {
-                "id": f"linkedin_pages_selection_{len(selections) + 1}",
+                "id": urn,
+                "label": item.get("organizationName") or urn,
                 "organization_urn": urn,
                 "organization_path": quote(urn, safe=""),
                 "display_name": item.get("organizationName") or urn,
@@ -172,13 +225,62 @@ PROFILE_PATHS = {
 }
 
 
-def fetch_statistics(client, token, profile, selection, date_from, date_to):
+#: Prefixe d'URN accepte pour organizationalEntity. LinkedIn adresse les trois
+#: endpoints organiques par une URN COMPLETE ; les ACL renvoient
+#: `urn:li:organization:<id>` et, pour certaines pages, `urn:li:organizationBrand:<id>`.
+_ORGANIZATION_URN_PREFIX = "urn:li:"
+
+
+def require_organization_urn(organization_urn):
+    """Refuse l'absence -- et refuse un id nu plutot que de fabriquer une URN.
+
+    Reconstruire `urn:li:organization:` + id serait une invention : un
+    identifiant nu ne dit pas de quel TYPE d'entite il vient, et une page
+    `organizationBrand` traitee comme une `organization` interroge une autre
+    entite sans que rien ne le signale. La discovery renvoie deja l'URN complete
+    (`discover_accounts` -> node id), donc l'absence de prefixe signale une
+    selection abimee en amont, pas un format a completer ici.
+
+    Pas de repli d'environnement : `core/account_topology.py:514` les declare
+    deprecies, et une variable unique pour tout le deploiement ferait tirer la
+    meme page pour tous les projets.
+    """
+    if not organization_urn:
+        raise LinkedInPagesNotConfiguredError(
+            "No administered LinkedIn organization selected for this connection: "
+            "the operator picks one in the Datastream wizard (discover_accounts "
+            "lists the APPROVED ADMINISTRATOR organizationAcls the token can "
+            "reach) and the worker passes it as `organization_urn` "
+            "(account_topology.pull_parameter). There is no deployment-wide "
+            "default -- one would pull the same Page for every project."
+        )
+    value = str(organization_urn)
+    if not value.startswith(_ORGANIZATION_URN_PREFIX):
+        raise LinkedInPagesCompatibilityError(
+            f"organization_urn must be the full LinkedIn URN the ACL returned "
+            f"(e.g. {_ORGANIZATION_URN_PREFIX}organization:<id>), not a bare id: "
+            f"got {value!r}. A bare id does not say which entity type it belongs "
+            f"to, so it is refused rather than rebuilt into an URN."
+        )
+    return value
+
+
+def fetch_statistics(
+    client, token, profile, selection, date_from, date_to, *, organization_urn=None
+):
     if profile not in PROFILE_PATHS:
         raise LinkedInPagesCompatibilityError(f"Unsupported organic profile: {profile}")
+    # L'organisation arrive par le parametre declare, plus par `selection`. La
+    # selection que le PLAN fournit (core/schemas/datastream-intent.schema.json,
+    # $defs.selection, additionalProperties: false) ne porte que selection_mode /
+    # metrics / dimensions / grain / filters, et core/queue.py ne remplit jamais
+    # job["selection"]. Le reste de `selection` (lifetime, facet, grain) reste lu.
+    organization_urn = require_organization_urn(organization_urn)
+    selection = selection or {}
     lifetime = bool(selection.get("lifetime"))
     facet = selection.get("facet")
     validate_window(date_from, date_to, lifetime=lifetime, facet=facet)
-    params = {"q": "organizationalEntity", "organizationalEntity": selection["organization_urn"]}
+    params = {"q": "organizationalEntity", "organizationalEntity": organization_urn}
     if not lifetime:
         params["timeIntervals.timeRange.start"] = int(
             datetime.fromisoformat(date_from).replace(tzinfo=UTC).timestamp() * 1000
@@ -200,6 +302,13 @@ CREATE TABLE IF NOT EXISTS raw_linkedin_company_pages_daily (
  non_additive BOOLEAN, lifetime BOOLEAN, payload_json VARCHAR, pull_id VARCHAR,
  loaded_at VARCHAR, project_id VARCHAR
 )
+"""
+
+_RAW_INSERT_SQL = """
+INSERT INTO raw_linkedin_company_pages_daily
+    (profile, organization_urn, entity_id, interval_start, interval_end, facet, facet_value,
+    metric, value, non_additive, lifetime, payload_json, pull_id, loaded_at, project_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 
@@ -244,9 +353,9 @@ def _extract_page_statistics_metrics(row: dict) -> list[tuple[str, float]]:
 
 
 def _land(rows, context):
-    if os.environ.get("TOOROW_DB_MODE", "duckdb") != "duckdb":
-        raise ValueError("linkedin-company-pages local landing currently requires duckdb")
-    import duckdb  # noqa: PLC0415
+    if os.environ.get("TOOROW_DB_MODE", "duckdb") not in ("duckdb", "bigquery"):
+        raise ValueError("linkedin-company-pages landing supports duckdb and bigquery")
+    from core import warehouse_write  # noqa: PLC0415
 
     path = os.environ.get("TOOROW_DUCKDB_PATH", str(Path(__file__).parent / "local.duckdb"))
     loaded_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
@@ -298,24 +407,35 @@ def _land(rows, context):
                     context["project_id"],
                 )
             )
-    connection = duckdb.connect(path)
+    connection = warehouse_write.open_raw_writer(path, project_id=context["project_id"])
     connection.execute(_RAW_DDL)
     if values:
         connection.executemany(
-            "INSERT INTO raw_linkedin_company_pages_daily VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            _RAW_INSERT_SQL,
             values,
         )
     connection.close()
     return len(values)
 
 
-def _pull_profile(connection_id, date_from, date_to, project_id, pull_id, profile, selection):
-    if not selection:
-        raise LinkedInPagesOnboardingError("An administered organization selection is required")
+def _pull_profile(
+    connection_id, date_from, date_to, project_id, pull_id, profile, organization_urn, selection
+):
+    organization_urn = require_organization_urn(organization_urn)
+    selection = selection or {}
     token = _token(connection_id)
-    rows = fetch_statistics(httpx.Client(), token, profile, selection, date_from, date_to)
+    rows = fetch_statistics(
+        httpx.Client(),
+        token,
+        profile,
+        selection,
+        date_from,
+        date_to,
+        organization_urn=organization_urn,
+    )
     context = {
         **selection,
+        "organization_urn": organization_urn,
         "profile": profile,
         "date_from": date_from,
         "date_to": date_to,
@@ -327,28 +447,60 @@ def _pull_profile(connection_id, date_from, date_to, project_id, pull_id, profil
     return {"pull_id": pull_id, "row_count": count, "date_from": date_from, "date_to": date_to}
 
 
-def pull(connection_id, date_from, date_to, project_id, pull_id, selection=None):
+# `organization_urn` est OPTIONNEL, jamais positionnel requis : la signature
+# ratifiee est pull(connection_id, date_from, date_to, project_id, pull_id) et le
+# worker ne passe le compte QUE si une selection existe (core/queue.py:636-637).
+# Requis, il leverait un TypeError nu -- hors de toute taxonomie -- des que la
+# selection est vide, au lieu de l'erreur typee que le produit sait afficher.
+
+
+def pull(
+    connection_id, date_from, date_to, project_id, pull_id, organization_urn=None, selection=None
+):
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "follower_statistics", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "follower_statistics",
+        organization_urn,
+        selection,
     )
 
 
 def pull_follower_statistics(
-    connection_id, date_from, date_to, project_id, pull_id, selection=None
+    connection_id, date_from, date_to, project_id, pull_id, organization_urn=None, selection=None
 ):
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "follower_statistics", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "follower_statistics",
+        organization_urn,
+        selection,
     )
 
 
-def pull_page_statistics(connection_id, date_from, date_to, project_id, pull_id, selection=None):
+def pull_page_statistics(
+    connection_id, date_from, date_to, project_id, pull_id, organization_urn=None, selection=None
+):
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "page_statistics", selection
+        connection_id,
+        date_from,
+        date_to,
+        project_id,
+        pull_id,
+        "page_statistics",
+        organization_urn,
+        selection,
     )
 
 
 def pull_organic_share_statistics(
-    connection_id, date_from, date_to, project_id, pull_id, selection=None
+    connection_id, date_from, date_to, project_id, pull_id, organization_urn=None, selection=None
 ):
     return _pull_profile(
         connection_id,
@@ -357,6 +509,7 @@ def pull_organic_share_statistics(
         project_id,
         pull_id,
         "organic_share_statistics",
+        organization_urn,
         selection,
     )
 

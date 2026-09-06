@@ -399,6 +399,74 @@ def register_unmapped_country_values(
 # DQ supervision surfacing.
 # ---------------------------------------------------------------------------
 
+#: The Project-wide projection's lens -- S2, the SAME panel one projection
+#: wider, in Governance > Semantic Model > `Value Tables`
+#: (`GovernanceCollection.tsx`, `lens === "value-tables"`).
+#:
+#: The WORKSPACE and SECTION beside it are written as literals at the call site,
+#: not as constants here, and that is deliberate:
+#: `tests/conformance/test_owner_refs_resolve_against_navigation.py` derives
+#: every address the server composes by reading the first two positional
+#: arguments, and a reference whose workspace comes from a variable is one it
+#: counts as UNDERIVABLE and cannot check. Two named constants would have bought
+#: nothing and cost that scan its sight -- it went red on exactly this, at a
+#: budget it pins so the blind spot cannot widen quietly.
+REPAIR_PROJECT_LENS = "value-tables"
+
+
+def build_repair_reference(datastream_id: str = "") -> dict[str, object]:
+    """WHERE this gap is repaired, in the address vocabulary the console resolves.
+
+    THE DEFECT THIS REPLACES, and it is a class. This block used to read
+    ``{"surface": "dimension_conformance", ...}``. `dimension_conformance` is a
+    MODULE name: `ui/admin/src/shell/ownerResolution.ts` knows two surfaces,
+    `project` and `global`, resolves everything else into a refusal, and no
+    console code path even reads a `repair` block that is not an owner
+    reference. So the one DQ alert this surface writes named a repair address
+    nothing could open -- exactly what `unresolved-values.md` forbids ("an alert
+    names no repair address, or names a screen that cannot repair its reason").
+
+    THE SIDE THAT CHANGED IS THIS ONE, and the reason is that the console
+    already has ONE address table -- the navigation registry, which
+    `resolveOwnerReference` consults and `buildPath` builds from. Teaching the
+    console a second table keyed on module names would be a second navigation
+    authority, drifting from the registry the day a section moves. The same
+    argument `datastream_workbench_placements._governance_owner_reference`
+    already makes for its own door.
+
+    Two addresses, because the reading has two projections and the doc names
+    both: with a Datastream, S1 on that Datastream's `Map` tab; without one,
+    S2, the Project-wide `Value Tables` lens. Measured 2026-08-31: both live
+    callers -- `dq_monitors._sweep_geography` and `reports` -- read the whole
+    Project's breakdown values and name no Datastream, so what ships today is
+    S2, which is the correct address for a Project-wide reading. The S1 form is
+    what a caller that DOES know the Datastream gets, and it is proved beside
+    the other one rather than left to the day someone adds that caller.
+    """
+    from core.project_overview import owner_reference  # noqa: PLC0415 -- shared contract
+
+    if datastream_id:
+        # Raises on a tab the `datastream` contract does not declare -- the
+        # console DROPS an unknown tab in silence, which is how a link that
+        # renders can lead nowhere.
+        from core.inbound_health import DATASTREAM_CONSOLE_TABS  # noqa: PLC0415
+
+        if "mapping" not in DATASTREAM_CONSOLE_TABS:  # pragma: no cover
+            raise ValueError(
+                "'mapping' is not a declared tab of the console's `datastream` "
+                f"contract {DATASTREAM_CONSOLE_TABS}"
+            )
+        return owner_reference(
+            "data",
+            "datastreams",
+            object_type="datastream",
+            object_id=datastream_id,
+            tab="mapping",
+        )
+    reference = owner_reference("governance", "semantic-model")
+    reference["lens"] = REPAIR_PROJECT_LENS
+    return reference
+
 
 def build_dq_firing_payload(
     items: Sequence[UnmappedCountryValue],
@@ -420,11 +488,17 @@ def build_dq_firing_payload(
     occurrences = sum(item.occurrences for item in items)
     unresolved = sum(1 for item in items if not item.candidates)
     message = (
-        f"Geographie non resolue: {distinct} valeur(s) pays distincte(s) "
-        f"({occurrences} ligne(s)) ne correspondent a aucun code ISO canonique; "
-        f"{distinct - unresolved} suggestion(s) de conformance a valider, "
-        f"{unresolved} sans candidat."
+        f"Unresolved geography: {distinct} distinct country value(s) "
+        f"({occurrences} row(s)) match no canonical ISO code; "
+        f"{distinct - unresolved} conformance suggestion(s) to review, "
+        f"{unresolved} with no candidate."
     )
+    # Composed into a named value rather than inline in the dict: the address is
+    # a VALUE, not prose, and `tests/test_infra_alerts.py`'s message scanner
+    # reads a return dict whole. Following a composer that reaches
+    # `project_overview.owner_reference` through a local import, it cannot say
+    # it read the sentence -- and an unreadable message is a red there, rightly.
+    repair = build_repair_reference(datastream_id)
     return {
         "message": message,
         "metadata": {
@@ -438,11 +512,11 @@ def build_dq_firing_payload(
             "unmapped_row_count": occurrences,
             "without_candidate": unresolved,
             "values": [item.as_dict() for item in items[:20]],
-            "repair": {
-                "surface": "dimension_conformance",
-                "scope_level": "PROJECT",
-                "canonical_dimension": CANONICAL_COUNTRY_DIMENSION,
-            },
+            # The address a reader can OPEN, not the name of the module that
+            # holds the store. `build_repair_reference` says why.
+            "repair": repair,
+            "repair_scope_level": "PROJECT",
+            "repair_canonical_dimension": CANONICAL_COUNTRY_DIMENSION,
         },
     }
 

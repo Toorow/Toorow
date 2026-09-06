@@ -1,6 +1,6 @@
 """Tests pour server/core/mediaplan_alerts.py (Story 22.6, FR9).
 
-Offline -- stand-ins warehouse fidèles au schéma réel des marts pacing
+Offline -- stand-ins warehouse fidèles au schéma actual des marts pacing
 (pattern test_mediaplan_pacing.py 22.4 ; mock/fake du chemin alert_firings
 identique à test_business_alerts.py 5.3).
 
@@ -616,7 +616,7 @@ class TestMetadataComplet:
         # L'observed_value doit correspondre au pace
         assert first["observed_value"] == pytest.approx(0.25, abs=1e-6)
 
-    def test_firing_message_contient_info_fr(self):
+    def test_firing_message_carries_the_expected_info(self):
         """Le message du firing contient des libellés français accentués."""
         prefs_cur = _make_prefs_cursor()
         plans_cur = _make_plans_cursor([PLAN_ID_A])
@@ -647,7 +647,7 @@ class TestMetadataComplet:
         assert captured, "Aucun message capturé"
         # Le premier message doit mentionner le dépassement en français
         first_msg = captured[0]
-        assert "Dépassement" in first_msg or "Sous-livraison" in first_msg
+        assert "Budget overrun" in first_msg or "Under-delivery" in first_msg
 
     def test_formula_constante_ad9(self):
         """PACE_FORMULA est la formule AD-9 documentée."""
@@ -871,7 +871,7 @@ class TestFetchRecentFireings:
             "2026-07-20T08:00:00+00:00",     # fired_at
             "2026-07-19",                    # window_date
             "error",                         # severity
-            "Dépassement budgétaire : Digital A | {}",  # message
+            "Budget overrun : Digital A | {}",  # message
         )
         cur = _make_cursor(
             rows=[firing_row],
@@ -894,7 +894,7 @@ class TestFetchRecentFireings:
         assert f["threshold"] == pytest.approx(0.10)
         assert f["firing_id"] == "fire_TEST001"
         # Le message affiché ne doit pas inclure le JSON de metadata
-        assert "Dépassement budgétaire" in f["message"]
+        assert "Budget overrun" in f["message"]
         assert "{}" not in f["message"]  # JSON metadata tronqué
 
     def test_fetch_recents_db_error_retourne_vide(self):
@@ -918,7 +918,7 @@ class TestFetchRecentFireings:
             "2026-07-20T08:00:00+00:00",
             "2026-07-19",
             "warning",
-            "Sous-livraison : Social | {}",
+            "Under-delivery : Social | {}",
         )
         cur = _make_cursor(
             rows=[firing_row],
@@ -946,12 +946,12 @@ class TestFormatAndConstants:
     def test_format_mediaplan_alert_line(self):
         """format_mediaplan_alert_line retourne une ligne lisible en français."""
         firing = {
-            "message": "Dépassement budgétaire : Digital A (pace +25,0%, seuil +10,0%)",
+            "message": "Budget overrun : Digital A (pace +25,0%, seuil +10,0%)",
             "observed_value": 0.25,
             "threshold": 0.10,
         }
         line = mediaplan_alerts.format_mediaplan_alert_line(firing)
-        assert "pacing mediaplan" in line
+        assert "Media plan pacing alert" in line
         assert "+25" in line or "25%" in line
         # ASCII-only stdout : pas d'emoji dans le stdout de log (le message lui-même peut en avoir)
 

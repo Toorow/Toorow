@@ -1,0 +1,293 @@
+version: 2
+
+# Story 41.2 (Epic 41, media cost composition) -- column docs + schema tests for the
+# Epic 37 country/market bridge view.
+#
+# A NEW file, deliberately not an edit to models/marts/schema.yml: dbt merges every YAML
+# under model-paths, so the additive claim of this story stays checkable with
+# `git diff --name-only`. Story 41.1 owns every shared-file touch of this epic; 41.2
+# touches none.
+#
+# TEST POSTURE (D2): the DuckDB dev seeder for the mirror.* relations is Story 41.3's.
+# These tests are therefore DECLARED here and run by the orchestrator once that seeder
+# exists; `dbt parse` passes now because dbt resolves source() lazily. The 14-column
+# contract itself is asserted OFFLINE, in Python, by
+# server/tests/core/test_fee_tax_geo_bridge.py (it parses this model's final SELECT).
+
+models:
+  - name: fee_tax_country_resolution
+    description: >
+      THE EPIC 37 BRIDGE, RESOLVED ONCE PER FACT ROW (Story 41.2, contract B1/C.4/C5).
+      A pure READ: it creates no fact row, edits no model and CAPTURES NO COUNTRY --
+      Epic 41 owns no country column and pulls no country from any connector.
+
+      Ladder, in order: (1) the row's own breakdown_dimension='country' value
+      (resolution_source='row_dimension'); (2) the datastream's DECLARED Epic 37 market
+      binding ('declared_binding'); (3) the single-country project posture
+      ('project_posture' -- a DECLARED INFERENCE, reached only from a silence, never
+      after a contradictory declaration and never over a row that carries its own
+      country); (4) a typed gap (resolution_source='').
+
+      The single-country test counts the UNION of country codes across every market in
+      local_markets, never the number of markets: one market may hold several countries.
+
+      D3: attr_market may be non-NULL while attr_country is NULL. A binding to a
+      multi-country market resolves the market (a rule conditioned on `market` fires)
+      while the country is a typed gap (a rule conditioned on `country` does not fire and
+      the composed total is flagged incomplete). resolution_source is the provenance of
+      the COUNTRY resolution and is non-empty if and only if attr_country is non-NULL.
+
+      Known false is not unresolvable: this model resolves ATTRIBUTES and fabricates no
+      zero. Story 41.3 evaluates the rules and owns the +0-micros half.
+
+      EMPTY GAP COLUMNS ARE '' AND UNRESOLVED ATTRIBUTES ARE NULL -- never the other way
+      round, never a placeholder.
+
+      MODULE GATE (contract C.1): OFF => ZERO ROWS. A project appears here only when
+      mirror.project_tax_fee_activation.tax_fees_active is TRUE -- Story 48.4 /
+      migration 146 moved the gate off project_preferences.fee_tax_alignment_enabled,
+      which no model reads any more. project_preferences is still read by this model,
+      for the Epic 37 geographic posture and nothing else. A FALSE flag and an absent
+      activation row both mean OFF, and OFF means no row at all -- not a row with NULL
+      attributes. The grain is therefore one row per fact_daily_kpi row OF AN ENABLED
+      PROJECT.
+
+      ADAPTER SUPPORT: reading Epic 37's market list needs JSON, and
+      project_preferences.local_markets is genuinely JSON in the mirror (decision C.8/1
+      flattened the fee/tax RULE relations in Postgres but never covered this
+      pre-existing column). The unnest therefore sits behind a target.type branch, like
+      the DECIMAL(p,s) branches in the 41.3 macros. On a non-DuckDB adapter the model
+      parses and returns ZERO ROWS rather than a parse failure (which would take the
+      whole dbt build down, C.8/11) or rows whose gap reason would misdescribe a posture
+      it could not read. That BigQuery arm is a deliberate no-op and has never run.
+
+      Consumed by Story 41.3 as a single LEFT JOIN on
+      (project_id, date, connector, metric, breakdown_dimension, breakdown_value).
+      The 14 columns below are a FROZEN CONTRACT. AI-63: the per-org dbt run (Story 24.4)
+      must include this model.
+    tests:
+      # One resolution row per fact row OF AN ENABLED PROJECT: the join must never fan
+      # out. Same expression convention as fact_daily_kpi_grain_unique (this repo ships
+      # no dbt_utils). Because of the C.1 gate this test now runs over the enabled
+      # projects only, not over every org's entire fact table on every build.
+      - unique:
+          name: fee_tax_country_resolution_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || connector || '|' || metric || '|' || breakdown_dimension || '|' || breakdown_value"
+
+    columns:
+      - name: project_id
+        description: "Join key 1/6. The project the fact row belongs to."
+        tests:
+          - not_null
+
+      - name: date
+        description: "Join key 2/6. Day grain -- the platform never carries an hour."
+        tests:
+          - not_null
+
+      - name: connector
+        description: >
+          Join key 3/6. The warehouse's connector identifier (fact_daily_kpi.connector).
+          Used to reach the declared binding and the datastream roll-up; this model
+          BRANCHES ON NO CONNECTOR NAME (AD-2 / E41-NFR05 / AC5), so a Story 37.6 country
+          fanout resolves at rung 1 with zero change here.
+        tests:
+          - not_null
+
+      - name: metric
+        description: "Join key 4/6."
+        tests:
+          - not_null
+
+      - name: breakdown_dimension
+        description: >
+          Join key 5/6. Rung 1 fires on an EXACT match with the canonical country
+          partition; a composite such as 'country>device' is deliberately NOT a country
+          row.
+        tests:
+          - not_null
+
+      - name: breakdown_value
+        description: "Join key 6/6."
+
+      - name: attr_country
+        description: >
+          Resolved ISO alpha-2 country, or NULL when unresolved -- NEVER '' and never a
+          default. NULL whenever country_gap_reason <> ''.
+
+      - name: attr_market
+        description: >
+          Resolved Epic 37 market id, or NULL when unresolved. MAY BE NON-NULL WHILE
+          attr_country IS NULL (the D3 multi-country-market case). Never a synthetic
+          reporting grouping: a binding to '__other_markets__' / '__unknown_market__' is
+          refused as not bindable.
+
+      - name: attr_source_type
+        description: >
+          The AD-8 source_type of the connector's datastream(s), or NULL when
+          unresolvable. NULL is a GAP, not an exclusion: a fabricated 'UNKNOWN' would make
+          every row known-false against the auto-populated rules and the cascade would
+          silently compute nothing.
+
+          WAREHOUSE LIMIT: the derivation half of contract C.4 needs the module manifest's
+          public_catalog.category, which is not mirrored, so this column reflects the
+          DECLARED table only (app.datastream_source_types), and an undeclared datastream
+          is reported as 'source_type_not_declared'. The full ladder
+          (declaration -> derivation -> typed UNKNOWN) lives in
+          server/core/fee_tax_source_types.py.
+        tests:
+          - accepted_values:
+              name: fee_tax_country_resolution_source_type_vocabulary
+              arguments:
+                values:
+                  - PAID_MEDIA
+                  - LEAD_GEN_MEDIA
+                  - DIRECT_SERVICE_COST
+                  - COMMERCE_REVENUE
+                  - ORGANIC_ANALYTICS
+                  - UNKNOWN
+
+      - name: resolution_source
+        description: >
+          LOAD-BEARING PROVENANCE (AD-9 / AC14), not a debug field: how the country was
+          known. 'row_dimension' = read off the row; 'declared_binding' = the operator
+          declared it; 'project_posture' = inferred from the Project's PUBLISHED
+          single-country hierarchy and LABELLED AS SUCH (Story 37.9 kept the frozen
+          literal: the rung means what it always meant, only its authority moved
+          from a mutable preference to a published version); '' = a gap. Non-empty if and only if attr_country is
+          non-NULL. Every surface that shows a composed total must be able to show this.
+        tests:
+          - not_null
+          - accepted_values:
+              name: fee_tax_country_resolution_provenance_vocabulary
+              arguments:
+                values:
+                  - row_dimension
+                  - declared_binding
+                  - project_posture
+                  - ""
+
+      - name: country_gap_reason
+        description: >
+          Why the country did not resolve; '' when it did. Each value names a DIFFERENT
+          next action, which is why 'nothing declared' was split into the two rung-4
+          reasons: a surface can say "declare a datastream binding" or "your project
+          tracks several countries" instead of a generic shrug.
+        tests:
+          - not_null
+          - accepted_values:
+              name: fee_tax_country_resolution_country_gap_vocabulary
+              arguments:
+                values:
+                  - ""
+                  - country_value_unmapped
+                  # Story 58.5: the provider reported no country at all. A DIFFERENT
+                  # next action from `country_value_unmapped`, which points at the
+                  # conformance surface -- here there is no value to conform.
+                  - country_absent_at_source
+                  - binding_ambiguous_for_connector
+                  - binding_not_bindable
+                  - market_not_single_country
+                  # Story 37.9: these replaced `no_binding_and_posture_global` and
+                  # `no_binding_and_posture_multi_country`. The first had become
+                  # FALSE -- there is no posture to be Global any more, and an
+                  # operator sent to look at one would find a preference no
+                  # surface writes. The Project's Country MODEL is what is
+                  # missing, and it is what repairs it.
+                  - no_binding_and_country_model_absent
+                  - no_binding_and_multiple_countries_governed
+
+      - name: market_gap_reason
+        description: >
+          Why the market did not resolve; '' when it did. 'country_outside_tracked_markets'
+          is the honest rung-1 case: the COUNTRY resolved, only the market did not (the
+          code sits in the governed Rest of World catch-all, or in no market at all --
+          either way it belongs to no tracked reporting market and is not bindable).
+        tests:
+          - not_null
+          - accepted_values:
+              name: fee_tax_country_resolution_market_gap_vocabulary
+              arguments:
+                values:
+                  - ""
+                  - country_outside_tracked_markets
+                  - country_value_unmapped
+                  - country_absent_at_source
+                  - binding_ambiguous_for_connector
+                  - binding_not_bindable
+                  # Story 37.9: these replaced `no_binding_and_posture_global` and
+                  # `no_binding_and_posture_multi_country`. The first had become
+                  # FALSE -- there is no posture to be Global any more, and an
+                  # operator sent to look at one would find a preference no
+                  # surface writes. The Project's Country MODEL is what is
+                  # missing, and it is what repairs it.
+                  - no_binding_and_country_model_absent
+                  - no_binding_and_multiple_countries_governed
+
+      - name: source_type_gap_reason
+        description: >
+          Why the source type did not resolve; '' when it did. Each value names a
+          DIFFERENT next action, so each must be literally true -- a mislabelled reason
+          propagates into the 41.7 rule matrix and sends an operator to reconcile a
+          problem that does not exist.
+
+          'no_datastream_for_connector' = the connector has no live datastream in this
+          project. 'source_type_ambiguous_for_connector' = two datastreams of one
+          connector resolve to different types, or one of them is undeclared -- NEVER PICK
+          ONE. 'source_type_not_declared' = the datastream exists and nothing has declared
+          its type; the next action is to declare it (this is the common case today,
+          because nothing writes app.datastream_source_types yet).
+
+          'signals_disagree' is RESERVED for the case it actually names: a declaration and
+          a derivation that genuinely conflict. This model cannot observe that -- the
+          derivation half of contract C.4 needs the module manifest's
+          public_catalog.category, which is not mirrored -- so the view never emits it
+          today. It stays in the vocabulary because the Python ladder in
+          server/core/fee_tax_source_types.py does run both signals, and a future writer
+          for app.datastream_source_types makes the conflict observable here.
+
+          UNEXERCISED, stated plainly: no fixture in the current 41.3 seeder reaches
+          'source_type_not_declared' either. Every fixture project with a NULL source type
+          has no mirror.datastreams_dim row for its connector, so it resolves through
+          'no_datastream_for_connector' first. Reaching the not-declared branch needs a
+          fixture with a datastreams_dim row for the project's connector and NO matching
+          datastream_source_types row. Nothing is broken -- the string is simply never
+          produced by a test today, and this note exists so nobody reads its presence in
+          the vocabulary as evidence that it was verified.
+        tests:
+          - not_null
+          - accepted_values:
+              name: fee_tax_country_resolution_source_type_gap_vocabulary
+              arguments:
+                values:
+                  - ""
+                  - no_datastream_for_connector
+                  - source_type_ambiguous_for_connector
+                  # RESERVED, NEVER EMITTED TODAY -- said HERE, beside the value, because
+                  # a value inside accepted_values reads as COVERAGE. Measured 2026-08-10
+                  # on a full local build: `SELECT source_type_gap_reason, COUNT(*) FROM
+                  # fee_tax_country_resolution GROUP BY 1` -> ('no_datastream_for_connector',
+                  # 293), ('', 28). WHAT WILL EMIT IT: a project whose connector HAS a
+                  # mirror.datastreams_dim row and NO matching datastream_source_types
+                  # row. Every fixture today lacks the datastreams_dim row, so it resolves
+                  # through 'no_datastream_for_connector' first. In production the same
+                  # branch waits on a writer for app.datastream_source_types, which
+                  # migration 146:19-21 records as still absent.
+                  - source_type_not_declared
+                  # RESERVED, NEVER EMITTED -- and unlike the one above, NOT reachable by
+                  # a fixture. It needs the DERIVATION half of contract C.4, which reads
+                  # the module manifest's public_catalog.category off disk; that is not
+                  # mirrored, so the warehouse has only one signal and two signals are
+                  # required to disagree. WHAT WILL EMIT IT: mirroring the manifest
+                  # category, then a declaration that contradicts it.
+                  - signals_disagree
+
+      - name: gap_code
+        description: >
+          '|'-joined, sorted, distinct gap codes raised on this row (the repo's '|'-join
+          convention): COUNTRY_UNRESOLVED, MARKET_UNRESOLVED, SOURCE_TYPE_UNRESOLVED. ''
+          when the row raised none. A gap flags the composed total INCOMPLETE for any rule
+          that constrains the gapped attribute; it is never a zero.
+        tests:
+          - not_null

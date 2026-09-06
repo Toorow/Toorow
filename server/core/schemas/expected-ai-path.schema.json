@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://toorow.dev/schemas/expected-ai-path.schema.json",
+  "title": "Expected AI Path pattern (Story 51.3 AC6)",
+  "description": "The grammar of an expected AI Path, versioned in the repository rather than inferred from an example. It encodes the six constructs of docs/product-architecture/analyze-and-test.md:271-280, and nothing else: this schema has no field for model reasoning, and migration 150_ai_path_observed_evidence.sql has no column to store it. A pattern is a PATTERN -- it is compared against the immutable observed path, never against a second prose trace.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["grammar_version", "required_nodes"],
+  "properties": {
+    "grammar_version": {
+      "description": "Pins the grammar a stored pattern was written against, so a later widening of this schema cannot silently re-interpret an old Golden Question version.",
+      "const": 1
+    },
+
+    "required_nodes": {
+      "description": "Construct 1. Governed objects that MUST appear in the observed path. A node is identified by owner_workspace + owner_object_type + owner_object_id, the same triple app.ai_path_steps records.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/node" }
+    },
+
+    "forbidden_nodes": {
+      "description": "Construct 2. Tools, scope changes and shortcuts that FAIL the case when observed. A forbidden node needs no owner_object_id: forbidding a whole object type is legitimate.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/forbiddenNode" },
+      "default": []
+    },
+
+    "order_constraints": {
+      "description": "Construct 4. Declared prerequisites -- 'context inspection before a query', 'DQ inspection before a query'. `before` and `after` are node keys declared in required_nodes; a constraint naming an undeclared key is refused at write time, because a constraint over a node nobody requires can never be violated and would read as satisfied.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["before", "after"],
+        "properties": {
+          "before": { "$ref": "#/$defs/nodeKey" },
+          "after": { "$ref": "#/$defs/nodeKey" },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      },
+      "default": []
+    },
+
+    "alternatives": {
+      "description": "Construct 5. Named alternative branches, ANY ONE of which passes. `analyze-and-test.md:277-278`: a different but allowed call sequence is not penalized. An empty branch list is refused -- 'there are alternatives, and there are none' is not a statement.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "branches"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "branches": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "required_nodes"],
+              "properties": {
+                "name": { "type": "string", "minLength": 1 },
+                "required_nodes": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": { "$ref": "#/$defs/node" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "default": []
+    },
+
+    "extra_step_rules": {
+      "description": "Construct 6. `analyze-and-test.md:279-280`: extra steps matter ONLY when they violate an explicit cost, retry, safety or capability rule declared HERE. With no rule declared, an unexpected step is not a defect and must not be reported as one -- which is why there is no `strict` or `exact_sequence` flag anywhere in this grammar.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "limit"],
+        "properties": {
+          "kind": { "enum": ["cost", "retry", "safety", "capability"] },
+          "limit": { "type": "integer", "minimum": 0 },
+          "applies_to": { "$ref": "#/$defs/nodeKey" },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      },
+      "default": []
+    }
+  },
+
+  "$defs": {
+    "exactVersionPin": {
+      "description": "An exact stored version identity. `latest`, `current` and `head` are refused in every letter case, and so is a blank: half a pin pins nothing, and a pattern that followed `latest` would silently change what it asserts.",
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "pattern": "(?i)^\\s*(latest|current|head)\\s*$"
+      }
+    },
+
+    "nodeKey": {
+      "description": "workspace/object_type/object_id -- the stable address of a governed object, matching the triple on app.ai_path_steps.",
+      "type": "string",
+      "pattern": "^[a-z0-9-]+/[a-z0-9-]+/[^/\\s][^/]*$"
+    },
+
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key"],
+      "properties": {
+        "key": { "$ref": "#/$defs/nodeKey" },
+        "step_kind": {
+          "description": "Optional narrowing. Absent means any step kind satisfies the node.",
+          "type": "string",
+          "minLength": 1
+        },
+        "owner_version_id": {
+          "description": "Construct 3, governed-object half. Present means the node must appear AT THIS VERSION; a node present at another version is a version mismatch and fails, it is not a missing node.",
+          "$ref": "#/$defs/exactVersionPin"
+        },
+        "skill_pin": {
+          "description": "Construct 3, Skill half. Both fields or neither -- the same rule app.ai_path_steps enforces in ck_ai_path_steps_skill_pin. A Skill version without the step it ran is not a pin, it is a hope.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["skill_version_id", "skill_step_id"],
+          "properties": {
+            "skill_version_id": { "$ref": "#/$defs/exactVersionPin" },
+            "skill_step_id": { "type": "string", "minLength": 1 }
+          }
+        },
+        "tool": {
+          "description": "Construct 3, tool half. `tool_catalog_version` is compared against the version pinned on the observed path HEADER, which is the catalog that was actually available during the execution.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tool_name"],
+          "properties": {
+            "tool_name": { "type": "string", "minLength": 1 },
+            "tool_catalog_version": { "$ref": "#/$defs/exactVersionPin" }
+          }
+        }
+      }
+    },
+
+    "forbiddenNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "key": { "$ref": "#/$defs/nodeKey" },
+        "owner_workspace": { "type": "string", "minLength": 1 },
+        "owner_object_type": { "type": "string", "minLength": 1 },
+        "tool_name": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

@@ -1,0 +1,302 @@
+version: 2
+
+# Epic 41 (media cost composition) / Story 41.3 -- the fee & tax cascade engine.
+#
+# A NEW YAML file on purpose: dbt merges every YAML under model-paths, and keeping
+# the Epic-41 entries out of dbt/models/marts/schema.yml is what makes the additive
+# claim checkable with `git diff --name-only`. Adding entries to the existing
+# schema.yml is FORBIDDEN by this story (AC14) and asserted by
+# server/tests/conformance/test_epic41_additive_only.py.
+#
+# All three models are materialized: view (E41-NFR03 -- no state is persisted; the
+# SPEND_TIERS cumulative base is computed at view time with SUM() OVER). The marts
+# default in dbt_project.yml is `table`, so each model overrides it IN-FILE; that
+# file is not edited by this story.
+
+models:
+  - name: fee_tax_rules_effective
+    description: >
+      Story 41.3. The CONFIRMED fee & tax rule set of every project whose fee & tax
+      alignment module is ON (mirror.project_tax_fee_activation.tax_fees_active --
+      Story 48.4 / migration 146 moved the gate off
+      project_preferences.fee_tax_alignment_enabled, which no model reads any more),
+      with its effective window normalised to DATE and its SCOPE resolved
+      (project / datastream / plan_version). One row per rule -- deliberately not per
+      (rule x day): this is the GOVERNANCE projection that 41.7's Global Rule Matrix
+      and 41.8's MCP tools read, so the rule set must stay inspectable as a rule set.
+      Emits scope_precedence but does NOT apply it: precedence is a per-matched-ROW
+      decision and is applied in fee_tax_ladder_daily (applying it here would delete a
+      project-scoped rule for every row, not just for the scoped datastream's rows).
+      With the module OFF this view returns ZERO rows.
+    config:
+      materialized: view
+    tests:
+      - unique:
+          name: fee_tax_rules_effective_grain_unique
+          arguments:
+            column_name: "rule_id"
+    columns:
+      - name: rule_id
+        description: >
+          The rule identifier. Aliased from mirror.fee_tax_rules.id -- migration 119's
+          app.fee_tax_rules_dim_v projects the PK as `id`, while
+          mirror.fee_tax_rule_conditions / mirror.fee_tax_rule_tiers name the same
+          value `rule_id`. This view speaks one name downstream.
+        tests:
+          - not_null
+      - name: project_id
+        description: "Owning project. The module is ON for it, by construction."
+        tests:
+          - not_null
+      - name: status
+        description: "Always 'confirmed'. 'proposed' and 'disabled' never enter the cascade (C.2)."
+        tests:
+          - not_null
+          - accepted_values:
+              name: fee_tax_rules_effective_status_confirmed_only
+              arguments:
+                values: ["confirmed"]
+      - name: category
+        description: "Cascade routing key. VERIFICATION / PAYMENT_FEE are carried here but admitted by no ladder phase."
+        tests:
+          - not_null
+          - accepted_values:
+              name: fee_tax_rules_effective_category_accepted
+              arguments:
+                values:
+                  - PLATFORM_FEE
+                  - VERIFICATION
+                  - REGULATORY_TAX
+                  - WHT_GROSS_UP
+                  - AGENCY_FEE
+                  - SALES_TAX
+                  - PAYMENT_FEE
+      - name: form
+        description: >
+          How the component is computed (PERCENTAGE / CPM / FLAT / SPEND_TIERS /
+          GROSS_UP / PER_TRANSACTION). PER_TRANSACTION was added by Story 41.5 for
+          payment-gateway fees (amount_micros x transaction_count) and is listed HERE
+          because this view selects every confirmed rule regardless of category, so the
+          first confirmed PER_TRANSACTION rule flows through it. FLAT and
+          PER_TRANSACTION are deliberately two forms: FLAT means "this amount, once for
+          the row", PER_TRANSACTION means "per transaction".
+        tests:
+          - not_null
+          - accepted_values:
+              name: fee_tax_rules_effective_form_accepted
+              arguments:
+                values: ["PERCENTAGE", "CPM", "FLAT", "SPEND_TIERS", "GROSS_UP", "PER_TRANSACTION"]
+      - name: base_target
+        description: "Which base the rule reads. MEASURED_IMPRESSIONS / NET_REVENUE / GROSS_REVENUE belong to 41.4/41.5 and are skipped by the ladder with no gap."
+        tests:
+          - not_null
+      - name: effective_from
+        description: "Window start, typed DATE. Inverted windows are dropped upstream."
+        tests:
+          - not_null
+      - name: scope_precedence
+        description: "datastream 3 > plan_version 2 > project 1. Emitted here, APPLIED per matched row in the ladder."
+        tests:
+          - not_null
+          - accepted_values:
+              name: fee_tax_rules_effective_scope_precedence_accepted
+              arguments:
+                # quote: false -- the column is an INTEGER. dbt's accepted_values
+                # quotes every value it is given unless told not to, and BigQuery
+                # answers *No matching signature for operator IN for argument
+                # types INT64 and {STRING}* to the quoted form (execution-substrate
+                # 23, dialect convention: a non-string column carries quote: false).
+                quote: false
+                values: [1, 2, 3]
+      - name: scope_state
+        description: >
+          RESOLVED | AMBIGUOUS | UNRESOLVED. AMBIGUOUS means the project runs >= 2
+          datastreams on the rule's connector: the ladder gaps that connector's rows
+          and ONE IS NEVER PICKED (D2). UNRESOLVED means the scope_ref is unknown to
+          the mirror, so the ladder gaps the whole project.
+        tests:
+          - not_null
+          - accepted_values:
+              name: fee_tax_rules_effective_scope_state_accepted
+              arguments:
+                values: ["RESOLVED", "AMBIGUOUS", "UNRESOLVED"]
+      - name: has_conditions
+        description: "FALSE means the rule is UNCONSTRAINED and matches every row (the empty-conditions fast path)."
+        tests:
+          - not_null
+
+  - name: fee_tax_ladder_daily
+    description: >
+      Story 41.3. The six-phase fee & tax cascade in EXACT INTEGER MICROS, one row per
+      spend row of the canonical single breakdown series:
+      Net Media -> + Platform/Tech fees -> + Regulatory taxes -> + WHT gross-up
+      -> + Agency fee = Subtotal HT -> + VAT/Sales tax = Total Invoice TTC.
+      Row-level condition matching is three-valued (MATCH / NO_MATCH / UNRESOLVED,
+      UNRESOLVED winning), computed PER (row, rule) so a market-conditioned rule still
+      fires on a row whose country is unresolved. A known-false condition contributes
+      exactly +0 micros and does NOT mark the row incomplete; an UNRESOLVABLE attribute
+      raises a TYPED GAP, the rule does not fire, and the headline totals go NULL --
+      never a fabricated 0 (arbitration B1 / E41-NFR02).
+      STEADY STATE TODAY, so a reader does not mistake it for a broken build: the
+      country ladder's row-breakdown and declared-binding rungs do not fire on
+      cost-cascade sources, so country-conditioned rules yield COUNTRY_UNRESOLVED and
+      NULL headline totals on every project that is not a single-tracked-country
+      project. MOSTLY-GAP OUTPUT IS SPECIFIED BEHAVIOUR. net_media_micros and every
+      unconditioned component stay populated, and fee_tax_ladder_rollup reports
+      "N of M rows composed" rather than a blank or a lie.
+      Strictly additive: reads fact_daily_kpi and never writes it; no pre-existing node
+      depends on this view.
+    config:
+      materialized: view
+    tests:
+      - unique:
+          name: fee_tax_ladder_daily_grain_unique
+          arguments:
+            column_name: >
+              project_id || '|' || date || '|' || connector
+              || '|' || breakdown_dimension || '|' || breakdown_value || '|' || currency
+    columns:
+      - name: project_id
+        tests: [not_null]
+        description: "Project whose module is ON."
+      - name: date
+        tests: [not_null]
+        description: "Day grain, typed DATE. No hour anywhere (the platform date-grain invariant)."
+      - name: connector
+        tests: [not_null]
+        description: "fact_daily_kpi.connector."
+      - name: breakdown_dimension
+        tests: [not_null]
+        description: >
+          The CANONICAL single series for this (project, date, connector): campaign_id
+          when the connector emits it, else MIN(breakdown_dimension). Without this
+          collapse meta-ads and tiktok-ads would triple every fee.
+      - name: breakdown_value
+        tests: [not_null]
+        description: "The canonical series' value (the campaign reference when the dimension is campaign_id)."
+      - name: currency
+        tests: [not_null]
+        description: >
+          mirror.project_preferences.canonical_currency. There is NO currency column on
+          fact_daily_kpi: cost is already converted at read (fx_convert_at_read, Epic
+          39.10) and the ladder never re-converts.
+      - name: net_media_micros
+        tests: [not_null]
+        description: "Phase 1. A read of a real fact, so never NULL and never derived."
+      - name: subtotal_ht_micros
+        description: "Phases 1-5. NULL whenever is_ladder_complete is FALSE -- never a partial number presented as a total."
+      - name: total_ttc_micros
+        description: "Phases 1-6. NULL whenever is_ladder_complete is FALSE."
+      - name: applied_rule_ids
+        tests: [not_null]
+        description: "'|'-joined, sorted rule_ids that fired (AD-9). '' when none fired."
+      - name: gap_codes
+        tests:
+          - not_null
+        description: "'|'-joined, SORTED, distinct gap codes; '' (never NULL) when the ladder is complete."
+      - name: is_ladder_complete
+        tests: [not_null]
+        description: "TRUE iff gap_codes = ''."
+      - name: gap_country_unresolved
+        tests: [not_null]
+        description: ">=1 confirmed in-window rule constrains `country` and attr_country IS NULL. NOT a copy of the bridge's gap_code."
+      - name: gap_market_unresolved
+        tests: [not_null]
+        description: "Idem for market -- moves INDEPENDENTLY of the country flag (the R4 asymmetry)."
+      - name: gap_currency_mismatch
+        tests: [not_null]
+        description: "A FLAT/CPM rule's currency differs from the row's: the component is refused, never summed and never converted."
+      - name: gap_datastream_scope_ambiguous
+        tests: [not_null]
+        description: "D2: the project runs >= 2 datastreams on this connector, so the scoped rule is not attributable. One is never picked."
+      - name: gap_wht_rate_invalid
+        tests: [not_null]
+        description: "A GROSS_UP rate outside [0, 1). The division is CASE-guarded, so base/0 is never evaluated."
+      - name: gap_wht_base_overflow
+        tests: [not_null]
+        description: >
+          A GROSS_UP rate INSIDE [0, 1) but close enough to 1 that base/(1-w) would exceed
+          INT64. Migration 119 admits 0.999999, and before the macro's magnitude guard
+          DuckDB raised a conversion error and took the whole build down -- a red build
+          where E41-NFR02 requires a typed gap.
+      - name: gap_tiers_malformed
+        tests: [not_null]
+        description: "No band, non-ascending thresholds, an unknown mode, or no band at/below the cumulative base -- never a silent 0."
+      - name: gap_rule_form_unroutable
+        tests: [not_null]
+        description: >
+          A (category, form) pair NO phase branch can execute -- e.g. (AGENCY_FEE,
+          GROSS_UP), which passes every migration-119 CHECK. Before this guard such a rule
+          fell through to +0 micros with is_ladder_complete TRUE: an understated invoice
+          reported as trustworthy.
+      - name: gap_coverage_not_applicable
+        tests: [not_null]
+        description: >
+          A plan coverage weight other than 1.0 on a form where it has no meaning (FLAT,
+          SPEND_TIERS, GROSS_UP). Coverage scales a dimensionless RATE; scaling a flat
+          charge or a tier tranche by one campaign's plan share would misprice it, so the
+          combination is refused rather than silently billed at 100 %.
+      - name: resolution_source
+        description: >
+          Story 41.2's provenance for how the country was known. OPAQUE to this model:
+          it is carried and never tested, which is why a new resolution rung in 41.2
+          costs zero changes here.
+
+  - name: fee_tax_ladder_rollup
+    description: >
+      Story 41.3. connector / country / plan_line / global rollups of
+      fee_tax_ladder_daily. Integer SUM() of every micros column; a phase column is
+      NULL as soon as any member row's is NULL, and the headline totals are NULL when
+      any member is incomplete. total_ttc_micros_complete_only +
+      complete_row_count / total_row_count let a surface say "20 339.68 EUR over 8 of
+      11 rows" instead of lying or showing nothing.
+      The country kind keys unresolved rows to the literal '__unresolved__' -- a reason
+      bucket, never a real country. The plan_line kind is a GROUPING, not a ventilation:
+      a campaign mapped to two lines appears at full value under both keys, so
+      plan_line rows must not be summed across lines.
+    config:
+      materialized: view
+    tests:
+      - unique:
+          name: fee_tax_ladder_rollup_grain_unique
+          arguments:
+            column_name: "project_id || '|' || date || '|' || rollup_kind || '|' || rollup_key || '|' || currency"
+    columns:
+      - name: project_id
+        tests: [not_null]
+        description: "Project whose module is ON."
+      - name: date
+        tests: [not_null]
+        description: "Day grain."
+      - name: rollup_kind
+        tests:
+          - not_null
+          - accepted_values:
+              name: fee_tax_ladder_rollup_kind_accepted
+              arguments:
+                values: ["connector", "country", "plan_line", "global"]
+        description: "The four rollup axes. '__unavailable__' reason rows were deleted by C4 and must never return."
+      - name: rollup_key
+        tests: [not_null]
+        description: "The connector / country (or '__unresolved__') / plan_id|line_key / 'all'."
+      - name: currency
+        tests: [not_null]
+        description: "Carried from the member rows; the grain includes it so two currencies can never be summed."
+      - name: net_media_micros
+        tests: [not_null]
+        description: "Integer SUM over the member rows."
+      - name: total_row_count
+        tests: [not_null]
+        description: "Member ladder rows in this rollup key."
+      - name: complete_row_count
+        tests: [not_null]
+        description: "Member rows whose ladder composed fully. Always <= total_row_count."
+      - name: total_ttc_micros_complete_only
+        tests: [not_null]
+        description: "Sum of total_ttc_micros over the COMPLETE members only -- 0, honestly, when none are complete."
+      - name: is_ladder_complete
+        tests: [not_null]
+        description: "TRUE only if EVERY member row is complete."
+      - name: gap_codes
+        tests: [not_null]
+        description: "'|'-joined, sorted, distinct union of the members' gap codes; '' when none."

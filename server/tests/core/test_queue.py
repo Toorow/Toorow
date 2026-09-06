@@ -18,19 +18,67 @@ Strategy:
 from __future__ import annotations
 
 import os
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+from tests.support.statement_router import StatementInventory, UnknownStatement, describe
 
 # Suppress background threads throughout this module
 os.environ.setdefault("HEALTH_POLLER_ENABLED", "false")
 os.environ.setdefault("QUEUE_WORKER_ENABLED", "false")
 
+# EVERY STATEMENT ONE WORKER RUN MAKES. Four fakes in this file each answered the
+# connection-reference row from `fetchone()` UNCONDITIONALLY, so any other read
+# the worker makes came back as a connection reference of the right arity and the
+# run carried on -- and each of those fakes tracks state transitions by matching
+# the job UPDATE by text, which is the half that goes stale (AI-317).
+_JOB_RUN = StatementInventory(
+    "test_queue worker fakes",
+    job_write=("update", "pull_jobs"),
+    connection_ref=("select id, nango_connection_id", "from app.connection_ref"),
+    # THE ACCOUNTS THIS CONSENT VERIFIED FOR THIS CONNECTOR (AI-327). The worker
+    # has always read them -- `_resolve_selected_account` -- and no fake here was
+    # ever taught the statement: `UnknownStatement` was caught by that function's
+    # "best effort, never fails a pull" `except`, which answered `None`, and the
+    # run pulled on with no account while the suite stayed green. The resolver
+    # now refuses instead of degrading, so the read has to be answered. None of
+    # these subjects models a verified account: `fetchall()` returns no row,
+    # which is the honest answer "this consent verified nothing".
+    connector_ready_accounts=(
+        "select s.account_id, ca.discovered_for_connector",
+        "from app.connection_account_scope s",
+    ),
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def test_the_worker_fakes_refuse_a_statement_the_run_never_declared():
+    """AI-317: `_JOB_RUN` is what four fakes in this file recognise statements by.
+
+    Each of them used to answer the connection-reference row from `fetchone()`
+    to EVERY read, and to track the job's state transitions by looking for the
+    word `running` or `queued` inside the SQL. A worker read of any other table
+    therefore came back as a connection reference with the right arity, and the
+    run went on measuring a path it never took.
+    """
+    assert _JOB_RUN.find("UPDATE app.pull_jobs SET state = %s WHERE id = %s") == "job_write"
+    assert (
+        _JOB_RUN.find(
+            "SELECT id, nango_connection_id, provider, project_id "
+            "FROM app.connection_ref WHERE id = %s"
+        )
+        == "connection_ref"
+    )
+    with pytest.raises(UnknownStatement) as raised:
+        _JOB_RUN.match("SELECT quota_remaining FROM app.provider_quotas WHERE provider = %s")
+    assert "app.provider_quotas" in str(raised.value)
+    assert "connection_ref" in str(raised.value)
 
 
 def _make_fake_connection(rows_by_query=None, fetchone_return=None):
@@ -218,9 +266,11 @@ class TestWorkerExecution:
 
         class TrackingCursor:
             def __init__(self):
-                self.description = [
-                    ("id",), ("nango_connection_id",), ("provider",), ("project_id",)
-                ]
+                # DERIVED from the statement, never typed: these four names used
+                # to be written out here and had to keep agreeing with a SELECT
+                # this fake does not read.
+                self.description = None
+                self._statement = None
                 self._call_count = 0
 
             def __enter__(self):
@@ -230,17 +280,37 @@ class TestWorkerExecution:
                 pass
 
             def execute(self, sql, params=None):
-                # Track state transitions via the SQL string (states are literals in SQL)
+                # Track state transitions on the job row.
+                #
+                # Story 63.1: the terminal state moved OUT of the SQL literal and
+                # into the parameters -- every terminal exit now goes through
+                # `_finish_job`, which composes its assignment list and binds the
+                # state. Reading the literal was reading how the statement was
+                # spelled; reading the parameter reads what it wrote.
                 sql_str = str(sql)
-                if "running" in sql_str and "UPDATE" in sql_str:
+                self._statement = _JOB_RUN.match(sql_str)
+                self.description = (
+                    describe(sql_str) if self._statement == "connection_ref" else None
+                )
+                if self._statement != "job_write":
+                    self._call_count += 1
+                    return
+                if "running" in sql_str:
                     update_states.append("running")
-                elif "done" in sql_str and "UPDATE" in sql_str:
-                    update_states.append("done")
+                for value in params or ():
+                    if value in ("done", "failed", "dead_letter", "queued"):
+                        update_states.append(value)
                 self._call_count += 1
 
             def fetchone(self):
-                return conn_ref_row
+                # Only the connection-reference read gets the connection
+                # reference. It used to be the answer to everything (AI-317).
+                return conn_ref_row if self._statement == "connection_ref" else None
 
+
+            def fetchall(self):
+                # No verified account: see `connector_ready_accounts`.
+                return []
         class TrackingConn:
             def cursor(self):
                 return TrackingCursor()
@@ -282,7 +352,7 @@ class TestWorkerExecution:
         assert "done" in update_states
 
         # Verify ACTION_PULL_COMPLETED audit row written
-        from core.audit import ACTION_PULL_COMPLETED
+        from core.queue import ACTION_PULL_COMPLETED  # noqa: PLC0415
         completed_calls = [
             c for c in mock_audit.call_args_list
             if ACTION_PULL_COMPLETED in str(c)
@@ -319,6 +389,10 @@ class TestWorkerExecution:
             def fetchone(self):
                 return conn_ref_row
 
+
+            def fetchall(self):
+                # No verified account: see `connector_ready_accounts`.
+                return []
         class TrackingConn:
             def cursor(self):
                 return TrackingCursor()
@@ -348,7 +422,7 @@ class TestWorkerExecution:
         )
 
         # Verify ACTION_PULL_FAILED audit row written
-        from core.audit import ACTION_PULL_FAILED
+        from core.queue import ACTION_PULL_FAILED  # noqa: PLC0415
         failed_calls = [
             c for c in mock_audit.call_args_list
             if ACTION_PULL_FAILED in str(c)
@@ -393,6 +467,10 @@ class TestCloudTasksBackend:
                  "CLOUD_TASKS_LOCATION": "us-central1",
                  "CLOUD_TASKS_QUEUE_NAME": "pull-queue",
                  "CLOUD_TASKS_WORKER_URL": "https://worker.example.com",
+                 # Required since the push task carries an OIDC token: the worker
+                 # refuses an unauthenticated delivery, so `_create_push_task`
+                 # fails closed rather than enqueue work nobody can accept.
+                 "CLOUD_TASKS_OIDC_SERVICE_ACCOUNT": "worker@example.iam.gserviceaccount.com",
              }):
             from core.queue import CloudTasksBackend
             backend = CloudTasksBackend(_tasks_client=mock_tasks_client)
@@ -417,7 +495,25 @@ class TestCloudTasksBackend:
         assert "task" in task_body
         task_url = task_body["task"]["http_request"]["url"]
         assert result["job_id"] in task_url
-        assert "execute-pull" in task_url
+
+        # Story 56.2: this assertion used to be `"execute-pull" in task_url`,
+        # which compared the URL to the literal that had just built it -- true by
+        # construction, and green for months while NO route served the path. The
+        # path is now resolved against the real router: the test fails if the
+        # endpoint is removed or renamed, which is what it was always meant to
+        # promise. Kept and corrected rather than deleted: it pins a real
+        # guarantee, it just could not fail.
+        from core.admin_api import router  # noqa: PLC0415
+        from starlette.routing import Match  # noqa: PLC0415
+
+        path = task_url.split("://", 1)[-1].split("/", 1)[-1]
+        scope = {"type": "http", "method": "POST", "path": f"/{path}",
+                 "path_params": {}, "headers": [], "root_path": ""}
+        matched = [r for r in router.routes if r.matches(scope)[0] is Match.FULL]
+        assert matched, (
+            f"Cloud Tasks addresses {task_url}, and no route in admin_api serves "
+            f"/{path}. A push backend would answer every task with a 404."
+        )
 
         # Verify return shape
         assert result["state"] == "queued"
@@ -481,7 +577,11 @@ class TestGetJobStatusEndpoint:
 
     def test_get_job_status_endpoint_401_in_static_mode(self):
         """GET /api/jobs/{id} returns 401 when auth required and no token."""
-        with patch.dict(os.environ, {"TOOROW_AUTH_MODE": "static"}):
+        # Static mode without a token is a refused CONFIGURATION (auth_config),
+        # not a 401: the token is set so the request, not the setup, is judged.
+        with patch.dict(
+            os.environ, {"TOOROW_AUTH_MODE": "static", "TOOROW_STATIC_TOKEN": "test-token-abc"}
+        ):
             from core.main import build_asgi_app
             from starlette.testclient import TestClient
             app = build_asgi_app()
@@ -606,9 +706,8 @@ class TestWorkerQuotaIntegration:
 
         class TrackingCursor:
             def __init__(self):
-                self.description = [
-                    ("id",), ("nango_connection_id",), ("provider",), ("project_id",)
-                ]
+                self.description = None
+                self._statement = None
                 self._states: list[str] = []
 
             def __enter__(self):
@@ -619,14 +718,24 @@ class TestWorkerQuotaIntegration:
 
             def execute(self, sql, params=None):
                 sql_str = str(sql)
+                self._statement = _JOB_RUN.match(sql_str)
+                self.description = (
+                    describe(sql_str) if self._statement == "connection_ref" else None
+                )
+                if self._statement != "job_write":
+                    return
                 for state in ("running", "done", "failed", "dead_letter", "queued"):
-                    if state in sql_str and "UPDATE" in sql_str:
+                    if state in sql_str:
                         self._states.append(state)
                         break
 
             def fetchone(self):
-                return conn_ref_row
+                return conn_ref_row if self._statement == "connection_ref" else None
 
+
+            def fetchall(self):
+                # No verified account: see `connector_ready_accounts`.
+                return []
         states_holder = []
 
         class TrackingConn:
@@ -688,6 +797,10 @@ class TestWorkerQuotaIntegration:
                 def fetchone(self):
                     return ("conn_ref_quota_01", "nango-001", "test-provider", "proj-01")
 
+
+                def fetchall(self):
+                    # No verified account: see `connector_ready_accounts`.
+                    return []
             class FakeConn:
                 def cursor(self):
                     return FakeCursor()
@@ -736,6 +849,10 @@ class TestWorkerQuotaIntegration:
             def fetchone(self):
                 return ("conn_ref_quota_01", "nango-001", "test-provider", "proj-01")
 
+
+            def fetchall(self):
+                # No verified account: see `connector_ready_accounts`.
+                return []
         class FakeConn:
             def cursor(self):
                 return TrackingCursor()
@@ -777,9 +894,8 @@ class TestWorkerQuotaIntegration:
 
         class TrackingCursor:
             def __init__(self):
-                self.description = [
-                    ("id",), ("nango_connection_id",), ("provider",), ("project_id",)
-                ]
+                self.description = None
+                self._statement = None
 
             def __enter__(self):
                 return self
@@ -788,12 +904,23 @@ class TestWorkerQuotaIntegration:
                 pass
 
             def execute(self, sql, params=None):
-                if "queued" in str(sql) and "UPDATE" in str(sql):
+                sql_str = str(sql)
+                self._statement = _JOB_RUN.match(sql_str)
+                self.description = (
+                    describe(sql_str) if self._statement == "connection_ref" else None
+                )
+                if self._statement == "job_write" and "queued" in sql_str:
                     queued_states.append("queued")
 
             def fetchone(self):
+                if self._statement != "connection_ref":
+                    return None
                 return ("conn_ref_quota_01", "nango-001", "test-provider", "proj-01")
 
+
+            def fetchall(self):
+                # No verified account: see `connector_ready_accounts`.
+                return []
         class FakeConn:
             def cursor(self):
                 return TrackingCursor()
@@ -877,6 +1004,10 @@ class TestVerificationHook:
             def fetchone(self):
                 return conn_ref_row
 
+
+            def fetchall(self):
+                # No verified account: see `connector_ready_accounts`.
+                return []
         class FakeConn:
             def cursor(self):
                 return FakeCursor()
@@ -954,6 +1085,10 @@ class TestVerificationHook:
             def fetchone(self):
                 return conn_ref_row
 
+
+            def fetchall(self):
+                # No verified account: see `connector_ready_accounts`.
+                return []
         class FakeConn:
             def cursor(self):
                 return FakeCursor()
@@ -1022,9 +1157,8 @@ class TestConnectorErrorTaxonomy:
 
         class CapturingCursor:
             def __init__(self):
-                self.description = [
-                    ("id",), ("nango_connection_id",), ("provider",), ("project_id",)
-                ]
+                self.description = None
+                self._statement = None
 
             def __enter__(self):
                 return self
@@ -1034,9 +1168,13 @@ class TestConnectorErrorTaxonomy:
 
             def execute(self, sql, params=None):
                 sql_str = str(sql)
+                self._statement = _JOB_RUN.match(sql_str)
+                self.description = (
+                    describe(sql_str) if self._statement == "connection_ref" else None
+                )
                 # The terminal UPDATE sets state=%s, error_detail=%s -> params[0:2].
                 if (
-                    "UPDATE" in sql_str
+                    self._statement == "job_write"
                     and "state = %s" in sql_str
                     and "error_detail = %s" in sql_str
                     and params is not None
@@ -1044,8 +1182,14 @@ class TestConnectorErrorTaxonomy:
                     writes.append((params[0], params[1]))
 
             def fetchone(self):
+                if self._statement != "connection_ref":
+                    return None
                 return ("conn_ref_tax_01", "nango-001", "test-provider", "proj-01")
 
+
+            def fetchall(self):
+                # No verified account: see `connector_ready_accounts`.
+                return []
         class CapturingConn:
             def cursor(self):
                 return CapturingCursor()
@@ -1266,3 +1410,195 @@ class TestBuildErrorDetailTruncation:
         detail = json.loads(encoded)
         assert detail["provider_payload"] is None
         assert detail["message"] == "m" * 500
+
+
+# ===========================================================================
+# 58.4 -- a window with no entitled day is refused, never queued.
+# ===========================================================================
+
+
+class TestBackfillCeilingRefusal:
+    """`enqueue_pull` is where the meaningless row would have been written.
+
+    The ceiling (`trial_enforcement.clamp_backfill_window`) keeps its 34.3
+    contract and decides nothing -- it reports that the clamped window keeps no
+    day. The decision is here, because this function is the one that inserts.
+    Before this, a trial org re-collecting a day older than its ceiling got
+    `date_from > date_to` in `app.pull_jobs` and a run sitting on it.
+    """
+
+    _EMPTY = {
+        "date_from": "2026-06-15",
+        "date_to": "2026-06-15",
+        "clamped": True,
+        "max_backfill_days": 30,
+        "empty": True,
+        "reason": "window_before_backfill_ceiling",
+        "floor": "2026-07-07",
+    }
+
+    def _enqueue(self, clamp):
+        from core import queue
+
+        with patch.object(queue, "_topology_scope_refusal", return_value=None), patch.object(
+            queue, "_clamp_trial_backfill", return_value=(clamp["date_from"], clamp)
+        ), patch.object(queue._backend, "enqueue_pull") as backend:
+            answer = queue.enqueue_pull(
+                "cref_EXAMPLE", clamp["date_from"], clamp["date_to"],
+                requested_by="owner@example.com", datastream_id="ds_EXAMPLE",
+            )
+        return answer, backend
+
+    def test_an_empty_window_is_refused_and_no_job_is_inserted(self):
+        answer, backend = self._enqueue(self._EMPTY)
+
+        backend.assert_not_called()
+        assert answer["state"] == "refused"
+        assert answer["code"] == "window_before_backfill_ceiling"
+        assert "2026-07-07" in answer["message"]
+        assert "2026-06-15" in answer["message"]
+        # No `job_id`: nothing was written, and a caller counting entries with one
+        # would count a spend that never happened.
+        assert "job_id" not in answer
+
+    def test_a_reduced_window_is_still_enqueued(self):
+        """The clamp that WORKS is untouched: a reduced window is a real pull."""
+        reduced = {**self._EMPTY, "date_from": "2026-07-07", "date_to": "2026-08-05",
+                   "empty": False, "reason": None}
+        answer, backend = self._enqueue(reduced)
+
+        backend.assert_called_once()
+        assert answer is backend.return_value
+
+    def test_no_ceiling_at_all_is_enqueued(self):
+        from core import queue
+
+        with patch.object(queue, "_topology_scope_refusal", return_value=None), patch.object(
+            queue, "_clamp_trial_backfill", return_value=("2026-06-15", None)
+        ), patch.object(queue._backend, "enqueue_pull") as backend:
+            queue.enqueue_pull(
+                "cref_EXAMPLE", "2026-06-15", "2026-06-15",
+                requested_by="owner@example.com",
+            )
+        backend.assert_called_once()
+
+
+class TestAmbiguousAccountRefusesTheEnqueue:
+    """2026-08-30 -- `data-path.md` « Incomplete if » [4] : un consentement couvre
+    N connecteurs et la selection n'en distinguait qu'un.
+
+    Le repli prenait le compte le plus recemment verifie de TOUT le
+    consentement. Deux proprietes GA4 sous un meme consentement Google, et un
+    Datastream qui n'en lie aucune : le tirage partait sur celle qui avait ete
+    verifiee en dernier. Ce n'est pas une reponse, c'est un tirage au sort.
+    """
+
+    @staticmethod
+    def _gate(monkeypatch, candidates):
+        from core import account_topology, db, queue
+
+        conn = MagicMock()
+        cur = MagicMock()
+        cur.__enter__.return_value = cur
+        cur.__exit__.return_value = False
+        def _fetchone():
+            sql = " ".join(str(cur.execute.call_args.args[0]).split()).lower()
+            # La liaison du Datastream : AUCUNE. C'est ce que la 211 autorise, et
+            # c'est la seule facon d'atteindre le repli que ce sujet mesure.
+            if "app.credential_accounts ca" in sql:
+                return None
+            # L'organisation beneficiaire, lue juste apres la selection.
+            return ("org_EXAMPLE",)
+
+        cur.fetchone.side_effect = _fetchone
+        cur.fetchall.return_value = candidates
+        conn.cursor.return_value = cur
+
+        monkeypatch.setattr(db, "request_connection", lambda _i: nullcontext(conn))
+        monkeypatch.setattr(db, "background_connection", lambda _r: nullcontext(conn))
+        monkeypatch.setattr(db, "set_local_access_context", MagicMock())
+        monkeypatch.setattr(
+            queue,
+            "_resolve_connection_ref",
+            lambda _conn, _id: {"provider": "google", "project_id": "proj_EXAMPLE"},
+        )
+        monkeypatch.setattr(account_topology, "get_topology_for_provider", lambda _p: {})
+        return queue._topology_scope_refusal(
+            "cref_EXAMPLE",
+            requested_by="owner@example.com",
+            datastream_id="ds_EXAMPLE",
+            module_name="google-analytics",
+        )
+
+    def test_two_verified_accounts_refuse_by_their_own_name(self, monkeypatch):
+        from core.queue import REFUSAL_ACCOUNT_SELECTION_AMBIGUOUS
+
+        refusal = self._gate(
+            monkeypatch,
+            [("properties/111", "google-analytics"), ("properties/222", "google-analytics")],
+        )
+
+        assert refusal is not None
+        assert refusal["code"] == REFUSAL_ACCOUNT_SELECTION_AMBIGUOUS, refusal
+        # Le geste, pas la cause : la personne va lier le compte sur le Datastream.
+        assert "choose the account it reads" in refusal["message"], refusal["message"]
+        assert "2" in refusal["message"], refusal["message"]
+
+    def test_one_verified_account_of_the_connector_still_passes_the_gate(self, monkeypatch):
+        """Le garde-fou contre la sur-correction : un seul candidat n'est pas un pari."""
+        from core import project_access
+
+        monkeypatch.setattr(
+            project_access,
+            "resolve_provider_account_access",
+            MagicMock(return_value=project_access.AccessDecision(True, None)),
+        )
+        from core import account_topology
+
+        monkeypatch.setattr(account_topology, "is_account_ready", lambda _i, _a, _c: True)
+
+        assert self._gate(monkeypatch, [("properties/111", "google-analytics")]) is None
+
+    def test_the_refusal_writes_no_job(self, monkeypatch):
+        """Un refus n'est pas un etat de `app.pull_jobs` : aucune ligne n'est ecrite."""
+        from core import queue
+        from core.queue import REFUSAL_ACCOUNT_SELECTION_AMBIGUOUS
+
+        exc = queue.AccountSelectionAmbiguous(
+            "cref_EXAMPLE", "google-analytics", ["properties/111", "properties/222"]
+        )
+
+        def _raise(*args, **kwargs):
+            raise exc
+
+        monkeypatch.setattr(queue, "_resolve_selected_account", _raise)
+        monkeypatch.setattr(
+            queue,
+            "_resolve_connection_ref",
+            lambda _conn, _id: {"provider": "google", "project_id": "proj_EXAMPLE"},
+        )
+        from core import account_topology, db
+
+        conn = MagicMock()
+        cur = MagicMock()
+        cur.__enter__.return_value = cur
+        cur.__exit__.return_value = False
+        conn.cursor.return_value = cur
+        monkeypatch.setattr(db, "request_connection", lambda _i: nullcontext(conn))
+        monkeypatch.setattr(db, "background_connection", lambda _r: nullcontext(conn))
+        monkeypatch.setattr(db, "set_local_access_context", MagicMock())
+        monkeypatch.setattr(account_topology, "get_topology_for_provider", lambda _p: {})
+
+        with patch.object(queue._backend, "enqueue_pull") as backend:
+            answer = queue.enqueue_pull(
+                "cref_EXAMPLE",
+                "2026-08-01",
+                "2026-08-02",
+                requested_by="owner@example.com",
+                datastream_id="ds_EXAMPLE",
+                module_name="google-analytics",
+            )
+
+        backend.assert_not_called()
+        assert answer["code"] == REFUSAL_ACCOUNT_SELECTION_AMBIGUOUS
+        assert "job_id" not in answer

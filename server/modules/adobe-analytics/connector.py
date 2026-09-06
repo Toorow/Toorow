@@ -12,6 +12,11 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+
+# Import au niveau module (et non paresseux comme les appels a `core` dans les
+# fonctions) : les classes d'exception ci-dessous en HERITENT, donc il doit etre
+# resolu au moment ou le fichier est lu.
+from core import pull_errors
 from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
@@ -23,16 +28,62 @@ TIMEOUT_SECONDS = 60
 MIN_FRESHNESS_POLL_MINUTES = 30
 
 
-class AdobeAnalyticsOnboardingError(RuntimeError):
-    """The Adobe product profile or report-suite selection is unusable."""
+class AdobeAnalyticsOnboardingError(pull_errors.PermissionDeniedError):
+    """The Adobe product profile or report-suite selection is unusable.
+
+    `permission_denied` : le credential est authentifie et n'atteint rien. L'action
+    juste est de se reconnecter avec les bons droits, et c'est `permission_denied`
+    qui la fait remonter a l'ecran (`user_action="reconnect"`).
+
+    Avant le 2026-08-01 cette classe heritait d'un `RuntimeError` nu : le worker la
+    voyait `unclassified`, la rejouait jusqu'au `dead_letter` contre un credential
+    qui ne marchera jamais, et n'affichait aucune action.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message)
 
 
-class AdobeAnalyticsCompatibilityError(ValueError):
-    """A component does not belong to the selected report-suite snapshot."""
+class AdobeAnalyticsNotConfiguredError(AdobeAnalyticsOnboardingError):
+    """Le credential va bien -- c'est la requete qui ne peut pas etre formee.
+
+    Derive de l'erreur d'onboarding pour qu'un `except AdobeAnalyticsOnboardingError`
+    existant continue de l'attraper, mais porte `invalid_request` : dire
+    << reconnecte-toi >> enverrait l'operateur au mauvais ecran, puisque le compte se
+    choisit dans l'assistant Datastream et pas sur la connexion.
+    """
+
+    error_class = pull_errors.INVALID_REQUEST
+    user_action = pull_errors.SELECT_SOURCE_ACCOUNT
 
 
-class AdobeAnalyticsPartialResponseError(RuntimeError):
-    """A strict report received HTTP 206 and cannot be landed completely."""
+class AdobeAnalyticsCompatibilityError(pull_errors.InvalidRequestError, ValueError):
+    """A component does not belong to the selected report-suite snapshot.
+
+    `invalid_request` : rejouer la meme requete redonne la meme reponse, et c'est
+    aussi le signal `pull_invalid_request_drift` -- une forme devenue illegale est
+    une derive du catalogue. `ValueError` reste dans les bases, des
+    appelants et des tests l'attrapent sous ce nom.
+    """
+
+    #: -> `Mapping` : le plan demande ce que la source ne rend plus
+    #: (datastream-workbench-and-wizard.md:107). L'operateur a un endroit
+    #: ou aller, contrairement a une derive de version d'API.
+    user_action = pull_errors.REVIEW_MAPPING
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message)
+
+
+class AdobeAnalyticsPartialResponseError(pull_errors.InvalidRequestError):
+    """A strict report received HTTP 206 and cannot be landed completely.
+
+    `invalid_request` : un 206 en mode strict redonne le meme 206 au rejeu --
+    la colonne demandee ne resout plus, et c'est exactement une derive.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message)
 
 
 def _manifest() -> dict:
@@ -42,7 +93,7 @@ def _manifest() -> dict:
 def _api_key(value: str | None = None) -> str:
     key = value or os.environ.get("ADOBE_ANALYTICS_API_KEY", "")
     if not key:
-        raise AdobeAnalyticsOnboardingError(
+        raise AdobeAnalyticsNotConfiguredError(
             "Adobe Analytics OAuth is present but x-api-key is not configured"
         )
     return key
@@ -321,11 +372,19 @@ CREATE TABLE IF NOT EXISTS raw_adobe_analytics_daily (
 )
 """
 
+_RAW_INSERT_SQL = """
+INSERT INTO raw_adobe_analytics_daily
+    (report_profile, global_company_id, rsid, report_suite_timezone, date, dimension,
+    item_id, item_value, parent_item_id, segment_ids, metric, value, unit, non_additive,
+    partial, partial_errors, request_hash, pull_id, loaded_at, project_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+
 
 def _land(result: dict, context: dict, metrics: list[str], dimension: str | None) -> int:
-    if os.environ.get("TOOROW_DB_MODE", "duckdb") != "duckdb":
-        raise ValueError("adobe-analytics local landing currently requires duckdb")
-    import duckdb  # noqa: PLC0415
+    if os.environ.get("TOOROW_DB_MODE", "duckdb") not in ("duckdb", "bigquery"):
+        raise ValueError("adobe-analytics landing supports duckdb and bigquery")
+    from core import warehouse_write  # noqa: PLC0415
 
     path = os.environ.get("TOOROW_DUCKDB_PATH", str(Path(__file__).parent / "local.duckdb"))
     loaded_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
@@ -380,21 +439,41 @@ def _land(result: dict, context: dict, metrics: list[str], dimension: str | None
                     context["project_id"],
                 )
             )
-    connection = duckdb.connect(path)
+    connection = warehouse_write.open_raw_writer(path, project_id=context["project_id"])
     connection.execute(_RAW_DDL)
     if values:
         connection.executemany(
-            "INSERT INTO raw_adobe_analytics_daily VALUES "
-            "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            _RAW_INSERT_SQL,
             values,
         )
     connection.close()
     return len(values)
 
 
-def _pull_profile(connection_id, date_from, date_to, project_id, pull_id, profile_id, selection):
+def _pull_profile(
+    connection_id, date_from, date_to, project_id, pull_id, profile_id, selection, rsid=None
+):
+    """`rsid` est la SELECTION de l'operateur, transmise par le worker.
+
+    Elle prime sur `selection["rsid"]`. Ce qui reste lu dans `selection`
+    (api_key, global_company_id, catalog_snapshot, metrics, dimension,
+    segments, completeness, parent_item_id) n'a AUCUNE source au moment du
+    pull : le plan ne fournit que selection_mode / metrics / dimensions /
+    grain / filters (datastream-intent.schema.json, additionalProperties:
+    false) et `queue.py` ne remplit jamais `job["selection"]`. C'est une
+    reconciliation distincte, nommee ici plutot qu'inventee.
+    """
+    if rsid and not selection:
+        selection = {"rsid": rsid}
+    elif rsid:
+        selection = {**selection, "rsid": rsid}
     if not selection:
-        raise AdobeAnalyticsOnboardingError("A report-suite selection is required")
+        raise AdobeAnalyticsNotConfiguredError(
+            "adobe-analytics: a report-suite selection is required. The operator "
+            "picks one in the Datastream wizard (discover_accounts lists the "
+            "suites the token can reach) and the worker passes it as `rsid`. "
+            "There is no deployment-wide default."
+        )
     token, api_key = _credentials(connection_id, selection.get("api_key"))
     profile = next(
         item for item in _manifest()["source_capabilities"]["reports"] if item["id"] == profile_id
@@ -446,31 +525,39 @@ def _pull_profile(connection_id, date_from, date_to, project_id, pull_id, profil
     }
 
 
-def pull(connection_id, date_from, date_to, project_id, pull_id, selection=None):
+def pull(
+    connection_id, date_from, date_to, project_id, pull_id, selection=None, rsid=None
+):
     """AI-58 dispatch: default profile = daily_kpi (grain date × rsid × dimension × item)."""
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "daily_kpi", selection
+        connection_id, date_from, date_to, project_id, pull_id, "daily_kpi", selection, rsid
     )
 
 
-def pull_daily_kpi(connection_id, date_from, date_to, project_id, pull_id, selection=None):
+def pull_daily_kpi(
+    connection_id, date_from, date_to, project_id, pull_id, selection=None, rsid=None
+):
     """AI-58 dispatch: daily KPI report (grain date × rsid × dimension × item)."""
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "daily_kpi", selection
+        connection_id, date_from, date_to, project_id, pull_id, "daily_kpi", selection, rsid
     )
 
 
-def pull_totals(connection_id, date_from, date_to, project_id, pull_id, selection=None):
+def pull_totals(
+    connection_id, date_from, date_to, project_id, pull_id, selection=None, rsid=None
+):
     """AI-58 dispatch: report-suite totals (grain rsid × segment_ids, no date breakdown)."""
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "totals", selection
+        connection_id, date_from, date_to, project_id, pull_id, "totals", selection, rsid
     )
 
 
-def pull_bounded_breakdown(connection_id, date_from, date_to, project_id, pull_id, selection=None):
+def pull_bounded_breakdown(
+    connection_id, date_from, date_to, project_id, pull_id, selection=None, rsid=None
+):
     """AI-58 dispatch: bounded breakdown (grain date × rsid × dimension × item × parent_item)."""
     return _pull_profile(
-        connection_id, date_from, date_to, project_id, pull_id, "bounded_breakdown", selection
+        connection_id, date_from, date_to, project_id, pull_id, "bounded_breakdown", selection, rsid
     )
 
 

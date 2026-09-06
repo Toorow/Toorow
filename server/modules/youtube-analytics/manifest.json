@@ -1,411 +1,1534 @@
 {
-    "schema_version": "1.2",
-    "name": "youtube-analytics",
-    "display_name": "YouTube Analytics",
-    "public_catalog": {
-        "visibility": "public",
-        "category": "analytics_product",
-        "onboarding_modes": [
-            "connector_pull"
-        ],
-        "verification": {
-            "status": "blocked",
-            "reason_code": "live_evidence_not_ratified",
-            "follow_up": "Ratify once a real YouTube channel connection exists (no test account 2026-07-21)."
-        }
-    },
-    "auth_type": "google_direct",
-    "module_kind": "kpi",
-    "report_profiles": [
-        {
-            "id": "channel_daily",
-            "display_name": "Channel performance (daily)",
-            "metrics": [
-                "views",
-                "estimated_minutes_watched",
-                "likes",
-                "comments",
-                "shares",
-                "subscribers_gained",
-                "subscribers_lost"
-            ],
-            "dimensions": [
-                "date",
-                "channel_id"
-            ],
-            "extraction_capabilities": {
-                "row_limit": null,
-                "filters_supported": true,
-                "realtime": false
-            },
-            "extraction_path": "custom_pull",
-            "_api_notes": "GET youtubeanalytics/v2/reports?ids=channel==MINE&dimensions=day&metrics=<additive core>. Synchronous. Full lifetime history at daily grain; re-pull a trailing window for late-settling data. channel_id stamped from channels.list(mine=true). Ratio metrics (averageViewDuration/Percentage) NOT extracted -- computed at the semantic layer (AD-4)."
-        },
-        {
-            "id": "video_daily",
-            "display_name": "Video performance (daily)",
-            "metrics": [
-                "views",
-                "estimated_minutes_watched",
-                "likes",
-                "comments",
-                "shares",
-                "subscribers_gained",
-                "subscribers_lost"
-            ],
-            "dimensions": [
-                "date",
-                "video",
-                "channel_id"
-            ],
-            "extraction_capabilities": {
-                "row_limit": null,
-                "filters_supported": true,
-                "realtime": false
-            },
-            "extraction_path": "custom_pull",
-            "_api_notes": "reports.query with dimensions=day,video. Per-video daily grain."
-        },
-        {
-            "id": "video_upload",
-            "display_name": "Video uploads (events)",
-            "metrics": [],
-            "dimensions": ["date"],
-            "events": ["video_upload"],
-            "extraction_capabilities": {
-                "row_limit": null,
-                "filters_supported": false,
-                "realtime": false
-            },
-            "extraction_path": "custom_pull",
-            "landing": "context_events",
-            "_api_notes": "Data API v3: channels.list(part=contentDetails,mine=true) -> uploads playlist id; playlistItems.list(part=snippet,playlistId=<uploads>,maxResults=50) paginated. snippet.publishedAt = event_date (YYYY-MM-DD); snippet.title = label. Scope youtube.readonly already present -- no new scope. 1 quota unit per page (vs 100 for search.list)."
-        }
+  "schema_version": "1.2",
+  "name": "youtube-analytics",
+  "display_name": "YouTube Analytics",
+  "business_domain": "marketing",
+  "public_catalog": {
+    "visibility": "public",
+    "category": "analytics_product",
+    "onboarding_modes": [
+      "connector_pull"
     ],
-    "canonical_event_mapping": {
-        "video_upload": "video_upload"
-    },
-    "canonical_metric_mapping": {
-        "views": "views",
-        "estimatedMinutesWatched": "estimated_minutes_watched",
-        "likes": "likes",
-        "comments": "comments",
-        "shares": "shares",
-        "subscribersGained": "subscribers_gained",
-        "subscribersLost": "subscribers_lost"
-    },
-    "canonical_dimension_mapping": {
-        "day": "date"
-    },
-    "error_map": {
-        "400": "invalid_request",
-        "401": "auth_expired",
-        "403": "permission_denied",
-        "404": "permission_denied",
-        "429": "provider_transient",
-        "500": "provider_transient"
-    },
-    "_error_map_note": "VERIFIE le 2026-07-21. YouTube APIs return the standard Google error envelope { error: { code, message, errors[]:{reason, domain} } }. No stable numeric subcodes actionable beyond HTTP status, so the map is keyed on status: 401->auth_expired, 403->permission_denied (also covers insufficientPermissions -- e.g. a monetary metric requested without the yt-analytics-monetary scope), 404->permission_denied, 400->invalid_request (bad metric+dimension combo, e.g. liveOrOnDemand+averageViewPercentage), 5xx->provider_transient. IMPORTANT shim (mirrors gsc/google): Google returns quota-exceeded as a 403 with reason quotaExceeded/dailyLimitExceeded -- the connector routes such a 403 to core.quota.RateLimitError (breaker), NOT permission_denied. A 429 (userRateLimitExceeded/rateLimitExceeded) also raises RateLimitError.",
-    "account_topology": {
-        "_comment": "The reporting entity is a single YouTube CHANNEL. Standard flow: ids=channel==MINE targets the connected user's channel; discover_accounts resolves it via Data API channels.list(mine=true) -> {id, title}. One token -> one channel (non-MCN). Content-owner (MCN) mode (ids=contentOwner==<name>, onBehalfOfContentOwner) reports across many channels with the 'channel' dimension -- a later extension. Access-check = a 1-row reports.query on the selected channel. No *_CHANNEL_ID env var (doctrine).",
-        "levels": [
-            {
-                "id": "channel",
-                "label": "Channel"
-            }
-        ],
-        "selection_level": "channel",
-        "discovery": {
-            "callable": "discover_accounts"
-        }
-    },
-    "quota": {
-        "window_seconds": 100,
-        "budget_points": 720,
-        "read_cost": 1,
-        "write_cost": 1,
-        "_rate_limit_note": "VERIFIE le 2026-07-21. TWO separate quota pools: (1) Data API v3 = 10,000 units/day (channels.list=1 unit; avoid search.list=100) -- discovery only, negligible. (2) Analytics API v2 (reports.query) = a SEPARATE pool (not the 10k), high daily ceiling, binding constraint = a per-100s per-user rate cap. Budget 720 points / 100s is a conservative pacing floor; the true ceiling is read live from the Cloud Console Quotas panel. 429 rateLimitExceeded (and 403 quotaExceeded) -> RateLimitError (breaker + backoff)."
-    },
-    "widget_ref": "ui://core/daily-report",
-    "source_capabilities": {
-        "contract_version": "1",
-        "field_discovery": {
-            "mode": "static",
-            "allowed_targets": []
-        },
-        "fields": [
-            {
-                "field_id": "views",
-                "source_field": "views",
-                "kind": "metric",
-                "physical_type": "integer",
-                "description": "Number of times a video was viewed. Additive.",
-                "semantic_hints": ["engagement", "count"],
-                "canonical_target": "views",
-                "aggregation": "sum",
-                "non_additive": false
-            },
-            {
-                "field_id": "estimated_minutes_watched",
-                "source_field": "estimatedMinutesWatched",
-                "kind": "metric",
-                "physical_type": "integer",
-                "description": "Total minutes users watched. Additive. (averageViewDuration = this*60/views is computed at the semantic layer, never stored.)",
-                "semantic_hints": ["engagement", "count"],
-                "canonical_target": "estimated_minutes_watched",
-                "aggregation": "sum",
-                "non_additive": false
-            },
-            {
-                "field_id": "likes",
-                "source_field": "likes",
-                "kind": "metric",
-                "physical_type": "integer",
-                "description": "Positive ratings (likes). Additive.",
-                "semantic_hints": ["engagement", "count"],
-                "canonical_target": "likes",
-                "aggregation": "sum",
-                "non_additive": false
-            },
-            {
-                "field_id": "comments",
-                "source_field": "comments",
-                "kind": "metric",
-                "physical_type": "integer",
-                "description": "Number of comments users left. Additive.",
-                "semantic_hints": ["engagement", "count"],
-                "canonical_target": "comments",
-                "aggregation": "sum",
-                "non_additive": false
-            },
-            {
-                "field_id": "shares",
-                "source_field": "shares",
-                "kind": "metric",
-                "physical_type": "integer",
-                "description": "Times shared via the Share button. Additive.",
-                "semantic_hints": ["engagement", "count"],
-                "canonical_target": "shares",
-                "aggregation": "sum",
-                "non_additive": false
-            },
-            {
-                "field_id": "subscribers_gained",
-                "source_field": "subscribersGained",
-                "kind": "metric",
-                "physical_type": "integer",
-                "description": "Times users subscribed. Additive.",
-                "semantic_hints": ["audience", "count"],
-                "canonical_target": "subscribers_gained",
-                "aggregation": "sum",
-                "non_additive": false
-            },
-            {
-                "field_id": "subscribers_lost",
-                "source_field": "subscribersLost",
-                "kind": "metric",
-                "physical_type": "integer",
-                "description": "Times users unsubscribed. Additive.",
-                "semantic_hints": ["audience", "count"],
-                "canonical_target": "subscribers_lost",
-                "aggregation": "sum",
-                "non_additive": false
-            },
-            {
-                "field_id": "date",
-                "source_field": "day",
-                "kind": "dimension",
-                "physical_type": "date",
-                "description": "Reporting day (YYYY-MM-DD) from the 'day' dimension. Full lifetime history at daily grain.",
-                "semantic_hints": ["date"],
-                "canonical_target": "date",
-                "aggregation": "none",
-                "non_additive": false
-            },
-            {
-                "field_id": "video",
-                "source_field": "video",
-                "kind": "dimension",
-                "physical_type": "string",
-                "description": "Video resource id (group-by + filter).",
-                "semantic_hints": ["content", "identifier"],
-                "canonical_target": "video",
-                "aggregation": "none",
-                "non_additive": false
-            },
-            {
-                "field_id": "channel_id",
-                "source_field": "channel_id",
-                "kind": "dimension",
-                "physical_type": "string",
-                "description": "The reporting entity: YouTube channel id. Stamped on every row (from channels.list(mine=true)).",
-                "semantic_hints": ["identifier"],
-                "canonical_target": "channel_id",
-                "aggregation": "none",
-                "non_additive": false
-            },
-            {
-                "field_id": "video_upload",
-                "source_field": "snippet.publishedAt",
-                "kind": "event",
-                "physical_type": "datetime",
-                "description": "Date a video was published on the channel (snippet.publishedAt from Data API v3 uploads playlist). label_source_field = snippet.title. Persisted as a context_events pulse (value null, event_type video_upload).",
-                "semantic_hints": ["event"],
-                "label_source_field": "snippet.title",
-                "canonical_target": "video_upload",
-                "aggregation": "none",
-                "non_additive": false
-            }
-        ],
-        "reports": [
-            {
-                "id": "channel_daily",
-                "selection_mode": "exact_bundle",
-                "availability": {
-                    "status": "selectable"
-                },
-                "dispatch": {
-                    "callable": "pull_channel_daily"
-                },
-                "metrics": [
-                    "views",
-                    "estimated_minutes_watched",
-                    "likes",
-                    "comments",
-                    "shares",
-                    "subscribers_gained",
-                    "subscribers_lost"
-                ],
-                "dimensions": [
-                    "date",
-                    "channel_id"
-                ],
-                "supported_grains": [
-                    [
-                        "date",
-                        "channel_id"
-                    ]
-                ],
-                "compatibility": [],
-                "filters": [
-                    {
-                        "field_id": "date",
-                        "operators": ["gte", "lte"]
-                    }
-                ],
-                "pagination": {
-                    "mode": "offset",
-                    "completeness": "complete",
-                    "max_pages": null,
-                    "row_limit": null,
-                    "truncation_signal": "none"
-                },
-                "quota_cost": {
-                    "read_points": 1,
-                    "unit": "request"
-                },
-                "incremental": {
-                    "mode": "date_window",
-                    "cursor_field": null
-                },
-                "cadence": {
-                    "minimum_interval_minutes": 1440,
-                    "supported_modes": ["manual", "daily"]
-                }
-            },
-            {
-                "id": "video_daily",
-                "selection_mode": "exact_bundle",
-                "availability": {
-                    "status": "selectable"
-                },
-                "dispatch": {
-                    "callable": "pull_video_daily"
-                },
-                "metrics": [
-                    "views",
-                    "estimated_minutes_watched",
-                    "likes",
-                    "comments",
-                    "shares",
-                    "subscribers_gained",
-                    "subscribers_lost"
-                ],
-                "dimensions": [
-                    "date",
-                    "video",
-                    "channel_id"
-                ],
-                "supported_grains": [
-                    [
-                        "date",
-                        "video",
-                        "channel_id"
-                    ]
-                ],
-                "compatibility": [],
-                "filters": [
-                    {
-                        "field_id": "date",
-                        "operators": ["gte", "lte"]
-                    }
-                ],
-                "pagination": {
-                    "mode": "offset",
-                    "completeness": "complete",
-                    "max_pages": null,
-                    "row_limit": null,
-                    "truncation_signal": "none"
-                },
-                "quota_cost": {
-                    "read_points": 1,
-                    "unit": "request"
-                },
-                "incremental": {
-                    "mode": "date_window",
-                    "cursor_field": null
-                },
-                "cadence": {
-                    "minimum_interval_minutes": 1440,
-                    "supported_modes": ["manual", "daily"]
-                }
-            },
-            {
-                "id": "video_upload",
-                "selection_mode": "exact_bundle",
-                "availability": {
-                    "status": "selectable"
-                },
-                "dispatch": {
-                    "callable": "pull_video_upload"
-                },
-                "landing": "context_events",
-                "metrics": [],
-                "dimensions": ["date"],
-                "events": ["video_upload"],
-                "supported_grains": [["date"]],
-                "compatibility": [],
-                "filters": [],
-                "pagination": {
-                    "mode": "none",
-                    "completeness": "complete",
-                    "max_pages": null,
-                    "row_limit": null,
-                    "truncation_signal": "none"
-                },
-                "quota_cost": {
-                    "read_points": 1,
-                    "unit": "request"
-                },
-                "incremental": {
-                    "mode": "full_refresh",
-                    "cursor_field": null
-                },
-                "cadence": {
-                    "minimum_interval_minutes": 1440,
-                    "supported_modes": ["manual", "daily"]
-                }
-            }
-        ]
+    "verification": {
+      "status": "blocked",
+      "reason_code": "live_evidence_not_ratified",
+      "follow_up": "Ratify once a real YouTube channel connection exists (no test account 2026-07-21)."
     }
+  },
+  "auth_type": "google_direct",
+  "auth": {
+    "type": "google_direct",
+    "auth_path": "google_direct",
+    "scopes": [
+      "https://www.googleapis.com/auth/yt-analytics.readonly",
+      "https://www.googleapis.com/auth/youtube.readonly"
+    ],
+    "_note": "AD-21 : la porte d'entree de ce connecteur EST ce scope. Un module auth_type='google_direct' que le consentement ne demande pas est installe et inatteignable -- c'est AI-94, mesure le 2026-07-31 sur l'artefact de production. La declaration ci-dessous est confrontee a GOOGLE_STACK_SCOPES par tests/conformance/test_google_consent.py. DEUX APIs, donc deux scopes : yt-analytics.readonly pour les rapports (YouTube Analytics API) et youtube.readonly pour le profil video_upload (Data API v3, playlist des mises en ligne). Le manifeste disait 'Scope youtube.readonly already present -- no new scope' : ni l'un ni l'autre n'etait demande."
+  },
+  "module_kind": "kpi",
+  "report_profiles": [
+    {
+      "id": "channel_daily",
+      "raw_relation": "raw_youtube_daily",
+      "staging_relation": "stg_youtube_daily",
+      "display_name": "Channel performance (daily)",
+      "metrics": [
+        "views",
+        "estimated_minutes_watched",
+        "likes",
+        "comments",
+        "shares",
+        "subscribers_gained",
+        "subscribers_lost"
+      ],
+      "dimensions": [
+        "date",
+        "channel_id"
+      ],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull",
+      "_api_notes": "GET youtubeanalytics/v2/reports?ids=channel==MINE&dimensions=day&metrics=<additive core>. Synchronous. Full lifetime history at daily grain; re-pull a trailing window for late-settling data. channel_id stamped from channels.list(mine=true). Ratio metrics (averageViewDuration/Percentage) NOT extracted -- computed at the semantic layer (AD-4). Measured 2026-08-12 against the live endpoint: date_axis=request_dimension."
+    },
+    {
+      "id": "video_daily",
+      "raw_relation": "raw_youtube_daily",
+      "staging_relation": "stg_youtube_daily",
+      "display_name": "Video performance (daily)",
+      "metrics": [
+        "views",
+        "estimated_minutes_watched",
+        "likes",
+        "comments",
+        "shares"
+      ],
+      "dimensions": [
+        "date",
+        "video",
+        "channel_id"
+      ],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": true,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull",
+      "_api_notes": "reports.query with dimensions=day,video. Per-video daily grain. Subscriber flows are ATTRIBUTED to a video: summed over the `video` axis they do not give the channel total, part of the subscriptions happening off the watch page. Additive over time, not over this breakdown -- so they live in `channel_daily`, where they are the channel's own measure. Measured 2026-08-12 against the live endpoint: date_axis=per_day_request."
+    },
+    {
+      "id": "video_upload",
+      "raw_relation": null,
+      "staging_relation": null,
+      "display_name": "Video uploads (events)",
+      "metrics": [],
+      "dimensions": [
+        "date"
+      ],
+      "events": [
+        "video_upload"
+      ],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": false,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull",
+      "landing": "context_events",
+      "_api_notes": "Data API v3: channels.list(part=contentDetails,mine=true) -> uploads playlist id; playlistItems.list(part=snippet,playlistId=<uploads>,maxResults=50) paginated. snippet.publishedAt = event_date (YYYY-MM-DD); snippet.title = label. Requires the youtube.readonly scope (distinct from yt-analytics.readonly used by the reporting profiles): both are DECLARED in this manifest's auth block and requested since AI-94. This note previously said the scope was 'already present' -- neither of the two was requested. 1 quota unit per page (vs 100 for search.list)."
+    },
+    {
+      "id": "channel_snapshot",
+      "_relation_note": "AI-310: this pair said raw_youtube_breakdown / stg_youtube_breakdown and that was the wrong address. `pull_channel_snapshot` calls `_insert_raw_rows`, which writes raw_youtube_daily -- it is NOT one of `_BREAKDOWN_PROFILES`, so it never reaches `_insert_breakdown_rows`. The conformance guard `test_profile_relations_declared` could not see it: it checks that the module CREATES the relation named, and this module creates both. What it does not check is that the profile's own pull function writes to the one it declares.",
+      "raw_relation": "raw_youtube_daily",
+      "staging_relation": "stg_youtube_daily",
+      "display_name": "Channel audience (snapshot)",
+      "metrics": [
+        "subscriber_count",
+        "lifetime_view_count",
+        "video_count"
+      ],
+      "dimensions": [
+        "date",
+        "channel_id"
+      ],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": false,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull",
+      "_api_notes": "\"How many subscribers?\" had NO field to answer it: reports.query serves FLOWS only (subscribersGained/Lost) and the STOCK lives on the Data API, channels.list(part=statistics) -> subscriberCount / viewCount / videoCount. A stock is read, never accumulated: aggregation=latest, non_additive=true, one row per reading day. 1 quota unit. Lands in the breakdown relation with breakdown_dimension='channel_id' -- a state is a (dimension, value) pair like any other."
+    },
+    {
+      "id": "audience_demographics",
+      "raw_relation": "raw_youtube_breakdown",
+      "staging_relation": "stg_youtube_breakdown",
+      "display_name": "Audience: age and gender",
+      "metrics": [
+        "viewer_percentage"
+      ],
+      "dimensions": [
+        "date",
+        "age_group",
+        "gender",
+        "channel_id"
+      ],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": false,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull",
+      "_api_notes": "A SUPPORTED combination of reports.query, confirmed against Google's channel-reports documentation, served over the whole window rather than day by day: the API refuses `day` beside an entity or distribution dimension (\"The query is not supported\"). The window is the request, not a column. Measured 2026-08-12 against the live endpoint: date_axis=per_day_request."
+    },
+    {
+      "id": "audience_geography",
+      "raw_relation": "raw_youtube_breakdown",
+      "staging_relation": "stg_youtube_breakdown",
+      "display_name": "Audience: country",
+      "metrics": [
+        "views",
+        "estimated_minutes_watched"
+      ],
+      "dimensions": [
+        "date",
+        "country",
+        "channel_id"
+      ],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": false,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull",
+      "_api_notes": "A SUPPORTED combination of reports.query, confirmed against Google's channel-reports documentation, served over the whole window rather than day by day: the API refuses `day` beside an entity or distribution dimension (\"The query is not supported\"). The window is the request, not a column. Measured 2026-08-12 against the live endpoint: date_axis=per_day_request."
+    },
+    {
+      "id": "audience_device",
+      "raw_relation": "raw_youtube_breakdown",
+      "staging_relation": "stg_youtube_breakdown",
+      "display_name": "Audience: device and OS",
+      "metrics": [
+        "views",
+        "estimated_minutes_watched"
+      ],
+      "dimensions": [
+        "date",
+        "device_type",
+        "operating_system",
+        "channel_id"
+      ],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": false,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull",
+      "_api_notes": "A SUPPORTED combination of reports.query, confirmed against Google's channel-reports documentation, served over the whole window rather than day by day: the API refuses `day` beside an entity or distribution dimension (\"The query is not supported\"). The window is the request, not a column. Measured 2026-08-12 against the live endpoint: date_axis=request_dimension."
+    },
+    {
+      "id": "traffic_sources",
+      "raw_relation": "raw_youtube_breakdown",
+      "staging_relation": "stg_youtube_breakdown",
+      "display_name": "Traffic sources",
+      "metrics": [
+        "views",
+        "estimated_minutes_watched"
+      ],
+      "dimensions": [
+        "date",
+        "traffic_source_type",
+        "channel_id"
+      ],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": false,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull",
+      "_api_notes": "A SUPPORTED combination of reports.query, confirmed against Google's channel-reports documentation, served over the whole window rather than day by day: the API refuses `day` beside an entity or distribution dimension (\"The query is not supported\"). The window is the request, not a column. Measured 2026-08-12 against the live endpoint: date_axis=request_dimension."
+    },
+    {
+      "id": "playback_locations",
+      "raw_relation": "raw_youtube_breakdown",
+      "staging_relation": "stg_youtube_breakdown",
+      "display_name": "Playback locations",
+      "metrics": [
+        "views",
+        "estimated_minutes_watched"
+      ],
+      "dimensions": [
+        "date",
+        "playback_location_type",
+        "channel_id"
+      ],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": false,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull",
+      "_api_notes": "A SUPPORTED combination of reports.query, confirmed against Google's channel-reports documentation, served over the whole window rather than day by day: the API refuses `day` beside an entity or distribution dimension (\"The query is not supported\"). The window is the request, not a column. Measured 2026-08-12 against the live endpoint: date_axis=request_dimension."
+    },
+    {
+      "id": "audience_subscription",
+      "raw_relation": "raw_youtube_breakdown",
+      "staging_relation": "stg_youtube_breakdown",
+      "display_name": "Audience: subscribed or not",
+      "metrics": [
+        "views",
+        "estimated_minutes_watched"
+      ],
+      "dimensions": [
+        "date",
+        "subscribed_status",
+        "channel_id"
+      ],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": false,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull",
+      "_api_notes": "A SUPPORTED combination of reports.query, confirmed against Google's channel-reports documentation, served over the whole window rather than day by day: the API refuses `day` beside an entity or distribution dimension (\"The query is not supported\"). The window is the request, not a column. Measured 2026-08-12 against the live endpoint: date_axis=request_dimension."
+    },
+    {
+      "id": "competitor_channel_snapshot",
+      "raw_relation": "raw_youtube_daily",
+      "staging_relation": "stg_youtube_daily",
+      "display_name": "Tracked channels (snapshot)",
+      "metrics": [
+        "subscriber_count",
+        "lifetime_view_count",
+        "video_count"
+      ],
+      "dimensions": [
+        "date",
+        "channel_id"
+      ],
+      "extraction_capabilities": {
+        "row_limit": null,
+        "filters_supported": false,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull",
+      "_api_notes": "Competitors outbound (capabilities/competitors.md): the SAME channels.list(part=statistics) read as channel_snapshot, pointed at the channel ids the tracked-entity bindings supply. Public statistics -- no permission on the tracked channel, only a live Google authorization. Batched 50 ids/request (the API ceiling), 1 quota unit per request. Zero bound ids = zero rows, never a fallback. Own/competitor role lives in Governance, never in the row."
+    },
+    {
+      "id": "channel_video_directory",
+      "raw_relation": "raw_youtube_video_directory",
+      "staging_relation": "stg_youtube_video_directory",
+      "display_name": "Video directory (named uploads)",
+      "metrics": [],
+      "dimensions": [
+        "date",
+        "channel_id",
+        "video",
+        "channel_title",
+        "is_own_channel"
+      ],
+      "extraction_capabilities": {
+        "row_limit": 50,
+        "filters_supported": false,
+        "realtime": false
+      },
+      "extraction_path": "custom_pull",
+      "_relation_note": "Carried columns beyond the declared grain (same precedent as video_upload's label/url): channel_title, video_title, published_at, duration_seconds, lifetime_views, is_own_channel. They are payload of the directory, not governed targets -- naming videos and dating publications is this profile's whole job, and lifetime_views is a PUBLIC counter (all-time, cross-era) deliberately kept out of the KPI mart: recent-window maths derive from published_at, never from comparing lifetime counters of different eras.",
+      "_api_notes": "Data API v3, public parts only: channels.list(part=contentDetails,snippet) -> uploads playlist; playlistItems.list(part=contentDetails, 50, ONE page -- the recent-window contract, not a history); videos.list(part=snippet,statistics,contentDetails). ~3 quota units per channel. Driven by the tracked_entity binding parameter channel_ids; ids in own_channel_ids are stamped is_own_channel, so the own catalogue (the 'Reference & targets' hole) and tracked channels land through one profile."
+    }
+  ],
+  "canonical_event_mapping": {
+    "video_upload": "video_upload"
+  },
+  "canonical_metric_mapping": {
+    "views": "views",
+    "estimatedMinutesWatched": "estimated_minutes_watched",
+    "likes": "likes",
+    "comments": "comments",
+    "shares": "shares",
+    "subscribersGained": "subscribers_gained",
+    "subscribersLost": "subscribers_lost",
+    "subscriberCount": "subscriber_count",
+    "viewCount": "lifetime_view_count",
+    "videoCount": "video_count",
+    "viewerPercentage": "viewer_percentage"
+  },
+  "canonical_dimension_mapping": {
+    "day": "date",
+    "ageGroup": "age_group",
+    "gender": "gender",
+    "country": "country",
+    "province": "province",
+    "city": "city",
+    "deviceType": "device_type",
+    "operatingSystem": "operating_system",
+    "subscribedStatus": "subscribed_status",
+    "insightTrafficSourceType": "traffic_source_type",
+    "insightTrafficSourceDetail": "traffic_source_detail",
+    "insightPlaybackLocationType": "playback_location_type",
+    "sharingService": "sharing_service",
+    "liveOrOnDemand": "live_or_on_demand",
+    "playlist": "playlist",
+    "month": "month"
+  },
+  "error_map": {
+    "401:authorizationExpired": "auth_expired",
+    "401:authError": "auth_expired",
+    "403:authenticatedUserAccountClosed": "auth_revoked",
+    "403:authenticatedUserAccountSuspended": "auth_revoked",
+    "403:insufficientPermissions": "permission_denied",
+    "403:authenticatedUserNotChannel": "permission_denied",
+    "403:authenticatedUserNotContentOwner": "permission_denied",
+    "403:forbidden": "permission_denied",
+    "400:invalidParameter": "invalid_request",
+    "400:invalidMetrics": "invalid_request",
+    "400:invalidDimensions": "invalid_request",
+    "400:invalidFilters": "invalid_request",
+    "400:invalidStartDate": "invalid_request",
+    "400:invalidEndDate": "invalid_request",
+    "400:invalidDateRange": "invalid_request",
+    "400:invalidQuery": "invalid_request",
+    "500:internalError": "provider_transient",
+    "503:backendError": "provider_transient"
+  },
+  "_error_map_note": "Codes come from the YouTube Analytics API error reference (https://developers.google.com/youtube/analytics/errors), which publishes them as reason strings of the standard Google API Console envelope: { error: { code: <numeric http>, message, errors: [{ message, domain: 'youtube.analytics', reason: '<reason>' }] } }. core.pull_errors._extract_provider_codes yields errors[].reason before error.status and error.code, so every key here is written on errors[].reason; error.code is never keyed on because it repeats the HTTP status. WHAT THE MAP CHANGES vs the pure-HTTP classification: a 403 authenticatedUserAccountClosed / authenticatedUserAccountSuspended becomes auth_revoked instead of permission_denied -- the YouTube account behind the grant is closed or suspended, so the answer is 'connect another account', not 'this token lacks a scope', and no amount of re-consenting on the same account will ever change it. TWO DELIBERATE HOLES, both because the connector decides BEFORE the classifier is reached: (a) no 403 quota key (quotaExceeded / dailyLimitExceeded / rateLimitExceeded / userRateLimitExceeded) -- _raise_for_status routes those to core.quota.RateLimitError, the breaker path, so a key would be dead; (b) no 404 key -- 404 is a status-only judgment carried by connector._STATUS_OVERRIDES (permission_denied), and the '<status>:<provider_code>' grammar cannot express a status-only rule. No 429 key either, for the same breaker reason. PREVIOUS NOTE (AI-114, 2026-08-01), kept for the history of this key: EXPLICITLY EMPTY --'we looked, this provider refines nothing core can key on', which is NOT the same statement as an absent key ('nobody looked'). The two former entries could never fire: the bare key '404' is unreachable because the grammar is '<status>:<provider_code>' with a single reader (core.pull_errors.classify_http_error, server/modules/README.md step 4), and '429' is unreachable by construction because connector._raise_for_status raises core.quota.RateLimitError on 429 and on quota-reason 403s BEFORE ever reaching classify_http_error. WHAT WAS REMOVED AND WHERE IT WENT: 404 -> permission_denied is now live and explicit in connector._STATUS_OVERRIDES. This is a BEHAVIOUR CHANGE, not a cleanup -- a 404 used to leave as unclassified/retryable=True, so the worker replayed an already-refused request. PREVIOUS NOTE, kept: VERIFIE le 2026-07-21. YouTube APIs return the standard Google error envelope { error: { code, message, errors[]:{reason, domain} } }. No stable numeric subcodes actionable beyond HTTP status, so the map is keyed on status: 401->auth_expired, 403->permission_denied (also covers insufficientPermissions -- e.g. a monetary metric requested without the yt-analytics-monetary scope), 404->permission_denied, 400->invalid_request (bad metric+dimension combo, e.g. liveOrOnDemand+averageViewPercentage), 5xx->provider_transient. IMPORTANT shim (mirrors gsc/google): Google returns quota-exceeded as a 403 with reason quotaExceeded/dailyLimitExceeded -- the connector routes such a 403 to core.quota.RateLimitError (breaker), NOT permission_denied. A 429 (userRateLimitExceeded/rateLimitExceeded) also raises RateLimitError.",
+  "account_topology": {
+    "_comment": "The reporting entity is a single YouTube CHANNEL. Standard flow: ids=channel==MINE targets the connected user's channel; discover_accounts resolves it via Data API channels.list(mine=true) -> {id, title}. One token -> one channel (non-MCN). Content-owner (MCN) mode (ids=contentOwner==<name>, onBehalfOfContentOwner) reports across many channels with the 'channel' dimension -- a later extension. Access-check = a 1-row reports.query on the selected channel. No *_CHANNEL_ID env var (doctrine).",
+    "levels": [
+      {
+        "id": "channel",
+        "label": "Channel"
+      }
+    ],
+    "selection_level": "channel",
+    "discovery": {
+      "callable": "discover_accounts"
+    },
+    "pull_parameter": "channel_id",
+    "verification": {
+      "callable": "verify_account",
+      "_note": "ACCESS IS THE PROVIDER'S ANSWER, NOT MEMBERSHIP OF A LIST. Enumeration returns only the consenting identity's own object, while a report query answers for every object that identity manages -- so a managed object was unreachable, the selection being bounded by the enumeration. This callable is the access check: a one-row report query on the chosen object, returning {id,label} if the provider answers and None if it refuses."
+    }
+  },
+  "quota": {
+    "window_seconds": 100,
+    "budget_points": 720,
+    "read_cost": 1,
+    "write_cost": 1,
+    "_rate_limit_note": "VERIFIE le 2026-07-21. TWO separate quota pools: (1) Data API v3 = 10,000 units/day (channels.list=1 unit; avoid search.list=100) -- discovery only, negligible. (2) Analytics API v2 (reports.query) = a SEPARATE pool (not the 10k), high daily ceiling, binding constraint = a per-100s per-user rate cap. Budget 720 points / 100s is a conservative pacing floor; the true ceiling is read live from the Cloud Console Quotas panel. 429 rateLimitExceeded (and 403 quotaExceeded) -> RateLimitError (breaker + backoff)."
+  },
+  "widget_ref": "ui://core/daily-report",
+  "source_capabilities": {
+    "contract_version": "1",
+    "field_discovery": {
+      "mode": "static",
+      "allowed_targets": []
+    },
+    "fields": [
+      {
+        "field_id": "age_group",
+        "kind": "dimension",
+        "aggregation": "none",
+        "non_additive": false,
+        "source_field": "ageGroup",
+        "canonical_target": "age_group",
+        "physical_type": "string",
+        "semantic_hints": [
+          "demographics"
+        ],
+        "description": "Viewer age bucket: age13-17, age18-24, age25-34, age35-44, age45-54, age55-64, age65-. Suppressed below privacy thresholds. Planned."
+      },
+      {
+        "field_id": "channel_id",
+        "source_field": "channel_id",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "The reporting entity: YouTube channel id. Stamped on every row (from channels.list(mine=true)).",
+        "semantic_hints": [
+          "identifier"
+        ],
+        "canonical_target": "channel_id",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "city",
+        "kind": "dimension",
+        "aggregation": "none",
+        "non_additive": false,
+        "source_field": "city",
+        "canonical_target": "city",
+        "physical_type": "string",
+        "semantic_hints": [
+          "geography"
+        ],
+        "description": "Estimated city (<=250 rows). Planned. NO REPORT SERVES IT YET -- no report serves it yet: reports.query requires a `sort` (-views or -estimatedMinutesWatched), 250 rows max."
+      },
+      {
+        "field_id": "comments",
+        "source_field": "comments",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Number of comments users left. Additive.",
+        "semantic_hints": [
+          "engagement",
+          "count"
+        ],
+        "canonical_target": "comments",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "country",
+        "kind": "dimension",
+        "aggregation": "none",
+        "non_additive": false,
+        "source_field": "country",
+        "canonical_target": "country",
+        "physical_type": "string",
+        "semantic_hints": [
+          "geography"
+        ],
+        "description": "Viewer country, ISO 3166-1 alpha-2 (e.g. 'US', 'FR'). Measured 2026-08-17: this field IS mapped onto the governed 'country' dimension (canonical_dimension_mapping) and its staging routes through normalize_dimension(..., dim_country, ...), so the previous NOTE -- \"kept as its own field, not mapped onto the governed dimension. Planned.\" -- described the opposite of the shipped contract. The exemplars are QUOTED because the conformance reader counts only quoted tokens inside an (e.g. ...) parenthetical: unquoted, they were invisible and the seed confrontation SKIPPED for this connector alone. alpha-2 is the same encoding Taboola declares; GA4 and GSC declare names and alpha-3 respectively, and all three families are now proven over the whole seed."
+      },
+      {
+        "field_id": "date",
+        "source_field": "day",
+        "kind": "dimension",
+        "physical_type": "date",
+        "description": "Reporting day (YYYY-MM-DD) from the 'day' dimension. Full lifetime history at daily grain.",
+        "semantic_hints": [
+          "date"
+        ],
+        "canonical_target": "date",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "device_type",
+        "kind": "dimension",
+        "aggregation": "none",
+        "non_additive": false,
+        "source_field": "deviceType",
+        "canonical_target": "device_type",
+        "physical_type": "string",
+        "semantic_hints": [
+          "device"
+        ],
+        "description": "Device form factor: DESKTOP, GAME_CONSOLE, MOBILE, TABLET, TV, UNKNOWN_PLATFORM. Planned."
+      },
+      {
+        "field_id": "estimated_minutes_watched",
+        "source_field": "estimatedMinutesWatched",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Total minutes users watched. Additive. (averageViewDuration = this*60/views is computed at the semantic layer, never stored.)",
+        "semantic_hints": [
+          "engagement",
+          "count"
+        ],
+        "canonical_target": "estimated_minutes_watched",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "gender",
+        "kind": "dimension",
+        "aggregation": "none",
+        "non_additive": false,
+        "source_field": "gender",
+        "canonical_target": "gender",
+        "physical_type": "string",
+        "semantic_hints": [
+          "demographics"
+        ],
+        "description": "Viewer gender: female, male, user_specified. Enum documented-but-unverified. Planned."
+      },
+      {
+        "field_id": "lifetime_view_count",
+        "kind": "metric",
+        "aggregation": "latest",
+        "non_additive": true,
+        "source_field": "statistics.viewCount",
+        "canonical_target": "lifetime_view_count",
+        "physical_type": "integer",
+        "semantic_hints": [
+          "count",
+          "non_additive"
+        ],
+        "description": "Channel views since inception, at the moment of the reading. A stock: summing it with `views` would count the same audience twice."
+      },
+      {
+        "field_id": "likes",
+        "source_field": "likes",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Positive ratings (likes). Additive.",
+        "semantic_hints": [
+          "engagement",
+          "count"
+        ],
+        "canonical_target": "likes",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "live_or_on_demand",
+        "kind": "dimension",
+        "aggregation": "none",
+        "non_additive": false,
+        "source_field": "liveOrOnDemand",
+        "canonical_target": "live_or_on_demand",
+        "physical_type": "string",
+        "semantic_hints": [
+          "playback"
+        ],
+        "description": "LIVE vs ON_DEMAND. Cannot be combined with averageViewPercentage. Planned."
+      },
+      {
+        "field_id": "month",
+        "kind": "dimension",
+        "aggregation": "none",
+        "non_additive": false,
+        "source_field": "month",
+        "canonical_target": "month",
+        "physical_type": "string",
+        "semantic_hints": [
+          "time"
+        ],
+        "description": "Reporting month (YYYY-MM). Planned. NO REPORT SERVES IT YET -- no report serves it yet: an alternative to `day`, never both."
+      },
+      {
+        "field_id": "operating_system",
+        "kind": "dimension",
+        "aggregation": "none",
+        "non_additive": false,
+        "source_field": "operatingSystem",
+        "canonical_target": "operating_system",
+        "physical_type": "string",
+        "semantic_hints": [
+          "device"
+        ],
+        "description": "Device OS (ANDROID, IOS, WINDOWS, MACINTOSH, ...). Enum documented-but-unverified; re-verify live. Planned."
+      },
+      {
+        "field_id": "playback_location_type",
+        "kind": "dimension",
+        "aggregation": "none",
+        "non_additive": false,
+        "source_field": "insightPlaybackLocationType",
+        "canonical_target": "playback_location_type",
+        "physical_type": "string",
+        "semantic_hints": [
+          "playback"
+        ],
+        "description": "Where playback occurred: BROWSE, CHANNEL, EMBEDDED, EXTERNAL_APP, MOBILE, SEARCH, WATCH, YT_OTHER. Planned."
+      },
+      {
+        "field_id": "playlist",
+        "kind": "dimension",
+        "aggregation": "none",
+        "non_additive": false,
+        "source_field": "playlist",
+        "canonical_target": "playlist",
+        "physical_type": "string",
+        "semantic_hints": [
+          "content"
+        ],
+        "description": "Playlist resource id (group-by + filter). Planned. NO REPORT SERVES IT YET -- no report serves it yet: requires a playlist filter, on playlist reports only."
+      },
+      {
+        "field_id": "province",
+        "kind": "dimension",
+        "aggregation": "none",
+        "non_additive": false,
+        "source_field": "province",
+        "canonical_target": "province",
+        "physical_type": "string",
+        "semantic_hints": [
+          "geography"
+        ],
+        "description": "US state (ISO 3166-2). Planned. NO REPORT SERVES IT YET -- no report serves it yet: reports.query requires the filter country==US."
+      },
+      {
+        "field_id": "shares",
+        "source_field": "shares",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Times shared via the Share button. Additive.",
+        "semantic_hints": [
+          "engagement",
+          "count"
+        ],
+        "canonical_target": "shares",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "sharing_service",
+        "kind": "dimension",
+        "aggregation": "none",
+        "non_additive": false,
+        "source_field": "sharingService",
+        "canonical_target": "sharing_service",
+        "physical_type": "string",
+        "semantic_hints": [
+          "traffic"
+        ],
+        "description": "Service used to share a video. Planned."
+      },
+      {
+        "field_id": "subscribed_status",
+        "kind": "dimension",
+        "aggregation": "none",
+        "non_additive": false,
+        "source_field": "subscribedStatus",
+        "canonical_target": "subscribed_status",
+        "physical_type": "string",
+        "semantic_hints": [
+          "playback"
+        ],
+        "description": "Subscribed vs not at view time: SUBSCRIBED, UNSUBSCRIBED. Planned."
+      },
+      {
+        "field_id": "subscriber_count",
+        "kind": "metric",
+        "aggregation": "latest",
+        "non_additive": true,
+        "source_field": "statistics.subscriberCount",
+        "canonical_target": "subscriber_count",
+        "physical_type": "integer",
+        "semantic_hints": [
+          "audience",
+          "count",
+          "non_additive"
+        ],
+        "description": "Channel subscribers AT THE MOMENT OF THE READING. A STOCK, not a flow: take the latest value, never sum two days. `subscribers_gained` and `subscribers_lost` are the matching flows."
+      },
+      {
+        "field_id": "subscribers_gained",
+        "source_field": "subscribersGained",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Times users subscribed. Additive.",
+        "semantic_hints": [
+          "audience",
+          "count"
+        ],
+        "canonical_target": "subscribers_gained",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "subscribers_lost",
+        "source_field": "subscribersLost",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Times users unsubscribed. Additive.",
+        "semantic_hints": [
+          "audience",
+          "count"
+        ],
+        "canonical_target": "subscribers_lost",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "traffic_source_detail",
+        "kind": "dimension",
+        "aggregation": "none",
+        "non_additive": false,
+        "source_field": "insightTrafficSourceDetail",
+        "canonical_target": "traffic_source_detail",
+        "physical_type": "string",
+        "semantic_hints": [
+          "traffic"
+        ],
+        "description": "Top referrers within a traffic source type. Planned. NO REPORT SERVES IT YET -- no report serves it yet: requires the insightTrafficSourceType filter and a `sort`, 25 rows max."
+      },
+      {
+        "field_id": "traffic_source_type",
+        "kind": "dimension",
+        "aggregation": "none",
+        "non_additive": false,
+        "source_field": "insightTrafficSourceType",
+        "canonical_target": "traffic_source_type",
+        "physical_type": "string",
+        "semantic_hints": [
+          "traffic"
+        ],
+        "description": "How users reached the video: ADVERTISING, ANNOTATION, CAMPAIGN_CARD, END_SCREEN, EXT_URL, HASHTAGS, LIVE_REDIRECT, NO_LINK_EMBEDDED, NO_LINK_OTHER, NOTIFICATION, PLAYLIST, PRODUCT_PAGE, PROMOTED, RELATED_VIDEO, SHORTS, SOUND_PAGE, SUBSCRIBER, VIDEO_REMIXES, YT_CHANNEL, YT_OTHER_PAGE, YT_SEARCH. Planned."
+      },
+      {
+        "field_id": "video",
+        "source_field": "video",
+        "kind": "dimension",
+        "physical_type": "string",
+        "description": "Video resource id (group-by + filter).",
+        "semantic_hints": [
+          "content",
+          "identifier"
+        ],
+        "canonical_target": "video",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "video_count",
+        "kind": "metric",
+        "aggregation": "latest",
+        "non_additive": true,
+        "source_field": "statistics.videoCount",
+        "canonical_target": "video_count",
+        "physical_type": "integer",
+        "semantic_hints": [
+          "count",
+          "non_additive"
+        ],
+        "description": "Public video count on the channel at the moment of the reading. A stock."
+      },
+      {
+        "field_id": "video_upload",
+        "source_field": "snippet.publishedAt",
+        "kind": "event",
+        "physical_type": "datetime",
+        "description": "Date a video was published on the channel (snippet.publishedAt from Data API v3 uploads playlist). label_source_field = snippet.title. Persisted as a context_events pulse (value null, event_type video_upload).",
+        "semantic_hints": [
+          "event"
+        ],
+        "label_source_field": "snippet.title",
+        "canonical_target": "video_upload",
+        "aggregation": "none",
+        "non_additive": false
+      },
+      {
+        "field_id": "viewer_percentage",
+        "kind": "metric",
+        "aggregation": "latest",
+        "non_additive": true,
+        "source_field": "viewerPercentage",
+        "canonical_target": "viewer_percentage",
+        "physical_type": "decimal",
+        "semantic_hints": [
+          "audience",
+          "non_additive"
+        ],
+        "description": "Share of views, as a percentage, for an age group and a gender. NOT ADDITIVE: a distribution is read, never summed. It is the only metric the demographics report accepts."
+      },
+      {
+        "field_id": "views",
+        "source_field": "views",
+        "kind": "metric",
+        "physical_type": "integer",
+        "description": "Number of times a video was viewed. Additive.",
+        "semantic_hints": [
+          "engagement",
+          "count"
+        ],
+        "canonical_target": "views",
+        "aggregation": "sum",
+        "non_additive": false
+      },
+      {
+        "field_id": "channel_title",
+        "kind": "dimension",
+        "aggregation": "none",
+        "non_additive": false,
+        "source_field": "snippet.title",
+        "canonical_target": null,
+        "physical_type": "string",
+        "semantic_hints": [
+          "entity_label"
+        ],
+        "description": "Public channel title from channels.list(snippet). The tracked-entity LABEL field: names the observed channel; never a governed dimension of a KPI series."
+      },
+      {
+        "field_id": "is_own_channel",
+        "kind": "dimension",
+        "aggregation": "none",
+        "non_additive": false,
+        "source_field": "derived",
+        "canonical_target": null,
+        "physical_type": "boolean",
+        "semantic_hints": [
+          "entity_own_marker"
+        ],
+        "description": "True when the channel id was supplied through own_channel_ids -- the binding's own-marker, stamped at pull time. Role (own/competitor/reference) remains a Governance fact."
+      }
+    ],
+    "reports": [
+      {
+        "id": "channel_daily",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "dispatch": {
+          "callable": "pull_channel_daily"
+        },
+        "metrics": [
+          "views",
+          "estimated_minutes_watched",
+          "likes",
+          "comments",
+          "shares",
+          "subscribers_gained",
+          "subscribers_lost"
+        ],
+        "dimensions": [
+          "date",
+          "channel_id"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "channel_id"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "offset",
+          "completeness": "complete",
+          "max_pages": null,
+          "row_limit": null,
+          "truncation_signal": "none"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "request"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "date_axis": "request_dimension",
+        "_date_axis_note": "The API accepts `day` beside this breakdown, so one request covers the whole window and the day is read from the answer."
+      },
+      {
+        "id": "video_daily",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "dispatch": {
+          "callable": "pull_video_daily"
+        },
+        "metrics": [
+          "views",
+          "estimated_minutes_watched",
+          "likes",
+          "comments",
+          "shares"
+        ],
+        "dimensions": [
+          "date",
+          "video",
+          "channel_id"
+        ],
+        "supported_grains": [
+          [
+            "date",
+            "video",
+            "channel_id"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [
+          {
+            "field_id": "date",
+            "operators": [
+              "gte",
+              "lte"
+            ]
+          }
+        ],
+        "pagination": {
+          "mode": "offset",
+          "completeness": "complete",
+          "max_pages": null,
+          "row_limit": null,
+          "truncation_signal": "none"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "request"
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        },
+        "date_axis": "per_day_request",
+        "_date_axis_note": "The API refuses `day` beside this breakdown (400, \"The query is not supported\"), so the daily grain is obtained one request PER DAY and the day is stamped from the window."
+      },
+      {
+        "id": "video_upload",
+        "selection_mode": "exact_bundle",
+        "availability": {
+          "status": "selectable"
+        },
+        "dispatch": {
+          "callable": "pull_video_upload"
+        },
+        "landing": "context_events",
+        "entity_field": "video",
+        "entity_kind": "video",
+        "metrics": [],
+        "dimensions": [
+          "date"
+        ],
+        "events": [
+          "video_upload"
+        ],
+        "supported_grains": [
+          [
+            "date"
+          ]
+        ],
+        "compatibility": [],
+        "filters": [],
+        "pagination": {
+          "mode": "none",
+          "completeness": "complete",
+          "max_pages": null,
+          "row_limit": null,
+          "truncation_signal": "none"
+        },
+        "quota_cost": {
+          "read_points": 1,
+          "unit": "request"
+        },
+        "incremental": {
+          "mode": "full_refresh",
+          "cursor_field": null
+        },
+        "cadence": {
+          "minimum_interval_minutes": 1440,
+          "supported_modes": [
+            "manual",
+            "daily"
+          ]
+        }
+      },
+      {
+        "id": "channel_snapshot",
+        "display_name": "Channel audience (snapshot)",
+        "metrics": [
+          "subscriber_count",
+          "lifetime_view_count",
+          "video_count"
+        ],
+        "dimensions": [
+          "date",
+          "channel_id"
+        ],
+        "selection_mode": "exact_bundle",
+        "supported_grains": [
+          [
+            "date",
+            "channel_id"
+          ]
+        ],
+        "filters": [],
+        "cadence": {
+          "supported_modes": [
+            "daily",
+            "manual"
+          ],
+          "minimum_interval_minutes": 1440
+        },
+        "pagination": {
+          "mode": "none",
+          "max_pages": null,
+          "row_limit": null,
+          "completeness": "complete",
+          "truncation_signal": "none"
+        },
+        "quota_cost": {
+          "unit": "request",
+          "read_points": 1
+        },
+        "incremental": {
+          "mode": "full_refresh",
+          "cursor_field": null
+        },
+        "availability": {
+          "status": "selectable"
+        },
+        "compatibility": [],
+        "description": null,
+        "dispatch": {
+          "callable": "pull_channel_snapshot"
+        }
+      },
+      {
+        "id": "audience_demographics",
+        "display_name": "Audience: age and gender",
+        "metrics": [
+          "viewer_percentage"
+        ],
+        "dimensions": [
+          "date",
+          "age_group",
+          "gender",
+          "channel_id"
+        ],
+        "selection_mode": "exact_bundle",
+        "supported_grains": [
+          [
+            "age_group",
+            "channel_id",
+            "date",
+            "gender"
+          ]
+        ],
+        "filters": [],
+        "cadence": {
+          "supported_modes": [
+            "daily",
+            "manual"
+          ],
+          "minimum_interval_minutes": 1440
+        },
+        "pagination": {
+          "mode": "none",
+          "max_pages": null,
+          "row_limit": null,
+          "completeness": "complete",
+          "truncation_signal": "none"
+        },
+        "quota_cost": {
+          "unit": "request",
+          "read_points": 1
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "availability": {
+          "status": "selectable"
+        },
+        "compatibility": [],
+        "description": null,
+        "dispatch": {
+          "callable": "pull_audience_demographics"
+        },
+        "date_axis": "per_day_request",
+        "_date_axis_note": "The API refuses `day` beside this breakdown (400, \"The query is not supported\"), so the daily grain is obtained one request PER DAY and the day is stamped from the window."
+      },
+      {
+        "id": "audience_geography",
+        "display_name": "Audience: country",
+        "metrics": [
+          "views",
+          "estimated_minutes_watched"
+        ],
+        "dimensions": [
+          "date",
+          "country",
+          "channel_id"
+        ],
+        "selection_mode": "exact_bundle",
+        "supported_grains": [
+          [
+            "channel_id",
+            "country",
+            "date"
+          ]
+        ],
+        "filters": [],
+        "cadence": {
+          "supported_modes": [
+            "daily",
+            "manual"
+          ],
+          "minimum_interval_minutes": 1440
+        },
+        "pagination": {
+          "mode": "none",
+          "max_pages": null,
+          "row_limit": null,
+          "completeness": "complete",
+          "truncation_signal": "none"
+        },
+        "quota_cost": {
+          "unit": "request",
+          "read_points": 1
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "availability": {
+          "status": "selectable"
+        },
+        "compatibility": [],
+        "description": null,
+        "dispatch": {
+          "callable": "pull_audience_geography"
+        },
+        "date_axis": "per_day_request",
+        "_date_axis_note": "The API refuses `day` beside this breakdown (400, \"The query is not supported\"), so the daily grain is obtained one request PER DAY and the day is stamped from the window."
+      },
+      {
+        "id": "audience_device",
+        "display_name": "Audience: device and OS",
+        "metrics": [
+          "views",
+          "estimated_minutes_watched"
+        ],
+        "dimensions": [
+          "date",
+          "device_type",
+          "operating_system",
+          "channel_id"
+        ],
+        "selection_mode": "exact_bundle",
+        "supported_grains": [
+          [
+            "channel_id",
+            "date",
+            "device_type",
+            "operating_system"
+          ]
+        ],
+        "filters": [],
+        "cadence": {
+          "supported_modes": [
+            "daily",
+            "manual"
+          ],
+          "minimum_interval_minutes": 1440
+        },
+        "pagination": {
+          "mode": "none",
+          "max_pages": null,
+          "row_limit": null,
+          "completeness": "complete",
+          "truncation_signal": "none"
+        },
+        "quota_cost": {
+          "unit": "request",
+          "read_points": 1
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "availability": {
+          "status": "selectable"
+        },
+        "compatibility": [],
+        "description": null,
+        "dispatch": {
+          "callable": "pull_audience_device"
+        },
+        "date_axis": "request_dimension",
+        "_date_axis_note": "The API accepts `day` beside this breakdown, so one request covers the whole window and the day is read from the answer."
+      },
+      {
+        "id": "traffic_sources",
+        "display_name": "Traffic sources",
+        "metrics": [
+          "views",
+          "estimated_minutes_watched"
+        ],
+        "dimensions": [
+          "date",
+          "traffic_source_type",
+          "channel_id"
+        ],
+        "selection_mode": "exact_bundle",
+        "supported_grains": [
+          [
+            "channel_id",
+            "date",
+            "traffic_source_type"
+          ]
+        ],
+        "filters": [],
+        "cadence": {
+          "supported_modes": [
+            "daily",
+            "manual"
+          ],
+          "minimum_interval_minutes": 1440
+        },
+        "pagination": {
+          "mode": "none",
+          "max_pages": null,
+          "row_limit": null,
+          "completeness": "complete",
+          "truncation_signal": "none"
+        },
+        "quota_cost": {
+          "unit": "request",
+          "read_points": 1
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "availability": {
+          "status": "selectable"
+        },
+        "compatibility": [],
+        "description": null,
+        "dispatch": {
+          "callable": "pull_traffic_sources"
+        },
+        "date_axis": "request_dimension",
+        "_date_axis_note": "The API accepts `day` beside this breakdown, so one request covers the whole window and the day is read from the answer."
+      },
+      {
+        "id": "playback_locations",
+        "display_name": "Playback locations",
+        "metrics": [
+          "views",
+          "estimated_minutes_watched"
+        ],
+        "dimensions": [
+          "date",
+          "playback_location_type",
+          "channel_id"
+        ],
+        "selection_mode": "exact_bundle",
+        "supported_grains": [
+          [
+            "channel_id",
+            "date",
+            "playback_location_type"
+          ]
+        ],
+        "filters": [],
+        "cadence": {
+          "supported_modes": [
+            "daily",
+            "manual"
+          ],
+          "minimum_interval_minutes": 1440
+        },
+        "pagination": {
+          "mode": "none",
+          "max_pages": null,
+          "row_limit": null,
+          "completeness": "complete",
+          "truncation_signal": "none"
+        },
+        "quota_cost": {
+          "unit": "request",
+          "read_points": 1
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "availability": {
+          "status": "selectable"
+        },
+        "compatibility": [],
+        "description": null,
+        "dispatch": {
+          "callable": "pull_playback_locations"
+        },
+        "date_axis": "request_dimension",
+        "_date_axis_note": "The API accepts `day` beside this breakdown, so one request covers the whole window and the day is read from the answer."
+      },
+      {
+        "id": "audience_subscription",
+        "display_name": "Audience: subscribed or not",
+        "metrics": [
+          "views",
+          "estimated_minutes_watched"
+        ],
+        "dimensions": [
+          "date",
+          "subscribed_status",
+          "channel_id"
+        ],
+        "selection_mode": "exact_bundle",
+        "supported_grains": [
+          [
+            "channel_id",
+            "date",
+            "subscribed_status"
+          ]
+        ],
+        "filters": [],
+        "cadence": {
+          "supported_modes": [
+            "daily",
+            "manual"
+          ],
+          "minimum_interval_minutes": 1440
+        },
+        "pagination": {
+          "mode": "none",
+          "max_pages": null,
+          "row_limit": null,
+          "completeness": "complete",
+          "truncation_signal": "none"
+        },
+        "quota_cost": {
+          "unit": "request",
+          "read_points": 1
+        },
+        "incremental": {
+          "mode": "date_window",
+          "cursor_field": null
+        },
+        "availability": {
+          "status": "selectable"
+        },
+        "compatibility": [],
+        "description": null,
+        "dispatch": {
+          "callable": "pull_audience_subscription"
+        },
+        "date_axis": "request_dimension",
+        "_date_axis_note": "The API accepts `day` beside this breakdown, so one request covers the whole window and the day is read from the answer."
+      },
+      {
+        "id": "competitor_channel_snapshot",
+        "display_name": "Tracked channels (snapshot)",
+        "metrics": [
+          "subscriber_count",
+          "lifetime_view_count",
+          "video_count"
+        ],
+        "dimensions": [
+          "date",
+          "channel_id"
+        ],
+        "selection_mode": "exact_bundle",
+        "supported_grains": [
+          [
+            "date",
+            "channel_id"
+          ]
+        ],
+        "filters": [],
+        "cadence": {
+          "supported_modes": [
+            "daily",
+            "manual"
+          ],
+          "minimum_interval_minutes": 1440
+        },
+        "pagination": {
+          "mode": "none",
+          "max_pages": null,
+          "row_limit": null,
+          "completeness": "complete",
+          "truncation_signal": "none"
+        },
+        "quota_cost": {
+          "unit": "request",
+          "read_points": 1
+        },
+        "incremental": {
+          "mode": "full_refresh",
+          "cursor_field": null
+        },
+        "availability": {
+          "status": "selectable"
+        },
+        "compatibility": [],
+        "description": "channels.list stocks for the bound tracked channels (public statistics).",
+        "dispatch": {
+          "callable": "pull_competitor_channel_snapshot"
+        }
+      },
+      {
+        "id": "channel_video_directory",
+        "display_name": "Video directory (named uploads)",
+        "metrics": [],
+        "dimensions": [
+          "date",
+          "channel_id",
+          "video",
+          "channel_title",
+          "is_own_channel"
+        ],
+        "selection_mode": "exact_bundle",
+        "supported_grains": [
+          [
+            "date",
+            "channel_id",
+            "video"
+          ]
+        ],
+        "filters": [],
+        "cadence": {
+          "supported_modes": [
+            "daily",
+            "manual"
+          ],
+          "minimum_interval_minutes": 1440
+        },
+        "pagination": {
+          "mode": "none",
+          "max_pages": null,
+          "row_limit": 50,
+          "completeness": "top_n",
+          "truncation_signal": "logged"
+        },
+        "quota_cost": {
+          "unit": "request",
+          "read_points": 3
+        },
+        "incremental": {
+          "mode": "full_refresh",
+          "cursor_field": null
+        },
+        "availability": {
+          "status": "selectable"
+        },
+        "compatibility": [],
+        "description": "The 50 most recent uploads of each bound channel: titles, publication dates, durations, public lifetime views.",
+        "dispatch": {
+          "callable": "pull_channel_video_directory"
+        }
+      }
+    ],
+    "tracked_entity": {
+      "declaration_version": "1",
+      "reports": [
+        {
+          "report_id": "competitor_channel_snapshot",
+          "direction": "collect",
+          "entity_kinds": [
+            "source_entity"
+          ],
+          "candidate_field_ids": [
+            "channel_id"
+          ],
+          "identity_field_id": "channel_id",
+          "label_field_id": "channel_id",
+          "own_marker_field_id": null,
+          "population": {
+            "completeness": "declared_scope",
+            "note": "Only the channels whose public ids were bound are requested; the Data API exposes channel search but discovery is a Governance act, never a side effect of a pull."
+          },
+          "query_driver": {
+            "parameter": "channel_ids",
+            "value_source": "source_identity",
+            "cardinality": "one_request_per_value",
+            "own_marker_parameter": "own_channel_ids",
+            "max_values_per_request": 50
+          }
+        },
+        {
+          "report_id": "channel_video_directory",
+          "direction": "collect",
+          "entity_kinds": [
+            "source_entity"
+          ],
+          "candidate_field_ids": [
+            "channel_title"
+          ],
+          "identity_field_id": "channel_id",
+          "label_field_id": "channel_title",
+          "own_marker_field_id": "is_own_channel",
+          "population": {
+            "completeness": "declared_scope",
+            "note": "50 most recent uploads per bound channel -- a recent window by contract, not a full catalogue crawl."
+          },
+          "query_driver": {
+            "parameter": "channel_ids",
+            "value_source": "source_identity",
+            "cardinality": "one_request_per_value",
+            "own_marker_parameter": "own_channel_ids",
+            "max_values_per_request": 50
+          }
+        }
+      ]
+    }
+  },
+  "_max_provider_backfill_days_note": "No max_provider_backfill_days is declared because Neither the YouTube Analytics data model nor its query reference states an earliest date or a lookback bound (https://developers.google.com/youtube/analytics/data_model). Declaring a guessed window would promise a history the provider never committed to, so this module answers 'unknown' rather than a number (test_backfill_bound_is_declared_or_its_absence_is)."
 }

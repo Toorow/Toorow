@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 
 _TRANSACTION_COOKIE = "toorow_oidc_transaction"
 _SESSION_COOKIE = "toorow_browser_session"
+#: The public name of the session cookie -- what `api_auth` looks at before opening
+#: anything. A rename here is a rename there, not a 500 on every request.
+SESSION_COOKIE_NAME = _SESSION_COOKIE
 _TRANSACTION_TTL_SECONDS = 600
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _DISCOVERY_TTL_SECONDS = 3600
@@ -62,6 +65,13 @@ class BrowserSession:
     issuer: str
     claims: dict[str, Any]
     expires_at: int
+    #: Names THIS ticket so a single one can be torn up (real logout). Without
+    #: it the seal is anonymous and revocation has nothing to point at.
+    session_id: str
+    #: The ticket's own mint time. It is what turns a principal revocation into
+    #: a "not before" bound instead of a ban -- a ticket minted after the bound
+    #: is untouched by it.
+    issued_at: int
 
 
 def reset_browser_oidc_caches() -> None:
@@ -195,12 +205,51 @@ def _no_store(response: Response) -> Response:
 
 
 async def browser_auth_config(_request: Request) -> Response:
+    """What the browser needs to draw a sign-in it can actually complete.
+
+    ``client_id`` is served for ``google_gis`` because the console cannot even
+    render Google's button without it, and it was a **build-time** value
+    (`VITE_GOOGLE_CLIENT_ID`) until 2026-08-04. A bundle built without it
+    deployed a sign-in screen that could never succeed -- the failure surfaced
+    only in the browser, in production, as "not set at build time", and no
+    server check could have caught it because the server was never asked.
+
+    It is not a secret. An OAuth client id is transmitted to Google BY THE PAGE
+    itself and is visible to anyone who opens the console; the secret half is
+    ``client_secret``, which this endpoint never discloses. Serving it here
+    removes an entire class of dead deployment: the value now travels with the
+    running server that already verifies tokens against it.
+    """
     mode, reason, settings = _browser_mode()
     body: dict[str, Any] = {"mode": mode}
     if reason:
         body["reason"] = reason
     if settings is not None:
         body["provider_name"] = settings.provider_name
+    if mode == "google_gis":
+        # DEUX sources, et la seconde n'est pas un repli de fortune.
+        #
+        # En `google_gis` le navigateur se connecte avec un client OAuth X, et le
+        # serveur n'accepte que les jetons dont le `aud` vaut X : c'est la
+        # DEFINITION du mode, pas une coincidence. `TOOROW_JWT_AUDIENCE` porte
+        # donc deja la valeur, et c'est elle qui est reellement posee en
+        # production -- mesure du 2026-08-04, juste apres avoir deploye une
+        # premiere version qui ne lisait que `TOOROW_OIDC_CLIENT_ID` : la route
+        # a repondu `oidc_client_id_missing` alors que la connexion, elle,
+        # fonctionnait. Un correctif qui ne corrige pas.
+        #
+        # `TOOROW_OIDC_CLIENT_ID` reste prioritaire : il appartient au mode
+        # `oidc`, et un operateur qui le pose explicitement a une raison.
+        client_id = (os.environ.get("TOOROW_OIDC_CLIENT_ID", "") or "").strip()
+        if not client_id:
+            client_id = (os.environ.get("TOOROW_JWT_AUDIENCE", "") or "").strip()
+        if client_id:
+            body["client_id"] = client_id
+        else:
+            # The mode stays `google_gis`: the operator DID choose it. What is
+            # missing is named, so the console stops blaming its own build for
+            # a value the server never had.
+            body["reason"] = "oidc_client_id_missing"
     return _no_store(JSONResponse(body))
 
 
@@ -536,6 +585,11 @@ async def oidc_callback(request: Request) -> Response:
         settings,
         {
             "exp": expires_at,
+            # `iat` and `sid` exist for revocation and nothing else: `sid` names
+            # the one ticket a logout tears up, `iat` places it against a
+            # principal-wide "not before" bound. See `core/session_revocation`.
+            "iat": now,
+            "sid": secrets.token_urlsafe(24),
             "iss": settings.issuer,
             "sub": claims["sub"],
             "claims": session_claims,
@@ -568,8 +622,56 @@ def _session_origin_allowed(request: Request, settings: OIDCSettings) -> bool:
     return bool(origin) and hmac.compare_digest(origin, expected)
 
 
+def clear_session_cookie(response: Response) -> Response:
+    """Drop the session cookie, so other modules never spell its name themselves.
+
+    `me_api` needs this after cutting the caller's own sessions: leaving the
+    cookie in place would make the next screen fail with a bare 401 instead of
+    showing the sign-in the person now needs.
+    """
+    response.delete_cookie(_SESSION_COOKIE, path="/")
+    return response
+
+
+def _session_is_revoked(session: BrowserSession) -> bool:
+    """Ask the LIVE revocation store whether this ticket may still be used.
+
+    Fails CLOSED. A store that cannot be read refuses the session, because an
+    auth seam that failed open on a database blip would serve revoked tickets
+    exactly when the operator most needs them cut.
+    """
+    from core.session_revocation import (  # noqa: PLC0415
+        is_session_revoked,
+        revocation_enabled,
+    )
+
+    if not revocation_enabled():
+        return False
+    try:
+        from core.db import get_connection  # noqa: PLC0415
+
+        with get_connection() as conn:
+            return is_session_revoked(
+                conn,
+                session_id=session.session_id,
+                issuer=session.issuer,
+                subject=session.subject,
+                issued_at=session.issued_at,
+            )
+    except Exception:  # noqa: BLE001 - fail closed, and say so
+        logger.exception("browser_session_revocation_store_unreadable")
+        return True
+
+
 def get_browser_session(request: Request) -> BrowserSession | None:
-    """Return a valid browser session only in the explicit OIDC mode."""
+    """Return a valid browser session only in the explicit OIDC mode.
+
+    THE SINGLE SEAM. Every authenticated path opens the sealed ticket here --
+    the four resolvers of `api_auth` and `GET /api/auth/session` -- so the
+    revocation check belongs here and nowhere else. Placed one layer up in
+    `api_auth` instead, it would leave `/api/auth/session` telling a person
+    whose session was just cut that they are still authenticated.
+    """
     mode, _reason, settings = _browser_mode()
     if mode != "oidc" or settings is None:
         return None
@@ -583,6 +685,8 @@ def get_browser_session(request: Request) -> BrowserSession | None:
     issuer = payload.get("iss")
     expires_at = payload.get("exp")
     claims = payload.get("claims")
+    session_id = payload.get("sid")
+    issued_at = payload.get("iat")
     if (
         not isinstance(subject, str)
         or not subject
@@ -590,14 +694,26 @@ def get_browser_session(request: Request) -> BrowserSession | None:
         or not isinstance(expires_at, int)
         or expires_at <= int(time.time())
         or not isinstance(claims, dict)
+        # A ticket minted before `sid`/`iat` existed cannot be named by a
+        # revocation, so it cannot be cut -- and an uncuttable ticket is the
+        # very defect this closes. It is refused; the person signs in again and
+        # gets one that can be. No production deployment holds such a ticket.
+        or not isinstance(session_id, str)
+        or not 8 <= len(session_id) <= 128
+        or not isinstance(issued_at, int)
     ):
         return None
-    return BrowserSession(
+    session = BrowserSession(
         subject=subject,
         issuer=issuer,
         claims={**claims, "iss": issuer, "sub": subject, "exp": expires_at},
         expires_at=expires_at,
+        session_id=session_id,
+        issued_at=issued_at,
     )
+    if _session_is_revoked(session):
+        return None
+    return session
 
 
 async def browser_session(request: Request) -> Response:
@@ -621,9 +737,60 @@ async def browser_session(request: Request) -> Response:
 
 
 async def browser_logout(request: Request) -> Response:
+    """Sign out THIS window -- and make the ticket it held unusable.
+
+    Deleting the cookie only asks the browser to forget the ticket. A copy taken
+    before the click kept working for the rest of the 8-hour TTL, which is what
+    `reviews/audit-2026-08-17/12-acces-utilisateurs.md:286-290` named. The
+    revocation is what makes this a logout; the `delete_cookie` is now only the
+    courtesy that stops the browser resending a ticket it will be refused on.
+
+    Only THIS ticket is torn up. Signing out of every window is a different
+    request the person makes deliberately: `POST /api/me/sessions/revoke`.
+    """
     mode, _reason, settings = _browser_mode()
     if mode == "oidc" and settings is not None and not _session_origin_allowed(request, settings):
         return _no_store(JSONResponse({"code": "csrf_origin_invalid"}, status_code=403))
+
+    session = get_browser_session(request)
+    if session is not None:
+        from core.audit import write_audit_row  # noqa: PLC0415
+        from core.session_revocation import (  # noqa: PLC0415
+            ACTION_SESSION_REVOKED,
+            revocation_enabled,
+            revoke_session,
+        )
+
+        if revocation_enabled():
+            try:
+                from core.db import get_connection  # noqa: PLC0415
+
+                with get_connection() as conn:
+                    revoke_session(
+                        conn,
+                        session_id=session.session_id,
+                        issuer=session.issuer,
+                        subject=session.subject,
+                        revoked_by=session.subject,
+                        reason="logout",
+                    )
+                    conn.commit()
+            except Exception:  # noqa: BLE001
+                # Say it, and refuse to claim a logout that did not happen: a
+                # 204 here would tell the person their session is closed while
+                # the ticket still opens every screen.
+                logger.exception("browser_logout_revocation_failed")
+                return _no_store(
+                    JSONResponse({"code": "logout_incomplete"}, status_code=503)
+                )
+            write_audit_row(
+                identity=session.subject,
+                action=ACTION_SESSION_REVOKED,
+                provider_account="",
+                connection_ref="",
+                metadata={"scope": "session", "reason": "logout"},
+            )
+
     response = Response(status_code=204)
     response.delete_cookie(_SESSION_COOKIE, path="/")
     return _no_store(response)

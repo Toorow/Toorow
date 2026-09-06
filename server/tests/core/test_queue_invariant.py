@@ -33,7 +33,9 @@ from pathlib import Path
 _SERVER_DIR = Path(__file__).parent.parent.parent  # server/
 _CORE_DIR = _SERVER_DIR / "core"
 _MAIN_PY = _CORE_DIR / "main.py"
-_ADMIN_API_PY = _CORE_DIR / "admin_api.py"
+# AD-43 : `_trigger_pull` a rejoint le module de son sujet. Un garde de source
+# s epingle au CODE, jamais a un chemin -- sinon il devient faux en silence.
+_ADMIN_API_PY = _CORE_DIR / "connections_api.py"
 
 # Third-party HTTP module names that must not appear inside MCP tool handlers
 _BANNED_HTTP_MODULES = {"httpx", "requests", "aiohttp", "urllib3"}
@@ -45,8 +47,17 @@ def _collect_mcp_tool_functions(tree: ast.Module) -> list[ast.FunctionDef]:
     Handles:
       - @mcp.tool decorator on the function
       - mcp.tool(fn) call at module level (explicit registration)
+      - register_profiled(mcp, fn, ...) -- the AD-43 declaring registrar
+
+    THE THIRD FORM IS WHY THIS FUNCTION CHANGED. It read `mcp.tool(fn)` with
+    EXACTLY one positional argument, and nothing else. AD-43 moved `health` -- the
+    only tool `main.py` still registers directly -- onto `register_profiled`, and
+    the collector returned an empty list. The assertion below caught that (it
+    demands at least one tool), but a guard that finds nothing must never be able
+    to pass silently, so both forms are read here rather than the assertion being
+    relaxed.
     """
-    # Collect names registered via mcp.tool(fn) at module level
+    # Collect names registered via mcp.tool(fn) / register_profiled(mcp, fn) at module level
     mcp_registered_names: set[str] = set()
     for node in ast.walk(tree):
         if not isinstance(node, ast.Expr):
@@ -64,6 +75,14 @@ def _collect_mcp_tool_functions(tree: ast.Module) -> list[ast.FunctionDef]:
             and isinstance(call.args[0], ast.Name)
         ):
             mcp_registered_names.add(call.args[0].id)
+        # register_profiled(mcp, fn, profile=..., ...) pattern
+        elif (
+            isinstance(call.func, ast.Name)
+            and call.func.id == "register_profiled"
+            and len(call.args) >= 2
+            and isinstance(call.args[1], ast.Name)
+        ):
+            mcp_registered_names.add(call.args[1].id)
 
     tool_fns: list[ast.FunctionDef] = []
     for node in ast.walk(tree):
@@ -125,7 +144,7 @@ def test_no_httpx_import_in_mcp_tool_handlers():
     tool_fns = _collect_mcp_tool_functions(tree)
     assert tool_fns, (
         "Expected to find at least one MCP tool function in main.py "
-        "(health, list_modules, get_daily_report). If the file structure changed, "
+        "(health, list_connectors, get_daily_report). If the file structure changed, "
         "update this test."
     )
 

@@ -4,17 +4,17 @@
  * Primitive de densité : chaque cellule affiche sa valeur numérique sur un fond
  * dégradé divergent (vert → jaune → rouge) dérivé du thème courant via getVizPalette.
  * Normalisation min-max sur les valeurs non-null ; null → cellule squelette (AD-9).
- * Aucune lib graphique externe (AD-11). Light + dark via MUI theme.
+ * Aucune lib graphique externe (AD-11). Light + dark via le thème partagé.
  *
  * Référence visuelle : card « Sales Report » — squircles denses, chiffres centrés,
  * contraste du texte garanti via getContrastText. Strings françaises (UX-DR10).
  */
 
 import { useMemo } from "react";
-import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
-import { useTheme, alpha } from "@mui/material/styles";
+
 import { getVizPalette } from "./vizTheme";
+import { NO_VALUE, formatMeasure, formatValue } from "./viz/theme/formatters";
+import { Box, Typography, alpha, useTheme } from "@toorow/shell";
 
 export interface ValueGridCell {
   /** Libellé optionnel — affiché dans le tooltip natif (ex. une date, un nom). */
@@ -124,11 +124,14 @@ export default function ValueGrid({
     if (cell.value === null) {
       return label ? `${label} : —` : "—";
     }
-    const formatted = cell.value.toLocaleString("fr-FR");
-    const withUnit = unit ? `${formatted} ${unit}` : formatted;
+    const withUnit = formatMeasure(cell.value, unit);
     return label ? `${label} : ${withUnit}` : withUnit;
   }
 
+  // The diverging ramp IS a verdict: green cells read as doing well, red ones as
+  // doing badly, and which end is which flips with `direction`. The sentence that
+  // says so is printed ONCE, by the card footer (`VariationLegend`), never per
+  // block — a legend inside this CSS grid would also become one more cell.
   return (
     <Box
       role="grid"
@@ -177,7 +180,7 @@ export default function ValueGrid({
                 fontSize: "0.65rem",
               }}
             >
-              {isNull ? "—" : cell.value!.toLocaleString("fr-FR")}
+              {isNull ? NO_VALUE : formatValue(cell.value)}
             </Typography>
           </Box>
         );

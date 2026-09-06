@@ -13,9 +13,9 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import CalendarHeatmap, { type ContextEvent } from "../CalendarHeatmap";
+import { ThemeProvider, createTheme } from "@toorow/shell";
 
-// Minimal theme stub — MUI useTheme() requires a ThemeProvider.
-import { ThemeProvider, createTheme } from "@mui/material/styles";
+// Minimal theme stub — useTheme() reads the nearest ThemeProvider.
 
 function renderHeatmap(contextEvents: ContextEvent[] = []) {
   const theme = createTheme();

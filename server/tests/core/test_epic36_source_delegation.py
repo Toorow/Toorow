@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+
+from tests.conftest import REPO_ROOT
 
 
 def _env(monkeypatch):
@@ -473,7 +474,7 @@ def test_no_secret_in_operation_payloads_or_result(monkeypatch):
 # (f) migration 068 text contains the contract.
 # ---------------------------------------------------------------------------
 def test_migration_068_declares_delegation_contract():
-    sql = Path("infra/nango/migrations/068_delegated_source_authorization.sql").read_text()
+    sql = (REPO_ROOT / "infra/nango/migrations/068_delegated_source_authorization.sql").read_text()
     for fragment in (
         "app.source_delegations",
         "delegation_id",
