@@ -290,3 +290,32 @@ export function formatCount(
   if (numeric === null) return NO_VALUE;
   return `${formatNumber(numeric)} ${Math.abs(numeric) === 1 ? singular : plural}`;
 }
+
+/**
+ * THE CATCH-UP NOTATION, WRITTEN ONCE — story 76-6, arbitrage 2.
+ *
+ * A collection window that ends N days before today is spoken as `D−3` in this
+ * console. Three things about that string are decisions and not typography:
+ *
+ *   - the letter is `D`, not `J`. « J-3 » is French (`jour`), and §1 of
+ *     `console-presentation.md` settles the console's language; it survived in
+ *     `SchedulePanel`'s extraction-offset hint, which was the last instance of
+ *     the epic's « Nuit · J-3 » family still in the tree at HEAD.
+ *   - the sign is U+2212 MINUS SIGN, the same character `formatRelative`
+ *     refuses in front of a count. Here it is not a direction word standing in
+ *     for « when » — it is an OFFSET from a named origin, which is a
+ *     subtraction and reads as one.
+ *   - `D` alone is today. `D−0` is a subtraction nobody performed.
+ *
+ * A negative offset is not an answer this notation has: a window cannot end in
+ * the future, so the caller gets `NO_VALUE` rather than a `D+1` this product
+ * has no meaning for.
+ */
+export const MINUS_SIGN = "−";
+
+export function formatDayOffset(value: NumericValue): string {
+  const numeric = readable(value);
+  if (numeric === null || numeric < 0) return NO_VALUE;
+  const days = Math.floor(numeric);
+  return days === 0 ? "D" : `D${MINUS_SIGN}${formatNumber(days)}`;
+}

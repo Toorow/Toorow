@@ -75,7 +75,7 @@ Anomalies **never assert causality**. When context events exist for an anomaly d
 Prohibited causal phrases in generated messages:
 - `"caused by"`, `"due to"`, `"because of"`, `"en raison de"`, `"causé par"`.
 
-Enforced by unit test `test_causal_language_absent` in `server/tests/core/test_anomaly_alerts.py`.
+Enforced by `TestCausalLanguageAbsent` in `server/tests/core/test_anomaly_alerts.py`, which asserts none of these patterns appears in any generated message.
 
 ---
 

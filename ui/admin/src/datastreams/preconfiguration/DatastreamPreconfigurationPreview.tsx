@@ -183,6 +183,12 @@ export default function DatastreamPreconfigurationPreview() {
         },
       }
       : draft.operator_input;
-  const previewDraft = { ...draft, operator_input: operatorInput };
+  const previewDraft = {
+    ...draft,
+    operator_input: {
+      ...(operatorInput as Record<string, unknown>),
+      wizard_state: { active_section_ref: section, first_incomplete: section },
+    },
+  };
   return <DatastreamPreconfiguration projectId="proj_preview" preview={{ draft: previewDraft, proposal }} />;
 }

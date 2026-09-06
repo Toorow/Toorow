@@ -263,6 +263,50 @@ export const STATE_TONE: Readonly<Record<string, Tone>> = {
   // Reading, right now. A statement about the deployment's progress, which is
   // what `info` is for, and never a verdict on the object.
   loading: "info",
+
+  // ------------------------------------------------------------------------
+  // DECLARED BY STORY 76-5, for the Overview and the seven Test screens.
+  //
+  // Every word below was reaching `stateLabel` UNDECLARED, so it read `Unknown`
+  // in the warning colour -- which is the honest default and, for these nine,
+  // the wrong answer: the server names each of them deliberately and three
+  // distinct words were collapsing into one reading. Declaring them is the
+  // path §3 offers ("a screen that disagrees changes the word here, in front of
+  // everybody"); the alternative was five private maps, which is what 76-2 spent
+  // itself removing.
+  // ------------------------------------------------------------------------
+
+  // `project_overview.py:798` -- `data_coverage.active.state` is
+  // `summary["published_trust"]`, one of `trusted` / `attention` / `unknown` /
+  // `no_data` (`derive_project_trust`). The three that are not already answered
+  // here were all reading `Unknown`, so an Overview whose publications are
+  // verified said the same word as one whose publications are late.
+  trusted: "success",
+  attention: "warning",
+  // Nothing published yet. An absence the server CHOSE to state, which is what
+  // `neutral` means in this scale -- and NOT the same fact as `unknown`.
+  no_data: "neutral",
+  // `project_overview.py` `PostureState`: the reading exists and this actor may
+  // not see it. A question unanswered FOR THIS READER is still a question
+  // unanswered, so it keeps the warning diamond it already had as an undeclared
+  // word; what changes is that it now has a sentence instead of `Unknown`.
+  permission_limited: "warning",
+
+  // `golden_questions.py:106` -- `LIFECYCLES = ("draft", "active",
+  // "deprecated", "archived")`. `draft`, `active` and `archived` were already
+  // declared; `deprecated` is the fourth and it is a warning rather than an
+  // error, because `LIFECYCLE_TRANSITIONS` (l.114) lets it go back to `active`:
+  // it is held up, not ended. `archived` is the terminal one and is already
+  // `error`.
+  deprecated: "warning",
+
+  // `evaluation_runs.py:807,1084-1092` -- an Evaluation Run and a Trace
+  // Observation are `recording` until `finalized`. `recording` is a run in
+  // flight (a statement about progress, `info`, like `loading`); `finalized` is
+  // a run whose evidence is closed and citable, which is a verdict and earns
+  // `success`.
+  recording: "info",
+  finalized: "success",
 };
 
 /**
@@ -339,6 +383,20 @@ export const STATE_LABEL: Readonly<Record<string, string>> = {
   unused: "Not used yet",
   used: "In use",
   versioned: "Versioned",
+
+  // Story 76-5. Only the words whose fallback would be worse than the sentence
+  // a reader needs; `trusted`, `deprecated`, `recording` and `finalized` the
+  // fallback spells correctly and are deliberately not repeated.
+  //
+  // "Attention" alone is a noun and reads as a heading, not as a verdict.
+  attention: "Needs attention",
+  // Not "No data": the fact is that nothing has been PUBLISHED yet, and a
+  // reader who sees rows in the workbench would read the shorter word as a
+  // contradiction.
+  no_data: "Nothing published yet",
+  // States the fact and says whose limit it is. The fallback would say
+  // "Permission limited", which reads as a property of the object.
+  permission_limited: "Permission limited",
 };
 
 /** What an undeclared state reads as, in both halves of the answer. */

@@ -134,6 +134,15 @@ HISTORY = OUT / "history.jsonl"
 # surface. It is transcribed from the table in CLAUDE.md section 1, which is the
 # authority. A surface with no document says so -- inventing one would be the
 # exact drift CLAUDE.md forbids.
+#
+# THE GLOBAL SURFACES WERE LEFT EMPTY HERE, AND THE BOARD CALLED THAT << NO RATIFIED
+# DOCUMENT >> ON 13 ROWS. `docs/product-architecture/page-structure.md:62` had
+# already ratified the opposite (Jean, 2026-09-01): the ten `account/*` and
+# `organization-settings/*` rows are described by `README.md` (<< Global scope
+# surfaces >>) and `organization-settings.md`, and `platform/clocks` by
+# `execution-substrate.md`. Three audits (2026-09-01, 09-05, 09-06) then repeated
+# << 12/13 screens without a target >> from this table: the instrument, not the
+# target, was short. Filled 2026-09-06 from that ratified paragraph.
 SURFACE_DOC = {
     "overview": ["overview.md"],
     "analyze": ["analyze-and-test.md"],
@@ -144,15 +153,19 @@ SURFACE_DOC = {
     "project-settings": ["project-settings.md"],
     "project-access": ["project-settings.md"],
     "getting-started": ["project-settings.md"],
-    "organization-settings": [],
-    "account": [],
-    "platform": [],
+    "organization-settings": ["organization-settings.md"],
+    "account": ["README.md"],
+    "platform": ["execution-substrate.md"],
 }
 # Two screens are covered by a document of their own, finer than their surface.
 SECTION_DOC = {
     "data/datastreams": ["datastream-workbench-and-wizard.md"],
     "data/imports": ["file-source-ingestion.md"],
     "context-hub/knowledge-graph": ["context-hub.md"],
+    # The AI tab of Organization Settings edits the `ai_settings` cascade, whose
+    # target is written in context-hub.md (story 75-4); organization-settings.md
+    # itself says the cascade is described THERE, not in it.
+    "organization-settings/ai": ["organization-settings.md", "context-hub.md"],
 }
 
 # The ledger does not key on the document's file name. Reading it as if it did

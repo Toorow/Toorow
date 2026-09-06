@@ -12,7 +12,7 @@ fresh-context review flagged as unshipped or unproven:
     ledger row and the FK to ``csv_excel_import_contracts`` holds.
   * the UNMOCKED rejection gate: parsed per-row rejections (mutation-shaped dents) drive a
     real ``evaluate_rejection_gate_for_ledger`` call that blocks above the threshold and
-    the outcome is marked ``failed``; a below-threshold import stays ``written``.
+    the outcome is marked ``rejected``; a below-threshold import stays ``written``.
   * publication honesty: a passing gate leaves the ledger ``written`` and the result
     carries ``published=False`` / ``outcome='written_pending_publication'`` -- never a
     fabricated publish (physical write + pointer swap are Phase B).
@@ -361,7 +361,7 @@ def test_ledger_rejects_dangling_contract_fk(live_postgres) -> None:
 
     with conn.cursor() as cur:
         cur.execute("SAVEPOINT sp")
-    with pytest.raises(psycopg.errors.ForeignKeyViolation):
+    with pytest.raises(psycopg.errors.RaiseException) as refusal:
         open_import(
             datastream_id=ds_id, project_id=project_id, plan_version_id=plan_id,
             mapping_version_id=mapping_id, feed_format="csv",
@@ -369,16 +369,25 @@ def test_ledger_rejects_dangling_contract_fk(live_postgres) -> None:
             source_metadata={}, content_hash=None, conn=conn,
             import_contract_id="cic_does_not_exist",
         )
+    assert "cic_does_not_exist" in str(refusal.value)
+    assert "does not exist in the table its prefix names" in str(refusal.value)
     with conn.cursor() as cur:
         cur.execute("ROLLBACK TO SAVEPOINT sp")
     conn.rollback()
 
 
 @requires_postgres
-def test_run_import_rejection_gate_blocks_and_marks_failed(live_postgres) -> None:
+def test_run_import_rejection_gate_blocks_and_marks_rejected(live_postgres) -> None:
     """C2 end-to-end: parsed per-row rejections drive the UNMOCKED gate; over the
-    threshold the ledger is marked 'failed' and the result is blocked."""
+    threshold the ledger is marked 'rejected' and the result is blocked.
+
+    'rejected', not 'failed': the ledger keeps the two terminal outcomes apart
+    (`core/managed_feed_ledger.py:80` / `:82`), and the rejection gate writes
+    `OUTCOME_REJECTED` (`core/import_runner.py:689`). 'failed' would say the
+    import broke; this one was refused by a threshold the project set.
+    """
     from core.csv_excel_import import run_import
+    from core.managed_feed_ledger import OUTCOME_REJECTED
 
     conn = live_postgres
     _apply_migrations(conn)
@@ -416,7 +425,7 @@ def test_run_import_rejection_gate_blocks_and_marks_failed(live_postgres) -> Non
             (result["ledger"]["id"],),
         )
         outcome, rej_count = cur.fetchone()
-    assert outcome == "failed"
+    assert outcome == OUTCOME_REJECTED
     assert rej_count == 8
 
     with conn.cursor() as cur:

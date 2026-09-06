@@ -25,6 +25,8 @@ from pathlib import Path
 import pytest
 from core import pull_job_states
 
+from tests.migration_ledger import apply_migrations_absent_from_the_ledger
+
 ROOT = Path(__file__).resolve().parents[3]
 MIGRATIONS = ROOT / "infra" / "nango" / "migrations"
 STOP_MIGRATION = MIGRATIONS / "220_a_window_that_never_started_can_be_refused.sql"
@@ -77,17 +79,26 @@ def test_the_migration_leaves_the_active_index_alone() -> None:
 
 
 def test_the_check_declares_exactly_what_the_registry_declares() -> None:
-    """Read from the SQL, compared to Python -- both, in the same change."""
+    """Read from the SQL, compared to Python -- both, in the same change.
+
+    The SQL read is the LAST migration that declares `pull_jobs_state_check`,
+    never migration 220: 297 widened the same named constraint with `prevented`,
+    and a guard anchored on the file that happened to be current when it was
+    written measures its own frozen copy. Same derivation as
+    `tests/conformance/test_pull_job_state_registry.py::_latest_state_check`.
+    """
     import re
 
-    sql = STOP_MIGRATION.read_text(encoding="utf-8")
-    body = re.search(
-        r"pull_jobs_state_check\s+CHECK\s*\(\s*state\s+IN\s*\(([^)]*)\)", sql
+    pattern = re.compile(
+        r"pull_jobs_state_check\s+CHECK\s*\(\s*state\s+IN\s*\((?P<body>[^)]*)\)",
+        re.IGNORECASE,
     )
-    assert body is not None
-    assert set(re.findall(r"'([a-z_]+)'", body.group(1))) == set(
-        pull_job_states.JOB_STATES
-    )
+    body = ""
+    for path in sorted(MIGRATIONS.glob("*.sql")):
+        for match in pattern.finditer(path.read_text(encoding="utf-8")):
+            body = match.group("body")
+    assert body, "no CHECK on pull_jobs.state found in the migrations"
+    assert set(re.findall(r"'([a-z_]+)'", body)) == set(pull_job_states.JOB_STATES)
 
 
 # ---------------------------------------------------------------------------
@@ -105,11 +116,15 @@ def stop_db(live_postgres):
     then be measuring a schema this build does not ship. `uq_pull_jobs_active`
     comes from the same file and is already in place on any cluster the
     migrations have been applied to.
+
+    THE SAME TRAP CAUGHT 220 ITSELF (AI-367): this fixture used to run its text
+    raw with `cur.execute`, and migration 297 -- which widened the very same
+    named constraint with `prevented` -- was silently rolled back on every run.
+    The narrowing outlived the test: a shared database keeps it. It now replays
+    only what the ledger does not carry, like every other integration fixture.
     """
     conn = live_postgres
-    with conn.cursor() as cur:
-        cur.execute(STOP_MIGRATION.read_text(encoding="utf-8"))
-    conn.commit()
+    apply_migrations_absent_from_the_ledger(conn, (STOP_MIGRATION,))
 
     org_id = _id("org_")
     project_id = _id("proj_")

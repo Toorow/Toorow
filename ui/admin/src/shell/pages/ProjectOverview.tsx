@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { ApiError, apiGet } from "../../lib/apiFetch";
 import { wireWord,
-  Button, EmptyState, Failure, formatCount, formatNumber, Loading, Metric, NO_VALUE, ObjectId,
+  Button, Cluster, EmptyState, Failure, formatCount, formatDate, formatNumber, formatTimestamp,
+  Loading, Metric, NO_VALUE, ObjectId,
   PageFrame, PageHeader, Panel, PanelHeader, ProjectNotFound, Retry, Stack, Status, StatusLegend,
   stateLabel, stateTone, Timestamp, type StatusLegendEntry, type Tone,
 } from "../../ui";
@@ -294,11 +295,16 @@ function windowText(hours: number | undefined): string | null {
  *  refuses in the same words. `applicable` is the server's own word
  *  (`_capability_coverage`, `coverage.applicable`) and is true of every row. The
  *  field that would carry the noun is named in the story record. */
-function coverageHint(item: { denominator: number; evidence_horizon: string | null }) {
-  const cutoff = <Timestamp value={item.evidence_horizon} absentMeaning="No evidence horizon recorded" />;
+function coverageHint(item: { denominator: number; evidence_horizon: string | null }): string {
+  // THE DATE GRAIN, not the instant. `evidence_horizon` is `complete_through`
+  // or a run date; rendering it through `<Timestamp>` would print a midnight
+  // with a timezone and claim a precision the server never sent.
+  const cutoff = item.evidence_horizon
+    ? `evidence to ${formatDate(item.evidence_horizon)}`
+    : "no evidence horizon recorded";
   return item.denominator === 0
-    ? <>Nothing applicable to measure · evidence to {cutoff}</>
-    : <>of {formatNumber(item.denominator)} applicable · evidence to {cutoff}</>;
+    ? `Nothing applicable to measure · ${cutoff}`
+    : `of ${formatNumber(item.denominator)} applicable · ${cutoff}`;
 }
 
 /** One component of the shared readiness projection, or null when the envelope
@@ -344,7 +350,7 @@ function OwnerButton({ owner, label, onOpenOwner, variant = "secondary" }: { own
 function PostureCard({ label, dimension, onOpenOwner }: { label: string; dimension: PostureDimension; onOpenOwner?: (owner: OwnerReference) => void }) {
   return <Status as="block" tone={tone(dimension.state)} title={label} action={<OwnerButton owner={dimension.owner} label="Open owner" onOpenOwner={onOpenOwner} variant="ghost" />}>
     <p className="m-0">{dimension.explanation}</p>
-    <p className="mt-1 mb-0 text-caption text-text-secondary">Evidence horizon: <Timestamp value={dimension.evidence_horizon} absentMeaning="No persisted evidence" /></p>
+    <p className="mt-1 mb-0 text-caption text-text-secondary">Evidence horizon: {formatDate(dimension.evidence_horizon)}</p>
   </Status>;
 }
 
@@ -384,6 +390,20 @@ function ProjectOverviewReady({ data, onOpenOwner }: { data: ProjectOverviewEnve
         <div className="grid gap-4 p-5 lg:grid-cols-3">{postureEntries.map(([key, label]) => <PostureCard key={key} label={label} dimension={data.posture[key]} onOpenOwner={onOpenOwner} />)}</div>
       </Panel>
       <Panel flush><PanelHeader title="Next action & attention" description="One ranked action per root cause, with an exact semantic owner." />
+        {/* THE QUEUE'S SIZE IS A KPI AND IT SAYS ITS POPULATION (76-5 arbitrage 1).
+            `attention.total` is the WHOLE ranked queue, not the eight rows below,
+            and it was reachable on this screen only through the truncation
+            footnote — so a project with eight problems and a project with eighty
+            both read "eight cards". The population is every root cause the server
+            ranked for this project and the cut-off is the envelope's own `as_of`. */}
+        <div className="border-b border-divider-base">
+          <Metric
+            label="Root causes needing attention"
+            value={formatNumber(data.attention.total)}
+            hint={`across this project · as at ${formatTimestamp(data.project.as_of)}`}
+            data-testid="attention-total"
+          />
+        </div>
         <div className="space-y-4 p-5">
           {data.next_action ? <Status as="block" tone="accent" title={data.next_action.cause} action={data.next_action.permitted ? <OwnerButton owner={data.next_action.owner} label={data.next_action.label} onOpenOwner={onOpenOwner} variant="default" /> : null}>
             {data.next_action.permitted ? "Recommended next step" : data.next_action.handoff ?? "Ask an authorized project editor."}
@@ -391,7 +411,7 @@ function ProjectOverviewReady({ data, onOpenOwner }: { data: ProjectOverviewEnve
           {data.attention.items.length === 0 ? <EmptyState title="Nothing needs attention" description="No persisted root cause currently requires action." /> : data.attention.items
             .filter((item) => !data.next_action || item.cause !== data.next_action.cause)
             .map((item) => <Status key={item.id} as="block" tone={tone(item.status)} title={item.cause} action={item.action.permitted && data.next_action?.label !== item.action.label ? <OwnerButton owner={item.owner} label={item.action.label} onOpenOwner={onOpenOwner} /> : null}>
-            <p className="m-0">{item.impact.join(" ")}</p><p className="mt-1 mb-0 text-caption text-text-secondary">Scope: {item.scope.join(", ") || "Project"} - Evidence horizon: <Timestamp value={item.evidence_horizon} absentMeaning="No persisted evidence" /></p>
+            <p className="m-0">{item.impact.join(" ")}</p><p className="mt-1 mb-0 text-caption text-text-secondary">Scope: {item.scope.join(", ") || "Project"} - Evidence horizon: {formatDate(item.evidence_horizon)}</p>
             <p className="mt-1 mb-0 text-caption text-text-secondary">Observed: <Timestamp value={item.first_observed_at} absentMeaning="First observation not recorded" /> to <Timestamp value={item.last_observed_at} absentMeaning="Last observation not recorded" /></p>
           </Status>)}
           {/* A BOUNDED QUEUE SAYS IT IS BOUNDED.
@@ -405,23 +425,46 @@ function ProjectOverviewReady({ data, onOpenOwner }: { data: ProjectOverviewEnve
               claim truncation on a queue the server sent whole. */}
           {data.attention.has_more ? (
             <p className="m-0 text-caption text-text-secondary" data-testid="attention-truncated">
-              Showing {data.attention.items.length} of {data.attention.total} items that need
-              attention. The rest are not on this page.
+              Showing {formatNumber(data.attention.items.length)} of {formatNumber(data.attention.total)} items
+              that need attention. The rest are not on this page.
             </p>
           ) : null}
         </div>
       </Panel>
       <Panel flush><PanelHeader title="Coverage & readiness" description="Denominators, gaps, active state, and pending state are explicit." />
-        {data.coverage.length === 0 ? <EmptyState title="No coverage evidence yet" description="Add a Datastream in Data to begin establishing project coverage." /> : <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-3">{data.coverage.map((item) => <Status key={`${item.kind}:${item.key}`} as="block" tone={tone(item.state)} title={wireWord(item.key)} action={<OwnerButton owner={item.owner} label="Open owner" onOpenOwner={onOpenOwner} variant="ghost" />}>
-          <p className="m-0 font-numeric text-metric font-metric text-text">{coverageReading(item)}</p>
-          <p className="mt-1 mb-0 text-caption text-text-secondary">{item.gaps.length ? `Gaps: ${item.gaps.join(", ")}` : "No persisted gaps"}</p>
-          <p className="mt-1 mb-0 text-caption text-text-secondary">Evidence horizon: {item.evidence_horizon ?? "No persisted evidence"}</p>
-          {item.active || item.pending ? <p className="mt-1 mb-0 text-caption text-text-secondary">
-            Active: {item.active ? `${item.active.state}${item.active.version_id ? ` (${item.active.version_id})` : ""}` : "None"}
+        {data.coverage.length === 0
+          ? <EmptyState
+              title="No coverage evidence yet"
+              description="Coverage is measured over the Datastreams this project reads, and it has none yet. The Add Datastream action above opens the one wizard that creates the first."
+            />
+          /* THE COVERAGE CARD IS THE OVERVIEW'S KPI, and until 76-5 it was the
+             three classes `Metric` owns -- `font-numeric text-metric font-metric`
+             -- copied onto a `<p>`, with the population glued to the numerator by
+             a slash and no cut-off anywhere on the card. It is a `Metric` now, its
+             `hint` names the population and the evidence cut-off (arbitrages 1 and
+             3), and the posture mark keeps its own line so `postureLegend` still
+             has marks to explain. */
+          : <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-3">{data.coverage.map((item) => <div key={`${item.kind}:${item.key}`} className="rounded-control border border-divider-base">
+          <Metric
+            label={wireWord(item.key)}
+            value={coverageReading(item)}
+            hint={coverageHint(item)}
+            data-testid={`coverage-${item.kind}-${item.key}`}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-2 px-5 pb-3">
+            <Status tone={tone(item.state)}>{stateLabel(item.state)}</Status>
+            <OwnerButton owner={item.owner} label="Open owner" onOpenOwner={onOpenOwner} variant="ghost" />
+          </div>
+          <p className="m-0 px-5 pb-2 text-caption text-text-secondary">{item.gaps.length ? `Gaps: ${item.gaps.join(", ")}` : "No persisted gaps"}</p>
+          {item.active || item.pending ? <p className="m-0 px-5 pb-4 text-caption text-text-secondary">
+            {/* The version was a ULID inside a parenthesis in a sentence, and the
+                state beside it was the wire word raw. Both take the console's one
+                answer: the declared label, then `ObjectId`. */}
+            Active: {item.active ? <>{stateLabel(item.active.state)}{item.active.version_id ? <> <ObjectId value={item.active.version_id} title="Active version" /></> : null}</> : NO_VALUE}
             {" — "}
-            Pending: {item.pending ? `${item.pending.state}${item.pending.version_id ? ` (${item.pending.version_id})` : ""}` : "None"}
+            Pending: {item.pending ? <>{stateLabel(item.pending.state)}{item.pending.version_id ? <> <ObjectId value={item.pending.version_id} title="Pending version" /></> : null}</> : NO_VALUE}
           </p> : null}
-        </Status>)}</div>}
+        </div>)}</div>}
       </Panel>
       {/* SETUP POSTURE — `overview.md:133-141`. Overview "summarizes current setup
           posture, the blocking cause and the next relevant step, then deep-links to
@@ -430,8 +473,8 @@ function ProjectOverviewReady({ data, onOpenOwner }: { data: ProjectOverviewEnve
       {readinessRows.length ? <Panel flush><PanelHeader title="Setup readiness" description="The same readiness object Getting Started reads, component by component." />
         <ul className="m-0 grid list-none gap-3 p-5 sm:grid-cols-2 xl:grid-cols-3">{readinessRows.map(({ key, component }) => <li key={key}>
           <Status as="block" tone={tone(component.state)} title={wireWord(key)} action={<OwnerButton owner={component.owner} label="Open owner" onOpenOwner={onOpenOwner} variant="ghost" />}>
-            <p className="m-0">{STATE_LABELS[component.state] ?? formatKey(component.state)}</p>
-            <p className="mt-1 mb-0 text-caption text-text-secondary">Evidence: {component.evidence_ref ?? "None recorded"}</p>
+            <p className="m-0">{stateLabel(component.state)}</p>
+            <p className="mt-1 mb-0 text-caption text-text-secondary">Evidence: {component.evidence_ref ? <ObjectId value={component.evidence_ref} title={`${wireWord(key)} evidence`} /> : NO_VALUE}</p>
           </Status>
         </li>)}</ul>
       </Panel> : null}
@@ -451,10 +494,14 @@ function ProjectOverviewReady({ data, onOpenOwner }: { data: ProjectOverviewEnve
             {item.owner ? <OwnerButton owner={item.owner} label="Open evidence" onOpenOwner={onOpenOwner} variant="ghost" /> : null}
           </div>
           <dl className="m-0 mt-2 grid gap-1 text-caption text-text-secondary sm:grid-cols-2">
-            <div><dt className="inline">Period: </dt><dd className="m-0 inline">{periodText(item.period) ?? "Not stated"}</dd></div>
-            <div><dt className="inline">Freshness: </dt><dd className="m-0 inline">{item.freshness ?? "Unknown"}</dd></div>
-            <div><dt className="inline">Limitations: </dt><dd className="m-0 inline">{item.limitations?.length ? item.limitations.join(", ") : "None recorded"}</dd></div>
-            <div><dt className="inline">Provenance: </dt><dd className="m-0 inline">{item.provenance?.kind ?? "Unknown"}{item.provenance?.id ? ` · ${item.provenance.id}` : ""}</dd></div>
+            {/* FOUR CELLS, FOUR SPELLINGS OF ONE ABSENCE — "Not stated", "Unknown",
+                "None recorded" — and each of them ASSERTED something the server had
+                not said. `console-presentation.md` §3 amendment 16: a value nobody
+                sent is not a value somebody withheld. One dash, everywhere. */}
+            <div><dt className="inline">Period: </dt><dd className="m-0 inline">{periodText(item.period) ?? NO_VALUE}</dd></div>
+            <div><dt className="inline">Freshness: </dt><dd className="m-0 inline"><Timestamp value={item.freshness} absentMeaning="No freshness recorded" data-testid="outcome-freshness" /></dd></div>
+            <div><dt className="inline">Limitations: </dt><dd className="m-0 inline">{item.limitations?.length ? item.limitations.join(", ") : NO_VALUE}</dd></div>
+            <div><dt className="inline">Provenance: </dt><dd className="m-0 inline">{item.provenance?.kind ? wireWord(item.provenance.kind) : NO_VALUE}{item.provenance?.id ? <> <ObjectId value={item.provenance.id} title="Provenance record" /></> : null}</dd></div>
             {/* The SERVER's reading first, and it is the only one that decides. */}
             {confidenceReading(item) ? <div className="sm:col-span-2" data-testid="outcome-confidence-derived"><dt className="inline">Confidence: </dt><dd className="m-0 inline">{confidenceReading(item)}</dd></div> : null}
             {/* The model's own estimate, kept and demoted — marked like every other
@@ -469,12 +516,19 @@ function ProjectOverviewReady({ data, onOpenOwner }: { data: ProjectOverviewEnve
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <strong className="block text-ui text-text">{itemLabel(item, `Change ${index + 1}`)}</strong>
-              <span className="font-mono text-caption uppercase tracking-wide text-text-secondary">{item.kind ?? "change"}{item.state ? ` · ${item.state}` : ""}</span>
+              {/* The kind was the wire token in monospace UPPERCASE and the state was
+                  the wire word raw beside it — a database row read out loud. The kind
+                  is a word now, the state is the declared one with its tone. */}
+              <Cluster className="mt-0.5">
+                <span className="text-caption uppercase tracking-wide text-text-secondary">{item.kind ? wireWord(item.kind) : NO_VALUE}</span>
+                {item.state ? <Status tone={stateTone(item.state)}>{stateLabel(item.state)}</Status> : null}
+              </Cluster>
             </div>
             {item.owner ? <OwnerButton owner={item.owner} label="Open record" onOpenOwner={onOpenOwner} variant="ghost" /> : null}
           </div>
           <p className="m-0 mt-2 text-caption text-text-secondary">
-            Occurred: {item.occurred_at ?? "Unknown"}{item.version_id ? ` — version ${item.version_id}` : ""}
+            Occurred: <Timestamp value={item.occurred_at} absentMeaning="No occurrence time recorded" data-testid="change-occurred" />
+            {item.version_id ? <> — version <ObjectId value={item.version_id} title="Change version" /></> : null}
           </p>
         </li>)}</ul>}
       </Panel>
@@ -484,6 +538,10 @@ function ProjectOverviewReady({ data, onOpenOwner }: { data: ProjectOverviewEnve
 
 export default function ProjectOverview({ projectId, onOpenOwner }: { projectId: string; onOpenOwner?: (owner: OwnerReference) => void }) {
   const [state, setState] = useState<LoadState>({ kind: "loading", projectId });
+  // `Retry` needs something to change for the effect to run again. A counter is
+  // the whole mechanism: the request is already idempotent and already scoped by
+  // `projectId`, so asking again is the entire repair.
+  const [reload, setReload] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
     setState({ kind: "loading", projectId });
@@ -505,10 +563,23 @@ export default function ProjectOverview({ projectId, onOpenOwner }: { projectId:
         setState({ kind: "error", projectId });
       });
     return () => controller.abort();
-  }, [projectId]);
+  }, [projectId, reload]);
   const visible = state.projectId === projectId ? state : { kind: "loading" as const, projectId };
-  if (visible.kind === "loading") return <PageFrame role="status" aria-label="Loading Project Overview"><p className="text-ui text-text-secondary">Loading Project Overview...</p></PageFrame>;
-  if (visible.kind === "denied") return <PageFrame><PageHeader title="Project unavailable" description="This project does not exist or is not available to you." /></PageFrame>;
-  if (visible.kind === "error") return <PageFrame><PageHeader title="Project Overview unavailable" description="The authoritative project posture could not be loaded." /></PageFrame>;
+  // THREE DEAD ENDS BECAME THREE ANSWERS (76-5, on 76-4's primitives). The
+  // loading region was a bare `<p>`; the denied and the failed read were a
+  // `PageHeader` and nothing else — no error mark, no action, and a person who
+  // reached either had only the browser's reload, which loses their place.
+  // `console-presentation.md` §5: an error block offers one fallback action.
+  if (visible.kind === "loading") return <PageFrame><Loading label="Project Overview" /></PageFrame>;
+  // NOT a `Failure`: a non-disclosing 404 is the server's answer for a project
+  // that does not exist OR that is not yours, and the two answer identically on
+  // purpose. The control that changes project is the shell's switcher, on screen
+  // at this moment, so this block names it rather than mounting a second one.
+  if (visible.kind === "denied") return <PageFrame><ProjectNotFound /></PageFrame>;
+  if (visible.kind === "error") return <PageFrame><Failure
+    what="The project posture"
+    message="The authoritative posture for this project could not be read. Nothing is shown in its place."
+    action={<Retry onClick={() => setReload((count) => count + 1)} />}
+  /></PageFrame>;
   return <ProjectOverviewReady data={visible.data} onOpenOwner={onOpenOwner} />;
 }

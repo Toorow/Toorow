@@ -1755,6 +1755,11 @@
       "identifier": "351",
       "filename": "351_a_step_appends_under_the_lock_the_finalizer_takes.sql",
       "sha256": "9aea5444810b93fa1eb8113df99ea8bacff3756aad03a6dc426b0cf4582002a0"
+    },
+    {
+      "identifier": "352",
+      "filename": "352_the_context_relation_authority_is_named_by_the_eraser_it_claimed.sql",
+      "sha256": "23998e0279f0daf3a533344c2f61e86c62995ca5786045ce6917e27e9d1757c0"
     }
   ]
 }

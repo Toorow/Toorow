@@ -94,47 +94,82 @@ def _apply_migrations(conn) -> None:
 
 
 def _insert_test_project_and_datastream(conn, project_id: str, ds_id: str) -> None:
-    """Insert the minimal rows needed for FK constraints."""
+    """Insert the rows the composite FKs need -- and FAIL if one of them does not land.
+
+    The three inserts used to be wrapped in `try/except Exception: conn.rollback()`,
+    "in case the table is absent from the test schema". They are not absent: since
+    the org chain landed, `app.projects.slug` and `app.projects.created_by` are NOT
+    NULL with no default, so the projects INSERT raised, the handler rolled the
+    whole transaction back, and the datastream never landed either. Every consumer
+    test then died far away on
+    `fk_datastream_executions_datastream_scope (datastream_id, project_id) is not
+    present in datastreams` -- a seed that reports success while seeding nothing.
+    A fixture that cannot seed must say so here, not three files later.
+    """
     with conn.cursor() as cur:
-        # app.projects (may not exist in test schema -- skip if absent).
-        try:
-            cur.execute(
-                """
-                INSERT INTO app.projects (id, name, status, org_id)
-                VALUES (%s, %s, 'active', 'org_test_fixture')
-                ON CONFLICT (id) DO NOTHING
-                """,
-                (project_id, f"Test Project {project_id[:8]}"),
-            )
-        except Exception:
-            conn.rollback()
+        cur.execute(
+            """
+            INSERT INTO app.projects (id, name, slug, status, created_by, org_id)
+            VALUES (%s, %s, %s, 'active', 'test-pg', 'org_test_fixture')
+            ON CONFLICT (id) DO NOTHING
+            """,
+            (project_id, f"Test Project {project_id[:8]}", project_id),
+        )
+        cur.execute(
+            """
+            INSERT INTO app.datastreams
+                (id, project_id, name, source_kind, enabled, created_by, org_id)
+            VALUES (%s, %s, 'test-ds', 'managed_feed', TRUE, 'test-pg', 'org_test_fixture')
+            ON CONFLICT (id) DO NOTHING
+            """,
+            (ds_id, project_id),
+        )
+        cur.execute(
+            """
+            INSERT INTO app.project_preferences (project_id)
+            VALUES (%s)
+            ON CONFLICT (project_id) DO NOTHING
+            """,
+            (project_id,),
+        )
+    conn.commit()
 
-        # app.datastreams (minimal row).
-        try:
-            cur.execute(
-                """
-                INSERT INTO app.datastreams
-                    (id, project_id, name, source_kind, enabled, org_id)
-                VALUES (%s, %s, 'test-ds', 'managed_feed', TRUE, 'org_test_fixture')
-                ON CONFLICT (id) DO NOTHING
-                """,
-                (ds_id, project_id),
-            )
-        except Exception:
-            conn.rollback()
 
-        # app.project_preferences (needed for rejection gate).
-        try:
-            cur.execute(
-                """
-                INSERT INTO app.project_preferences (project_id)
-                VALUES (%s)
-                ON CONFLICT (project_id) DO NOTHING
-                """,
-                (project_id,),
-            )
-        except Exception:
-            conn.rollback()
+def _insert_pinned_bundle(conn, project_id: str, ds_id: str, plan_id: str, mapping_id: str) -> None:
+    """Seed the plan/mapping versions the execution row now points at.
+
+    `app.datastream_executions` carries composite FKs on
+    (plan_version_id, datastream_id, project_id) and on the mapping version: the
+    pinned bundle is no longer a free-form string the caller may invent. Minting
+    `dsp_`/`dmap_` ids in `_base_args` without rows behind them made every
+    consumer test die inside `create_execution` as an opaque InvalidReference.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO app.datastream_plan_versions
+                (id, datastream_id, project_id, version_number, contract_version,
+                 source_kind, writer_kind, destination_policy, normalized_payload,
+                 content_hash, idempotency_key_hash, created_by)
+            VALUES (%s, %s, %s, 1, '1', 'managed_feed', 'toorow', 'managed_raw',
+                    '{}'::jsonb, repeat('a', 64), repeat('b', 64), 'test-pg')
+            ON CONFLICT (id) DO NOTHING
+            """,
+            (plan_id, ds_id, project_id),
+        )
+        cur.execute(
+            """
+            INSERT INTO app.datastream_mapping_versions
+                (id, datastream_id, project_id, version_number, mapping_contract_version,
+                 source_schema_hash, plan_version_id, content_hash, ossie_spec_version,
+                 toorow_extension_version, executable, mapping_payload, ossie_projection,
+                 idempotency_key_hash, created_by)
+            VALUES (%s, %s, %s, 1, '1', repeat('a', 64), %s, repeat('c', 64), '0.1.1',
+                    '1', TRUE, '{}'::jsonb, '{}'::jsonb, repeat('d', 64), 'test-pg')
+            ON CONFLICT (id) DO NOTHING
+            """,
+            (mapping_id, ds_id, project_id, plan_id),
+        )
     conn.commit()
 
 
@@ -293,7 +328,16 @@ class TestSyncConsumerEndToEnd:
             _apply_migrations(conn)
             self.project_id = _uid("proj_")
             self.ds_id = _uid("ds_")
+            self.plan_version_id = _uid("dsp_")
+            self.mapping_version_id = _uid("dmap_")
             _insert_test_project_and_datastream(conn, self.project_id, self.ds_id)
+            _insert_pinned_bundle(
+                conn,
+                self.project_id,
+                self.ds_id,
+                self.plan_version_id,
+                self.mapping_version_id,
+            )
             self.conn = conn
             yield
             conn.rollback()
@@ -307,8 +351,8 @@ class TestSyncConsumerEndToEnd:
             sheet_range=_SHEET_RANGE,
             sheet_name="Budget2026",
             column_mapping=_MINIMAL_COLUMN_MAPPING,
-            plan_version_id=_uid("dsp_"),
-            mapping_version_id=_uid("dmap_"),
+            plan_version_id=self.plan_version_id,
+            mapping_version_id=self.mapping_version_id,
             projection_plan=_EXECUTABLE_PLAN,
             actor="test-pg",
             cadence_mode="manual",

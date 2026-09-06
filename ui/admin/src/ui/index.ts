@@ -47,6 +47,13 @@ export {
 // component owns the mark, its shape and its order.
 export { StatusLegend } from "./StatusLegend";
 export type { StatusLegendEntry, StatusLegendProps } from "./StatusLegend";
+// One panel width, one declaration — `console-presentation.md` §6. They are
+// class strings and not numbers, for the reason `layout.ts` writes down: a
+// width composed at runtime is a rule Tailwind never emits.
+export {
+  DRAWER_WIDTH, WIDE_DRAWER_WIDTH, WORKBENCH_GRID_MAX,
+  WIZARD_GRID, WIZARD_ASIDE_STICKY,
+} from "./layout";
 
 // --- a column header that sorts, and announces the order it carries ---------
 // `aria-sort` was absent from the whole console. `SortableHead` composes
@@ -88,9 +95,9 @@ export type { ConfirmDialogProps } from "./ConfirmDialog";
 // for the rest. `NO_VALUE` is the dash a cell shows instead of nothing, and it
 // is the same character `NO_TIMESTAMP` has always been.
 export {
-  CONSOLE_LOCALE, NO_VALUE, THIN_SPACE,
+  CONSOLE_LOCALE, NO_VALUE, THIN_SPACE, MINUS_SIGN,
   formatNumber, formatCompact, formatPercent, formatCurrency,
-  formatBytes, formatDuration, formatCount, percentValue,
+  formatBytes, formatDuration, formatCount, percentValue, formatDayOffset,
 } from "./format";
 export type { NumericValue } from "./format";
 // One word per concept — `console-presentation.md` §4. `format.ts` above holds

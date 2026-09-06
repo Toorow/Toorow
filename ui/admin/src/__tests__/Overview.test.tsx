@@ -133,7 +133,12 @@ test("renders a nondisclosing denied state", async () => {
 
   render(<ProjectOverview projectId="hidden" />);
 
-  expect(await screen.findByRole("heading", { name: "Project unavailable" })).toBeInTheDocument();
+  // 76-5: the denied answer was a `PageHeader` and nothing else -- a title, a
+  // sentence and no way out. It is `ProjectNotFound` now, the console's one
+  // wording for "this address names nothing you can see", which names the
+  // control that changes project instead of mounting a second one.
+  expect(await screen.findByText("Project not found")).toBeInTheDocument();
+  expect(screen.getByText(/project switcher at the top of the screen/)).toBeInTheDocument();
   expect(screen.queryByText("Acme")).not.toBeInTheDocument();
 });
 
@@ -149,7 +154,12 @@ test("removes prior Project evidence immediately during a scope change", async (
     await Promise.resolve();
   });
 
-  expect(screen.getByRole("status", { name: "Loading Project Overview" })).toBeInTheDocument();
+  // The bare `<p>` became the shared `Loading`, so the wording is the console's
+  // and not this screen's -- ellipsis included.
+  // `role="status"` takes its accessible name from the author, and the shared
+  // `Loading` sets none -- the words ARE the announcement, so the words are what
+  // is pinned.
+  expect(screen.getByRole("status")).toHaveTextContent("Loading Project Overview…");
   expect(screen.queryByRole("heading", { name: "Acme" })).not.toBeInTheDocument();
   await act(async () => { resolveSecond?.(response(200, { ...READY, project: { ...READY.project, id: "project-2", name: "Beta" } })); await second; });
   expect(await screen.findByRole("heading", { name: "Beta" })).toBeInTheDocument();
@@ -181,9 +191,12 @@ test("every persisted outcome carries its period, freshness, limitations and pro
 
   expect(await screen.findByText("Paid revenue recovered week over week")).toBeInTheDocument();
   expect(screen.getByText("2026-07-20 to 2026-07-26")).toBeInTheDocument();
-  expect(screen.getByText("2026-07-27T06:00:00Z")).toBeInTheDocument();
+  // 76-5: the freshness was a raw ISO instant read out to a person. It is a
+  // `<Timestamp>` now, so what is pinned is the MACHINE half -- the rendering is
+  // the console's one locale and asserting it here would pin a locale twice.
+  expect(screen.getByTestId("outcome-freshness")).toHaveAttribute("datetime", "2026-07-27T06:00:00.000Z");
   expect(screen.getByText("Excludes one Datastream still backfilling")).toBeInTheDocument();
-  expect(screen.getByText(/persisted_daily_insight/)).toBeInTheDocument();
+  expect(screen.getByText(/Persisted daily insight/)).toBeInTheDocument();
 });
 
 test("a silent day says why it was silent, not only that it was", async () => {
@@ -349,7 +362,10 @@ test("a recent change is dated, versioned and opens its exact owner record", asy
   render(<ProjectOverview projectId="project-1" onOpenOwner={onOpenOwner} />);
 
   expect(await screen.findByText("Project configuration changed.")).toBeInTheDocument();
-  expect(screen.getByText(/2026-07-28T11:00:00Z — version cfg-3/)).toBeInTheDocument();
+  // 76-5: the instant was raw ISO and the version was a bare ULID inside the
+  // same sentence. The instant is a `<Timestamp>`, the version an `ObjectId`.
+  expect(screen.getByTestId("change-occurred")).toHaveAttribute("datetime", "2026-07-28T11:00:00.000Z");
+  expect(screen.getByTitle("Change version: cfg-3")).toHaveTextContent("cfg-3");
 
   fireEvent.click(screen.getByRole("button", { name: "Open record" }));
   expect(onOpenOwner).toHaveBeenCalledWith(
@@ -363,8 +379,12 @@ test("coverage states its evidence horizon and separates active from pending", a
   render(<ProjectOverview projectId="project-1" />);
 
   await screen.findByRole("heading", { name: "Coverage & readiness" });
-  expect(screen.getByText(/Active: ready \(fx-v1\)/)).toBeInTheDocument();
-  expect(screen.getAllByText(/Evidence horizon: 2026-07-28/).length).toBeGreaterThan(0);
+  // 76-5: the active state was the wire word and the version a ULID in a
+  // parenthesis. The state is the declared label; the version is an `ObjectId`
+  // with the full value on its title.
+  expect(screen.getByText(/Active: Ready/)).toBeInTheDocument();
+  expect(screen.getByTitle("Active version: fx-v1")).toHaveTextContent("fx-v1");
+  expect(screen.getAllByText(/Evidence horizon: 28 Jul 2026/).length).toBeGreaterThan(0);
 });
 
 test("zero applicable objects reads Not applicable, never 0/0 and never 100%", async () => {
@@ -413,7 +433,9 @@ test("a media plan pace alert reads as a signal that names what it is not", asyn
 
   expect(await screen.findByText("Budget overrun on line Display FR")).toBeInTheDocument();
   expect(screen.getByText("Governed alert")).toBeInTheDocument();
-  expect(screen.getByText(/alert_firing:mediaplan_pace/)).toBeInTheDocument();
+  // 76-5: the provenance kind was the wire token raw. `wireWord` takes the
+  // base's punctuation off it and changes nothing else.
+  expect(screen.getByText(/Alert firing:mediaplan pace/)).toBeInTheDocument();
   expect(screen.getByText(/not reachable from this console yet/)).toBeInTheDocument();
 });
 
@@ -478,8 +500,13 @@ it("renders the setup readiness it was already composing", async () => {
 
   await screen.findByText("Setup readiness");
   expect(screen.getByText("Governance")).toBeInTheDocument();
-  expect(screen.getByText("First Value")).toBeInTheDocument();
-  expect(screen.getByText("Evidence: cfg-3")).toBeInTheDocument();
+  // `wireWord`, not a local Title-Caser: `console-presentation.md` §4 reserves
+  // Title Case for the ratified nouns, so a stored component key is sentence
+  // case ("First value") and a reader can tell the two apart.
+  expect(screen.getByText("First value")).toBeInTheDocument();
+  // 76-5: the evidence reference was a bare identifier in a sentence. `ObjectId`
+  // keeps the full value on the title and names what it identifies.
+  expect(screen.getByTitle("Project foundation evidence: cfg-3")).toHaveTextContent("cfg-3");
 });
 
 it("opens the workbench that owns a blocked readiness component", async () => {
@@ -500,7 +527,8 @@ it("states the window the governed alerts were read over", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(200, { ...READY, outcomes: { ...READY.outcomes, alert_window_hours: 168 } })));
   render(<ProjectOverview projectId="p1" onOpenOwner={vi.fn()} />);
 
-  expect(await screen.findByText(/Governed alerts cover the last 7 day\(s\)/)).toBeInTheDocument();
+  // `day(s)` was this screen's hand-rolled plural. `formatCount` agrees the noun.
+  expect(await screen.findByText(/Governed alerts cover the last 7 days/)).toBeInTheDocument();
 });
 
 it("draws no evidence link for an insight that was never rendered", async () => {
