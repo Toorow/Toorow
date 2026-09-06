@@ -16,8 +16,21 @@ last entry):
         step can leave (never started, never recorded). `Incomplete if` 2 asks
         this one level below the clocks: the beat fired, and then what? Outside
         the `/clocks/` prefix on purpose -- under it, `nightly-steps` is a valid
-        clock NAME. It has no MCP counterpart yet; that is a gap, not a
-        decision.
+        clock NAME.
+
+PAS DE CONTREPARTIE MCP, ET C'EST LA REGLE PLUTOT QU'UN TROU (Jean, 2026-09-06 ;
+cet en-tete disait l'inverse -- « it has no MCP counterpart yet; that is a gap,
+not a decision » -- sans l'avoir mesure). Les cinq outils clocks existent parce
+qu'un verdict de derive est une CONFIGURATION sur laquelle on agit
+(`apply_platform_clock`). Les pas de la nuit sont une histoire d'EXECUTION de la
+plateforme, et un agent travaille dans un Projet : la question qu'il se pose
+vraiment -- « pourquoi les donnees d'hier manquent-elles ? » -- a deja ses portes
+a la bonne echelle (`datastream_diagnose`, `datastream_pull_history`,
+`list_datastream_runs`), et l'enveloppe qu'il recoit porte deja `stale_since`.
+Lui faire lire le dispatch de la plateforme pour expliquer les donnees d'un
+Projet serait l'inverse de l'isolement que le produit tient partout ailleurs. Un
+outil de plus coute en outre un budget que Jean a du deplacer a la main pour en
+ouvrir UN (130 -> 131, mcp-tool-surface.md).
 
 BOTH SURFACES SERIALISE `core/platform_clocks_read_model.py` AND NEITHER RESHAPES
 IT. That is the rule `inbound_health_api` states in its own header, for the same

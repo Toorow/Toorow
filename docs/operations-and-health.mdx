@@ -58,20 +58,39 @@ record is itself a state with a name.
 
 ## Where to look
 
+A **clock** is one scheduled job. Reading one returns three things, never one:
+the **declared** cadence (what the platform decided), the **observed** one (what
+the scheduler is actually running), and the **drift verdict** between them —
+`in_sync`, `drifted`, `missing_in_gcp`, `unmanaged_in_gcp` or `unknown`.
+
+Drift is *rendered, never silently corrected*. And when the scheduler cannot be
+observed at all — no credential, no network — every verdict is `unknown` and the
+observation is marked unreachable. Never `in_sync`: an observation that did not
+run proves no synchronisation.
+
 | Endpoint | Method | Answers |
 | --- | --- | --- |
-| `/api/platform/clocks` | `GET` | Every scheduled beat and when it last fired. |
-| `/api/platform/clocks/{clock_name}` | `GET`, `PATCH` | One clock, and changing its cadence. |
-| `/api/platform/clocks/{clock_name}/run` | `POST` | Run it now instead of waiting. |
+| `/api/platform/clocks` | `GET` | Every clock: declared, observed, drift verdict. |
+| `/api/platform/clocks/{clock_name}` | `GET`, `PATCH` | One clock, and editing its **declared** cadence. |
+| `/api/platform/clocks/{clock_name}/apply` | `POST` | Pushes the declared clock into the scheduler. Idempotent. |
+| `/api/platform/clocks/{clock_name}/run` | `POST` | Fires one clock immediately. |
 | `/api/platform/nightly-steps` | `GET` | Last night's steps, each with its outcome and duration. |
 
-The console shows the same thing on **Platform Clocks**: the beats, and one
-level below them, what the beat actually did. Every message names the dispatch,
-never a deployment state.
+The console shows the same model on **Platform Clocks** — the beats, and one
+level below them, what the beat actually did. Both surfaces serialise the same
+read model and neither reshapes it: two answers to *"is it in sync?"* would be
+the same as none.
 
 <Note>
-  `/api/platform/nightly-steps` has no MCP counterpart yet. That is a gap, not a
-  decision.
+  **There is no MCP tool for the nightly steps, and that is deliberate.** The
+  clock tools exist because a drift verdict is *configuration* an agent can act
+  on. The nightly steps are the platform's own execution history, and an agent
+  works inside a project: the question it actually has — *why is yesterday's data
+  missing?* — already has doors at the right scale (`datastream_diagnose`,
+  `datastream_pull_history`, `list_datastream_runs`), and the envelope it
+  receives already carries how stale the data is. Reading the platform's dispatch
+  to explain one project's data would be the opposite of the isolation the
+  product holds everywhere else.
 </Note>
 
 ---

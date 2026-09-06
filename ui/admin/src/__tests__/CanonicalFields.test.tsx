@@ -735,7 +735,9 @@ describe("a common key can be retired, which the route served and no control rea
     open(LENS);
 
     const panel = await screen.findByTestId("mdm-common-keys");
-    await userEvent.click(within(panel).getByTestId("retire-common-key-mck_DAY"));
+    // `findByTestId`, not `getByTestId`: the Panel mounts before the fetch resolves,
+    // so the row is not there yet under full-suite load (red twice in 76-4 reviews).
+    await userEvent.click(await within(panel).findByTestId("retire-common-key-mck_DAY"));
 
     await within(panel).findByTestId("retire-common-key-confirm");
     // The difference between this and a delete, said before the act.
