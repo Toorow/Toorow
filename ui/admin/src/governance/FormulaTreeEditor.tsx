@@ -16,14 +16,18 @@
  * server's own `ALLOWED_OPERATIONS`.
  */
 import { AGGREGATION_FUNCTIONS, FORMULA_OPERATION_LABEL, FORMULA_OPERATIONS, OPERAND_OPERATION_LABEL, OPERAND_OPERATIONS, type AggregationFunction, type FormulaDraft, type FormulaOperation, type OperandDraft, type OperandOperation, type ZeroDenominatorPolicy, VALUE_TYPES, ZERO_DENOMINATOR_LABEL, ZERO_DENOMINATOR_POLICIES } from "./formulaContract";
-import { Checkbox, Input, Label, label as humanLabel, NativeSelect, Status } from "../ui";
+import { Checkbox, Input, Label, label as humanLabel, NativeSelect, Status, Retry } from "../ui";
 
 /** A read that failed says so. An empty list is a different fact from a list
  *  that could not be read, and only one of the two means "nothing to point at". */
 export type ReferenceState =
   | { status: "loading" }
   | { status: "ready"; options: Array<{ value: string; label: string }> }
-  | { status: "error"; message: string };
+  /** `retry` re-runs the read the MOUNTING DIALOG owns. This editor renders the
+   *  failure and owns no fetch, so without it its error block is a dead end
+   *  (76-4, `console-presentation.md` §5). Carried on the state rather than
+   *  threaded as a prop, because the editor nests three levels deep. */
+  | { status: "error"; message: string; retry: () => void };
 
 export function OperandEditor({
   id,
@@ -61,7 +65,12 @@ export function OperandEditor({
         <p className="mb-0 text-caption text-text-secondary">Reading this Project&apos;s Concepts…</p>
       )}
       {operand.op === "concept_ref" && references.status === "error" && (
-        <Status as="block" tone="error" title="The Concept list could not be read">
+        <Status
+          as="block"
+          tone="error"
+          title="The Concept list could not be read"
+          action={<Retry onClick={references.retry} />}
+        >
           {references.message} No reference can be pinned until it answers — an empty list here
           would read as &quot;this Project has no Concepts&quot;, which is a different fact.
         </Status>

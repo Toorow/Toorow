@@ -313,10 +313,10 @@ function CommonKeys({ projectId, fields }: { projectId: string; fields: Canonica
       <PanelBody className="flex flex-col gap-5">
         {loading && <p role="status" className="m-0 text-body text-text-secondary">Loading common keys…</p>}
         {!loading && keys.length === 0 && !error && (
-          <p className="m-0 text-body text-text-secondary">
-            No common key is declared yet. Select the shared business dimensions below; a key is
-            useful only after Datastream mappings implement those dimensions.
-          </p>
+          <EmptyState
+            title="No common key is declared yet"
+            description="A common key is what lets two Datastreams be crossed. Select the shared business dimensions below; a key is useful only once Datastream mappings implement those dimensions."
+          />
         )}
         {/* WHAT THE FLOWS SHARE, BEFORE ANY KEY IS DECLARED. Derived across every
             current mapping of the Project in one read; never stored, never
@@ -880,10 +880,10 @@ export default function CanonicalFields({ projectId }: { projectId: string }) {
                   </p>
                 </div>
                 {platform.length === 0 ? (
-                  <p className="m-0 text-caption text-text-secondary">
-                    No shared field is defined on this installation yet. Every field below belongs
-                    to this Project alone.
-                  </p>
+                  <EmptyState
+                    title="No shared field on this installation"
+                    description="Every field below belongs to this Project alone. A shared field is declared once, for every Project of the installation."
+                  />
                 ) : (
                   table(platform, "Shared canonical fields")
                 )}

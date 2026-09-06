@@ -56,7 +56,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("Mapping tab — governed publication", () => {
   it("offers no publication when the server names no ready proposal", () => {
-    render(<WorkbenchMappingPage {...props} header={header(null)} />);
+    render(<WorkbenchMappingPage onRetry={() => {}} {...props} header={header(null)} />);
     // A proposed VERSION exists (`mv_next`) and is deliberately not enough: a
     // button here would open a review the server would refuse to mint.
     expect(screen.queryByTestId("publish-mapping")).not.toBeInTheDocument();
@@ -77,7 +77,7 @@ describe("Mapping tab — governed publication", () => {
       };
     }));
 
-    render(<WorkbenchMappingPage {...props} header={header("prop_ready")} />);
+    render(<WorkbenchMappingPage onRetry={() => {}} {...props} header={header("prop_ready")} />);
     await userEvent.click(screen.getByTestId("publish-mapping"));
 
     expect(await screen.findByTestId("publication-review")).toBeInTheDocument();
@@ -91,7 +91,7 @@ describe("Mapping tab — governed publication", () => {
     // grain change has no dedicated control and would otherwise become
     // unreachable. What it removed is the textarea being the only way to exclude
     // a column, which is proved on the other side in FileMappingColumns.
-    render(<WorkbenchMappingPage {...props} header={header(null)} />);
+    render(<WorkbenchMappingPage onRetry={() => {}} {...props} header={header(null)} />);
 
     // Named for what it IS since the binding table grew its own controls: the
     // raw editor is the advanced escape hatch, not the ordinary way to change a
@@ -103,7 +103,7 @@ describe("Mapping tab — governed publication", () => {
   });
 
   it("no longer tells the reader that Outputs moves the mapping pointer", async () => {
-    render(<WorkbenchMappingPage {...props} header={header("prop_ready")} />);
+    render(<WorkbenchMappingPage onRetry={() => {}} {...props} header={header("prop_ready")} />);
     // The sentence belongs to a NON-LIVE version, so select one. BY ITS CELL:
     // since the 2026-08-18 amendment the ledger also names every other version
     // in the "compare with" list, so a bare text query matches the row AND the

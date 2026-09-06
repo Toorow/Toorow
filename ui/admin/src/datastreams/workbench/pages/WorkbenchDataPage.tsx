@@ -71,10 +71,10 @@ function DatastreamMatchOpportunities({
         )}
         {error && <Status as="block" tone="warning">{error} No absence is inferred.</Status>}
         {matches?.length === 0 && !error && (
-          <p className="m-0 text-body text-text-secondary">
-            No governed cross currently includes this Datastream. Map a shared canonical dimension,
-            declare its common key in MDM, then pin that key on a Semantic View relationship.
-          </p>
+          <EmptyState
+            title="No governed cross includes this Datastream"
+            description="A cross needs three things in order: a shared canonical dimension mapped on this Datastream, its common key declared in MDM, and that key pinned on a Semantic View relationship."
+          />
         )}
         {matches?.map((match) => {
           const other = match.left.datastream_id === datastreamId ? match.right : match.left;

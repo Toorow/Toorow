@@ -175,16 +175,28 @@ def test_a_stored_version_cannot_be_updated_or_deleted(live_postgres, project, v
     )
     version_id = created["current_version"]["id"]
 
-    for statement, params in (
+    # The two halves are refused by two different mechanisms, and naming only the
+    # trigger is what made this assertion stale. Migration 258 granted
+    # SELECT, INSERT on this table, but 207's `ALTER DEFAULT PRIVILEGES` had
+    # already handed `connector` UPDATE on every table created after it, so the
+    # narrow grant was declarative until migration 316 revoked it
+    # (`316_a_narrow_grant_is_declarative_until_the_revoke_lands.sql:77`, pinned
+    # by `tests/conformance/test_the_erasure_hatch_is_a_privilege_too.py`).
+    # PostgreSQL checks the privilege before the trigger, so the UPDATE is 42501
+    # and never reaches the append-only guard. DELETE keeps its privilege -- the
+    # RGPD erasure hatch needs it, and the test below opens it -- so there the
+    # trigger is what speaks, in 23000.
+    for statement, params, sqlstate, expected in (
         ("UPDATE app.mdm_common_key_versions SET content_hash = %s WHERE id = %s",
-         ("f" * 64, version_id)),
-        ("DELETE FROM app.mdm_common_key_versions WHERE id = %s", (version_id,)),
+         ("f" * 64, version_id), "42501", psycopg.errors.InsufficientPrivilege),
+        ("DELETE FROM app.mdm_common_key_versions WHERE id = %s", (version_id,),
+         "23000", psycopg.errors.IntegrityConstraintViolation),
     ):
         with live_postgres.cursor() as cur:
             cur.execute("SAVEPOINT immutable_probe")
-            with pytest.raises(psycopg.errors.IntegrityConstraintViolation) as excinfo:
+            with pytest.raises(expected) as excinfo:
                 cur.execute(statement, params)
-            assert excinfo.value.sqlstate == "23000"
+            assert excinfo.value.sqlstate == sqlstate
             cur.execute("ROLLBACK TO SAVEPOINT immutable_probe")
 
 

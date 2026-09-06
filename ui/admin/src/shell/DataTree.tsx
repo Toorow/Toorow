@@ -100,7 +100,17 @@ export default function DataTree() {
       </div>
     );
   }
-  if (streams.length === 0) return <p className="px-2 py-3 text-xs text-text-secondary" data-testid="tree-empty">No Datastream yet.</p>;
+  // THE RAIL IS 210px WIDE, and `EmptyState` is a page region: it centres its
+  // copy over twelve rems of vertical padding, which in a tree rail reads as a
+  // broken layout rather than as an answer. So this one absence stays a
+  // sentence, and it is named in the gate's classification with this reason.
+  if (streams.length === 0) {
+    return (
+      <p className="px-2 py-3 text-xs text-text-secondary" data-testid="tree-empty">
+        No Datastream yet — one is added from Data.
+      </p>
+    );
+  }
 
   return (
     <div className="space-y-2 py-2" data-testid="datastream-tree">

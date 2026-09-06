@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../lib/apiFetch";
-import { Button } from "../ui";
+import { Button, EmptyState } from "../ui";
 
 /**
  * Les remarques ouvertes SUR UN NOEUD du Context Hub, lisibles et closables
@@ -232,9 +232,12 @@ export default function NodeRemarks({
         </div>
       )}
       {view.status === "ok" && view.rows.length === 0 && (
-        <p className="text-sm opacity-70" data-testid={`${testIdPrefix}-queue-empty`}>
-          No open remark on this node.
-        </p>
+        <div data-testid={`${testIdPrefix}-queue-empty`}>
+          <EmptyState
+            title="No open remark on this node"
+            description="A remark is how a reader flags what this node gets wrong or leaves out. Written ones that have been resolved are not shown here."
+          />
+        </div>
       )}
       {view.status === "ok" && view.rows.length > 0 && (
         <ul className="flex flex-col gap-3">

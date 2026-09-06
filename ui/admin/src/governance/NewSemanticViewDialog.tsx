@@ -47,6 +47,7 @@ import {
   Status,
   Textarea,
   notify,
+  Retry,
 } from "../ui";
 
 interface NewSemanticViewDialogProps {
@@ -248,6 +249,10 @@ export default function NewSemanticViewDialog({
   const [overrideReason, setOverrideReason] = useState("");
   const [pendingChangeSetId, setPendingChangeSetId] = useState<string | null>(null);
 
+  // THE READ THIS SCREEN'S ERROR BLOCK OFFERS TO REPEAT (76-4). An error
+  // that names no way forward is a dead end; this token is what `Retry`
+  // moves, and the effect below is the read it re-runs.
+  const [reloadToken, setReloadToken] = useState(0);
   useEffect(() => {
     if (!open || !projectId) return;
     const controller = new AbortController();
@@ -275,7 +280,7 @@ export default function NewSemanticViewDialog({
         });
       });
     return () => controller.abort();
-  }, [open, projectId]);
+  }, [open, projectId, reloadToken]);
 
   /** Seeded from the View's own summary, once per opening. */
   useEffect(() => {
@@ -747,7 +752,9 @@ export default function NewSemanticViewDialog({
                 </p>
               )}
               {matches.status === "error" && (
-                <Status as="block" tone="error" title="Matching candidates unavailable">
+                <Status as="block" tone="error" title="Matching candidates unavailable"
+          action={<Retry onClick={() => setReloadToken((token) => token + 1)} />}
+        >
                   {matches.message} You can still create a single-source View; no cross-source
                   authority will be invented.
                 </Status>
@@ -835,7 +842,9 @@ export default function NewSemanticViewDialog({
                 </p>
               )}
               {concepts.status === "error" && (
-                <Status as="block" tone="error" title="The Concept list could not be read">
+                <Status as="block" tone="error" title="The Concept list could not be read"
+          action={<Retry onClick={() => setReloadToken((token) => token + 1)} />}
+        >
                   {concepts.message} No View can be pinned until it answers — an empty list
                   here would read as "this Project has no Concepts", which is a different fact.
                 </Status>

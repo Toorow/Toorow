@@ -9,6 +9,7 @@ import {
   DialogTitle,
   EvidenceRows,
   Status,
+  Retry,
 } from "../../ui";
 import { apiFetch } from "../../lib/apiFetch";
 import { filledRecord, record, text, type EvidenceRecord } from "./evidence";
@@ -257,7 +258,7 @@ export function DatastreamRollbackDialog({
             filledRecord(preparation.review)
               ? <EvidenceRows source={filledRecord(preparation.review)!} label="Exact rollback consequence" className="max-h-72" />
               : <Status as="block" tone="error" title="Rollback evidence unavailable"
-          action={<Retry onClick={() => void load()} />}
+          action={<Retry onClick={() => void prepare()} />}
         >
                   No exact consequence was returned, so nothing can be confirmed here.
                 </Status>

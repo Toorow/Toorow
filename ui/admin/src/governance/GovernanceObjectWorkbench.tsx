@@ -1021,6 +1021,7 @@ export default function GovernanceObjectWorkbench({
           organizationId={route.organizationId ?? ""}
           projectId={projectId}
           typeLabel={typeLabel}
+          onRetry={reload}
         />
       ) : section === "semantic-model" && objectType === "semantic-concept" && tab === "semantics" ? (
         <SemanticsTab detail={detail} />

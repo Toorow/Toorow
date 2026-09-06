@@ -161,7 +161,7 @@ function OfflineSection({
             {state.profiles.length === 0 ? (
               <EmptyState
                 title="No run profile"
-                description="A run belongs to a named profile, and a baseline is approved for one profile. Neither exists in this Project yet."
+                description="A run belongs to a named profile, and a baseline is approved for one profile. Neither exists in this Project yet: a profile appears here the first time an offline Evaluation Run is finalized against this Project, which is done from your LLM host, not from this screen."
               />
             ) : (
               <TableScroll label="Run profiles">

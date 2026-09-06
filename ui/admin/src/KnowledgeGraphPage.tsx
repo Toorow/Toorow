@@ -90,7 +90,7 @@ import { parseSkillSteps } from "./connaissances/SkillStepList";
 import { endpointLabelOf, graphWord } from "./connaissances/relationshipVocabulary";
 import RawMarkdown from "./lib/RawMarkdown";
 import type { OwnerReference } from "./governance/governanceSurface";
-import { ObjectId, stateLabel } from "./ui";
+import { EmptyState, ObjectId, stateLabel } from "./ui";
 
 // ---------------------------------------------------------------------------
 // Payload contract — GET /api/context/graph (Story 44.3)
@@ -2535,11 +2535,10 @@ export default function KnowledgeGraphPage({
 
       {isEmpty && (
         <section className="panel kg-empty" data-testid="kg-empty">
-          <h2>Nothing in this project&rsquo;s graph yet</h2>
-          <p>
-            The graph draws the Knowledge, Skills and schema docs analysis can read. Add a
-            first knowledge entry and it appears here — no placeholder nodes are drawn.
-          </p>
+          <EmptyState
+            title="Nothing in this project&rsquo;s graph yet"
+            description="The graph draws the Knowledge, Skills and schema docs analysis can read. It appears here as soon as a first knowledge entry exists — no placeholder nodes are drawn."
+          />
           {/* The canvas (and with it the right-click "New topic here") only
               exists once there IS a node, so an empty project needs its own way
               in — otherwise the one action that fixes the empty state is the
@@ -2896,12 +2895,10 @@ export default function KnowledgeGraphPage({
                   what emptied the canvas. */}
               {businessScope?.selected && scoped.nodes.length === 0 && allNodes.length > 0 && (
                 <div className="kg-no-match" role="status" data-testid="kg-business-scope-empty">
-                  <h3>Nothing is linked to this business scope yet</h3>
-                  <p>
-                    This project has <span className="number">{allNodes.length}</span> governed
-                    node(s); none of them belong to the selected domain or layer, or to anything
-                    beneath it.
-                  </p>
+                  <EmptyState
+                    title="Nothing is linked to this business scope yet"
+                    description={`This project has ${allNodes.length} governed node(s); none of them belong to the selected domain or layer, or to anything beneath it.`}
+                  />
                   {businessScope.onSelect && (
                     <button
                       className="secondary-button"

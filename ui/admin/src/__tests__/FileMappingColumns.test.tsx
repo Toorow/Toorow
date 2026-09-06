@@ -102,7 +102,7 @@ const header = {
 
 function mount(tab: WorkbenchTabPayload = payload(), onConfirmed = () => undefined) {
   return render(
-    <WorkbenchMappingPage
+    <WorkbenchMappingPage onRetry={() => {}}
       header={header}
       payload={tab}
       projectId="proj_EXAMPLE"

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button, Metric, NavTabs, ObjectHeader, PageHeader, Panel, PanelHeader, Stack, Status, formatTimestamp,
+  Retry,
   stateLabel,
   stateTone,
 } from "../../ui";
@@ -305,6 +306,7 @@ export default function DatastreamWorkbenchRoute({
         sourceAccountRef={header.identity.source_account_ref}
         onOpenOwner={onOpenOwner}
         onNavigateTab={onNavigateTab}
+        onRetryCapabilities={() => setReload((value) => value + 1)}
         onRepairMapping={(rawImportId) => {
           setMappingRawImportId(rawImportId);
           onNavigateTab("mapping");
@@ -359,7 +361,7 @@ export default function DatastreamWorkbenchRoute({
     // `onOpenOwner` — amendment 10 of the 2026-08-11 review. A bound field names
     // the concept that governs it and has to LEAD there; only the shell's
     // resolver may build that address, so it travels rather than being composed.
-    mapping: <WorkbenchMappingPage header={header} payload={payload} projectId={projectId} datastreamId={datastreamId} rawImportId={mappingRawImportId} onConfirmed={() => { setMappingRawImportId(null); setReload((value) => value + 1); }} onOpenOwner={onOpenOwner} />,
+    mapping: <WorkbenchMappingPage header={header} payload={payload} projectId={projectId} datastreamId={datastreamId} rawImportId={mappingRawImportId} onRetry={() => setReload((value) => value + 1)} onConfirmed={() => { setMappingRawImportId(null); setReload((value) => value + 1); }} onOpenOwner={onOpenOwner} />,
     processing: <WorkbenchProcessingPage payload={payload} projectId={projectId} datastreamId={datastreamId} mode={header.identity.mode} deliveryChannels={header.identity.delivery_channels} onConfirmed={() => setReload((value) => value + 1)} onOpenOwner={onOpenOwner} links={links} onNavigateTab={onNavigateTab} />,
     runs: <WorkbenchRunsPage payload={payload} projectId={projectId} datastreamId={datastreamId} connector={header.identity.connector ?? header.identity.module} sourceAccountRef={header.identity.source_account_ref} onConfirmed={() => setReload((value) => value + 1)} onOpenOwner={onOpenOwner} onNavigateTab={onNavigateTab} selectedRunId={openedRunId} />,
     outputs: <WorkbenchOutputsPage header={header} payload={payload} projectId={projectId} datastreamId={datastreamId} onConfirmed={() => setReload((value) => value + 1)} onOpenOwner={onOpenOwner} onOpenRun={(executionId) => { setOpenedRunId(executionId); onNavigateTab("runs"); }} />,

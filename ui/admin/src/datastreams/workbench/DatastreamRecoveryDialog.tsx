@@ -22,6 +22,7 @@ import { useState } from "react";
 import {
   Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader,
   DialogTitle, EvidenceRows, Status,
+  Retry,
 } from "../../ui";
 import { apiFetch } from "../../lib/apiFetch";
 import { filledRecord, record, text, titleCase, type EvidenceRecord } from "./evidence";

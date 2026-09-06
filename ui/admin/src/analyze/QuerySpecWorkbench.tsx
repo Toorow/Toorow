@@ -13,7 +13,7 @@
 import { useEffect, useState } from "react";
 
 import { ApiError } from "../lib/apiFetch";
-import { EmptyState, EvidenceRows, Metric, ObjectHeader, ObjectId, PageHeader, Panel, PanelHeader, Stack, stateLabel, Status, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableScroll } from "../ui";
+import { EmptyState, EvidenceRows, Metric, ObjectHeader, ObjectId, PageHeader, Panel, PanelHeader, Stack, stateLabel, Status, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableScroll, Retry } from "../ui";
 import { ownerTarget, resultTarget, type AnalyzeScope } from "./analyzeTargets";
 import { EnvelopeMismatch, fetchQuerySpecVersion, type QuerySpecVersionDetail } from "./workbenchClient";
 

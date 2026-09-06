@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import DatastreamSetupWizard from "../datastreams/preconfiguration/DatastreamSetupWizard";
 import * as wizardApi from "../datastreams/wizard/wizardApi";
@@ -240,4 +240,63 @@ it("says a failed discovery is a failure, and names the adapter", async () => {
   expect(screen.getByText(/external_bq.readonly.v1/)).toBeInTheDocument();
   // Not the other sentence: this one is a fault, not an honest emptiness.
   expect(screen.queryByText(/exposes no readable column/)).not.toBeInTheDocument();
+});
+
+// ---------------------------------------------------------------------------
+// 76-4 — the refusal path, RENDERED. `console-presentation.md` §5: one error is
+// shown once, in one formulation, and it carries a way forward.
+//
+// WHY THESE CASES EXIST. The missing scan estimate was rendered by TWO
+// `role="alert"` blocks over ONE sentence, under two different titles — `No
+// scan estimate` inside `Configure`, and `A read cannot be launched without its
+// scan estimate` inside `Preview and validate`. Only one section is drawn at a
+// time, so the two never met on screen and no test could have caught it by
+// counting nodes in one state. What catches it is asserting the sentence is
+// rendered ONCE per screen state, and asserting it from more than one state.
+// ---------------------------------------------------------------------------
+
+/** The one sentence, wherever the operator is standing. */
+const NEEDS_ESTIMATE = /No scan estimate is attached to this observation/;
+
+it("says the missing scan estimate ONCE, and in one formulation", async () => {
+  const user = userEvent.setup();
+  vi.mocked(wizardApi.createDatastreamSetupObservation).mockResolvedValue({
+    ...observation,
+    safe_metadata: { ...observation.safe_metadata, quota_cost: null },
+  });
+  await discoverExternalObject(user);
+
+  // ONE rendering, not two. `getAllByText` rather than `getByText` so the
+  // failure reads "expected 1, received 2" instead of "found multiple".
+  expect(await screen.findAllByText(NEEDS_ESTIMATE)).toHaveLength(1);
+
+  // And ONE alert carrying it: the block is `Status as="block" tone="error"`,
+  // which is `role="alert"`. The retired second copy had a different title over
+  // the same sentence, and that is the defect this pins.
+  const alerts = screen.getAllByRole("alert").filter((node) => NEEDS_ESTIMATE.test(node.textContent ?? ""));
+  expect(alerts).toHaveLength(1);
+  expect(alerts[0]).toHaveTextContent("A read cannot be launched without its scan estimate");
+  expect(screen.queryByText("No scan estimate")).not.toBeInTheDocument();
+});
+
+it("carries the same fallback on Source, where it opens the control that repairs it", async () => {
+  // THE FALLBACK IS ON EVERY RENDERING, not on most of them. `goToSection` also
+  // FOCUSES the section it opens, so on step 1 this moves the operator onto the
+  // discovery control rather than nowhere -- which is why it is not suppressed
+  // here. A first version did suppress it, and this case is what refused that.
+  const user = userEvent.setup();
+  vi.mocked(wizardApi.createDatastreamSetupObservation).mockResolvedValue({
+    ...observation,
+    safe_metadata: { ...observation.safe_metadata, quota_cost: null },
+  });
+  await discoverExternalObject(user);
+
+  const alert = screen.getAllByRole("alert").find((node) => NEEDS_ESTIMATE.test(node.textContent ?? ""));
+  expect(alert).toBeDefined();
+  // The sentence names the gesture, and the block carries a control for it.
+  expect(alert).toHaveTextContent("Re-run Discover source");
+  const back = within(alert as HTMLElement).getByRole("button", { name: "Go to Source" });
+  expect(back).toBeEnabled();
+  await user.click(back);
+  expect(await screen.findByRole("radio", { name: "External BigQuery" })).toBeInTheDocument();
 });

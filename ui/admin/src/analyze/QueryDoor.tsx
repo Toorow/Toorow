@@ -39,6 +39,7 @@ import {
   ObjectId, Button, Checkbox, Field, Input, NativeSelect, Panel, PanelHeader, Stack, Status, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableScroll,
   stateLabel,
   stateTone,
+  Retry,
 } from "../ui";
 import {
   createQuerySpec,

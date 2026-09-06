@@ -55,7 +55,7 @@ def test_a_done_line_may_not_carry_commentary():
     )
     found = shape.findings(text)
     assert len(found) == 1
-    assert "carries" in found[0] and "story-log.md" in found[0]
+    assert "carries" in found[0] and "Dev Agent Record" in found[0]
 
 
 def test_a_live_line_may_carry_one_sentence_but_not_an_essay():
@@ -114,3 +114,21 @@ def test_the_guard_would_have_fired_on_the_file_it_was_written_for():
         pytest.skip("the pre-degrease revision is not reachable from here")
     found = shape.findings(before.stdout)
     assert len(found) > 500, f"expected the 2026-08-03 file to be massively red, got {len(found)}"
+
+
+def test_the_frozen_journal_refuses_to_grow():
+    text = "x\n" * (shape.JOURNAL_FROZEN_LINES + 1)
+    found = shape.journal_findings(text)
+    assert len(found) == 1
+    assert "grew" in found[0] and "Dev Agent Record" in found[0] and "reviews/" in found[0]
+
+
+def test_the_frozen_journal_refuses_to_shrink():
+    text = "x\n" * (shape.JOURNAL_FROZEN_LINES - 1)
+    found = shape.journal_findings(text)
+    assert len(found) == 1
+    assert "shrank" in found[0] and "put it back" in found[0]
+
+
+def test_the_frozen_journal_at_its_frozen_size_is_clean():
+    assert shape.journal_findings("x\n" * shape.JOURNAL_FROZEN_LINES) == []

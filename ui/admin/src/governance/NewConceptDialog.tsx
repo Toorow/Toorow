@@ -262,6 +262,10 @@ export default function NewConceptDialog({
   const [aggregation, setAggregation] = useState<AggregationFunction | "">("sum");
 
   const [references, setReferences] = useState<ReferenceState>({ status: "loading" });
+  // THE CONCEPT READ THE FORMULA EDITOR OFFERS TO REPEAT (76-4). The editor
+  // nests three levels down and owns no fetch, so the gesture rides on the
+  // state rather than through three prop lists.
+  const [referencesAttempt, setReferencesAttempt] = useState(0);
   // The preconfigured offer, and which one was taken. `""` is "write my own",
   // and it is the default: a preselected preset would answer, for someone, a
   // question they have not been asked yet.
@@ -290,10 +294,11 @@ export default function NewConceptDialog({
         setReferences({
           status: "error",
           message: reason instanceof Error ? reason.message : "The request failed.",
+          retry: () => setReferencesAttempt((value) => value + 1),
         });
       });
     return () => controller.abort();
-  }, [open, projectId]);
+  }, [open, projectId, referencesAttempt]);
 
   /** The preconfigured offer. Read only for a creation: an EDIT already has a
    *  published identity, and a preset would propose replacing it with another

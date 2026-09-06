@@ -54,6 +54,7 @@ import {
   TableScroll,
   stateLabel,
   stateTone,
+  Retry,
 } from "../ui";
 import DimensionLabelPanel from "./DimensionLabelPanel";
 import type { GovernanceObject } from "./governanceSurface";

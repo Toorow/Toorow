@@ -11,33 +11,65 @@ Toorow maintains a private working repository while exporting a strictly allow-l
 
 ## Public Application Projection
 
-The shareable application projection includes only paths explicitly allowed in `distribution/public-app.toml`:
+`distribution/public-app.toml` is the source of truth, and it is allow-list
+based: a path is private until it is named there. The tables on this page are
+checked against that file by a conformance test, so this page cannot quietly
+fall behind the boundary it describes.
 
-| Surface | Included | Purpose |
-|---|---:|---|
-| `server/` | Yes | FastMCP kernel, source-specific connectors, and test suites. |
-| `ui/` | Yes | React Admin Console, shared shells, design tokens, and single-file MCP App widgets. |
-| `dbt/` | Yes | Canonical dbt models (`fact_daily_kpi`), seeds, and data-quality tests. |
-| `infra/` | Yes | Local services (Docker Compose for Nango/Postgres) and GCP Terraform IaC. |
-| `.github/` | Yes | Application CI matrix and human-gated Cloud Run deployment workflow. |
-| Root build files | Yes | `pyproject.toml`, `uv.lock`, `pnpm-workspace.yaml`, Makefile, `README.md`. |
-| `scripts/` | Yes | Export utility (`export_public_app.py`) and audit scripts. |
-| `distribution/` | Yes | Boundary policy file (`public-app.toml`). |
+| Surface | Purpose |
+|---|---|
+| `.github/` | Application CI matrix. |
+| `dbt/` | Canonical dbt models (`fact_daily_kpi`), seeds, and data-quality tests. |
+| `distribution/` | The boundary policy file itself (`public-app.toml`) and its README. |
+| `docs/` | This documentation site. `docs.toorow.com` **is** this directory: Mintlify reads it from the public repository. |
+| `infra/` | Local services (Docker Compose for Nango/Postgres) and GCP Terraform IaC. |
+| `scripts/` | Export utility (`export_public_app.py`), the publisher, and audit scripts. |
+| `server/` | FastMCP kernel, source-specific connectors, and test suites. |
+| `ui/` | React Admin Console, shared shells, design tokens, and single-file MCP App widgets. |
+
+Root files: `.dockerignore`, `.env.example`, `.gitattributes`, `.gitignore`,
+`CHANGELOG.md`, `CONTRIBUTING.md`, `LICENSE`, `Makefile`, `README.md`,
+`pyproject.toml`, `uv.lock`.
+
+---
+
+## A public directory does not make everything under it public
+
+Being allow-listed opens a directory, not its whole subtree. `docs/` is public
+because the documentation site is served from it — the internal working papers
+that happen to live beside those pages are not:
+
+| Excluded from `docs/` | What it is |
+|---|---|
+| `docs/product-architecture/**` | The ratified product and architecture contracts, their debt and caveat registers. Internal. |
+| `docs/claude-md-incidents.md` | The incident log behind each working rule. |
+| `docs/console-visual-gate-g1-status.md` | An internal gate status. |
+| `docs/note_de_suivi_controle.md` | An internal follow-up note. |
+| `docs/ui-architect-guide.md`, `docs/ui-css-strategy.md` | Internal interface working papers. |
+
+Measured 2026-09-06: `docs/product-architecture/` was created three days after
+the previous public export, so it had never been published and no decision had
+ever been taken to publish it. The first projection after that gap would have
+carried all of it. What has never been published does not become public as a
+side effect of a sync — a public push cannot be undone.
 
 ---
 
 ## Private Workspace Projection
 
-The following surfaces remain strictly private and are excluded from public application exports:
+Named explicitly in `public-app.toml` so a boundary review can be read rather
+than inferred, even though the allow-list already denies every path absent from
+it:
 
 | Surface | Purpose |
 |---|---|
 | `web/` | Marketing showcase site (Astro). |
 | `studio/` | Sanity CMS content administration workspace. |
-| `docs/`, `doc/` | Technical documentation and research notes. |
-| `_bmad/`, `_bmad-output/`, `reviews/` | Planning artifacts, story specs, and cynic review output. |
+| `doc/` | Research notes. |
+| `_bmad/`, `_bmad-output/`, `reviews/` | Planning artifacts, story specs, and review output. |
 | `_screenshots/`, `logo/` | Brand assets, screenshots, and visual design assets. |
-| Dot-directories (`.agents/`, `.claude/`) | Local assistant and workflow agent configurations. |
+| `.agents/`, `.claude/`, `.codex/`, `.design-sync/`, `.ds-sync/` | Local assistant and workflow agent configurations. |
+| `.mcp.json`, `design-sync.config.json`, `skills-lock.json` | Local tooling configuration. |
 | `info.md` | Original product requirements document. |
 
 ---
@@ -52,11 +84,22 @@ Defense-in-depth deny rules further scrub environment files (`.env`), credential
 
 ## Export & Release Workflow
 
-1. Execute `python scripts/export_public_app.py --list` to inspect allowed export targets.
-2. Export snapshot to an isolated build directory outside the repository.
-3. Run automated secret scanner (`ruff`, secret-grep) over the exported tree.
-4. Verify license inclusion prior to describing the repository as open-source.
-5. Human approval (**Human Gate**) is required before pushing public releases.
+The public repository is `github.com/Toorow/Toorow`, and `docs.toorow.com` is
+built by Mintlify from the `docs/` directory of its default branch. It is never
+updated by pushing the private monorepo: history is all-or-nothing, so only a
+clean allow-listed projection is published.
+
+1. `python scripts/export_public_app.py --list` — inspect exactly what the
+   allow-list selects.
+2. `python scripts/publish_public_app.py` — stage that projection into a
+   checkout outside this repository and print the diff. It writes nothing
+   public.
+3. Run a secret scanner over the staged tree, and read the list of **added**
+   files: an addition is a path that has never been public, which is where the
+   irreversible mistake lives.
+4. Verify `LICENSE` is present before describing the repository as open-source.
+5. Human approval (**Human Gate**), then
+   `python scripts/publish_public_app.py --push -m "<message>"`.
 
 ---
 

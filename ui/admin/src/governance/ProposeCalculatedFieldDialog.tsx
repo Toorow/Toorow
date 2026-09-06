@@ -153,6 +153,9 @@ export default function ProposeCalculatedFieldDialog({
 }) {
   const [load, setLoad] = useState<LoadState>({ status: "loading" });
   const [references, setReferences] = useState<ReferenceState>({ status: "loading" });
+  // THE CONCEPT READ THE FORMULA EDITOR OFFERS TO REPEAT (76-4), for the
+  // reason `NewConceptDialog` gives beside its own.
+  const [referencesAttempt, setReferencesAttempt] = useState(0);
   const [formula, setFormula] = useState<FormulaDraft>(emptyFormula());
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -216,10 +219,11 @@ export default function ProposeCalculatedFieldDialog({
         setReferences({
           status: "error",
           message: err instanceof Error ? err.message : "The Concept list did not answer.",
+          retry: () => setReferencesAttempt((value) => value + 1),
         });
       });
     return () => controller.abort();
-  }, [open, projectId]);
+  }, [open, projectId, referencesAttempt]);
 
   /** The exploration's pins FIRST, then the Project's published Concepts. Both,
    *  never one: the version a Result executed is often not the current one, and

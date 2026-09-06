@@ -37,7 +37,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { ApiError, apiGet, apiJson } from "../../lib/apiFetch";
-import { Badge, Button, Input, Label, Panel, PanelHeader, Status, wireWord } from "../../ui";
+import { Badge, Button, EmptyState, Input, Label, Panel, PanelHeader, Retry, Status, wireWord } from "../../ui";
 import GlobalScopeLayout from "../GlobalScopeLayout";
 import { AppearanceControl, signOutThisWindow } from "../StableSidebar";
 import AuthorizationsPanel from "../../authorizations/AuthorizationsPanel";
@@ -284,7 +284,10 @@ function ProfileSection({
             {orgs === null ? (
               <p className="mt-2 text-body text-text-secondary">Membership evidence is still loading.</p>
             ) : orgs.length === 0 ? (
-              <p className="mt-2 text-body text-text-secondary">No active Organization membership.</p>
+              <EmptyState
+                title="No active Organization membership"
+                description="Membership is granted by an organization's owner or admin, from its own Settings. Nothing is shown in its place."
+              />
             ) : (
               <div className="mt-2 flex flex-wrap gap-2">
                 {orgs.map((org) => <Badge key={org.id} tone="neutral">{org.name}</Badge>)}

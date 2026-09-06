@@ -238,7 +238,7 @@ function mount(
   onOpenOwner?: (owner: unknown) => void,
 ) {
   return render(
-    <WorkbenchMappingPage
+    <WorkbenchMappingPage onRetry={() => {}}
       header={header}
       payload={tab}
       projectId="proj_EXAMPLE"

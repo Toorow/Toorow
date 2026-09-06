@@ -1028,11 +1028,12 @@ export default function WidgetCardsPage({ projectId }: { projectId?: string }) {
                       // The honest empty state. Production holds zero Query Specs, so
                       // this is what an operator will actually see - and it names where
                       // one comes from instead of offering a picker over nothing.
-                      <p data-testid={`queries-empty-${card.id}`}>
-                        No governed query is bound to this topic. A query is authored in
-                        Analyze &rsaquo; Explore as a Query Spec, then bound here by its
-                        exact version.
-                      </p>
+                      <div data-testid={`queries-empty-${card.id}`}>
+                        <EmptyState
+                          title="No governed query is bound to this topic"
+                          description="A query is authored in Analyze › Explore as a Query Spec, then bound here by its exact version."
+                        />
+                      </div>
                     ) : (
                       <ul>
                         {bindings.map((b) => (

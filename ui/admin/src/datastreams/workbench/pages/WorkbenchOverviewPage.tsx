@@ -144,6 +144,7 @@ export default function WorkbenchOverviewPage({
   onOpenOwner,
   onNavigateTab,
   onRepairMapping,
+  onRetryCapabilities,
 }: {
   header: WorkbenchHeader;
   payload: WorkbenchTabPayload;
@@ -157,6 +158,9 @@ export default function WorkbenchOverviewPage({
   connector?: string | null;
   sourceAccountRef?: string | null;
   onOpenOwner?: (owner: OwnerReference) => void;
+  /** Re-reads the Workbench header, for the capability panel's error block
+   *  (76-4). Owned by the route, because the route made the read. */
+  onRetryCapabilities?: () => void;
   onNavigateTab?: (tab: Tab) => void;
   onRepairMapping?: (rawImportId: string) => void;
 }) {
@@ -782,6 +786,7 @@ export default function WorkbenchOverviewPage({
         // read, and `null` is how this panel is told so — absent would make it
         // the projection-only panel of the other tabs instead.
         modules={capabilityTabs ?? null}
+        onRetryCapabilities={onRetryCapabilities}
         onModuleToggle={(change) => setConfirmingCapability(change)}
         moduleBusy={preparing !== null}
         renderModuleNotice={(key) => {

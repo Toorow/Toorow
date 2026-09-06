@@ -2,7 +2,7 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { RunInsights } from "../../daily-insights/InsightShare";
 import { apiFetch } from "../../lib/apiFetch";
 import AiSettingsPanel from "../../settings/AiSettingsPanel";
-import { Badge, Button, CapabilityCoverage, CapabilityImpactMatrix, capabilityLabel, EmptyState, Field, Input, ObjectId, PageFrame, PageHeader, Panel, PanelHeader, ReferenceSelect, SectionHeader, Stack, stateLabel, stateTone, Status, Tabs, TabsContent, TabsList, TabsTrigger, Textarea, type ImpactMatrixRow } from "../../ui";
+import { Badge, Button, CapabilityCoverage, CapabilityImpactMatrix, capabilityLabel, EmptyState, Field, Input, ObjectId, PageFrame, PageHeader, Panel, PanelHeader, ReferenceSelect, SectionHeader, Stack, stateLabel, stateTone, Status, Tabs, TabsContent, TabsList, TabsTrigger, Textarea, type ImpactMatrixRow, Retry } from "../../ui";
 
 export type SettingsSection = "general" | "capabilities" | "changes" | "ai";
 
@@ -725,10 +725,10 @@ function CapabilityDatastreams({
   }
   if (state.rows.length === 0) {
     return (
-      <p className="m-0 text-caption text-text-secondary">
-        No Datastream is compatible with this capability yet. Add one that carries the fields it
-        needs, and it will appear here.
-      </p>
+      <EmptyState
+        title="No Datastream is compatible with this capability yet"
+        description="A Datastream appears here once it carries the fields this capability reads. One is added in Data."
+      />
     );
   }
   return (
@@ -924,10 +924,10 @@ function RunHistoryPanel({
         </Status>
       ) : null}
       {state.status === "ready" && state.runs.length === 0 ? (
-        <p className="mt-4 mb-0 text-ui text-text-secondary">
-          No run has been recorded for this Project yet. Copy the recipe above into your LLM
-          host&apos;s scheduled task; the first run will appear here.
-        </p>
+        <EmptyState
+          title="No run has been recorded for this Project yet"
+          description="The first run appears here once the recipe above is running in your LLM host's scheduled task."
+        />
       ) : null}
       {state.status === "ready" && state.runs.length > 0 ? (
         <ul className="mt-4 grid gap-2">

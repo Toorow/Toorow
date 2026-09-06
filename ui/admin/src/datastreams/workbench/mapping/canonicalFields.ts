@@ -335,7 +335,10 @@ export interface ConceptReferenceOption {
 export type ConceptReferences =
   | { status: "loading" }
   | { status: "ready"; options: ConceptReferenceOption[] }
-  | { status: "error"; message: string };
+  /** `retry` re-runs the read this hook owns: the screens that RENDER this
+   *  failure do not own the fetch, so without it their error block is a dead
+   *  end (76-4, `console-presentation.md` §5). */
+  | { status: "error"; message: string; retry: () => void };
 
 function referenceOptions(items: GovernanceObject[]): ConceptReferenceOption[] {
   return items
@@ -362,6 +365,8 @@ export function useSemanticConceptReferences(
   enabled: boolean,
 ): ConceptReferences {
   const [state, setState] = useState<ConceptReferences>({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => setAttempt((value) => value + 1), []);
 
   useEffect(() => {
     if (!enabled || !projectId) return;
@@ -374,10 +379,11 @@ export function useSemanticConceptReferences(
         setState({
           status: "error",
           message: reason instanceof Error ? reason.message : "The request failed.",
+          retry,
         });
       });
     return () => controller.abort();
-  }, [projectId, enabled]);
+  }, [projectId, enabled, attempt, retry]);
 
   return state;
 }

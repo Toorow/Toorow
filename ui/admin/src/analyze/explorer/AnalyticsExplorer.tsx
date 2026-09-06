@@ -61,6 +61,7 @@ import {
   type WellSpec,
   formatBytes, formatNumber, formatPercent,
   wireWord,
+  Retry,
 } from "../../ui";
 import { createVisualizationFromResult } from "../builder/seedVisualization";
 import StartingPointChoice from "../builder/StartingPointChoice";

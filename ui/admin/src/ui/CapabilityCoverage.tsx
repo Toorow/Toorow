@@ -21,7 +21,7 @@
 import type { ReactNode } from "react";
 import { Badge } from "../components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
-import { ObjectId, TableScroll } from "./Data";
+import { EmptyState, ObjectId, TableScroll } from "./Data";
 import type { Tone } from "./tone";
 import { wireWord } from "./glossary";
 
@@ -153,9 +153,10 @@ export function capabilityLabel(key: string): string {
 export function CapabilityImpactMatrix({ rows }: { rows: ImpactMatrixRow[] }) {
   if (rows.length === 0) {
     return (
-      <p className="m-0 text-ui text-text-secondary">
-        No Datastream proposal was compiled for this change.
-      </p>
+      <EmptyState
+        title="No Datastream proposal was compiled for this change"
+        description="Nothing is claimed about what this change would do to any Datastream, because the compiler produced no per-Datastream proposal for it."
+      />
     );
   }
   return (

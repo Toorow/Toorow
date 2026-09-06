@@ -32,7 +32,7 @@
  *     step, and the six that existed before it broke four surfaces at once.
  */
 import { type ReactNode, useState } from "react";
-import { Button, formatClock, formatNumber, Panel, percentValue, Progress, stateLabel, Status } from "../../ui";
+import { Button, formatClock, formatNumber, Panel, percentValue, Progress, stateLabel, Status, Retry } from "../../ui";
 import type { Tone } from "../../ui";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { dateTime } from "./evidence";
@@ -527,6 +527,13 @@ export default function DatastreamRunLive({
                 tone="error"
                 title="This run could not be opened"
                 data-testid="run-live-materialization-failed"
+                /* THE ONE GESTURE THIS BAND HAS (76-4). Nothing here can restart
+                   a dead materialization job -- that is the queue's, and this
+                   file may not hold a second opinion about it -- but the band
+                   CAN ask the server again, which is what a person does when a
+                   job has been repaired elsewhere. An error that offers nothing
+                   leaves them reloading the browser. */
+                action={<Retry onClick={poll.refresh} />}
               >
                 {/* NOT ONE STATE NAME IS TYPED HERE, and the band's own
                     conformance test is what enforces it: this file may not hold

@@ -36,7 +36,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { apiGet } from "../lib/apiFetch";
-import { Label, NativeSelect, Status } from "../ui";
+import { Label, NativeSelect, Status, Retry } from "../ui";
 
 export interface ConceptChoice {
   /** `<concept_id>|<version_id>`, the value the picker carries. */
@@ -98,6 +98,10 @@ export default function ConceptDatastreamBindings({
   const [feeds, setFeeds] = useState<FeedsState>({ status: "loading" });
   const key = concepts.map((concept) => concept.name).join(",");
 
+  // THE READ THIS SCREEN'S ERROR BLOCK OFFERS TO REPEAT (76-4). An error
+  // that names no way forward is a dead end; this token is what `Retry`
+  // moves, and the effect below is the read it re-runs.
+  const [reloadToken, setReloadToken] = useState(0);
   useEffect(() => {
     if (!projectId || concepts.length === 0) {
       setFeeds({ status: "ready", byConcept: {} });
@@ -141,7 +145,7 @@ export default function ConceptDatastreamBindings({
         });
       });
     return () => controller.abort();
-  }, [projectId, key, concepts.length]);
+  }, [projectId, key, concepts.length, reloadToken]);
 
   // EVERY FEED IS REPORTED, so the caller binds every one of them. Same
   // change-only guard as `onPendingChange` below: the caller rebuilds
@@ -210,7 +214,9 @@ export default function ConceptDatastreamBindings({
         </p>
       )}
       {feeds.status === "error" && (
-        <Status as="block" tone="error" title="The Datastreams could not be read">
+        <Status as="block" tone="error" title="The Datastreams could not be read"
+          action={<Retry onClick={() => setReloadToken((token) => token + 1)} />}
+        >
           {feeds.message} Without them a View can be published and will answer
           nothing, so the step stops here rather than binding a guess.
         </Status>

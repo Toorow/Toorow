@@ -310,3 +310,102 @@ def test_every_tool_a_published_page_names_exists_on_the_server():
         f"outils annonces au public et INEXISTANTS : {offenders}. "
         "Un appel invente envoie l'agent dans le mur, et le lecteur ne peut pas le savoir."
     )
+
+
+def _boundary_policy() -> dict:
+    import tomllib
+
+    return tomllib.loads(
+        (_REPO_ROOT / "distribution" / "public-app.toml").read_text(encoding="utf-8")
+    )
+
+
+def _boundary_tables(page: str) -> tuple[str, str]:
+    """Les deux TABLEAUX, pas les deux moities de la page.
+
+    La section << Export & Release Workflow >> vient apres le tableau prive et
+    cite `docs/` legitimement (Mintlify le lit). Decouper la page en deux et
+    appeler la seconde moitie << prive >> rendait la prose coupable.
+    """
+    public = page.split("## A public directory")[0]
+    private = page.split("## Private Workspace Projection", 1)[1].split("\n---", 1)[0]
+    return public, private
+
+def test_the_published_boundary_page_agrees_with_the_allow_list():
+    """`public-app.toml` decide ; cette page l'EXPLIQUE. Elle avait derive.
+
+    Mesure du 2026-09-06. `repository-boundary.mdx` rangeait `docs/` du cote
+    PRIVE -- alors que le fichier d'allow-list le publie, et que
+    `docs.toorow.com` EST ce dossier, servi par Mintlify depuis le depot public.
+    Elle citait aussi `pnpm-workspace.yaml` parmi les fichiers racine publies,
+    qui n'y est pas, et omettait six chemins prives. Rien ne pouvait le dire :
+    une page de politique perimee se lit exactement comme une page juste, et
+    celle-ci decrit la seule operation du depot qui soit irreversible.
+
+    La page n'a pas a etre generee -- elle explique, et une explication vaut
+    mieux qu'un tableau derive. Mais chaque nom qu'elle porte doit exister dans
+    la source de verite, et chaque nom de la source doit y figurer.
+    """
+    policy = _boundary_policy()
+    page = (_DOCS / "repository-boundary.mdx").read_text(encoding="utf-8")
+
+    missing_public = [d for d in policy["public_directories"] if f"`{d}/`" not in page]
+    assert not missing_public, (
+        f"repertoires publies et absents de la page : {missing_public}"
+    )
+
+    missing_private = [
+        p for p in policy["private_paths"] if f"`{p}`" not in page and f"`{p}/`" not in page
+    ]
+    assert not missing_private, (
+        f"chemins prives et absents de la page : {missing_private}"
+    )
+
+    #: Ce qui est publie et ce qui ne l'est pas ne peuvent pas etre le meme mot.
+    public_table, private_table = _boundary_tables(page)
+    wrongly_public = [p for p in policy["private_paths"] if f"`{p}/`" in public_table]
+    assert not wrongly_public, (
+        f"chemins prives presentes comme publies : {wrongly_public}"
+    )
+    assert "`web/`" in private_table and "`studio/`" in private_table
+
+    missing_root = [f for f in policy["root_files"] if f"`{f}`" not in page]
+    assert not missing_root, f"fichiers racine publies et absents de la page : {missing_root}"
+
+    invented_root = [
+        name
+        for name in re.findall(r"`([A-Za-z0-9_.-]+\.(?:toml|lock|md|yaml|yml))`", page)
+        if name not in policy["root_files"]
+        and name not in {"public-app.toml", "docs.json", "manifest.json"}
+        and not (_REPO_ROOT / name).exists()
+    ]
+    assert not invented_root, (
+        f"fichiers racine annonces publies et INEXISTANTS : {invented_root}. "
+        "C'est ainsi que `pnpm-workspace.yaml` a survecu a sa suppression."
+    )
+
+    docs_exclusions = [g for g in policy["exclude_globs"] if g.startswith("docs/")]
+    assert docs_exclusions, "plus aucune exclusion sous docs/ -- la page en decrit encore"
+    unnamed = [g for g in docs_exclusions if g.replace("/**", "") not in page]
+    assert not unnamed, (
+        f"exclusions de docs/ absentes de la page : {unnamed}. "
+        "Un repertoire publie n'ouvre pas tout son sous-arbre, et la page doit dire lequel."
+    )
+
+
+def test_the_boundary_guard_would_catch_the_drift_it_was_written_for():
+    """LA SONDE. Le defaut etait `docs/` du mauvais cote d'un tableau.
+
+    Une garde qui ne verifie que la PRESENCE d'un nom ne l'aurait pas vu : le
+    mot `docs/` etait bien sur la page -- rangee dans la mauvaise moitie.
+    """
+    policy = _boundary_policy()
+    assert "docs" in policy["public_directories"]
+    assert "docs" not in policy["private_paths"]
+
+    page = (_DOCS / "repository-boundary.mdx").read_text(encoding="utf-8")
+    assert "## Private Workspace Projection" in page, "la coupe des deux tableaux a disparu"
+    _, private_table = _boundary_tables(page)
+    assert "`docs/`" not in private_table, (
+        "`docs/` est reapparu du cote prive -- c'est exactement la derive de 2026-09-06"
+    )

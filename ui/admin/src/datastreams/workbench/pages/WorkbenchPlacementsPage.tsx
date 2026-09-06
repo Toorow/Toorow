@@ -158,6 +158,7 @@ import {
   sortRows,
   useTableSort,
   stateTone,
+  Retry,
 } from "../../../ui";
 import { apiDelete, apiGet, apiPost } from "../../../lib/apiFetch";
 import { moneyText, nullableText, numberText, record, records, text } from "../evidence";
@@ -788,7 +789,7 @@ export default function WorkbenchPlacementsPage({
 
       {failure && (
         <Status as="block" tone="error" title="Placement evidence unavailable"
-          action={<Retry onClick={() => void reread()} />}
+          action={<Retry onClick={() => void reread(planId)} />}
         >
           {failure}
         </Status>
@@ -940,7 +941,12 @@ export default function WorkbenchPlacementsPage({
       )}
 
       {suggestFailure && (
-        <Status as="block" tone="error" title="Placement evidence unavailable">
+        <Status
+          as="block"
+          tone="error"
+          title="Placement evidence unavailable"
+          action={<Retry onClick={() => void askForMatches()} />}
+        >
           {suggestFailure}
         </Status>
       )}

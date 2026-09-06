@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   Badge, Button, ChoiceGroup, Input, Panel, PanelHeader, Status,
+  Retry,
 } from "../../../ui";
 import { record, records, text } from "../evidence";
 import DatastreamChangeDialog from "../DatastreamChangeDialog";
@@ -46,6 +47,7 @@ export default function WorkbenchMappingPage({
   projectId,
   datastreamId,
   onConfirmed,
+  onRetry,
   onOpenOwner,
   rawImportId,
 }: {
@@ -56,6 +58,9 @@ export default function WorkbenchMappingPage({
   projectId: string;
   datastreamId: string;
   onConfirmed: () => void;
+  /** Re-reads the Workbench payload this tab is handed (76-4). Owned by the
+   *  route, because the route made the read. */
+  onRetry: () => void;
   /** The shell's own resolver — amendment 10. A field that names its canonical field has
    *  to LEAD to it, and only the router may build that address. Absent means the
    *  concept is named and inert, never a control that opens nothing. */
@@ -592,7 +597,9 @@ export default function WorkbenchMappingPage({
               // this says the per-column reading could not be built, which is a
               // different fact and never a shorter table.
               <div className="p-5">
-                <Status as="block" tone="error" title="The column mapping could not be read" data-testid="columns-broken">
+                <Status as="block" tone="error" title="The column mapping could not be read" data-testid="columns-broken"
+          action={<Retry onClick={onRetry} />}
+        >
                   The bindings of this version are shown, but what each column
                   becomes could not be established. This is not an absence of
                   treatments.

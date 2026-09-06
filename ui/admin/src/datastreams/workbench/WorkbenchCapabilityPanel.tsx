@@ -54,6 +54,7 @@ import {
   formatNumber,
   stateLabel,
   stateTone,
+  Retry,
 } from "../../ui";
 import { record, records, text, titleCase } from "./evidence";
 import type { OwnerReference } from "../../shell/pages/ProjectSettings";
@@ -414,6 +415,7 @@ export default function WorkbenchCapabilityPanel({
   moduleBusy = false,
   renderModuleNotice,
   onOpenOwner,
+  onRetryCapabilities,
 }: {
   projection: WorkbenchCapabilityProjection | null;
   /** The Project rows from the Workbench header — `Overview` only.
@@ -432,6 +434,10 @@ export default function WorkbenchCapabilityPanel({
    *  performs it, so no confirmation ever passes through here. */
   renderModuleNotice?: (capabilityKey: string) => ReactNode;
   onOpenOwner?: (owner: OwnerReference) => void;
+  /** Re-reads the Workbench header this panel is handed (76-4). Only the
+   *  route that made that read can repeat it, so the gesture arrives as a
+   *  prop rather than being invented here. */
+  onRetryCapabilities?: () => void;
 }) {
   const compiled = projection?.capabilities ?? [];
   /** The merged `Modules` panel of amendment 11, or the projection-only panel. */
@@ -493,7 +499,12 @@ export default function WorkbenchCapabilityPanel({
       ) : null}
       {merged && modules === null ? (
         <div className="p-5">
-          <Status as="block" tone="error" title="Project capabilities could not be read">
+          <Status
+            as="block"
+            tone="error"
+            title="Project capabilities could not be read"
+            action={onRetryCapabilities ? <Retry onClick={onRetryCapabilities} /> : undefined}
+          >
             This Workbench header carried no capability state, so no Connector is shown. This is not
             the same as a Project with no capability: nothing was measured.
           </Status>

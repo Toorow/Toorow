@@ -774,7 +774,12 @@ export default function ContextHubLayout({
           {selected && (
             <div className="flex flex-col gap-3 rounded-large border border-divider-base bg-surface-light px-6 py-5" aria-label="Governed resource links">
               <span className={KICKER}>Traceable routes</span>
-              {selectedLinks.length === 0 ? <p className="m-0 text-ui text-text-secondary">No resources are linked to this business key yet.</p> : selectedLinks.map((link) => {
+              {selectedLinks.length === 0 ? (
+                <EmptyState
+                  title="No resource is linked to this business key yet"
+                  description="Knowledge, Skills, Datastreams and reporting views become findable together once they hang off a key. A link is made from the object's own screen."
+                />
+              ) : selectedLinks.map((link) => {
                 // The name if the bundle knows it, the id if it does not -- and
                 // then the id is shown AS an id, in mono, so nobody reads an
                 // unresolved token as a title somebody chose.

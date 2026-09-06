@@ -489,9 +489,14 @@ export function bareAbsenceSentences(source: string): string[] {
   const blank = (start: number, end: number) =>
     masked.slice(0, start) + " ".repeat(end - start + 1) + masked.slice(end + 1);
   // `EmptyState` is the answer; `Status` is a statement about a condition and has
-  // its own rules above. Mask both so neither is counted twice.
-  for (const tag of ["EmptyState", "Status"]) {
-    for (const t of openingTagSpans(masked, tag)) masked = blank(t.start, t.end);
+  // its own rules above. Mask both -- and mask a `Status` WHOLE, body included:
+  // its children are part of the statement it makes, not a bare sentence beside
+  // it. Masking only the opening tag counted six `Status` bodies as offenders,
+  // which is how a guard starts asking for an `EmptyState` inside an alert.
+  for (const t of openingTagSpans(masked, "EmptyState")) masked = blank(t.start, t.end);
+  for (const t of openingTagSpans(masked, "Status")) {
+    const close = masked.indexOf("</Status>", t.end);
+    masked = blank(t.start, close < 0 ? t.end : close + "</Status>".length - 1);
   }
   const found: string[] = [];
   for (const m of masked.matchAll(/>([^<>{}]{6,}?)</g)) {
@@ -526,8 +531,26 @@ function openingTagSpans(body: string, tag: string): Array<{ start: number; end:
 }
 
 /**
- * The sentences that are NOT an empty collection, each with the reason it is a
- * sentence and not an `EmptyState`.
+ * The absences that are NOT a region's answer, each named by the file it lives
+ * in.
+ *
+ * THE CUT IS THE CONTAINER, and it is what the migration measured rather than
+ * what it assumed. `EmptyState` answers for a REGION — a panel's body, a tab, a
+ * page — and it is 12rem of centred vertical space, which is exactly right
+ * there and wrong everywhere else. The entries below answer inside a ROW, a
+ * CARD, a FIELD or a 210px navigation rail, or they are not an absence at all:
+ * a fact about one object, a disclosure of what a screen deliberately does not
+ * do, a consequence read inside a confirmation, or a FILTER that matched
+ * nothing while the collection behind it is full.
+ *
+ * `shell/DataTree.tsx` is the clearest of them and its file says so in a
+ * comment: an `EmptyState` in a 210px tree rail reads as a broken layout, not
+ * as an answer. The three `No published Concept` hints sit where a
+ * `<NativeSelect>` goes, inside a form, beside a `loading` twin that is already
+ * a plain sentence.
+ *
+ * 29 absences WERE regions and are now `EmptyState`, including two in the
+ * primitive library itself (`ui/EntityMatrix.tsx`). This list is what remains.
  *
  * THIS LIST IS THE CLASSIFICATION, not an amnesty. Every entry answers about ONE
  * object (`No freshness verdict was recorded for this Result`), DISCLOSES what a
@@ -538,33 +561,68 @@ function openingTagSpans(body: string, tag: string): Array<{ start: number; end:
  * answers for. A new entry has to carry the same kind of reason.
  */
 const NOT_A_COLLECTION = new Set([
-  // One object, one fact about it.
-  "No freshness verdict was recorded for this Result, so this screen cannot tell you whether the data behind it is current.",
-  "No interaction has taken this Skill yet. A walk appears here the first time an agent asks for this procedure.",
-  "None was recorded for this Result",
+  // analyze/builder/VisualizationBuilder.tsx
   "No version has been saved yet.",
-  "No change-set id came back with this acceptance.",
-  "No compatible automated verdict.",
-  "No longer in the sequence",
-  "No jurisdiction — applies on contract, not on geography",
-  "No reconciliation has read Cloud Scheduler for this clock yet. Nothing is claimed about it either way.",
-  // A disclosure: what this screen deliberately does NOT do.
-  "No path token is created here, and no bearer is returned by any route on this screen.",
-  "No link exists yet, and nothing has left this platform. Someone else with the Edit role on this project can create one.",
-  "None of them is a control. Day-by-day coverage above performs the retired ones.",
-  "No navigation was supplied to this workbench",
-  "No fallback knowledge has been substituted.",
-  "No list is shown in their place.",
-  "None identified by the server.",
+  // analyze/explorer/AnalyticsExplorer.tsx
   "No active Skills.",
-  // A consequence, inside a confirmation the person is reading before deciding.
-  "Nothing is deleted: its versions stay, and any Semantic View relationship that pins one keeps working. What changes is that no new relationship can be built on it.",
-  "Nothing is written until you have seen what this repair would do.",
-  "No changes were made. You can retry the acceptance.",
-  // A FILTER matched nothing: the collection is not empty, the query is.
+  // analyze/ResultWorkbench.tsx
+  "No freshness verdict was recorded for this Result, so this screen cannot tell you whether the data behind it is current. Re-run the query to get one.",
+  // analyze-artifacts/Dossiers.tsx
+  "None was recorded for this Result",
+  // connaissances/ContextHubLayout.tsx
   "No matching business layer.",
+  // ContextObjectPage.tsx
+  "No interaction has taken this Skill yet. A walk appears here the first time an agent asks for this procedure and calls one of the tools its steps name.",
+  // datastreams/workbench/DatastreamReloadPanel.tsx
+  "None of them is a control. Day-by-day coverage above performs the retired ones.",
+  // datastreams/workbench/DatastreamSample.tsx
+  "No eligible row on this day.",
+  // datastreams/workbench/mapping/DeclareConceptPanel.tsx
+  "No published Concept to reference yet. A formula pins a Concept AND its exact version, and this project has published no Concept version, so there is nothing to point at. A Concept is published in Governance.",
+  // datastreams/workbench/pages/WorkbenchCostPage.tsx
+  "No rule reached this phase",
+  // datastreams/workbench/pages/WorkbenchPlacementsPage.tsx
+  "No placement is attached to this campaign on this line.",
+  // governance/CanonicalFields.tsx
+  "Nothing is deleted: its versions stay, and any Semantic View relationship that pins one keeps working. What changes is that no new relationship can be built on it. A key a relationship still pins is refused, and the refusal names which ones to retire first.",
+  // governance/CanonicalFields.tsx
+  "Nothing is deleted: a mapping already published against this field keeps working. What changes is that it leaves this list and no new mapping can be built on it — and the name",
+  // governance/CountryWorkspace.tsx
+  "No country is assigned to this Market.",
+  // governance/FormulaTreeEditor.tsx
+  "No published Concept to reference yet. A formula pins a Concept AND its exact version, and this Project has published no Concept version, so there is nothing to point at.",
+  // governance/NewSemanticViewDialog.tsx
+  "No pair currently implements the same published MDM common key.",
+  // governance/NewSemanticViewDialog.tsx
+  "No published Concept to publish yet. A Semantic View publishes at least one metric, pinned to its exact version, and this Project has none: a Concept is authored from New Concept in Governance, and published before it can be pinned.",
+  // governance/TaxFeeLadderTabs.tsx
+  "No jurisdiction — applies on contract, not on geography",
+  // governance/UnresolvedRepairDrawer.tsx
+  "Nothing is written until you have seen what this repair would do.",
+  // KnowledgeBasePage.tsx
+  "No fallback knowledge has been substituted.",
+  // KnowledgeGraphPage.tsx
+  "Nothing of this project&rsquo;s own yet",
+  // KnowledgeGraphPage.tsx
   "No node matches these filters",
-  "Nothing of this project’s own yet",
+  // KnowledgeGraphPage.tsx
+  "Nothing feeds this field yet — no datastream in this project maps a source column onto it.",
+  // KnowledgeGraphPage.tsx
+  "Nothing links to this node.",
+  // shell/DataTree.tsx
+  "No Datastream yet — one is added from Data.",
+  // shell/pages/FeedbackReviewWorkbench.tsx
+  "No navigation was supplied to this workbench",
+  // shell/pages/JoinOrg.tsx
+  "No changes were made. You can retry the acceptance.",
+  // shell/pages/PlatformClocks.tsx
+  "No longer in the sequence",
+  // shell/pages/ProjectMapping.tsx
+  "None identified by the server.",
+  // shell/pages/WidgetFeedback.tsx
+  "No additional version filter.",
+  // shell/pages/WidgetFeedback.tsx
+  "No compatible automated verdict.",
 ]);
 
 it("an absent collection is an EmptyState, never a bare sentence", () => {

@@ -28,7 +28,7 @@ import { useMemo, useRef, useState } from "react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { NativeSelect } from "../components/ui/input";
-import { TableScroll } from "./Data";
+import { EmptyState, TableScroll } from "./Data";
 import type { Tone } from "./tone";
 
 export type BindingState = "published" | "candidate" | "excluded" | "superseded" | "none";
@@ -255,9 +255,10 @@ export function EntityMatrix({
       </div>
 
       {visibleEntities.length === 0 ? (
-        <p className="m-0 text-ui text-text-secondary">
-          No tracked entity matches these filters. Nothing has been hidden beyond them.
-        </p>
+        <EmptyState
+          title="No tracked entity matches these filters"
+          description="Nothing has been hidden beyond them. Widen the role or the search above to see the rest of this Project's registry."
+        />
       ) : asList || visibleDatastreams.length === 0 ? (
         <ul className="m-0 flex list-none flex-col gap-4 p-0" data-testid="entity-matrix-list">
           {visibleEntities.map((entity) => (
@@ -267,9 +268,10 @@ export function EntityMatrix({
                 <Badge tone="neutral">{roleLabel(entity.role)}</Badge>
               </p>
               {visibleDatastreams.length === 0 ? (
-                <p className="m-0 text-caption text-text-secondary">
-                  No compatible Datastream was detected for this Project.
-                </p>
+                <EmptyState
+                  title="No compatible Datastream"
+                  description="No Datastream of this Project carries the fields this entity would be matched on, so no cell can be drawn for it."
+                />
               ) : (
                 <ul className="m-0 flex list-none flex-col gap-1 p-0">
                   {visibleDatastreams.map((datastream) => {

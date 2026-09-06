@@ -37,7 +37,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, apiGet, apiJson } from "../lib/apiFetch";
-import { Badge, Button, Cluster, Field, NativeSelect, ObjectId, SectionHeader, Stack, Status } from "../ui";
+import { Badge, Button, Cluster, EmptyState, Field, NativeSelect, ObjectId, SectionHeader, Stack, Status } from "../ui";
 
 /** One relation of a Semantic View version, as the model holds it today. */
 export interface ViewRelation {
@@ -449,10 +449,12 @@ export default function TopicViewsPanel({
                   can still be read on its own.
                 </p>
               ) : nextRelations().length === 0 ? (
-                <p data-testid="view-chain-complete">
-                  No relationship of this version continues that chain. Add the path, or
-                  remove its last leg.
-                </p>
+                <div data-testid="view-chain-complete">
+                  <EmptyState
+                    title="No relationship continues that chain"
+                    description="This Semantic View version declares no further leg from where the chain now ends. Add the path below, or remove its last leg."
+                  />
+                </div>
               ) : (
                 <Field
                   label="Add a leg"

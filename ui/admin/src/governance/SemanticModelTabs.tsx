@@ -50,6 +50,7 @@ import {
   formatPercent,
   stateLabel,
   stateTone,
+  Retry,
 } from "../ui";
 import { buildPath, useRoute, type CanonicalRoute } from "../shell/router";
 import type { GovernanceObject, OwnerReference } from "./governanceSurface";
@@ -288,8 +289,12 @@ export function SourceBindingsTab({
   organizationId,
   projectId,
   typeLabel,
+  onRetry,
 }: {
   bindings: SourceBindings | null | undefined;
+  /** Re-reads the governed object this tab is handed (76-4). Owned by the
+   *  workbench, because the workbench made the read. */
+  onRetry: () => void;
   organizationId: string;
   projectId: string;
   typeLabel: string;
@@ -339,7 +344,7 @@ export function SourceBindingsTab({
 
       {bindings.state === "unavailable" ? (
         <Status as="block" tone="error" title="Mapping coverage is unavailable"
-          action={<Retry onClick={() => void load()} />}
+          action={<Retry onClick={onRetry} />}
         >
           {bindings.unavailable_reason?.message ?? "The Data mapping owner could not be read."}
         </Status>
@@ -1157,9 +1162,10 @@ export function BusinessDomainLinks({
 
   if (refs.length === 0) {
     return (
-      <p className="m-0 text-ui text-text-secondary" data-testid="business-domain-links-empty">
-        No Business Domain is linked to this object.
-      </p>
+      <EmptyState
+        title="No Business Domain is linked to this object"
+        description="A Business Domain is what makes this object findable beside the Knowledge, Skills and reporting views of the same area. Links are made in Context Hub."
+      />
     );
   }
 

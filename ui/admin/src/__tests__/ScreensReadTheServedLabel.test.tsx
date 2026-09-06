@@ -156,6 +156,7 @@ describe("Semantic Model — source bindings", () => {
         organizationId="org_1"
         projectId="proj_1"
         typeLabel="Concept"
+        onRetry={() => {}}
       />,
     );
 
@@ -170,6 +171,7 @@ describe("Semantic Model — source bindings", () => {
         organizationId="org_1"
         projectId="proj_1"
         typeLabel="Concept"
+        onRetry={() => {}}
       />,
     );
 

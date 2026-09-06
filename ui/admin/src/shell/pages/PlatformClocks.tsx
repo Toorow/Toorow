@@ -51,7 +51,7 @@
  * record" object, rather than with a table invented here.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Badge, Button, Cluster, ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, EmptyState, EvidenceRows, Field, formatDuration, formatTimestamp, Input, NativeSelect, PageFrame, PageHeader, Panel, PanelHeader, SectionHeader, Stack, Status, type Fill } from "../../ui";
+import { Badge, Button, Cluster, ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, EmptyState, EvidenceRows, Field, formatDuration, formatTimestamp, Input, NativeSelect, PageFrame, PageHeader, Panel, PanelHeader, SectionHeader, Stack, Status, type Fill, Retry } from "../../ui";
 import { apiFetch } from "../../lib/apiFetch";
 import CacheHealthCard from "../../cache/CacheHealthCard";
 import { clockApplyPath, clockListPath, clockPath, clockRunNowPath, DESIRED_STATES, driftDifferences, nightlyStepsPath, normalizeClockList, normalizeNightlySteps, type ClockVerdict, type DesiredState, type NightlyStep, type NightlyStepLedger, type PlatformClock, type PlatformClockList, type StepState, verdictOf } from "./clockRegistryContract";
@@ -644,7 +644,7 @@ function NightlyStepRow({ step }: { step: NightlyStep }) {
   );
 }
 
-function NightlyStepsPanel({ load }: { load: NightlyLoad }) {
+function NightlyStepsPanel({ load, onRetry }: { load: NightlyLoad; onRetry: () => void }) {
   if (load.status === "loading") {
     return (
       <Panel>
@@ -665,7 +665,7 @@ function NightlyStepsPanel({ load }: { load: NightlyLoad }) {
         <div className="p-5">
           {/* "We could not ask" is never rendered as "nothing went wrong". */}
           <Status tone="error" as="block" title="The nightly steps could not be read"
-          action={<Retry onClick={() => void readNightly()} />}
+          action={<Retry onClick={onRetry} />}
         >
             {load.message}. Nothing here is a statement about last night: the ledger itself did
             not answer, so no step is succeeded, failed or missing — they are unread.
@@ -836,7 +836,7 @@ export default function PlatformClocks() {
             Reading the clock registry…
           </Status>
         </Panel>
-        <NightlyStepsPanel load={nightly} />
+        <NightlyStepsPanel load={nightly} onRetry={reload} />
       </PageFrame>
     );
   }
@@ -847,14 +847,14 @@ export default function PlatformClocks() {
         {header}
         <Panel>
           <Status tone="error" as="block" title="The platform clocks could not be read"
-          action={<Retry onClick={() => { void read(); void readNightly(); }} />}
+          action={<Retry onClick={reload} />}
         >
             {load.message}. Nothing on this screen is a statement about Cloud Scheduler: the
             registry itself did not answer, so no clock is in sync, drifted or missing — they
             are unread.
           </Status>
         </Panel>
-        <NightlyStepsPanel load={nightly} />
+        <NightlyStepsPanel load={nightly} onRetry={reload} />
       </PageFrame>
     );
   }
@@ -919,7 +919,7 @@ export default function PlatformClocks() {
             <ClockCard key={clock.clock_name} clock={clock} onChanged={reload} />
           ))
         )}
-        <NightlyStepsPanel load={nightly} />
+        <NightlyStepsPanel load={nightly} onRetry={reload} />
         <section aria-label="Warehouse cache health" className="mt-4">
           <CacheHealthCard />
         </section>

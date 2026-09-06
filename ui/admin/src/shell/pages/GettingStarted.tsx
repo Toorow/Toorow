@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiFetch, apiGet } from "../../lib/apiFetch";
-import { ActivityLog, Button, EmptyState, formatPercent, NO_VALUE, Panel, PanelHeader, percentValue, Progress, stateLabel, Status } from "../../ui";
+import { ActivityLog, Button, EmptyState, formatPercent, NO_VALUE, Panel, PanelHeader, percentValue, Progress, stateLabel, Status, Retry } from "../../ui";
 import GlobalScopeLayout from "../GlobalScopeLayout";
 
 export interface SetupOwnerReference { surface: "project" | "global"; workspace?: string | null; section?: string | null; global_surface?: string | null; global_section?: string | null; object_type?: string | null; object_id?: string | null; tab?: string | null; action?: string | null; version_id?: string | null; evidence_id?: string | null; }

@@ -96,7 +96,7 @@ const header = {
 
 function mount() {
   return render(
-    <WorkbenchMappingPage
+    <WorkbenchMappingPage onRetry={() => {}}
       header={header}
       payload={payload()}
       projectId="proj_EXAMPLE"

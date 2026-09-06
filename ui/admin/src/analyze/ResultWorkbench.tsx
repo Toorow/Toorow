@@ -33,7 +33,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AiPathCapability, formatGovernedValue, TargetedFeedback, type ExactFeedbackRequest, type FeedbackSelection, type GovernedValueMeaning } from "@toorow/card-shell/viz";
 
 import { ApiError, apiGet, apiPut } from "../lib/apiFetch";
-import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, EmptyState, EvidenceRows, formatPercent, Input, Label, Metric, NativeSelect, NavTabs, ObjectHeader, ObjectId, PageHeader, Panel, PanelHeader, Stack, stateLabel, stateTone, Status, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableScroll, Textarea, wireWord } from "../ui";
+import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, EmptyState, EvidenceRows, formatPercent, Input, Label, Metric, NativeSelect, NavTabs, ObjectHeader, ObjectId, PageHeader, Panel, PanelHeader, Stack, stateLabel, stateTone, Status, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableScroll, Textarea, wireWord, Retry } from "../ui";
 import { governedFieldQueueTarget, openInToorowTarget, ownerTarget, resultTarget, type AnalyzeScope, visualizationBuilderTarget } from "./analyzeTargets";
 import { createVisualizationFromResult } from "./builder/seedVisualization";
 import StartingPointChoice from "./builder/StartingPointChoice";
@@ -808,7 +808,10 @@ function EntityDetailGapsPanel({
   const members = body.entity_gap_candidates ?? [];
   if (members.length === 0) return null;
 
+  const [lastMemberId, setLastMemberId] = useState<string | null>(null);
+
   const ask = async (memberId: string) => {
+    setLastMemberId(memberId);
     setState({ kind: "loading" });
     try {
       const gaps = await apiGet<EntityDetailGaps>(
@@ -850,7 +853,12 @@ function EntityDetailGapsPanel({
           </div>
         ) : null}
         {state.kind === "error" ? (
-          <Status as="block" tone="error" title="This inventory could not be read">
+          <Status
+            as="block"
+            tone="error"
+            title="This inventory could not be read"
+            action={lastMemberId ? <Retry onClick={() => void ask(lastMemberId)} /> : undefined}
+          >
             {state.message} Nothing is claimed about what is missing.
           </Status>
         ) : null}

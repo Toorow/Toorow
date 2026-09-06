@@ -11,6 +11,16 @@ become literally unrunnable, and nobody could read what was left to do.
 
 Nothing was deleted: the prose moved, verbatim, to `story-log.md` beside it.
 
+That journal was FROZEN on 2026-09-06. In 34 days it grew from 718 Ko to 2.6 Mo
+(35 226 lines, +22 841 in its last thirty days), nothing read it -- no script, no
+skill, no test, and a reading tool refuses a file that size -- while every section
+already lived in the commit message, in the story file's Dev Agent Record and in
+`SESSIONS.md`. A fourth copy nobody reads is not a record, it is a cost. The
+journal stays where it is, intact, because its sections are cited by title; the
+narrative now goes to the story file (Dev Agent Record), to the commit message when
+there is no story, or -- for a long investigation -- to its own file under
+`reviews/`.
+
 But a rule written in a header is a wish. This guard is the mechanism, and it is
 the same shape as `check_action_items.py` and `check_migration_catalog.py`: one
 command, a named failure, and a repair the reader can perform.
@@ -30,7 +40,10 @@ WHAT IT REFUSES, and why each one is the exact way the file grew:
   4. an action-item description written as an essay;
   5. the total size, last -- the others are causes, this one is the symptom that
      made the file unreadable, and it is checked so that a new class of growth
-     nobody predicted still fires something.
+     nobody predicted still fires something;
+  6. any change to the line count of `story-log.md` beside the tracker -- it is
+     frozen: an appended section goes where someone will read it, and a removed
+     section breaks a citation by title.
 
 WHAT IT DOES NOT DO: judge the CONTENT of a blocker. A line saying what was DONE
 rather than what is MISSING passes this guard and still fails CLAUDE.md section 7.
@@ -71,6 +84,14 @@ _AI_STATUS = re.compile(r"^    status: *([\w\-]+) *(?:#\s*(.*))?$")
 
 _JOURNAL = "story-log.md"
 
+#: Where the narrative goes since the journal froze: the story file first, the
+#: commit message when the work has no story.
+_HOME = "the story file (Dev Agent Record), or the commit message when there is no story"
+
+#: `story-log.md` on 2026-09-06: 12 lines of freeze header + 35 226 lines of journal.
+#: Any other count is a finding -- growth and shrinkage alike.
+JOURNAL_FROZEN_LINES = 35238
+
 
 def _development_status_region(lines: list[str]) -> tuple[int, int]:
     """``[start, end)`` line indices of the ``development_status:`` block."""
@@ -104,13 +125,13 @@ def findings(text: str) -> list[str]:
                 if comment and status in FROZEN:
                     found.append(
                         f"L{i + 1} `{key}` is {status} and carries {len(comment)} characters "
-                        f"of commentary. A settled line carries none -- move it to {_JOURNAL}."
+                        f"of commentary. A settled line carries none -- move it to {_HOME}."
                     )
                 elif comment and len(comment) > MAX_BLOCKER:
                     found.append(
                         f"L{i + 1} `{key}` carries a {len(comment)}-character blocker "
                         f"(max {MAX_BLOCKER}). Keep the sentence that says what is missing "
-                        f"and to whom; the evidence goes to {_JOURNAL}."
+                        f"and to whom; the evidence goes to {_HOME}."
                     )
                 i += 1
                 continue
@@ -126,7 +147,7 @@ def findings(text: str) -> list[str]:
                     found.append(
                         f"L{i + 1}-{j} a {len(block)}-line comment paragraph sits in "
                         f"development_status. An epic header is one line; a paragraph is a "
-                        f"journal entry -- move it to {_JOURNAL}."
+                        f"journal entry -- move it to {_HOME}."
                     )
                 i = j
                 continue
@@ -139,13 +160,13 @@ def findings(text: str) -> list[str]:
             found.append(
                 f"L{i + 1} an action-item description runs {len(match.group(1))} characters "
                 f"(max {MAX_DESCRIPTION}). Say what is wrong and to whom; the measurement "
-                f"goes to {_JOURNAL}."
+                f"goes to {_HOME}."
             )
         match = _AI_STATUS.match(line)
         if match and match.group(2) and match.group(1) in FROZEN:
             found.append(
                 f"L{i + 1} a {match.group(1)} action item carries {len(match.group(2))} "
-                f"characters of commentary. Closed is closed -- move it to {_JOURNAL}."
+                f"characters of commentary. Closed is closed -- move it to {_HOME}."
             )
         i += 1
 
@@ -159,22 +180,39 @@ def findings(text: str) -> list[str]:
     return found
 
 
+def journal_findings(text: str) -> list[str]:
+    """The one reason the frozen journal can be wrong: its line count moved."""
+    count = len(text.splitlines())
+    if count == JOURNAL_FROZEN_LINES:
+        return []
+    verb = "grew to" if count > JOURNAL_FROZEN_LINES else "shrank to"
+    return [
+        f"{_JOURNAL} {verb} {count:,} lines (frozen at {JOURNAL_FROZEN_LINES:,} on "
+        f"2026-09-06, because nobody read it). A new section goes to {_HOME}, or to its "
+        f"own file under reviews/ when it is an investigation; a removed section breaks a "
+        f"citation by title -- put it back."
+    ]
+
+
 def check(path: Path) -> int:
     text = path.read_text(encoding="utf-8")
     found = findings(text)
+    journal = path.with_name(_JOURNAL)
+    if journal.is_file():
+        found.extend(journal_findings(journal.read_text(encoding="utf-8")))
     if found:
         for line in found:
             print(line, file=sys.stderr)
         print(
             f"\n{len(found)} finding(s). The tracker is a STATE, not a journal: a `done` "
             f"line carries no comment, a live line carries one sentence, everything else "
-            f"lives in {_JOURNAL} (append-only, one section per key).",
+            f"lives in {_HOME}. {_JOURNAL} is frozen.",
             file=sys.stderr,
         )
         return 1
     print(
         f"sprint-status shape OK: {len(text.encode('utf-8')):,} bytes, "
-        f"no journal prose on its lines"
+        f"no journal prose on its lines; {_JOURNAL} frozen at {JOURNAL_FROZEN_LINES:,} lines"
     )
     return 0
 

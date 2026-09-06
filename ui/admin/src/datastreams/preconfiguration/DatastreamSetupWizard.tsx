@@ -8,6 +8,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableScroll,
   stateLabel,
   stateTone,
+  Retry,
 } from "../../ui";
 import DiscoveredSchema from "./DiscoveredSchema";
 import SourceConnectorPull, {
@@ -2494,7 +2495,13 @@ export default function DatastreamSetupWizard({
           tone="error"
           title="A read cannot be launched without its scan estimate"
           data-testid="preview-needs-estimate"
-          action={activeSection === SECTION_INDEX.source ? undefined : (
+          /* ALWAYS, INCLUDING ON SOURCE ITSELF. The first version suppressed
+             this on step 1 on the reasoning that the operator was already
+             standing on the control -- but `goToSection` also FOCUSES the
+             section it opens, so on step 1 the button takes them to the
+             discovery control rather than nowhere, and §5 asks for a fallback
+             on every rendering of an error, not on most of them. */
+          action={(
             <Button variant="secondary" onClick={() => goToSection(SECTION_INDEX.source)}>
               Go to Source
             </Button>
@@ -3116,11 +3123,12 @@ export default function DatastreamSetupWizard({
             {GOOGLE_SHEETS_COPY.gridHeight(String(observation.safe_metadata.row_count_bucket ?? ""))}
           </Status>
         )}
-        {/* ONE FACT, ONE NAME (76-4). This step said the same sentence as
-            `Preview and validate` below, under a second title (`No scan
-            estimate`), so a person who met both read two problems. It is said
-            once, where the refusal actually bites: on the step whose primary
-            button is disabled by the very same criterion. */}
+        {/* THE SECOND COPY OF THE SCAN-ESTIMATE REFUSAL STOOD HERE (76-4), under
+            a second title (`No scan estimate`) over the same sentence. It is
+            said once now, ABOVE the step area rather than inside any step:
+            the fact is true from the moment the observation comes back without
+            a quota estimate until discovery is re-run, which is the property of
+            no single step. See the block beside `positionUnknown`. */}
         {/* Quota/cost left this line: `DiscoveredSchema` above owns it for every
             mode now, and printing the same evidence twice — once as a sentence,
             once as a stringified record — is how a screen stops being read. */}

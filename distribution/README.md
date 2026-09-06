@@ -4,8 +4,13 @@ This private monorepo contains two virtual products:
 
 1. the shareable application (`server/`, `ui/`, `dbt/`, `infra/`, CI and
    supporting root files);
-2. the private presence and product workspace (`web/`, `studio/`, `docs/`,
+2. the private presence and product workspace (`web/`, `studio/`,
    internal planning, reviews, screenshots, brand assets and agent tooling).
+
+`docs/` sits on the public side: `docs.toorow.com` is that directory, read by
+Mintlify from the public repository. The internal working papers that live under
+it are excluded one by one in `public-app.toml` -- being allow-listed opens a
+directory, not its whole subtree.
 
 `public-app.toml` is the source of truth. It is intentionally allow-list based:
 new top-level paths remain private until explicitly reviewed and added.

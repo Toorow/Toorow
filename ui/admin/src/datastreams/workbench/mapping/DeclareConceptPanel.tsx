@@ -47,7 +47,7 @@
  * shared vocabulary changes what every project of the instance aligns on.
  */
 import { useEffect, useMemo, useState } from "react";
-import { Button, Checkbox, Input, NativeSelect, Status, label as humanLabel } from "../../../ui";
+import { Button, Checkbox, Input, NativeSelect, Status, label as humanLabel, Retry } from "../../../ui";
 import {
   ADDITIVITY_CLASSES,
   ADDITIVITY_HINT,
@@ -141,7 +141,9 @@ function OperandFields({
         <span className="text-caption text-text-secondary">Reading this project's concepts…</span>
       )}
       {operand.op === "concept_ref" && references.status === "error" && (
-        <Status as="block" tone="error" title="The concept list could not be read">
+        <Status as="block" tone="error" title="The concept list could not be read"
+          action={<Retry onClick={references.retry} />}
+        >
           {references.message} No reference can be pinned until it answers — an empty list here
           would read as "this project has no concept", which is a different fact.
         </Status>

@@ -99,6 +99,8 @@ export default function FileSourceSamplePanel({
   /** Which mapping the gate replays. AD-8: never re-recognized at arrival. */
   mappingVersionId?: string | null;
 }) {
+  // The picker this panel's read-failure block re-opens (76-4).
+  const fileInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [preview, setPreview] = useState<FileSourcePreview | null>(null);
