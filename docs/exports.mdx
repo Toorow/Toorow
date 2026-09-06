@@ -59,21 +59,27 @@ active plan version's daily allocation and the ventilated observed spend.
 
 - **A planned day with no actual is a gap, not a hole.** It is reported as
   variance against a plan, because that is what it is.
-- **Ventilation is applied once, by the mart**, under the invariant that a
-  placement's split weights sum to exactly 1. The extract re-derives nothing.
+- **Ventilation is applied once, by the mart**, under the invariant that the
+  split weights of one `(plan, connector, campaign)` sum to exactly 1. It is held
+  by the store under a row lock rather than by a database constraint, and the
+  extract re-derives nothing.
 
-This extract needs **Placement Mapping**, which itself needs **Currency & FX** —
-a planned-versus-actual figure computed across unconverted currencies is a wrong
-number that looks right. See [Project Capabilities](/project-capabilities).
+This extract needs **Placement Mapping**, whose card in turn names **Currency &
+FX**: a planned-versus-actual figure computed across unconverted currencies is a
+wrong number that looks right. See [Project Capabilities](/project-capabilities).
 
 ---
 
-## What these endpoints will not do
+## What these endpoints do not do
 
-A request to copy the mart out of the warehouse — a destination, a bucket URI, a
-third-party database — is refused. The extract hands you rows; where they go
-afterwards is your decision and your infrastructure, and the platform does not
-pretend to own that step.
+They do not copy the mart out of the warehouse. There is no destination, no
+bucket URI, no third-party database to point them at — not a parameter that gets
+rejected, a capability that was deliberately not built. The plan for this work
+asked for a dedicated dataset and files on object storage; the ratified card
+refused it, and these endpoints are what the refusal describes.
+
+The extract hands you rows. Where they go afterwards is your decision and your
+infrastructure, and the platform does not pretend to own that step.
 
 ---
 

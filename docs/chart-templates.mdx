@@ -100,10 +100,15 @@ landed in it.
 
 ## Seeded by a connector, owned by the project
 
-A connector may ship Chart Templates as data. Drawing one into a project creates
-a project head marked with that seed origin; the **first edit** makes the head
-project-owned in the same statement. A connector never owns a Chart Template in
-your project.
+A template records where it came from: `project`, `platform_seed`, or
+`connector_seed`. A connector may ship Chart Templates as data; drawing one into
+a project creates a project head marked with that origin, and the **first edit**
+makes the head project-owned in the same statement. A connector never owns a
+Chart Template in your project.
+
+No connector ships one today. That is what makes *"no seed available"* a
+measurement rather than a placeholder — the empty state is reporting a fact, not
+covering for a missing feature.
 
 ---
 

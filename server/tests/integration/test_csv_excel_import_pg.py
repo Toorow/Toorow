@@ -120,15 +120,30 @@ def _seed(conn, project_id: str, ds_id: str, plan_id: str, mapping_id: str) -> N
     conn.commit()
 
 
+# Story 38.11 made the delimiter DEMONSTRABLE: a one-column file carries no
+# separator to demonstrate, so `_detect_delimiter` returns the blocking
+# `delimiter_undetermined` issue (core/tabular_parsing.py:219) and `run_import`
+# refuses with ParserReviewRequired before opening any ledger row. These fixtures
+# are therefore two-column. The type a row can dent is DECLARED by the contract
+# (`column_types`), never guessed: an `id` column holding mostly garbage is
+# inferred `mixed`, and a mixed column rejects nothing.
+_IMPORT_CONTRACT = {
+    "format": "csv",
+    "write_mode": "replace",
+    "header_row": 1,
+    "column_types": {"id": "integer"},
+}
+
+
 # A CSV with 2 good integer rows + N garbage rows -> N per-row rejections. Used to feed
 # the UNMOCKED rejection gate real mutation-shaped dents.
 def _csv_with_rejections(n_bad: int) -> bytes:
-    lines = ["id", "1", "2"] + ["garbage" for _ in range(n_bad)]
-    return "\n".join(lines).encode("utf-8")
+    lines = ["id,label", "1,a", "2,b"] + ["garbage,x" for _ in range(n_bad)]
+    return ("\n".join(lines) + "\n").encode("utf-8")
 
 
 def _clean_csv() -> bytes:
-    return "id\n1\n2\n3\n4\n".encode("utf-8")
+    return "id,label\n1,a\n2,b\n3,c\n4,d\n".encode("utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -271,7 +286,7 @@ def test_run_import_threads_contract_id_and_fk_holds(live_postgres) -> None:
     plan_id, mapping_id = _id("dsp_"), _id("dmap_")
     _seed(conn, project_id, ds_id, plan_id, mapping_id)
 
-    contract = {"format": "csv", "write_mode": "replace", "header_row": 1}
+    contract = dict(_IMPORT_CONTRACT)
     result = run_import(
         _clean_csv(),
         datastream_id=ds_id,
@@ -325,7 +340,16 @@ def test_run_import_threads_contract_id_and_fk_holds(live_postgres) -> None:
 
 @requires_postgres
 def test_ledger_rejects_dangling_contract_fk(live_postgres) -> None:
-    """The import_contract_id FK is enforced: a non-existent contract id is rejected."""
+    """A non-existent contract id is refused.
+
+    Migration 213 DROPPED the 078 foreign key and replaced it by
+    `app.validate_import_ledger_contract_ref()`, because the epic-22 file-source
+    path writes an `fst_` template id into the same column: the reference became
+    polymorphic by prefix and is checked by trigger. The integrity is the same
+    (the id must exist in the table its prefix names); only the SQLSTATE moved
+    from foreign_key_violation to raise_exception, so the message is asserted too
+    -- a trigger that fired for some other reason must not read as a pass.
+    """
     import psycopg
     from core.managed_feed_ledger import open_import
 
@@ -373,7 +397,7 @@ def test_run_import_rejection_gate_blocks_and_marks_failed(live_postgres) -> Non
         actor="u",
         idempotency_key="imp-gate-block",
         source_metadata={"filename": "dents.csv"},
-        contract={"format": "csv", "write_mode": "replace", "header_row": 1},
+        contract=dict(_IMPORT_CONTRACT),
         conn=conn,
     )
     conn.commit()
@@ -439,7 +463,7 @@ def test_run_import_below_threshold_stays_written(live_postgres) -> None:
         actor="u",
         idempotency_key="imp-gate-allow",
         source_metadata={"filename": "one-dent.csv"},
-        contract={"format": "csv", "write_mode": "replace", "header_row": 1},
+        contract=dict(_IMPORT_CONTRACT),
         conn=conn,
     )
     conn.commit()

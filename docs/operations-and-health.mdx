@@ -29,9 +29,15 @@ Three rules make this readable rather than noisy:
 - **A sweep never raises a red somebody else posted**, and only a pull that
   verifiably succeeded clears one. A red does not decay into green because time
   passed.
-- **`provider_denied` leaves the door open.** The datastream can still be
-  enqueued, so the daily probe detects the moment access comes back. A denial is
+- **`provider_denied` leaves the door open.** Unlike `revoked`, it does not close
+  the enqueue gate: the daily probe is the detector of restoration, and a
+  verified `ok` pull lifts the red **without any console gesture**. A denial is
   not a disablement.
+
+The two reds are not the same fact either. `revoked` means the authorization
+itself is dead and someone has to reconnect. `provider_denied` means the
+authorization is alive — the token still refreshes — and the provider is refusing
+the data this connection exists to collect.
 
 ---
 

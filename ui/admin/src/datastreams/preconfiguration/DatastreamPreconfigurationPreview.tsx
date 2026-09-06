@@ -130,8 +130,32 @@ const proposal: DatastreamPreconfigurationProposal = {
 };
 
 
+/** WHICH STOP THE SANDBOX OPENS ON.
+ *
+ *  The wizard is five sections and only one is drawn at a time
+ *  (`DatastreamSetupWizard#sectionVisible`), so a sandbox that can only open on
+ *  `Source` can only ever be looked at one fifth. The rail is no way in either:
+ *  a step is offered only once every step before it is complete, and a preview
+ *  draft carries no observation.
+ *
+ *  The wizard already reads its opening stop from the draft it is handed
+ *  (`restoreSection(previewInput?.wizard_state)`), so `?section=` is written
+ *  into the FIXTURE rather than passed as a new prop: this is what a resumed
+ *  draft looks like on the wire, and no production path changes.
+ *
+ *      /debug/screen?name=DatastreamPreconfiguration&section=preview_validate
+ */
+const SANDBOX_SECTIONS = [
+  "source", "configure", "classify_and_map", "preview_validate", "schedule_activate",
+] as const;
+
 export default function DatastreamPreconfigurationPreview() {
-  const mode = new URLSearchParams(window.location.search).get("mode");
+  const params = new URLSearchParams(window.location.search);
+  const mode = params.get("mode");
+  const asked = params.get("section");
+  const section = SANDBOX_SECTIONS.includes(asked as (typeof SANDBOX_SECTIONS)[number])
+    ? (asked as string)
+    : "source";
   const operatorInput = mode === "external_bq"
     ? {
       mode,

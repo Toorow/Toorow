@@ -76,14 +76,30 @@ means the control plane never wrote the row.
 
 ## Dependencies
 
-- **Placement Mapping depends on Currency & FX.** A planned-versus-actual figure
-  computed across unconverted currencies is a wrong number that looks right.
+**Analytics Alignment carries three**, in the order a person has to satisfy
+them — an identity, then the permission to cross on it, then the money that makes
+the crossing readable:
+
+| Dependency | What it is |
+| --- | --- |
+| `common_key` | An MDM common key whose current version covers both datastreams. |
+| `approved_relationship` | An **approved** Semantic View relationship. A declaration of meaning is not a permission to execute, and this dependency is what keeps them apart. |
+| `currency_fx` | Currency & FX in `ready` or `degraded`. An aligned figure computed across unconverted currencies is a wrong number that looks right. |
+
+Every unmet dependency is named **at once**, never the first one only: a refusal
+that reveals its blockers one at a time turns a dependency chain into a guessing
+game. And a project where no two datastreams could ever be aligned is told that,
+rather than shown three unmet dependencies for a pair that does not exist.
+
+Two more, stated by the capability cards:
+
+- **Placement Mapping depends on Currency & FX** for the same reason — a
+  planned-versus-actual figure computed across unconverted currencies is wrong.
+  Currency & FX is always present, but *present* is not *ready*: it can still sit
+  in `draft` or `blocked`, so the dependency is not satisfied by construction.
 - **Tax & Fees leans on Country when it is active**: prequalified,
   country-dependent rules are proposed from versioned shared knowledge, and the
   operator confirms, edits or rejects each one. Nothing applies itself.
-- **Analytics Alignment is the first whose dependencies are not all
-  capabilities**: it also needs an MDM common key covering both datastreams and a
-  **published** Semantic View.
 
 ---
 

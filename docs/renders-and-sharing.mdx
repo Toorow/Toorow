@@ -75,8 +75,10 @@ Three properties are worth knowing before you call it:
 - **All or nothing.** A block referencing a figure from another project, or from
   another organization, fails the whole call. There is no partial Dossier.
 - **Authorship is recorded, not inferred.** Every narrative block carries
-  `authored_by`: `model` when the MCP gate stamped it, `human` when a person
-  wrote it. The share page and the console both show which is which.
+  `authored_by`. The MCP gate stamps `model` on every block it stores —
+  *whatever the caller sent* — because a figure is governed and a narrative is
+  generated, and the page has to show which is which. `human` is what a person
+  writing in the console leaves.
 - **A version is immutable.** Appending to a Dossier creates a new version. The
   version someone is reading does not change under them.
 

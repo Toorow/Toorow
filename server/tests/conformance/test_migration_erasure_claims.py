@@ -169,7 +169,7 @@ PLAN_BLIND_CLAIMS: dict[str, str] = {
         "`107` entry above. It states the fact in its own words: « "
         "`core.org_purge.plan_purge` walks `confdeltype IN ('a','r')` only, so a "
         "CASCADE edge is absent from its plan and the foreign key is what makes "
-        "the final `DELETE FROM app.organizations` reach these rows ». What it "
+        "the final [organization delete] reach these rows ». What it "
         "does not carry is the canonical DENIAL string, which is what this file "
         "reads. `cleanup_rule_versions` and `value_mapping_table_versions` are "
         "CASCADE to org, project and parent rule; their only graph-visible edge "

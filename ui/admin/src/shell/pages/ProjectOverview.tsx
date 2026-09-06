@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { ApiError, apiGet } from "../../lib/apiFetch";
 import { wireWord,
-  Button, EmptyState, PageFrame, PageHeader, Panel, PanelHeader, Stack, Status, StatusLegend,
-  stateTone, type StatusLegendEntry, type Tone,
+  Button, EmptyState, Failure, formatCount, formatNumber, Loading, Metric, NO_VALUE, ObjectId,
+  PageFrame, PageHeader, Panel, PanelHeader, ProjectNotFound, Retry, Stack, Status, StatusLegend,
+  stateLabel, stateTone, Timestamp, type StatusLegendEntry, type Tone,
 } from "../../ui";
 import {
   declaredConfidenceReading,
@@ -141,21 +142,27 @@ function postureLegend(data: ProjectOverviewEnvelope): StatusLegendEntry[] {
   return [...shown].map((mark) => ({ tone: mark, ...POSTURE_MEANING[mark] }));
 }
 
-const STATE_LABELS: Partial<Record<PostureState, string>> = {
-  unknown: "Unknown",
-  unavailable: "Unavailable",
-  permission_limited: "Permission limited",
-  not_applicable: "Not applicable",
-  empty: "Not applicable",
-};
-
-/** What a coverage row REPORTS. Zero applicable objects is "Not applicable",
- *  never "0/0" read as a complete denominator -- and never 100%. */
-function coverageReading(item: { state: PostureState; status?: string; denominator: number; complete: number }) {
+/** What a coverage row REPORTS, as the VALUE of a KPI (76-5).
+ *
+ *  Zero applicable objects is "Not applicable", never "0/0" read as a complete
+ *  denominator -- and never 100%. The two readings a zero denominator can have
+ *  are spelled out rather than mapped: the server either could not read the
+ *  projection (`status: "unavailable"`, `project_overview.py:236,292,325`) or
+ *  read it and found nothing applicable. Both words come from the declared
+ *  vocabulary, so this screen holds no private state map any more -- the
+ *  `STATE_LABELS` it did hold answered `Not applicable` for FIVE different
+ *  posture words, which is a second vocabulary nobody could see.
+ *
+ *  When there IS a denominator the value is the numerator alone and the
+ *  population moves into the hint: that is the whole of this story's title.
+ *  "3" over "of 12 applicable" is the same fact as "3/12" and says which
+ *  number is the population. */
+function coverageReading(item: { state: PostureState; status?: string; denominator: number; complete: number }): string {
   if (item.denominator === 0) {
-    return STATE_LABELS[(item.status as PostureState) ?? item.state] ?? "Not applicable";
+    const read = item.status ?? item.state;
+    return stateLabel(read === "unavailable" ? "unavailable" : "not_applicable");
   }
-  return `${item.complete}/${item.denominator}`;
+  return formatNumber(item.complete);
 }
 
 /** The confidence a reader sees is the SERVER's, or it is `unmeasurable`.
@@ -259,15 +266,39 @@ function isEnvelope(value: unknown): value is ProjectOverviewEnvelope {
     && (next == null || isOwner(next.owner));
 }
 
-function formatKey(value: string) { return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()); }
-
 /** The window a bounded zone was read over, in the reader's units.
  *  `overview.md:123` -- "Every count names its denominator and window". The
  *  governed-alert window lived only in a server comment that CLAIMED it was
- *  stated; an empty list over seven days and one over seven minutes read alike. */
+ *  stated; an empty list over seven days and one over seven minutes read alike.
+ *
+ *  `day(s)` was this screen's own plural. `formatCount` agrees the noun with the
+ *  number and is the one place that decides (console-presentation.md §2). */
 function windowText(hours: number | undefined): string | null {
   if (!hours || hours <= 0) return null;
-  return hours % 24 === 0 ? `last ${hours / 24} day(s)` : `last ${hours} hour(s)`;
+  return hours % 24 === 0 ? `last ${formatCount(hours / 24, "day")}` : `last ${formatCount(hours, "hour")}`;
+}
+
+/** THE POPULATION AND THE CUT-OFF OF ONE COVERAGE KPI (76-5, arbitrages 1 and 3).
+ *
+ *  « what · window · cut-off », the sentence pattern Controls & Quality's monitor
+ *  description was the console's single instance of. `what` is the tile's own
+ *  label; this is the other two halves.
+ *
+ *  THE NOUN IS NOT COMPOSED HERE, and that is a server boundary rather than a
+ *  choice. `project_overview.py` sends `denominator` and `complete` per coverage
+ *  row and NO word for what is being counted -- Datastreams for `data:publication`
+ *  (`:798`), active context objects for `context` (`:312`), evaluation-run cases
+ *  for `test` (`:345`), unresolved quality issues for `governance` (`:259`).
+ *  Composing that noun in the browser would make the console a second authority
+ *  on the vocabulary, which is the defect `ScreensDoNotPrintIdentifiersAsProse`
+ *  refuses in the same words. `applicable` is the server's own word
+ *  (`_capability_coverage`, `coverage.applicable`) and is true of every row. The
+ *  field that would carry the noun is named in the story record. */
+function coverageHint(item: { denominator: number; evidence_horizon: string | null }) {
+  const cutoff = <Timestamp value={item.evidence_horizon} absentMeaning="No evidence horizon recorded" />;
+  return item.denominator === 0
+    ? <>Nothing applicable to measure · evidence to {cutoff}</>
+    : <>of {formatNumber(item.denominator)} applicable · evidence to {cutoff}</>;
 }
 
 /** One component of the shared readiness projection, or null when the envelope
@@ -313,7 +344,7 @@ function OwnerButton({ owner, label, onOpenOwner, variant = "secondary" }: { own
 function PostureCard({ label, dimension, onOpenOwner }: { label: string; dimension: PostureDimension; onOpenOwner?: (owner: OwnerReference) => void }) {
   return <Status as="block" tone={tone(dimension.state)} title={label} action={<OwnerButton owner={dimension.owner} label="Open owner" onOpenOwner={onOpenOwner} variant="ghost" />}>
     <p className="m-0">{dimension.explanation}</p>
-    <p className="mt-1 mb-0 text-caption text-text-secondary">Evidence horizon: {dimension.evidence_horizon ?? "No persisted evidence"}</p>
+    <p className="mt-1 mb-0 text-caption text-text-secondary">Evidence horizon: <Timestamp value={dimension.evidence_horizon} absentMeaning="No persisted evidence" /></p>
   </Status>;
 }
 
@@ -331,7 +362,7 @@ function ProjectOverviewReady({ data, onOpenOwner }: { data: ProjectOverviewEnve
     <PageHeader
       eyebrow={data.project.organization?.name ?? "Project"}
       title={data.project.name}
-      description={`Current project posture as of ${data.project.as_of}. Each signal keeps its evidence horizon and owning route.`}
+      description={<>Current project posture as of <Timestamp value={data.project.as_of} />. Each signal keeps its evidence horizon and owning route.</>}
       /* The posture marks THIS project is actually showing (§3), derived from
          the signals below rather than declared: an Overview whose every signal
          is ready must not explain what a refusal looks like. */
@@ -340,10 +371,15 @@ function ProjectOverviewReady({ data, onOpenOwner }: { data: ProjectOverviewEnve
     <Stack>
       <Panel flush><PanelHeader title="Project posture" description="Operational health, trust readiness, and business signals remain separate." />
         <dl className="m-0 grid gap-4 border-b border-divider-base p-5 text-ui sm:grid-cols-2 xl:grid-cols-4">
-          <div><dt className="text-label text-text-secondary">Organization</dt><dd className="m-0 mt-1 text-text">{data.project.organization?.name ?? "Permission limited"}</dd></div>
-          <div><dt className="text-label text-text-secondary">Business Domains</dt><dd className="m-0 mt-1 text-text">{data.project.business_domains.map((domain) => domain.name).join(", ") || "None associated"}</dd></div>
-          <div><dt className="text-label text-text-secondary">Active Configuration</dt><dd className="m-0 mt-1 font-numeric text-text">{data.project.active_configuration_version_id ?? "No active version"}</dd></div>
-          <div><dt className="text-label text-text-secondary">Evidence as of</dt><dd className="m-0 mt-1 font-numeric text-text">{data.project.as_of}</dd></div>
+          {/* NOT KPIs, and deliberately not `Metric`: these four are the project's
+              IDENTITY, and `Metric`'s own contract is "a single number with its
+              label". What they owed §2 and §4 is the rest: one dash for an
+              absence, `ObjectId` for the version ULID that was drawn in the
+              business-number typeface, and `Timestamp` for the instant. */}
+          <div><dt className="text-label text-text-secondary">Organization</dt><dd className="m-0 mt-1 text-text">{data.project.organization?.name ?? stateLabel("permission_limited")}</dd></div>
+          <div><dt className="text-label text-text-secondary">Business Domains</dt><dd className="m-0 mt-1 text-text">{data.project.business_domains.map((domain) => domain.name).join(", ") || NO_VALUE}</dd></div>
+          <div><dt className="text-label text-text-secondary">Active Configuration</dt><dd className="m-0 mt-1 text-text">{data.project.active_configuration_version_id ? <ObjectId value={data.project.active_configuration_version_id} title="Active configuration version" /> : NO_VALUE}</dd></div>
+          <div><dt className="text-label text-text-secondary">Evidence as of</dt><dd className="m-0 mt-1 text-text"><Timestamp value={data.project.as_of} /></dd></div>
         </dl>
         <div className="grid gap-4 p-5 lg:grid-cols-3">{postureEntries.map(([key, label]) => <PostureCard key={key} label={label} dimension={data.posture[key]} onOpenOwner={onOpenOwner} />)}</div>
       </Panel>
@@ -355,8 +391,8 @@ function ProjectOverviewReady({ data, onOpenOwner }: { data: ProjectOverviewEnve
           {data.attention.items.length === 0 ? <EmptyState title="Nothing needs attention" description="No persisted root cause currently requires action." /> : data.attention.items
             .filter((item) => !data.next_action || item.cause !== data.next_action.cause)
             .map((item) => <Status key={item.id} as="block" tone={tone(item.status)} title={item.cause} action={item.action.permitted && data.next_action?.label !== item.action.label ? <OwnerButton owner={item.owner} label={item.action.label} onOpenOwner={onOpenOwner} /> : null}>
-            <p className="m-0">{item.impact.join(" ")}</p><p className="mt-1 mb-0 text-caption text-text-secondary">Scope: {item.scope.join(", ") || "Project"} - Evidence horizon: {item.evidence_horizon ?? "Unknown"}</p>
-            <p className="mt-1 mb-0 text-caption text-text-secondary">Observed: {item.first_observed_at ?? "Unknown"} to {item.last_observed_at ?? "Unknown"}</p>
+            <p className="m-0">{item.impact.join(" ")}</p><p className="mt-1 mb-0 text-caption text-text-secondary">Scope: {item.scope.join(", ") || "Project"} - Evidence horizon: <Timestamp value={item.evidence_horizon} absentMeaning="No persisted evidence" /></p>
+            <p className="mt-1 mb-0 text-caption text-text-secondary">Observed: <Timestamp value={item.first_observed_at} absentMeaning="First observation not recorded" /> to <Timestamp value={item.last_observed_at} absentMeaning="Last observation not recorded" /></p>
           </Status>)}
           {/* A BOUNDED QUEUE SAYS IT IS BOUNDED.
               The server already sends `total` and `has_more`; the screen showed
@@ -376,7 +412,7 @@ function ProjectOverviewReady({ data, onOpenOwner }: { data: ProjectOverviewEnve
         </div>
       </Panel>
       <Panel flush><PanelHeader title="Coverage & readiness" description="Denominators, gaps, active state, and pending state are explicit." />
-        {data.coverage.length === 0 ? <EmptyState title="No coverage evidence yet" description="Add a Datastream in Data to begin establishing project coverage." /> : <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-3">{data.coverage.map((item) => <Status key={`${item.kind}:${item.key}`} as="block" tone={tone(item.state)} title={formatKey(item.key)} action={<OwnerButton owner={item.owner} label="Open owner" onOpenOwner={onOpenOwner} variant="ghost" />}>
+        {data.coverage.length === 0 ? <EmptyState title="No coverage evidence yet" description="Add a Datastream in Data to begin establishing project coverage." /> : <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-3">{data.coverage.map((item) => <Status key={`${item.kind}:${item.key}`} as="block" tone={tone(item.state)} title={wireWord(item.key)} action={<OwnerButton owner={item.owner} label="Open owner" onOpenOwner={onOpenOwner} variant="ghost" />}>
           <p className="m-0 font-numeric text-metric font-metric text-text">{coverageReading(item)}</p>
           <p className="mt-1 mb-0 text-caption text-text-secondary">{item.gaps.length ? `Gaps: ${item.gaps.join(", ")}` : "No persisted gaps"}</p>
           <p className="mt-1 mb-0 text-caption text-text-secondary">Evidence horizon: {item.evidence_horizon ?? "No persisted evidence"}</p>
@@ -393,7 +429,7 @@ function ProjectOverviewReady({ data, onOpenOwner }: { data: ProjectOverviewEnve
           owner, so every row opens the workbench that can actually close it. */}
       {readinessRows.length ? <Panel flush><PanelHeader title="Setup readiness" description="The same readiness object Getting Started reads, component by component." />
         <ul className="m-0 grid list-none gap-3 p-5 sm:grid-cols-2 xl:grid-cols-3">{readinessRows.map(({ key, component }) => <li key={key}>
-          <Status as="block" tone={tone(component.state)} title={formatKey(key)} action={<OwnerButton owner={component.owner} label="Open owner" onOpenOwner={onOpenOwner} variant="ghost" />}>
+          <Status as="block" tone={tone(component.state)} title={wireWord(key)} action={<OwnerButton owner={component.owner} label="Open owner" onOpenOwner={onOpenOwner} variant="ghost" />}>
             <p className="m-0">{STATE_LABELS[component.state] ?? formatKey(component.state)}</p>
             <p className="mt-1 mb-0 text-caption text-text-secondary">Evidence: {component.evidence_ref ?? "None recorded"}</p>
           </Status>
