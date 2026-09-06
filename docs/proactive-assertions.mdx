@@ -1,0 +1,125 @@
+---
+title: What toorow Says When Nobody Asked
+description: The rules a claim must satisfy when the product volunteers it — provenance, derived confidence, disclosed silence, and no invented causes.
+---
+
+Most of toorow answers questions. Three surfaces do something else: they make a
+claim nobody requested.
+
+- the **nightly briefing** behind `get_daily_report` — what changed since
+  yesterday, and what is worth looking at;
+- **anomaly detection** — this value is outside its own recent behaviour;
+- the **daily insight** — a model-authored reading of the day, with a
+  recommended action.
+
+That changes the burden of proof, and everything on this page follows from it:
+
+> When a person asks a question, a wrong answer is a wrong answer. When the
+> product volunteers a claim, a wrong claim is **also an interruption the person
+> did not choose** — arriving with the authority of having been selected as worth
+> saying.
+
+---
+
+## It never invents a cause
+
+A correlation observed in the data is not an explanation. Where no governed
+context event covers the window, the assertion says *context missing* and stops.
+
+A context event may name the metric it concerns. When it does, a claim about a
+different metric will not quote it — and a claim that could not compare says so,
+rather than treating "no metric named" as a match.
+
+---
+
+## Every claimed number carries its provenance, and an absent one is not zero
+
+A figure in a proactive claim carries the pull that produced it and how fresh it
+is. A measure that was not collected is reported as absent — never rendered as
+`0`, which is a value somebody could act on.
+
+A comparison names **both** of its terms. "Up 12%" without saying against what is
+not a comparison.
+
+---
+
+## Silence is a state, and it is disclosed
+
+A detector that cannot yet fire is not a quiet detector — it is an absent one,
+and the surface says so.
+
+A z-score computed over a window that includes the point being tested cannot
+exceed `(n−1)/√n`. With the default threshold, that makes the detector
+mathematically unable to fire below **eleven** observations, and unable to reach
+the `error` severity below **twenty-seven**. The bound is derived from the
+configured threshold, not hard-coded: move the threshold and the number moves
+with it, on every surface that discloses it.
+
+So a project with nine days of history is not told "no anomalies". It is told
+the detector cannot speak yet.
+
+---
+
+## Confidence is derived, never self-declared
+
+A confidence level chosen by the author of a claim measures nothing — and that
+applies to a model exactly as it applies to a person.
+
+An insight names its evidence, and the publication gate refuses a reference the
+server did not measure for this project over this window. Confidence is then
+computed from **the rows carrying the members the claim actually cited**,
+restricted to the insight's own period — not the project's rows at large:
+
+| Term | What it measures |
+| --- | --- |
+| Completeness | The share of the cited members the server measured over the insight's own period. |
+| Freshness | The stalest contributing source decides. |
+| Provenance | The share of supporting rows carrying a pull identifier. |
+
+The reading is the **band of the limiting term** — never a blend. Completeness
+cannot buy back staleness. And `unmeasurable` is a legitimate reading, not a
+level: an insight whose evidence cannot be scoped says so instead of scoring
+itself.
+
+---
+
+## Model-authored prose carries one marker
+
+Where a model wrote the sentence, the surface says so — once, not on every
+clause. Cited data carries no marker, because the data was not authored.
+
+A proactive claim stays a **springboard, never a verdict**: it points at
+something worth opening, and the opening is where the answer is defended.
+
+---
+
+## Publishing, retracting, and leaving the platform
+
+| Act | What the platform does |
+| --- | --- |
+| **Publish** | The insight is persisted with its evidence references, each one checked against what the server measured. |
+| **Retract** | An audited transition, never a deletion. What was said stays readable as having been said, and withdrawn. |
+| **Share externally** | Refused by default. Sending an assertion outside the platform needs the project capability **and** a confirmation by a *second* role holder — the requester and the confirmer cannot be the same person. |
+
+Over MCP: `get_daily_insight_readiness` says whether there is anything worth
+publishing, `preview_daily_insight` composes it, `publish_daily_insights`
+publishes it, and `retract_daily_insight` withdraws it.
+
+---
+
+## Next Steps & Cross-References
+
+<CardGroup cols={2}>
+  <Card title="Anomaly Detection" icon="chart-line" href="/anomaly-detection-method">
+    The z-score method, its baseline window, and the bound behind the disclosure.
+  </Card>
+  <Card title="Agentic Daily Insights" icon="sparkles" href="/agentic-daily-insights">
+    The nightly run that produces the claim.
+  </Card>
+  <Card title="Agent Rules" icon="scroll" href="/agent-rules">
+    Rule 5: context events are candidates, never causes.
+  </Card>
+  <Card title="Renders, Dossiers and Sharing" icon="share-nodes" href="/renders-and-sharing">
+    The same two-person rule, applied to a figure leaving the platform.
+  </Card>
+</CardGroup>

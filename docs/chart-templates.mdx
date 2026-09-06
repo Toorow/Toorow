@@ -1,0 +1,125 @@
+---
+title: Chart Templates
+description: A reusable, validated way of showing a class of answer — its compatibility verdict, and what applying one produces.
+---
+
+A **Chart Template** says *how a class of answer is shown*, and it names no data.
+It is the starting point you reach for when a new Result arrives and you already
+know what a good picture of it looks like.
+
+---
+
+## What it owns, and what it does not
+
+| It owns | It does not own |
+| --- | --- |
+| A stable identity with immutable versions | A Result, its rows, a figure |
+| A visual family and a presentation intent — axes, legend, formats, semantic colour, thresholds, responsive profiles | The semantics of a question: measure, dimension, filter, grain, comparison |
+| **Compatibility predicates** — which roles it needs in which well, at which cardinality, at which grain, in which comparison shape | A concrete member, which is exactly what separates it from a Visualization |
+| Optional governed defaults | Renderer code, a raw renderer option, a URL, a function |
+| Its seed provenance: the platform, a connector, or this project | Ownership once a connector has seeded it into a project |
+
+A **Visualization** is bound to one precise question. A template is reusable
+*across* questions — which is why it is its own object rather than a column on
+that one.
+
+---
+
+## Where you find it
+
+Templates are a lens of **Reports**, and each template opens its own workbench.
+They are browsable, not merely addressable: a starting point nobody can browse is
+not a starting point.
+
+A list of templates is a list of **possible answers**, never a catalogue of chart
+types. Each row states the question the template answers, its visual family, what
+it requires in the words of the roles — *"one measure, one low-cardinality
+dimension, one time axis"* — its provenance, and how many versions it has.
+
+The most useful filter is compatibility with an open Result: from a Result, the
+list narrows to the templates that Result satisfies, and the ones it does not
+say **which predicate is missing** rather than disappearing.
+
+Three empty states, never one: no project template yet; no seed available; no
+template compatible with the open Result. Each names the gesture that fills it.
+
+---
+
+## The compatibility verdict
+
+The verdict is computed at the moment somebody asks. Nothing stores one —
+what it reads moves without either object moving, so a stored verdict would be a
+value nobody computed at the moment it was read.
+
+| Verdict | What it means |
+| --- | --- |
+| **Compatible** | Every predicate the template declares, and every one its visual family declares, is satisfied by this Result. |
+| **Incompatible** | At least one is not. **All** of them are named — the well, the role, the cardinality bound, the grain — each with the gesture that repairs it, rather than just the first. |
+| **Unavailable** | Something could not be read: the template does not validate under the contract this deployment ships, the Result declares no schema or never answered, or a cardinality bound could not be counted. |
+
+*Incompatible* and *Unavailable* are not the same sentence. One says this Result
+cannot answer this way; the other says nobody knows yet — and a person acts on
+them differently. A measured failure outranks an unmeasured predicate, because a
+named failure is an answer.
+
+Which roles a Result offers is read from the schema it declares, resolved against
+the members its pinned question selected. A field the question does not name
+carries no role, and none is inferred from its name. Every sentence names a
+member by its canonical name, never by its identifier.
+
+---
+
+## Applying one
+
+Applying a template to a Result produces an ordinary **Visualization Spec
+version** of the project, through the same validator and the same writer every
+hand-built presentation goes through — and through no other path.
+
+Nothing in the produced document says it came from a template. The same
+presentation composed by hand in the builder is indistinguishable from it: same
+hash, same table, same refusals. The template is recorded *beside* the document
+as provenance, never inside it — a hash that depended on how a presentation was
+born would make two identical charts two different objects.
+
+The one choice materialisation makes is **which member occupies which well**. It
+takes exactly the number of members the predicate asked for, in the order the
+Result states them. Everything the template says about the presentation crosses
+over unchanged, with each anchor that named a well now naming the member that
+landed in it.
+
+- **The verdict is asked first and is binding.** An incompatible template is
+  refused before a document is composed, with the unsatisfied predicates named.
+  Nothing is written on that path.
+- **No question is re-executed and no Result is created.** The Visualization Spec
+  pins the Query Spec version the Result already carries.
+- **A seed is read, never rewritten.** Editing a visualization derived from a
+  template writes a new project-owned version whose predecessor is the
+  materialised one; the template version is left exactly as it was.
+
+---
+
+## Seeded by a connector, owned by the project
+
+A connector may ship Chart Templates as data. Drawing one into a project creates
+a project head marked with that seed origin; the **first edit** makes the head
+project-owned in the same statement. A connector never owns a Chart Template in
+your project.
+
+---
+
+## Next Steps & Cross-References
+
+<CardGroup cols={2}>
+  <Card title="Renders, Dossiers and Sharing" icon="chart-line" href="/renders-and-sharing">
+    What happens to a presentation once it is frozen.
+  </Card>
+  <Card title="Agent Tools" icon="wrench" href="/agent-tools">
+    `render_analyze_result` takes a template version as well as a spec version.
+  </Card>
+  <Card title="Semantic Layer" icon="cubes" href="/semantic-layer">
+    The governed measures and dimensions a predicate is written against.
+  </Card>
+  <Card title="Use Cases" icon="layer-group" href="/use-cases-library">
+    Where a template fits in an agent's path from question to document.
+  </Card>
+</CardGroup>

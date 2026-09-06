@@ -45,6 +45,7 @@
               "index",
               "introduction",
               "supported-connectors",
+              "operations-and-health",
               "changelog"
             ]
           },
@@ -57,7 +58,10 @@
               "data-quality",
               "anomaly-detection-method",
               "agentic-daily-insights",
-              "renders-and-sharing"
+              "renders-and-sharing",
+              "project-capabilities",
+              "chart-templates",
+              "exports"
             ]
           },
           {
@@ -67,6 +71,7 @@
               "agent-context",
               "agent-tools",
               "agent-rules",
+              "proactive-assertions",
               "use-cases-library"
             ]
           },

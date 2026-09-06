@@ -47,7 +47,8 @@ def _apply_migration(conn):
     ELLE ETAIT REJOUEE A CHAQUE FOIS, et sur un cluster deja migre ce rejeu ne
     peut pas aboutir : la 051 se termine par
     un `ALTER TABLE` (DROP puis ADD CONSTRAINT) sur
-    la table `render_snapshots` du schema `app`, ordre reserve a son PROPRIETAIRE. En production le proprietaire est
+    la table `render_snapshots` du schema `app`, ordre reserve a son
+    PROPRIETAIRE. En production le proprietaire est
     `postgres` ; les suites tournent sous `connector`, qui ne l est pas. Les
     quatre tests de ce fichier mouraient donc en ERROR de fixture sur
     « doit etre le proprietaire de la table render_snapshots » -- une mesure de la

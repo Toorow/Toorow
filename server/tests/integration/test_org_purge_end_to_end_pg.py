@@ -725,3 +725,241 @@ def test_the_projection_edge_restricts_rather_than_cascades(live_postgres):
         "context_graph_project_id_fkey is no longer ON DELETE RESTRICT: the "
         "projection would be erased by a cascade `org_purge` cannot name"
     )
+
+
+# ---------------------------------------------------------------------------
+# Migration 352 -- the AUTHORITY behind the projection, and its versions.
+#
+# 338 gave the READ PROJECTION (`app.context_graph`) a RESTRICT parent so the
+# eraser NAMES it. The authority 317 created was left on CASCADE while 317's own
+# header claimed `core.org_purge` "reaches them through the graph it walks" --
+# and `app.context_relationship_versions` never hung off `app.projects` at all.
+# Nothing leaked; the mechanism named was false, and the conformance guard let it
+# through on an edge that led nowhere (AI-365). These four tests are the pair of
+# the four above, on the tables 352 flips.
+# ---------------------------------------------------------------------------
+
+
+def _relation_counts(conn, project_id: str) -> dict[str, int]:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM app.context_relationships WHERE project_id = %s",
+            (project_id,),
+        )
+        heads = int(cur.fetchone()[0])
+        cur.execute(
+            "SELECT COUNT(*) FROM app.context_relationship_versions WHERE project_id = %s",
+            (project_id,),
+        )
+        versions = int(cur.fetchone()[0])
+    return {"context_relationships": heads, "context_relationship_versions": versions}
+
+
+@requires_postgres
+def test_the_context_relation_authority_is_named_in_the_plan(live_postgres):
+    """The plan must SEE the head AND its versions -- reverting 352 turns this red.
+
+    Asserted on the plan and not only on a purge: an organization holding no
+    relation is erased identically either way, so a purge alone cannot tell
+    "reached" from "absent". The plan is a property of the SCHEMA, so it answers
+    on an id that does not exist and touches no row.
+    """
+    plan = plan_purge(live_postgres, "org_DOES_NOT_EXIST")
+    tables = {op.table for op in plan}
+    for table in ("app.context_relationships", "app.context_relationship_versions"):
+        assert table in tables, (
+            f"the erasure plan no longer names {table}: the foreign key migration "
+            "352 set to RESTRICT is back on CASCADE, and `_FK_GRAPH_SQL` "
+            "(confdeltype IN ('a','r')) cannot see a CASCADE edge. The rows are "
+            "still erased -- by Postgres, from somebody else's statement -- and "
+            "the audited erasure report names them nowhere"
+        )
+
+    order = [op.table for op in plan if op.kind == "delete"]
+    assert order.index("app.context_relationship_versions") < order.index(
+        "app.context_relationships"
+    ), "the append-only versions must be deleted BEFORE the relation head"
+    assert order.index("app.context_relationships") < order.index("app.projects"), (
+        "the relation must be deleted BEFORE the project it hangs off"
+    )
+
+
+@requires_postgres
+def test_a_context_relation_and_its_versions_do_not_survive_their_organization(
+    live_postgres,
+):
+    """The RGPD path, walked on the authority rather than on its projection."""
+    conn = live_postgres
+    target = _seed_org(conn, "Cible")
+    _seed_graph_relation(conn, target["project_id"])
+
+    before = _relation_counts(conn, target["project_id"])
+    assert before == {
+        "context_relationships": 1,
+        "context_relationship_versions": 1,
+    }, f"the seed did not build a relation with a version row: {before}"
+
+    report = purge_org_tree(conn, target["org_id"])
+
+    assert _relation_counts(conn, target["project_id"]) == {
+        "context_relationships": 0,
+        "context_relationship_versions": 0,
+    }
+    # NAMED by the eraser, in statements of its own -- that is the whole point of
+    # RESTRICT over CASCADE, and it is what makes `rows_by_table` an audit trail
+    # rather than a partial one.
+    for table in ("app.context_relationships", "app.context_relationship_versions"):
+        assert report["rows_by_table"].get(table) == 1, (
+            f"{table} vanished without `org_purge` naming it: its rows went on a "
+            "delete rule the plan cannot see. rows_by_table="
+            f"{sorted(report['rows_by_table'])}"
+        )
+
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM app.organizations WHERE id = %s", (target["org_id"],))
+        assert cur.rowcount == 1
+
+
+@requires_postgres
+def test_deleting_a_project_holding_a_relation_is_refused_by_name(live_postgres):
+    """A project cannot take its relations down with it in silence any more.
+
+    Same shape as the projection proof above, and for the same reason: the
+    project-rooted plan is run with the statements about the two relation tables
+    REMOVED -- the pre-352 eraser exactly -- and the final `DELETE FROM
+    app.projects` is then required to be refused BY NAME. A bare delete on a
+    fully seeded project would not prove this: several other RESTRICT children
+    answer first, and which one Postgres reports is not ours to decide.
+    """
+    conn = live_postgres
+    target = _seed_org(conn, "Cible")
+    bare_project = _id("proj_")
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO app.projects (id, name, slug, created_by, org_id)
+            VALUES (%s, 'Cible sans datastream', %s, %s, %s)
+            """,
+            (bare_project, bare_project, ACTOR, target["org_id"]),
+        )
+    _seed_graph_relation(conn, bare_project)
+
+    plan = plan_purge(
+        conn,
+        bare_project,
+        root_table="app.projects",
+        root_predicate="id = %s",
+    )
+    authority = {"app.context_relationships", "app.context_relationship_versions"}
+    assert authority <= {op.table for op in plan}, (
+        "the project-rooted plan does not name the relation authority either"
+    )
+
+    with conn.cursor() as cur:
+        cur.execute("SAVEPOINT relation_probe")
+        # The erasure hatch, exactly as `purge_org_tree` opens it: the version
+        # ledger is append-only and refuses DELETE without it.
+        cur.execute("SET LOCAL app.rgpd_erasure = 'on'")
+        for op in plan:
+            if op.table in authority:
+                continue  # the pre-352 eraser: it named neither table
+            cur.execute(op.sql, (bare_project,))
+        with pytest.raises(psycopg.errors.ForeignKeyViolation) as excinfo:
+            cur.execute("DELETE FROM app.projects WHERE id = %s", (bare_project,))
+        cur.execute("ROLLBACK TO SAVEPOINT relation_probe")
+    # Read from the error's DIAGNOSTICS, not from its sentence: the message is
+    # localised by the server's `lc_messages`.
+    assert excinfo.value.diag.constraint_name == "fk_context_relationships_project", (
+        "the project was deleted (or refused by another child) with its context "
+        "relations taken along by a cascade nobody planned. Constraint that "
+        f"answered: {excinfo.value.diag.constraint_name}"
+    )
+
+    # And the pair is still whole: a rolled-back probe detached nothing.
+    assert _relation_counts(conn, bare_project) == {
+        "context_relationships": 1,
+        "context_relationship_versions": 1,
+    }
+
+
+@requires_postgres
+def test_the_relation_authority_edges_restrict_rather_than_cascade(live_postgres):
+    """Read from the catalog -- the same place `plan_purge` reads.
+
+    Both edges, because flipping only the head would name the head and leave the
+    versions swept up by its DELETE, named nowhere. This asserts the shape, so a
+    later migration that "simplifies" either edge back to CASCADE fails here
+    rather than in an audit nobody reads.
+    """
+    expected = {
+        "fk_context_relationships_project": "r",
+        "fk_context_relationship_versions_relation": "r",
+    }
+    with live_postgres.cursor() as cur:
+        cur.execute(
+            "SELECT conname, confdeltype FROM pg_constraint "
+            "WHERE contype = 'f' AND conname = ANY(%s)",
+            (sorted(expected),),
+        )
+        found = {str(name): str(action) for name, action in cur.fetchall()}
+    assert found == expected, (
+        "migration 352 is not applied here, or one of its edges is back on a "
+        f"delete rule `org_purge` cannot see: {found}"
+    )
+
+
+@requires_postgres
+def test_the_eraser_holds_one_column_of_update_and_no_more(live_postgres):
+    """The privilege half of the cycle break, pinned in both directions.
+
+    `plan_purge` breaks the version -> predecessor cycle with an UPDATE, and
+    PostgreSQL checks the TABLE PRIVILEGE before the trigger: with 352's two
+    foreign keys and nothing else, every purge in this file failed with
+    `InsufficientPrivilege: permission denied for table
+    context_relationship_versions` -- 317 revoked UPDATE there on purpose.
+
+    352 grants back exactly one column. Both halves are asserted, because either
+    one alone is the wrong posture: a table-level GRANT would make the whole
+    append-only row writable by the application role, and no grant at all makes
+    the erasure unrunnable on the RGPD path.
+    """
+    with live_postgres.cursor() as cur:
+        cur.execute(
+            "SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'connector'"
+        )
+        role = cur.fetchone()
+        assert role is not None, "role `connector` is missing: nothing below measures"
+        assert not role[0] and not role[1], (
+            "`connector` is SUPERUSER or BYPASSRLS here: has_*_privilege answers "
+            "TRUE whatever the ACL says, so the assertions below prove nothing"
+        )
+        cur.execute(
+            """
+            SELECT
+              has_table_privilege('connector',
+                  'app.context_relationship_versions', 'UPDATE'),
+              has_column_privilege('connector',
+                  'app.context_relationship_versions', 'supersedes_version_id', 'UPDATE'),
+              has_column_privilege('connector',
+                  'app.context_relationship_versions', 'fact', 'UPDATE'),
+              has_column_privilege('connector',
+                  'app.context_relationship_versions', 'content_hash', 'UPDATE')
+            """
+        )
+        table_update, break_column, fact_column, hash_column = cur.fetchone()
+
+    assert not table_update, (
+        "`connector` holds table-level UPDATE on app.context_relationship_versions: "
+        "317's REVOKE has been undone, and the append-only ledger is declaratively "
+        "rewritable. 352 grants ONE column, not the table."
+    )
+    assert break_column, (
+        "`connector` cannot update `supersedes_version_id`: the cycle-breaking "
+        "statement `org_purge` emits for this table is refused with 42501 before "
+        "the trigger runs, and the organization erasure cannot complete."
+    )
+    assert not fact_column and not hash_column, (
+        "the grant widened beyond `supersedes_version_id`: the typed fact and its "
+        "content hash are what make a version row evidence, and they are not "
+        "writable by the application role at any privilege level."
+    )

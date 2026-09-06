@@ -235,12 +235,12 @@ it("offers a column the shipped catalog does not describe", async () => {
 it("a read that failed says so and draws no table", async () => {
   serve(() => fail(500, "server_error", "Server error."));
   mount();
-  expect(await screen.findByText("Not readable")).toBeTruthy();
+  expect(await screen.findByText("The language bindings are not readable")).toBeTruthy();
   expect(screen.queryByTestId("language-row-language")).toBeNull();
 });
 
 it("a 200 that carries no family is a failed read, not an empty one", async () => {
   serve(() => ok({ schema: "language_bindings.v1", project_id: PROJECT }));
   mount();
-  expect(await screen.findByText("Not readable")).toBeTruthy();
+  expect(await screen.findByText("The language bindings are not readable")).toBeTruthy();
 });

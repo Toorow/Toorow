@@ -55,7 +55,7 @@ const SUPPORT = {
 describe("the verdict is readable, and so is every refusal", () => {
   it("shows the observed type with its origin and confidence side by side", () => {
     render(
-      <WorkbenchCapabilityPanel
+      <WorkbenchCapabilityPanel onRetryCapabilities={() => {}}
         projection={projection({
           capability_key: "tax_fees",
           applicability: "applicable",
@@ -75,7 +75,7 @@ describe("the verdict is readable, and so is every refusal", () => {
 
   it("lists every refused rule with its code and its reason, never a count", () => {
     render(
-      <WorkbenchCapabilityPanel
+      <WorkbenchCapabilityPanel onRetryCapabilities={() => {}}
         projection={projection({
           capability_key: "tax_fees",
           applicability: "applicable",
@@ -99,7 +99,7 @@ describe("the verdict is readable, and so is every refusal", () => {
 describe("UNKNOWN is a typed gap, never a source type", () => {
   it("refuses to present it as a value, and refuses the 'no fee applies' reading", () => {
     render(
-      <WorkbenchCapabilityPanel
+      <WorkbenchCapabilityPanel onRetryCapabilities={() => {}}
         projection={projection({
           capability_key: "tax_fees",
           applicability: "applicable",
@@ -184,7 +184,7 @@ describe("the five situations produce five sentences", () => {
   for (const [name, capability, sentence] of cases) {
     it(`says its own sentence for: ${name}`, () => {
       render(
-        <WorkbenchCapabilityPanel
+        <WorkbenchCapabilityPanel onRetryCapabilities={() => {}}
           projection={projection({ capability_key: "tax_fees", ...capability })}
         />,
       );
@@ -206,7 +206,7 @@ describe("the other capabilities are untouched", () => {
       [false, "Detected, not selected"],
     ] as const) {
       const { unmount } = render(
-        <WorkbenchCapabilityPanel
+        <WorkbenchCapabilityPanel onRetryCapabilities={() => {}}
           projection={projection({
             capability_key: "country",
             applicability: "applicable",
@@ -227,7 +227,7 @@ describe("the other capabilities are untouched", () => {
    */
   it("lists the physical inputs the publication landed, and marks the absent ones", () => {
     render(
-      <WorkbenchCapabilityPanel
+      <WorkbenchCapabilityPanel onRetryCapabilities={() => {}}
         projection={projection({
           capability_key: "tax_fees",
           applicability: "applicable",
@@ -256,7 +256,7 @@ describe("the other capabilities are untouched", () => {
 
   it("says so plainly when no physical input was recorded at all", () => {
     render(
-      <WorkbenchCapabilityPanel
+      <WorkbenchCapabilityPanel onRetryCapabilities={() => {}}
         projection={projection({
           capability_key: "tax_fees",
           applicability: "applicable",
@@ -276,7 +276,7 @@ describe("the other capabilities are untouched", () => {
 
   it("adds no Tax & Fees detail block to a capability that is not tax_fees", () => {
     render(
-      <WorkbenchCapabilityPanel
+      <WorkbenchCapabilityPanel onRetryCapabilities={() => {}}
         projection={projection({
           capability_key: "currency_fx",
           applicability: "applicable",

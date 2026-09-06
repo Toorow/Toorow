@@ -1,0 +1,139 @@
+---
+title: Project Capabilities
+description: The seven capabilities a project can carry, what each one adds to a number, and the two-step change that turns one on.
+---
+
+A **project capability** is a behaviour a project either carries or does not:
+whether money is comparable across currencies, whether a row knows which country
+it belongs to, whether spend can be read against the plan that bought it.
+
+Seven exist. They are versioned at project scope, and turning one on is a
+governed change — never a switch that takes effect silently.
+
+---
+
+## The seven
+
+| Capability | Key | Availability | What it does to a number |
+| --- | --- | --- | --- |
+| **Currency & FX** | `currency_fx` | Always present | Makes monetary measures comparable without hiding the native amount, its currency, or the dated rate used. |
+| **Reporting Timezone** | `reporting_timezone` | Always present | Preserves each source's reporting boundary and projects a governed project boundary, so a cross-source day comparison is honest. |
+| **Country** | `country` | Optional, off by default | Turns source geography into one governed model — country detail, client markets, reporting regions — without losing the original country grain. |
+| **Tax & Fees** | `tax_fees` | Optional, off by default | Explains the gap between native media values and invoice values through an exact, versioned rule ladder. |
+| **Competitors** | `competitors` | Optional, off by default | One governed entity identity per organization, with a role per project, bound to each source's own representation. |
+| **Placement Mapping** | `placement_mapping` | Optional, off by default | Binds what was *planned* — a media plan line — to what was *observed* — a campaign and its placements. |
+| **Analytics Alignment** | `analytics_alignment` | Optional, off by default | Aligns what a media datastream observed with what an analytics datastream measured. |
+
+**Always present** is not a default that happens to be on: the database refuses
+the pairing, so those two carry no switch on any surface. The control is what is
+forbidden, not the row.
+
+---
+
+## Two kinds, and the difference matters
+
+**Some re-express a measure.** Currency & FX, Reporting Timezone and Tax & Fees
+take a figure that already exists and make it comparable, boundary-correct or
+explained. The native fact is preserved beside the derived one.
+
+**Some add columns to the aggregation.** Country, Placement Mapping and
+Analytics Alignment change the shape of a row:
+
+| Capability | Columns it adds |
+| --- | --- |
+| Country | The country the row belongs to. |
+| Placement Mapping | `plan_line_key` and `plan_line_label`. |
+| Analytics Alignment | The aligned entity's id, its name, and **the method that resolved the row**. |
+
+Analytics Alignment adds a third column where its two siblings add two, and it
+is not decoration: the method cannot be re-derived at read time. A human
+arbitration is a stored act, and the automatic stages read a mapping version
+that will later be superseded — so a reader who could not tell an id equality
+from a shared name prefix could not defend the number.
+
+<Note>
+  **Null means unmapped, and it says so.** Where no plan line matched, both of
+  Placement Mapping's columns are `NULL` — never `0`, never `Unmapped`. That row
+  is unplanned spend and has to read as such. Analytics Alignment's three
+  columns are `NULL` on every row that is not `matched`, for the same reason.
+</Note>
+
+---
+
+## Five states, and why two of them count as on
+
+`disabled` · `draft` · `ready` · `degraded` · `blocked`
+
+`ready` **and** `degraded` both count as active. A degraded capability shows its
+evidence *and* says it is degraded — hiding evidence already collected is worse
+than showing it diminished.
+
+A project whose capability rows were never written is `unset`, which is a
+distinct fact from `disabled`. `disabled` is a decision somebody took; `unset`
+means the control plane never wrote the row.
+
+---
+
+## Dependencies
+
+- **Placement Mapping depends on Currency & FX.** A planned-versus-actual figure
+  computed across unconverted currencies is a wrong number that looks right.
+- **Tax & Fees leans on Country when it is active**: prequalified,
+  country-dependent rules are proposed from versioned shared knowledge, and the
+  operator confirms, edits or rejects each one. Nothing applies itself.
+- **Analytics Alignment is the first whose dependencies are not all
+  capabilities**: it also needs an MDM common key covering both datastreams and a
+  **published** Semantic View.
+
+---
+
+## Turning one on
+
+Activation is a **project change set**, decided in **Project Settings ›
+Capabilities** and nowhere else. Reading a capability's state never turns one on.
+
+Over MCP, the change is two steps and the second one needs a person:
+
+```python
+read_project_capability(...)              # what is on, how complete, what is missing
+preview_project_capability_impact(...)    # what would change, before anything does
+prepare_project_capability_change(...)    # returns a single-use confirmation
+confirm_project_capability_change(...)    # consumes it, with a person present
+```
+
+`prepare_project_capability_row_decision` and
+`confirm_project_capability_row_decision` do the same for one row of evidence.
+
+Activating **Country** changes extraction plans, so its review step shows grain,
+coverage, quota and **backfill impact** before publication — what a source can
+still be asked for, and what it cannot. If a source cannot provide a compatible
+country breakdown, the proposal names the datastream and the reason; it never
+presents global-only data as country-complete.
+
+---
+
+## What a capability owes every screen
+
+A working toggle does not complete a capability. Each one must project
+coherently into every applicable surface — project settings, the data
+workbenches, governance, the context hub, Analyze, Test and the MCP surface — or
+it is incomplete, whatever the toggle says.
+
+---
+
+## Next Steps & Cross-References
+
+<CardGroup cols={2}>
+  <Card title="Semantic Layer" icon="cubes" href="/semantic-layer">
+    The governed vocabulary the capabilities align.
+  </Card>
+  <Card title="Universal Datastreams" icon="arrows-rotate" href="/universal-datastreams">
+    Where a capability changes what is extracted.
+  </Card>
+  <Card title="Agent Tools" icon="wrench" href="/agent-tools">
+    The governance profile, and the confirmations it consumes.
+  </Card>
+  <Card title="Data Quality" icon="shield-check" href="/data-quality">
+    Unresolved geography is a monitor, not a silence.
+  </Card>
+</CardGroup>

@@ -416,8 +416,36 @@ it("both rules ACCUSE what they exist to refuse", () => {
  * The wording a failed read takes in this console, measured over all 200 blocks.
  * `could not (be )?load` matches `could not be loaded` by prefix, which is why
  * the participles are not spelled out.
+ *
+ * `unreadable`, `not readable` AND `could not be read` ARE THE CONSOLE'S OWN
+ * WORD, and the first version of this rule did not carry them. Four dead ends
+ * lived in that gap — `Address state unreadable`, `Delivery history
+ * unreadable`, `Not readable`, and the wizard's capabilities refusal. It is the
+ * same failure mode as a guard that greps for the shape it has just repaired
+ * instead of the shape the codebase actually writes.
  */
-const READ_FAILURE = /unavailable|could not (be )?(load|read|fetch|open)|failed to (load|read|fetch)|not (be )?reached/i;
+const READ_FAILURE = /unavailable|unreadable|not readable|could not be read|cannot be read|could not (be )?(load|read|fetch|open)|failed to (load|read|fetch)|not (be )?reached/i;
+
+/**
+ * A `title={CONSTANT}` is still a title, and a guard that reads only literals
+ * cannot see it.
+ *
+ * `DatastreamSetupWizard.tsx` writes `title={CAPABILITY_SECTION_UNREADABLE}`
+ * and declares that constant twelve hundred lines above as « Project
+ * capabilities could not be read ». Matching on the identifier finds nothing,
+ * so the block read as untitled AND as not-a-read-failure — two wrong answers
+ * out of one blind spot. This resolves a bare identifier against a
+ * `const NAME = "…"` declared in the SAME file; a call, a template with holes
+ * or an imported name stays unresolved and is reported as it is, because
+ * guessing across files is how a guard starts inventing evidence.
+ */
+function resolveTitle(title: string, source: string): string {
+  if (!/^[A-Za-z_$][\w$]*$/.test(title)) return title;
+  const pattern = "\\bconst " + title + "\\s*(?::[^=]*)?=\\s*(?:\"([^\"]*)\"|'([^']*)'|`([^`]*)`)";
+  const declaration = new RegExp(pattern).exec(source);
+  if (!declaration) return title;
+  return declaration[1] ?? declaration[2] ?? declaration[3] ?? title;
+}
 
 /** Every `Status as="block" tone="error"` in a file, with its title and body. */
 export function errorBlocks(source: string): Array<{ attrs: string; title: string; body: string }> {
@@ -663,4 +691,75 @@ it("rules 3 and 4 ACCUSE what they exist to refuse", () => {
   expect(bareAbsenceSentences("<dd>No time grain</dd>")).toHaveLength(0);
   // And an EmptyState's own copy is never counted as a bare sentence.
   expect(bareAbsenceSentences('<EmptyState title="No datastream is bound to this yet." />')).toHaveLength(0);
+});
+
+/**
+ * `EmptyState` answers for a REGION, and a row is not a region.
+ *
+ * MEASURED, AND IT WAS THIS STORY'S OWN DEFECT. `ui/EntityMatrix.tsx` put the
+ * matrix-wide fact « no compatible Datastream » inside the per-entity `<li>`,
+ * so a Project with twelve tracked entities stacked twelve identical twelve-rem
+ * blocks — against the container rule the same pass had just ratified. Writing
+ * a rule down does not hold it; this does.
+ *
+ * The check is lexical and deliberately narrow: an `<EmptyState` with an
+ * unclosed `<li>`, `<td>` or `<tr>` open above it in the same file. That is the
+ * shape a repeated block takes, and it costs no exemptions — the console has no
+ * legitimate empty state inside a row today, and if one appears it comes here
+ * with the reason its row is a region.
+ */
+const ROW_TAGS = ["li", "td", "tr"] as const;
+
+export function emptyStatesInsideARow(source: string): string[] {
+  const found: string[] = [];
+  const depth: Record<string, number> = { li: 0, td: 0, tr: 0 };
+  // One pass over the file, counting the row tags as they open and close, and
+  // reporting every `<EmptyState` met while one of them is open.
+  const token = /<(\/?)(li|td|tr)\b[^>]*?(\/?)>|<EmptyState\b/g;
+  for (const m of source.matchAll(token)) {
+    if (m[0].startsWith("<EmptyState")) {
+      const open = ROW_TAGS.filter((tag) => depth[tag] > 0);
+      if (open.length > 0) found.push(`inside <${open.join("><")}>`);
+      continue;
+    }
+    const [, closing, tag, selfClosing] = m;
+    if (selfClosing) continue;
+    depth[tag] += closing ? -1 : 1;
+    if (depth[tag] < 0) depth[tag] = 0;
+  }
+  return found;
+}
+
+it("no EmptyState is drawn inside a row", () => {
+  const offenders: string[] = [];
+  for (const { path, body } of SOURCES) {
+    for (const where of emptyStatesInsideARow(body)) offenders.push(`${path}: ${where}`);
+  }
+  expect(offenders).toEqual([]);
+});
+
+it("the widened read-failure shape and the row rule ACCUSE what they exist to refuse", () => {
+  // The console's own word, which the first version of rule 3 did not carry.
+  expect(READ_FAILURE.test("Address state unreadable")).toBe(true);
+  expect(READ_FAILURE.test("Not readable")).toBe(true);
+  expect(READ_FAILURE.test("Project capabilities could not be read")).toBe(true);
+
+  // A title held in a constant declared in the same file is still a title.
+  const withConstant = [
+    'const CAPABILITY_SECTION_UNREADABLE = "Project capabilities could not be read";',
+    '<Status as="block" tone="error" title={CAPABILITY_SECTION_UNREADABLE}>x</Status>',
+  ].join("\n");
+  const [block] = errorBlocks(withConstant);
+  expect(block.title).toBe("Project capabilities could not be read");
+  expect(READ_FAILURE.test(block.title)).toBe(true);
+  // And an identifier this file does not declare is reported as it stands,
+  // never guessed at across files.
+  expect(resolveTitle("SOMETHING_ELSE", withConstant)).toBe("SOMETHING_ELSE");
+
+  // The row rule.
+  expect(emptyStatesInsideARow("<li><EmptyState title=\"x\" /></li>")).toHaveLength(1);
+  expect(emptyStatesInsideARow("<td><EmptyState title=\"x\" /></td>")).toHaveLength(1);
+  expect(emptyStatesInsideARow("<div><EmptyState title=\"x\" /></div>")).toHaveLength(0);
+  // A closed row before it is not an open row around it.
+  expect(emptyStatesInsideARow("<li>a</li>\n<EmptyState title=\"x\" />")).toHaveLength(0);
 });

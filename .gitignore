@@ -120,6 +120,8 @@ server/modules/*/seeds/*.duckdb
 # committed. The run reports next door (_bmad-output/qa/runs/*.json) ARE committed:
 # they are the dated evidence a gate result rests on, and they stay small.
 _bmad-output/qa/screenshots/
+# Walk captures carry real org/project slugs in their file names: never in the repo.
+_bmad-output/qa/walks/
 
 # Harness chain pins (e2e/arm_harness_project.py -> e2e/chain_pins.py) -- a LOCAL
 # file naming this deployment's own project, feed, host and service accounts. Never

@@ -121,7 +121,7 @@ function stubApi(options: {
 
 function mount(header: unknown = HEADER, evidence: Record<string, unknown> = EVIDENCE) {
   return render(
-    <WorkbenchOverviewPage
+    <WorkbenchOverviewPage onRetryCapabilities={() => {}}
       header={header as never}
       payload={{ evidence } as never}
       projectId="proj_EXAMPLE"

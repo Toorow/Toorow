@@ -1,0 +1,107 @@
+---
+title: Operations & Connection Health
+description: What the platform knows about its own night — which connections are healthy, which steps ran, and what a crash leaves behind.
+---
+
+Two questions an operator asks every morning: *is anything broken upstream?* and
+*did last night actually run?* toorow answers both from recorded facts, not from
+the absence of an alert.
+
+---
+
+## Connection health
+
+A connection carries a status, and a report is as healthy as its **worst** input
+— never its first, and never its newest.
+
+| Status | What it means |
+| --- | --- |
+| `revoked` | The authorization is gone. Nothing will be pulled until it is granted again. |
+| `provider_denied` | The provider refused this pull. The credential is valid; this request was not allowed. |
+| `populate_failed` | The pull ran and could not land its rows. |
+| `stale` | Nothing new has arrived for longer than the policy allows. |
+| `ok` | Fresh, and pulling. |
+
+Three rules make this readable rather than noisy:
+
+- **The pull that learns writes.** A provider refusal is recorded by the pull
+  that hit it, inside its own transaction — not inferred later by a sweep.
+- **A sweep never raises a red somebody else posted**, and only a pull that
+  verifiably succeeded clears one. A red does not decay into green because time
+  passed.
+- **`provider_denied` leaves the door open.** The datastream can still be
+  enqueued, so the daily probe detects the moment access comes back. A denial is
+  not a disablement.
+
+---
+
+## The night, step by step
+
+The platform writes the list of steps **at dispatch, before the first one runs**.
+That ordering is the whole design: a crash cannot erase a step it never got to
+close, so an unfinished step stays visibly unfinished.
+
+Four outcomes that cannot collapse into one another, plus one derived:
+
+| Outcome | What it says |
+| --- | --- |
+| `never_started` | The step was declared and the run never reached it. |
+| `unfinished` | It started and never closed — the crash *is* this line. |
+| `failed` | It ran and reported a failure. |
+| `succeeded` | It ran and finished. |
+| *unrecorded* | Derived: no line at all, which means the dispatch itself never wrote one. |
+
+“No alert” is therefore never the answer to *did it run?* — the absence of a
+record is itself a state with a name.
+
+---
+
+## Where to look
+
+| Endpoint | Method | Answers |
+| --- | --- | --- |
+| `/api/platform/clocks` | `GET` | Every scheduled beat and when it last fired. |
+| `/api/platform/clocks/{clock_name}` | `GET`, `PATCH` | One clock, and changing its cadence. |
+| `/api/platform/clocks/{clock_name}/run` | `POST` | Run it now instead of waiting. |
+| `/api/platform/nightly-steps` | `GET` | Last night's steps, each with its outcome and duration. |
+
+The console shows the same thing on **Platform Clocks**: the beats, and one
+level below them, what the beat actually did. Every message names the dispatch,
+never a deployment state.
+
+<Note>
+  `/api/platform/nightly-steps` has no MCP counterpart yet. That is a gap, not a
+  decision.
+</Note>
+
+---
+
+## What an agent can ask
+
+- `list_platform_clocks`, `get_platform_clock` — the beats and their cadence.
+- `run_platform_clock_now`, `set_platform_clock_cadence`, `apply_platform_clock` —
+  changing when things happen.
+- `get_connector_activation_status`, `get_connector_verification_status`,
+  `get_connector_installation_status` — is this connector installed, proved, and
+  pulling for this organization?
+- `datastream_diagnose`, `datastream_pull_history`, `list_datastream_runs` — why
+  did this one stop, and what did it do before.
+
+---
+
+## Next Steps & Cross-References
+
+<CardGroup cols={2}>
+  <Card title="Data Quality" icon="shield-check" href="/data-quality">
+    The ten monitors that run once the rows have landed.
+  </Card>
+  <Card title="Universal Datastreams" icon="arrows-rotate" href="/universal-datastreams">
+    What a pull does, and what it records while doing it.
+  </Card>
+  <Card title="Agent Tools" icon="wrench" href="/agent-tools">
+    The operations profile, and what it takes to reach it.
+  </Card>
+  <Card title="Self-Hosting Guide" icon="server" href="/self-hosting">
+    Turning the scheduler on, and where it runs.
+  </Card>
+</CardGroup>

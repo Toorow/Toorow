@@ -84,11 +84,22 @@ def _seed(conn):
             "VALUES (%s, %s, %s, %s, 'story-12.11-test') ON CONFLICT DO NOTHING",
             (project_id, project_id, project_id, org_id),
         )
+        #  `connector_pull` ET un module, PARCE QUE LA CONTRAINTE EXIGE LA PAIRE.
+        #  Ce seed ecrivait `source_kind = 'connector'`, un mot qui n appartient a
+        #  aucun des trois registres du produit : la migration 030 (`:26-29`) et
+        #  `core.datastream_activation.MODES` (`:30`) n admettent que
+        #  `connector_pull`, `external_bq` et `managed_feed`, et le premier exige
+        #  `module_name IS NOT NULL`. Les quatre tests vivants de ce fichier
+        #  mouraient donc dans le seed sur `ck_datastreams_source_kind`, avant
+        #  d avoir touche a la seule chose qu ils mesurent : le CHECK `kind` de
+        #  `operation_preparations`. Le Datastream n est ici qu un ancrage de cle
+        #  etrangere, mais un ancrage doit etre un Datastream que le produit
+        #  accepterait.
         cur.execute(
             "INSERT INTO app.datastreams "
             "(id, project_id, name, module_name, source_kind, enabled, created_by, org_id) "
-            "VALUES (%s, %s, 'DS', NULL, 'connector', FALSE, 'test', 'org_test_fixture')",
-            (ds_id, project_id),
+            "VALUES (%s, %s, 'DS', 'generic', 'connector_pull', FALSE, 'test', %s)",
+            (ds_id, project_id, org_id),
         )
     conn.commit()
     return org_id, project_id, ds_id

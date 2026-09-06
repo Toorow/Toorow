@@ -127,7 +127,7 @@ function mount(
   } = {},
 ) {
   return render(
-    <WorkbenchOverviewPage
+    <WorkbenchOverviewPage onRetryCapabilities={() => {}}
       header={header as never}
       payload={{ evidence: { state: "available", ...evidence } } as never}
       projectId="proj_EXAMPLE"

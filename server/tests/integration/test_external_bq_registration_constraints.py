@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+from ulid import ULID
 
 ROOT = Path(__file__).resolve().parents[3]
 from tests.migration_ledger import apply_migrations_absent_from_the_ledger  # noqa: E402
@@ -50,6 +51,27 @@ _EXTERNAL_OBJECT = {
 
 def _id(prefix: str) -> str:
     return f"{prefix}{uuid.uuid4().hex[:12]}"
+
+
+def _ulid(prefix: str) -> str:
+    """Un identifiant NEUF a chaque run, au format que la contrainte 076 exige.
+
+    LE DEFAUT QUE CECI FERME. Quatre tests de ce fichier ecrivaient des
+    identifiants CONSTANTS (`ebqo_01J8ZC4Q...`, `dsp_...`, `dmap_...`) dans des
+    tables dont ce fichier PROUVE qu elles sont append-only : la migration 076
+    rejette le DELETE sur `external_bq_observations`, la 030 et la 032 sur les
+    deux tables de versions. La ligne ne pouvait donc pas etre reprise, et la
+    seconde execution sur la meme base mourait sur
+    `pk_external_bq_observations` / `pk_datastream_plan_versions`. Une suite qui
+    ne passe qu une fois par base ne mesure pas le produit, elle mesure l age du
+    cluster -- et sur une base jetable PARTAGEE elle accuse la voisine qui l a
+    lancee en premier.
+
+    `_id` ne suffit pas ici : la 076 (`:107`) exige
+    `^ebqo_[0-9A-HJKMNP-TV-Z]{26}$`, c est-a-dire un ULID Crockford, que douze
+    caracteres hexadecimaux minuscules ne satisfont pas.
+    """
+    return f"{prefix}{ULID()}"
 
 
 def _apply_migrations(conn) -> None:
@@ -176,12 +198,12 @@ def test_scheduler_exclusion_flag_synced_from_source_kind(pg_conn):
 def test_observation_ledger_is_append_only(pg_conn):
     project_id = _id("proj_")
     ds_id = _id("ds_")
-    plan_id = _id("dsp_").replace("dsp_", "dsp_")
-    mapping_id = _id("dmap_").replace("dmap_", "dmap_")
+    plan_id = _id("dsp_")
+    mapping_id = _id("dmap_")
     _seed_project(pg_conn, project_id)
     _seed_external_datastream(pg_conn, project_id, ds_id, plan_id, mapping_id)
 
-    obs_id = "ebqo_" + "01J8ZC4Q0N7R2K3W5X6Y7Z8A9B"[:26]
+    obs_id = _ulid("ebqo_")
     with pg_conn.cursor() as cur:
         cur.execute(
             """
@@ -214,8 +236,8 @@ def test_observe_and_register_mints_execution_and_observation(pg_conn):
 
     project_id = _id("proj_")
     ds_id = _id("ds_")
-    plan_id = "dsp_" + "01J8ZC4Q0N7R2K3W5X6Y7Z8A9C"[:26]
-    mapping_id = "dmap_" + "01J8ZC4Q0N7R2K3W5X6Y7Z8A9D"[:26]
+    plan_id = _ulid("dsp_")
+    mapping_id = _ulid("dmap_")
     _seed_project(pg_conn, project_id)
     _seed_external_datastream(pg_conn, project_id, ds_id, plan_id, mapping_id)
 
@@ -261,8 +283,8 @@ def test_repeated_unchanged_observation_is_noop(pg_conn):
 
     project_id = _id("proj_")
     ds_id = _id("ds_")
-    plan_id = "dsp_" + "01J8ZC4Q0N7R2K3W5X6Y7Z8A9E"[:26]
-    mapping_id = "dmap_" + "01J8ZC4Q0N7R2K3W5X6Y7Z8A9F"[:26]
+    plan_id = _ulid("dsp_")
+    mapping_id = _ulid("dmap_")
     _seed_project(pg_conn, project_id)
     _seed_external_datastream(pg_conn, project_id, ds_id, plan_id, mapping_id)
 
@@ -315,8 +337,8 @@ def test_same_key_same_evidence_replay_returns_existing_execution(pg_conn):
 
     project_id = _id("proj_")
     ds_id = _id("ds_")
-    plan_id = "dsp_" + "01J8ZC4Q0N7R2K3W5X6Y7Z8B10"[:26]
-    mapping_id = "dmap_" + "01J8ZC4Q0N7R2K3W5X6Y7Z8B11"[:26]
+    plan_id = _ulid("dsp_")
+    mapping_id = _ulid("dmap_")
     _seed_project(pg_conn, project_id)
     _seed_external_datastream(pg_conn, project_id, ds_id, plan_id, mapping_id)
 

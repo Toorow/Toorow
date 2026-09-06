@@ -33,7 +33,7 @@ beforeEach(() => {
 
 function mount(evidence: Record<string, unknown>) {
   return render(
-    <WorkbenchOverviewPage
+    <WorkbenchOverviewPage onRetryCapabilities={() => {}}
       header={HEADER}
       payload={{ evidence: { state: "available", ...evidence } } as never}
       projectId="proj_EXAMPLE"

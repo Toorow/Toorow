@@ -26,16 +26,41 @@ quoted from the day this file was written: the last test below re-runs
 statements -- which grows with the schema -- never has to be written down
 anywhere to keep the claim honest.
 
-WHAT THIS GUARD ASKS, AND IT IS THE NARROW VERSION. For every migration that
-CREATES a table in `app.` and names `org_purge` anywhere, at least one table it
-creates must carry a foreign key the graph can see -- `confdeltype IN ('a','r')`.
-A migration whose tables are all CASCADE-only must instead carry the CANONICAL
-DENIAL, the phrase migration 235 established:
+WHAT THIS GUARD ASKS. For every migration that CREATES a table in `app.` and
+names `org_purge` anywhere, at least one table it creates must be NAMED by
+`plan_purge` in a statement of its own. A migration whose tables the plan never
+names must instead carry the CANONICAL DENIAL, the phrase migration 235
+established:
 
     NOT `core.org_purge`
 
 That is a sentence, checked as a string, and it is on purpose: the point of the
 class is what the header SAYS, so what the guard reads is what the header says.
+
+IT ASKS THE PLANNER, AND IT USED TO ASK A PROXY -- AI-365, 2026-09-06. What this
+file asked until then was the STRUCTURAL version: *at least one table it creates
+carries a foreign key `confdeltype IN ('a','r')`*. That is a proxy for "the
+eraser reaches it", and a proxy can be satisfied by an edge that leads nowhere.
+Migration 317 satisfied it by accident and its false claim went through:
+
+    fk_context_relationships_current_version      -> context_relationship_versions   a
+    fk_context_relationship_versions_predecessor  -> context_relationship_versions   a
+    fk_context_relationship_versions_relation     -> context_relationships           c
+    fk_context_relationships_project              -> app.projects                    c
+
+Two graph-visible edges, both pointing INSIDE the pair the migration creates, and
+nothing attaching that pair to the tenant tree. The traversal starts at
+`app.organizations`, so it never arrived: measured on a cluster at migration 351,
+`plan_purge` emitted 3430 statements over 209 tables and named NEITHER table.
+The structural check said yes while the mechanism said no -- a green by
+coincidence, on the RGPD path, in the one file whose job is to refuse exactly
+that.
+
+So the question is now put to the planner itself: is the table in `plan_purge`'s
+own statements? That is the sentence the headers make, asked of the thing that
+would have to be true. It cannot be satisfied by an edge that leads nowhere,
+because the walk either arrives or it does not. Migration 352 flips both of
+317's edges to RESTRICT, which is what makes 317's sentence true.
 
 IT READS `pg_constraint`, NOT THE SQL TEXT, and that decision was measured. A
 hand-rolled parser of the migration files was written first and disagreed with
@@ -70,6 +95,11 @@ DENIAL = "NOT `core.org_purge`"
 #: `a` = NO ACTION, `r` = RESTRICT. Everything else -- `c` CASCADE, `n` SET NULL,
 #: `d` SET DEFAULT -- is invisible to `plan_purge` BY DESIGN.
 GRAPH_VISIBLE_DELETE_ACTIONS = frozenset({"a", "r"})
+
+#: An org id that exists nowhere. `plan_purge` builds its statements from the
+#: foreign-key graph and not from rows, so the plan is complete for any id, and
+#: nothing this file touches can leave a trace.
+_NO_SUCH_ORG = "org_EXAMPLE"
 
 #: The claims that predate this guard and that no edit can repair, each with what
 #: it actually says. Dated 2026-08-09; nothing may be added here without a reason
@@ -121,6 +151,48 @@ FROZEN_CLAIMS: dict[str, str] = {
     ),
 }
 
+#: EXPOSED BY THE TIGHTENING OF 2026-09-06 (AI-365), and not repaired by it.
+#: Inventory, never silence: each entry says what its header gets wrong, and
+#: `test_every_plan_blind_claim_is_still_blind` re-measures the blindness on the
+#: live catalog, so an entry cannot outlive the defect it describes.
+#:
+#: These are NOT frozen claims. `FROZEN_CLAIMS` holds five files that no edit can
+#: repair; these two are repairable the way 317 was -- by a FORWARD migration
+#: that gives the table a delete rule the walk can follow, or by one that carries
+#: the canonical denial on their behalf, as 266 does for the five. Each needs its
+#: own arbitration and its own migration number, which is why AI-365 names them
+#: here instead of deciding for them: a session that repairs one deletes its
+#: entry, and the test above turns red if it does not.
+PLAN_BLIND_CLAIMS: dict[str, str] = {
+    "242_a_transformation_rule_remembers_what_it_was.sql": (
+        "ITS HEADER IS RIGHT AND ITS FORM IS OLD -- the same shape as the "
+        "`107` entry above. It states the fact in its own words: « "
+        "`core.org_purge.plan_purge` walks `confdeltype IN ('a','r')` only, so a "
+        "CASCADE edge is absent from its plan and the foreign key is what makes "
+        "the final `DELETE FROM app.organizations` reach these rows ». What it "
+        "does not carry is the canonical DENIAL string, which is what this file "
+        "reads. `cleanup_rule_versions` and `value_mapping_table_versions` are "
+        "CASCADE to org, project and parent rule; their only graph-visible edge "
+        "is the self-referencing `predecessor_version_id`, which attaches them "
+        "to nothing -- 317's incident exactly. The repair is a forward migration "
+        "carrying the canonical phrase for these two tables, not a schema change: "
+        "flipping them to RESTRICT would make 242's own sentence false."
+    ),
+    "347_a_topic_names_its_semantic_views_and_the_paths_it_allows.sql": (
+        "A FALSE CLAIM, the same one 317 made: « the foreign-key graph "
+        "`core.org_purge` walks reaches this table through the Semantic View "
+        "version as well as being cascaded from the topic ». "
+        "`answerable_topic_view_bindings` does carry two NO ACTION edges "
+        "(`fk_atvb_view_head`, `fk_atvb_view_version`), but measured 2026-09-06 "
+        "neither `app.semantic_views` nor `app.semantic_view_versions` is itself "
+        "named by the plan, so the walk never arrives and the binding is named "
+        "in none of the eraser's statements. Its third edge, `fk_atvb_topic`, is "
+        "CASCADE onto `app.answerable_topics`, which the plan DOES name -- so "
+        "the smallest true repair is a forward migration flipping that one edge "
+        "to RESTRICT, exactly as 352 did for 317."
+    ),
+}
+
 _CREATE_TABLE = re.compile(
     r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?app\.([a-z0-9_]+)", re.IGNORECASE
 )
@@ -152,9 +224,45 @@ def _delete_actions(conn) -> dict[str, set[str]]:
     return actions
 
 
+def _existing_tables(conn) -> set[str]:
+    """Every ordinary table of the `app` schema, by bare name.
+
+    Existence is read from `pg_class` and not from `pg_constraint`, because a
+    table with NO foreign key at all exists and is invisible to BOTH mechanisms
+    -- which is the state migration 338 was written to close. Reading existence
+    off the constraint catalogue would have silently excused exactly that table.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT c.relname FROM pg_class c "
+            "JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE n.nspname = 'app' AND c.relkind = 'r'"
+        )
+        return {str(row[0]) for row in cur.fetchall()}
+
+
+def _planned_tables(conn) -> set[str]:
+    """Every `app.` table `org_purge` NAMES in a statement of its OWN, bare name.
+
+    The production planner, on the live catalog, for an org id that exists
+    nowhere: the plan is derived from the schema and not from rows, so it is
+    complete for any id and touches nothing.
+    """
+    from core.org_purge import plan_purge  # noqa: PLC0415 -- lazy, pg-gated
+
+    return {op.table.split(".", 1)[-1] for op in plan_purge(conn, _NO_SUCH_ORG)}
+
+
 def _offenders(conn) -> list[str]:
-    """Every migration whose header claims `org_purge` and whose tables refuse it."""
-    actions = _delete_actions(conn)
+    """Every migration whose header claims `org_purge` and whose tables refuse it.
+
+    The verdict is `plan_purge`'s own statement list, never a property of an
+    individual foreign key: an edge the graph can SEE is not an edge the walk
+    ARRIVES by, and a pair of tables pointing at each other satisfies the first
+    while failing the second (AI-365, migration 317).
+    """
+    existing = _existing_tables(conn)
+    planned = _planned_tables(conn)
     offenders: list[str] = []
     for path in sorted(MIGRATIONS.glob("*.sql")):
         sql = path.read_text(encoding="utf-8", errors="replace")
@@ -167,31 +275,38 @@ def _offenders(conn) -> list[str]:
             # It names `org_purge` and creates nothing -- a grant, a trigger, a
             # hatch. There is no table for the claim to be wrong about.
             continue
-        known = [table for table in tables if table in actions]
+        known = [table for table in tables if table in existing]
         if not known:
             # Every table it creates is gone from the schema, or the database is
             # behind this migration. Nothing measurable, so nothing asserted --
             # `test_the_guard_is_not_vacuous` is what stops that from swallowing
             # the whole corpus.
             continue
-        if any(actions[table] & GRAPH_VISIBLE_DELETE_ACTIONS for table in known):
+        if any(table in planned for table in known):
             continue
         offenders.append(path.name)
     return offenders
 
 
 def test_a_migration_naming_org_purge_is_reached_by_org_purge(live_postgres) -> None:
-    offenders = sorted(set(_offenders(live_postgres)) - set(FROZEN_CLAIMS))
+    known_blind = set(FROZEN_CLAIMS) | set(PLAN_BLIND_CLAIMS)
+    offenders = sorted(set(_offenders(live_postgres)) - known_blind)
 
     assert not offenders, (
-        "migration(s) whose header names `core.org_purge` while every table they "
-        f"create is invisible to its FK graph: {offenders}\n\n"
+        "migration(s) whose header names `core.org_purge` while `plan_purge` "
+        f"names NONE of the tables they create: {offenders}\n\n"
         "`plan_purge` walks `confdeltype IN ('a','r')` only -- NO ACTION and "
-        "RESTRICT. A table reached only by ON DELETE CASCADE is erased by "
-        "POSTGRES, from the parent statement `org_purge` does emit, and "
-        "`org_purge` names it in none of its own.\n\n"
+        "RESTRICT -- from `app.organizations` down. A table reached only by ON "
+        "DELETE CASCADE is erased by POSTGRES, from the parent statement "
+        "`org_purge` does emit, and `org_purge` names it in none of its own.\n\n"
+        "A GRAPH-VISIBLE FOREIGN KEY IS NOT ENOUGH AND NEVER WAS: this used to "
+        "ask for one, and migration 317 satisfied it with two edges pointing at "
+        "the other table of its own pair, attached to the tenant tree by "
+        "nothing. What is asked is that the WALK ARRIVES.\n\n"
         "Two ways out, and only these two:\n"
-        "  - give the table a foreign key the graph can see; or\n"
+        "  - give the table a delete rule the walk can follow -- RESTRICT or NO "
+        "ACTION, on an edge whose PARENT the plan already names (migration 352 "
+        "did this for 317); or\n"
         f"  - write the truth, in the words migration 235 fixed: `{DENIAL}` -- "
         "then say WHICH parent statement cascades down to it, and measure it.\n\n"
         "Do not repair this by deleting the sentence: an org-scoped table naming "
@@ -203,8 +318,9 @@ def test_a_migration_naming_org_purge_is_reached_by_org_purge(live_postgres) -> 
 def test_the_guard_is_not_vacuous(live_postgres) -> None:
     """It really reads the catalog, and it really refuses a planted claim.
 
-    Three assertions, because each covers a different way this file could pass on
-    nothing: an empty catalog, a corpus it never opened, and a rule with no teeth.
+    Four assertions, because each covers a different way this file could pass on
+    nothing: an empty catalog, a corpus it never opened, a rule that is only the
+    old proxy under a new name, and a rule with no teeth.
     """
     actions = _delete_actions(live_postgres)
     # 1. The catalog answered, and it carries BOTH shapes -- otherwise the
@@ -220,7 +336,19 @@ def test_the_guard_is_not_vacuous(live_postgres) -> None:
     assert actions["master_data_aliases"] & GRAPH_VISIBLE_DELETE_ACTIONS
     assert len(list(MIGRATIONS.glob("*.sql"))) > 200
 
-    # 3. THE TEETH. Plant the claim in a COPY of the file that is right today --
+    # 3. THE RULE IS NOT THE OLD PROXY UNDER A NEW NAME. `cleanup_rule_versions`
+    #    (migration 242) carries a graph-visible foreign key -- its own
+    #    `predecessor_version_id`, NO ACTION -- and the walk still never arrives,
+    #    because that edge points at the table itself. The two questions really
+    #    do give different answers on a real table of this schema, which is what
+    #    317 exploited by accident.
+    planned = _planned_tables(live_postgres)
+    assert len(planned) > 100, len(planned)
+    assert actions["cleanup_rule_versions"] & GRAPH_VISIBLE_DELETE_ACTIONS
+    assert "cleanup_rule_versions" not in planned
+    assert "master_data_aliases" in planned
+
+    # 4. THE TEETH. Plant the claim in a COPY of the file that is right today --
     #    strip its denial -- and require the guard to name it. Without this, a
     #    rule that returns `[]` unconditionally passes every assertion above.
     planted = MIGRATIONS / "244_a_plan_line_names_the_placements_it_bought.sql"
@@ -235,12 +363,6 @@ def test_the_guard_is_not_vacuous(live_postgres) -> None:
     # And restored byte for byte: a guard that leaves the corpus modified is a
     # guard that breaks the migration checksums of the next run.
     assert planted.read_text(encoding="utf-8") == original
-
-
-#: An org id that exists nowhere. `plan_purge` builds its statements from the
-#: foreign-key graph and not from rows, so the plan is complete for any id, and
-#: nothing this test touches can leave a trace.
-_NO_SUCH_ORG = "org_EXAMPLE"
 
 
 def test_no_frozen_claim_table_is_named_by_the_plan(live_postgres) -> None:
@@ -302,3 +424,51 @@ def test_every_frozen_claim_still_exists_and_still_names_org_purge() -> None:
     # applied migration changed`), and that -- not convenience -- is the only
     # thing this list stands on.
     assert max(int(name[:3]) for name in FROZEN_CLAIMS) < 200, sorted(FROZEN_CLAIMS)
+
+
+def test_every_plan_blind_claim_is_still_blind(live_postgres) -> None:
+    """The second inventory cannot outlive the defects it names either.
+
+    Two things are asked of every entry, and both are re-measured rather than
+    quoted: the file still exists and still names `org_purge`, and `plan_purge`
+    still names NONE of the tables it creates. The day a forward migration gives
+    one of them a delete rule the walk can follow -- or carries the canonical
+    denial on its behalf -- this turns red and the entry has to go, which is the
+    only thing that keeps an inventory from ageing into an exemption.
+    """
+    planned = _planned_tables(live_postgres)
+    existing = _existing_tables(live_postgres)
+    repaired: dict[str, list[str]] = {}
+
+    for name, reason in PLAN_BLIND_CLAIMS.items():
+        path = MIGRATIONS / name
+        assert path.exists(), f"{name} no longer exists; drop its entry from PLAN_BLIND_CLAIMS"
+        sql = path.read_text(encoding="utf-8", errors="replace")
+        assert "org_purge" in sql, (
+            f"{name} no longer names org_purge; drop its entry from PLAN_BLIND_CLAIMS"
+        )
+        assert DENIAL not in sql, (
+            f"{name} now carries the canonical denial and needs no entry here"
+        )
+        assert reason.strip(), name
+        created = _created_tables(sql)
+        assert created & existing, (
+            f"{name} creates no table this schema still has; drop its entry"
+        )
+        hit = sorted(table for table in created if table in planned)
+        if hit:
+            repaired[name] = hit
+
+    assert not repaired, (
+        "a table named by a PLAN_BLIND_CLAIMS entry is now NAMED by "
+        f"`org_purge`'s own plan: {repaired}\n\n"
+        "That is the repair landing, not a regression. Delete the entry: leaving "
+        "it in place would keep a header the guard no longer needs to excuse, and "
+        "would hide the next one that does."
+    )
+
+    # It is the OTHER list that is frozen. Everything here is repairable by a
+    # forward migration, so an entry below the frozen ceiling would be an entry
+    # in the wrong inventory.
+    assert min(int(name[:3]) for name in PLAN_BLIND_CLAIMS) >= 200, sorted(PLAN_BLIND_CLAIMS)
+    assert not set(PLAN_BLIND_CLAIMS) & set(FROZEN_CLAIMS), "an entry in both inventories"

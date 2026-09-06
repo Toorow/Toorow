@@ -1,0 +1,95 @@
+---
+title: Governed Exports
+description: The MMM extract and the planned-versus-actual extract — two reads that write nothing and carry the provenance a model will need later.
+---
+
+Two extracts leave toorow as rows: one feeds a marketing-mix model, one compares
+a media plan to what actually ran. Both are **reads**. Neither builds a dataset,
+writes a table, lands a file in a bucket, or mints a row of its own.
+
+| Extract | Endpoint |
+| --- | --- |
+| MMM | `POST /api/projects/{project_id}/exports/mmm` |
+| Planned versus actual | `POST /api/projects/{project_id}/exports/planned-vs-actual` |
+
+---
+
+## Why not just read the mart
+
+The daily grain lives in `fact_daily_kpi`, and a file read straight off it would
+be simpler. It would also be unusable a year later.
+
+A model's coefficients cannot be re-derived without knowing, **line by line**,
+which Semantic View version, which Concept version and which datastream relation
+produced each row. So the extract resolves the *same* physical plan a governed
+query resolves — which means every refusal that path already names travels here
+unchanged: an inactive binding, a member bound to nothing, a measure the grain
+does not sanction.
+
+The consequence is worth stating plainly: an extract that cannot be defended is
+refused rather than shipped incomplete.
+
+---
+
+## The MMM extract
+
+The daily fact, long, with its provenance. It composes objects that already
+exist — a published Semantic View, the governed physical plan behind it, the MDM
+measurement grain that sanctions a cut, and the money authority that says which
+column is an amount.
+
+- **Date gaps are named, not silently skipped.** A window with holes returns the
+  holes, listed by date, up to a bound — so a modeller knows the difference
+  between a zero and an absence.
+- **A metric that is not money carries no currency**, and that is not a gap.
+- **Bounds**: a window of at most 3 660 days, and a source read capped at 50 000
+  rows. A request past either bound is refused with the bound named.
+
+---
+
+## Planned versus actual
+
+The second reader of the same seam — not a second export with a second file
+shape. What differs is the reading, and only that: the refusal type, the window
+parser, the row cap and the CSV writer are the ones above.
+
+It reads the consolidated variance mart, one row per
+`(project, plan, plan version, plan line, day)`: the full outer join of the
+active plan version's daily allocation and the ventilated observed spend.
+
+- **A planned day with no actual is a gap, not a hole.** It is reported as
+  variance against a plan, because that is what it is.
+- **Ventilation is applied once, by the mart**, under the invariant that a
+  placement's split weights sum to exactly 1. The extract re-derives nothing.
+
+This extract needs **Placement Mapping**, which itself needs **Currency & FX** —
+a planned-versus-actual figure computed across unconverted currencies is a wrong
+number that looks right. See [Project Capabilities](/project-capabilities).
+
+---
+
+## What these endpoints will not do
+
+A request to copy the mart out of the warehouse — a destination, a bucket URI, a
+third-party database — is refused. The extract hands you rows; where they go
+afterwards is your decision and your infrastructure, and the platform does not
+pretend to own that step.
+
+---
+
+## Next Steps & Cross-References
+
+<CardGroup cols={2}>
+  <Card title="Project Capabilities" icon="sliders" href="/project-capabilities">
+    Placement Mapping and Currency & FX, which planned-versus-actual depends on.
+  </Card>
+  <Card title="Semantic Layer" icon="cubes" href="/semantic-layer">
+    The published Semantic View an extract resolves against.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference">
+    Authentication and the other REST families.
+  </Card>
+  <Card title="Data Quality" icon="shield-check" href="/data-quality">
+    What the monitors say about the rows an extract will read.
+  </Card>
+</CardGroup>
