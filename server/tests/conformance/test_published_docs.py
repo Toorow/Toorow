@@ -409,3 +409,117 @@ def test_the_boundary_guard_would_catch_the_drift_it_was_written_for():
     assert "`docs/`" not in private_table, (
         "`docs/` est reapparu du cote prive -- c'est exactement la derive de 2026-09-06"
     )
+
+
+#: Un bloc `<Note>` qui DIT qu'une adresse n'existe pas parle d'une absence.
+#: Il est retire avant le balayage, sinon la seule facon de documenter un
+#: endpoint retire serait de ne pas en parler.
+_NOTE_BLOCK = re.compile(r"<Note>.*?</Note>", re.S)
+_API_PATH = re.compile(r"(/api/[A-Za-z0-9_\-/{}]+)")
+
+
+def _served_addresses() -> set[str]:
+    """Le routeur COMPOSE, importe -- jamais lu comme du texte.
+
+    `scripts/ui_server_seam_audit.py` lit la meme source pour la meme raison :
+    un routeur qui construit ses chemins depuis une constante de base ne declare
+    rien qu'une expression reguliere puisse trouver. On importe le routeur et
+    non le script : celui-ci a des effets de bord a l'import qui cassent la
+    capture de pytest.
+    """
+    from core.admin_api import router  # noqa: PLC0415
+
+    return {
+        re.sub(r"\{[^}]*\}", "{}", path)
+        for route in router.routes
+        if (path := getattr(route, "path", ""))
+    }
+
+
+def _is_served(cited: str, served: set[str]) -> bool:
+    """Servie, ou BASE d'une adresse servie.
+
+    Nommer une famille (`.../governance/controls-quality/...`) n'est pas
+    annoncer un endpoint qui n'existe pas -- `scripts/ui_server_seam_audit.py`
+    fait la meme distinction avec `is_base_of`.
+    """
+    normalised = re.sub(r"\{[^}]*\}", "{}", cited)
+    return normalised in served or any(
+        address.startswith(normalised + "/") for address in served
+    )
+
+
+def test_every_rest_endpoint_a_published_page_gives_is_actually_served():
+    """Mesure du 2026-09-06, avant ce test.
+
+    `api-reference.mdx` s'intitulait « **Complete** REST API reference » et
+    donnait NEUF endpoints sur 547 servis. Sept des huit chemins n'existaient
+    pas : `/api/context/events` (la route est `/api/context-events`),
+    `/api/credentials/list`, `/api/credentials/verify`, `/api/dq/status`,
+    `/api/flows/upsert` (c'est `PUT /api/flows`), `/api/org/settings` (la famille
+    est `/api/organizations/...`), et `/api/money/rates`, qui n'existe nulle part
+    -- la page citait meme `server/core/money_api.py`, un fichier absent.
+    `data-quality.mdx` en donnait trois de plus, tous faux.
+
+    C'est la classe du defaut Mailgun, portee a l'API : un lecteur qui suit cette
+    page ecrit un client contre des adresses qui repondent 404, et rien sur la
+    page ne le laisse deviner.
+    """
+    served = _served_addresses()
+    offenders: dict[str, list[str]] = {}
+    for page in sorted(_DOCS.glob("*.mdx")):
+        text = _NOTE_BLOCK.sub("", page.read_text(encoding="utf-8"))
+        cited = {c.split("?")[0].rstrip("/.,`") for c in _API_PATH.findall(text)}
+        missing = sorted(c for c in cited if not _is_served(c, served))
+        if missing:
+            offenders[page.name] = missing
+    assert not offenders, (
+        f"adresses REST annoncees au public et NON SERVIES : {offenders}. "
+        "Le routeur compose en monte 547 ; celles-ci n'en font pas partie."
+    )
+
+
+def test_the_served_address_reader_actually_reads_the_router() -> None:
+    """LA SONDE. Un lecteur qui rendrait un ensemble vide validerait tout.
+
+    C'est le mode de defaillance de cette garde : `served_addresses()` boote le
+    routeur, et un import casse rendrait `set()` -- sur quoi chaque page
+    passerait, y compris celle qui vient d'etre reparee.
+    """
+    served = _served_addresses()
+    assert len(served) > 400, f"seulement {len(served)} adresses lues -- le routeur n'a pas boote"
+    assert "/api/flows" in served
+    assert not [a for a in served if a.startswith("/api/dq/")], (
+        "/api/dq/* est redevenu servi -- la note de api-reference.mdx est a reecrire"
+    )
+
+
+def test_the_monitor_count_a_published_page_gives_is_the_registry_count():
+    """Mesure du 2026-09-06 : trois pages annoncaient CINQ moniteurs pour DIX.
+
+    `data-quality.mdx` s'intitulait « The 5 Universal Data Quality Monitors »,
+    le schema de `universal-datastreams.mdx` en dessinait cinq, et le tableau de
+    `adding-a-connector.mdx` en listait cinq nommement. Le registre en porte dix
+    depuis que `null_rate`, `zero_rows`, `arrival_timeliness`, `geography` et
+    `unresolved_values` ont ete livres. Un compte fige est la meme faute que le
+    « 37 Built-in Modules » du catalogue : il se lit comme un compte juste.
+
+    Le changelog est exclu : une note de version dit ce qui etait vrai a sa date.
+    """
+    from core.dq_monitor_registry import DQ_MONITORS  # noqa: PLC0415
+
+    expected = len(DQ_MONITORS)
+    pattern = re.compile(
+        r"\b(\d+)\s+(?:[Uu]niversal\s+)?(?:[Dd]ata\s+[Qq]uality\s+)?[Mm]onitors?\b"
+    )
+    offenders: dict[str, list[str]] = {}
+    for page in sorted(_DOCS.glob("*.mdx")):
+        if page.name in _HISTORICAL:
+            continue
+        found = pattern.findall(page.read_text(encoding="utf-8"))
+        wrong = [m for m in found if int(m) != expected]
+        if wrong:
+            offenders[page.name] = wrong
+    assert not offenders, (
+        f"pages annoncant un nombre de moniteurs different de {expected} : {offenders}"
+    )

@@ -543,6 +543,15 @@ def test_rollback_allowed_within_resolved_window_on_null_deadline(live_postgres)
 # ---------------------------------------------------------------------------
 
 
+#  `pg_owner` PARCE QUE LE REJEU EST LE SUJET. Le corps rejoue deliberement `081`,
+#  qui ouvre par un `ALTER TABLE` sur `datastream_publication_log` et recree un
+#  declencheur : deux ordres reserves au PROPRIETAIRE. En production le proprietaire
+#  est `postgres`, les suites tournent sous `connector`, et le test mourait donc sur
+#  « doit etre le proprietaire de la table datastream_publication_log » -- une mesure
+#  de la connexion, pas du code. Le marqueur repointe la DSN sur
+#  `TEST_POSTGRES_OWNER_DSN` pour la duree de ce seul test (conftest.py:697), et
+#  n en fait pas un test de RLS : il n en affirme aucune.
+@pytest.mark.pg_owner
 @requires_postgres
 def test_migration_081_applies_on_populated_publication_log(live_postgres) -> None:
     """C2: seed a publication-log row BEFORE applying 081, then apply 081 and assert it

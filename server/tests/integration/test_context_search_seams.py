@@ -37,6 +37,9 @@ import pytest  # noqa: E402
 from core.main import mcp  # noqa: E402
 from fastmcp.client import Client, FastMCPTransport  # noqa: E402
 
+from tests.migration_ledger import (  # noqa: E402
+    apply_migrations_absent_from_the_ledger,
+)
 from tests.support.statement_router import (  # noqa: E402
     StatementInventory,
     UnknownStatement,
@@ -789,8 +792,16 @@ def _seed_live(conn) -> str:
 
     Appeler via ``_seeded_live`` : appele nu, il laisse ses lignes en base.
     """
+    #  NE REJOUER LA 031 QUE SUR UNE BASE NUE -- voir `tests.migration_ledger`.
+    #  Rejouee contre une base migree elle ne peut pas aboutir : elle porte
+    #  un `ALTER TABLE` (DROP CONSTRAINT) sur `schema_context`, reserve au
+    #  PROPRIETAIRE, et les suites tournent sous `connector`. Les deux seams
+    #  vivants de ce fichier mouraient sur « doit etre le proprietaire de la table
+    #  context_topics ». Elle rejette aussi ses trois declencheurs
+    #  d immutabilite -- donc, meme en proprietaire, un rejeu leur reprendrait
+    #  l echappatoire RGPD que la 099 leur a donnee, pour toute la session.
+    apply_migrations_absent_from_the_ledger(conn, [MIGRATION])
     with conn.cursor() as cur:
-        cur.execute(MIGRATION.read_text(encoding="utf-8"))
         suffix = uuid.uuid4().hex[:8]
         # Platform ROAS topic (visible to all).
         cur.execute(

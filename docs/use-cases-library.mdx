@@ -1,66 +1,82 @@
 ---
 title: MCP App & Agent Use Cases Library
-description: Interactive workflows demonstrating how AI agents trigger tools that render embedded MCP App UI widgets directly inside host client interfaces.
+description: What an AI agent can actually do against toorow, with the tools and the visual surfaces that exist today.
 ---
 
-Unlike traditional AI tools that return plain text or raw JSON wall-of-responses, **toorow** features an **MCP App architecture**. When an AI agent executes a toorow FastMCP tool, the host client receives a dual-channel payload that renders **interactive React/TypeScript UI widgets (`ui/widgets/`)** directly inside the chat window.
+When an agent calls a **toorow** tool, the host receives two channels at once: a
+short text summary the model can read, and a structured payload a host can draw.
+The second one is what turns an answer into something you can look at.
 
 ---
 
-## The MCP App Dual-Channel Architecture
+## The two channels
 
 ```
-+-----------------------------------------------------------------------------------+
-|  AI AGENT CHAT INTERFACE (Claude Desktop / Cursor / Antigravity Host)             |
-|                                                                                   |
-|  User Prompt: "Show me this week's performance and any anomalies across channels"  |
-|                                                                                   |
-|  +-----------------------------------------------------------------------------+  |
-|  |  LLM TEXT CHANNEL (Leans Summary <= 30 lines)                               |  |
-|  |  "Overall spend was €12,450 (+8%), generating 1,420 conversions. Meta ROAS   |  |
-|  |   improved to 3.8x, while GA4 conversions dipped 12% on July 14..."          |  |
-|  +-----------------------------------------------------------------------------+  |
-|                                                                                   |
-|  +-----------------------------------------------------------------------------+  |
-|  |  EMBEDDED MCP APP UI WIDGET (ui/widgets/daily-report)                       |  |
-|  |  [ Interactive Performance Chart | Metric Selector | Anomaly Inspector ]    |  |
-|  |  - Meta Ads:    €5,200 | 680 conv | ROAS 3.8x [Sparkline: ↗]                |  |
-|  |  - GA4 Organic:     0  | 410 conv | CPA  €0.00 [Sparkline: ↘]                |  |
-|  |  - TikTok Ads:  €3,100 | 210 conv | ROAS 2.1x [Sparkline: →]                |  |
-|  |  * Click any row to inspect underlying pull provenance or context events       |  |
-|  +-----------------------------------------------------------------------------+  |
-+-----------------------------------------------------------------------------------+
+  TEXT CHANNEL  (≤ 30 lines)          STRUCTURED CHANNEL (structuredContent)
+  ────────────────────────────        ──────────────────────────────────────
+  What the model reads and can        Metric rows, provenance, freshness,
+  quote in its answer.                definitions and quality findings.
+                                      What the host draws.
 ```
 
----
-
-## Featured MCP App Use Cases
-
-### 1. Executive Morning Briefing App
-- **User Intent**: *"Give me my morning marketing briefing."*
-- **Agent Action**: Executes `get_daily_report(project_id)`, then `preview_daily_insight(project_id, payload)` to compose the narrative that goes with the numbers.
-- **MCP App UI Experience**: Renders an interactive **Morning Briefing Widget**. The executive can toggle date ranges, inspect daily metric deltas, and review flagged anomaly spikes with one click.
+A summary that replaces the structured payload turns a chart into a paragraph —
+see [Agent Rules](/agent-rules), rule 4.
 
 ---
 
-### 2. Multi-Channel Marketing Attribution & ROI App
-- **User Intent**: *"Compare ROI and spend efficiency between Meta Ads, TikTok, and GA4."*
-- **Agent Action**: Executes `get_daily_report(project_id, connectors=["meta-ads", "tiktok-ads", "google-analytics"])`.
-- **MCP App UI Experience**: Renders a **Cross-Channel Performance Matrix Widget**. Displays side-by-side spend, CPA, and ROAS visualizations computed directly from dbt semantic ratio views (`semantic_roas`, `semantic_cpa`).
+## The visual surfaces that exist
+
+| Surface | What it is | How an agent reaches it |
+| --- | --- | --- |
+| **Cards** | Ten registered card templates, each answering one question from governed inputs: `kpi`, `keywords`, `conversions`, `usertypes`, `journey`, `attribution`, `videos`, `dedup`, `mediaplan_pacing`, `connectors`. | `list_card_templates` to choose, then `get_card` |
+| **MCP App widgets** | Single-file React widgets under `ui/widgets/`, rendered inside the host. Three ship today. | Returned as the app channel of the tool that owns them |
+| **Renders and Dossiers** | A frozen figure, or a document composing several — addressable, versioned, shareable. | `render_analyze_result`, then `compose_dossier` — see [Renders, Dossiers and Sharing](/renders-and-sharing) |
 
 ---
 
-### 3. Anomaly Root-Cause Inspector App
-- **User Intent**: *"Why did GA4 conversions drop on July 14?"*
-- **Agent Action**: Executes `get_daily_report` + queries `context_events`.
-- **MCP App UI Experience**: Renders an **Anomaly Inspector Widget**. Visually correlates the conversion dip on July 14 with a registered context event (*"Payment Gateway Migration v2"*), allowing the user to drill down into raw pull provenance (`pull_id`).
+## Use cases
 
----
+### 1. The daily read
+- **Intent** — *"How did last week go?"*
+- **Tools** — `get_daily_report(project_id)` for the numbers, then
+  `preview_daily_insight(project_id, payload)` for the narrative that goes with
+  them. `get_daily_insight_readiness` first says whether there is anything worth
+  saying.
+- **What the reader gets** — a `kpi` card, and every figure carries the pull that
+  produced it and how fresh it is.
 
-### 4. Interactive Datastream & Mapping Manager App
-- **User Intent**: *"Show me all connected datastreams and mapping statuses."*
-- **Agent Action**: Executes `flows_list()`.
-- **MCP App UI Experience**: Renders an **Admin Datastream Manager Widget**. Enables administrators and agents to inspect datastream health, verify target field mappings (`app.target_fields`), and trigger on-demand backfills.
+### 2. Comparing channels
+- **Intent** — *"Compare spend efficiency across Meta, TikTok and GA4."*
+- **Tools** — `get_daily_report(project_id, connectors=["meta-ads", "tiktok-ads", "google-analytics"])`,
+  or a governed question through `explore_analyze_query`.
+- **The trap it avoids** — CTR, CPA and ROAS are not additive. The semantic ratio
+  views recompute them at the grain you asked for, so a cross-channel comparison
+  is not a sum of ratios. See [Agent Rules](/agent-rules), rule 2.
+
+### 3. Explaining a drop
+- **Intent** — *"Why did conversions fall on 14 July?"*
+- **Tools** — `get_daily_report` for the shape of the dip, `search_context` and
+  `get_context_hub` for what the business registered around that date.
+- **The rule that holds** — context events are offered as **candidate context**,
+  never as causes. toorow records that a deployment and a drop share a date; it
+  does not know that one produced the other.
+
+### 4. Auditing what is connected
+- **Intent** — *"Show me every datastream and its mapping status."*
+- **Tools** — `flows_list(project_id)`, then `flows_get(project_id, kind, id)` for
+  one definition. `get_data_quality_report` says which of the ten monitors is
+  unhappy and where.
+- **What the reader gets** — the `connectors` card, and a repair named for each
+  finding rather than a status code.
+
+### 5. Keeping the analysis
+- **Intent** — *"Turn this into something I can send."*
+- **Tools** — `render_analyze_result` freezes each figure, `compose_dossier`
+  composes them with the narrative into an immutable version, and a Share hands
+  it out — requested by one person, confirmed by a second.
+- **What the reader gets** — a page that draws through the same runtime as the
+  console, with each figure's provenance beside it. See
+  [Renders, Dossiers and Sharing](/renders-and-sharing).
 
 ---
 
@@ -68,15 +84,15 @@ Unlike traditional AI tools that return plain text or raw JSON wall-of-responses
 
 <CardGroup cols={2}>
   <Card title="MCP Host Integration" icon="network-wired" href="/mcp-host-integration">
-    Connect your favorite MCP host client to render toorow MCP App widgets.
+    Connect an MCP host and reach these tools.
   </Card>
   <Card title="Agent Tools Reference" icon="wrench" href="/agent-tools">
-    Inspect the FastMCP tools powering MCP App UI payloads.
+    The surface behind every call on this page.
   </Card>
   <Card title="Agent Rules" icon="scroll" href="/agent-rules">
-    Learn how to write LLM rules that preserve `structuredContent`.
+    The five rules that keep an agent's answers correct.
   </Card>
-  <Card title="Semantic Layer" icon="layer-group" href="/semantic-layer">
-    Explore the canonical dbt marts feeding MCP App charts.
+  <Card title="Renders, Dossiers and Sharing" icon="chart-line" href="/renders-and-sharing">
+    How an answer becomes a document someone else can open.
   </Card>
 </CardGroup>

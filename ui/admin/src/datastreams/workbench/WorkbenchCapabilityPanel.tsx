@@ -437,7 +437,7 @@ export default function WorkbenchCapabilityPanel({
   /** Re-reads the Workbench header this panel is handed (76-4). Only the
    *  route that made that read can repeat it, so the gesture arrives as a
    *  prop rather than being invented here. */
-  onRetryCapabilities?: () => void;
+  onRetryCapabilities: () => void;
 }) {
   const compiled = projection?.capabilities ?? [];
   /** The merged `Modules` panel of amendment 11, or the projection-only panel. */
@@ -503,7 +503,7 @@ export default function WorkbenchCapabilityPanel({
             as="block"
             tone="error"
             title="Project capabilities could not be read"
-            action={onRetryCapabilities ? <Retry onClick={onRetryCapabilities} /> : undefined}
+            action={<Retry onClick={onRetryCapabilities} />}
           >
             This Workbench header carried no capability state, so no Connector is shown. This is not
             the same as a Project with no capability: nothing was measured.

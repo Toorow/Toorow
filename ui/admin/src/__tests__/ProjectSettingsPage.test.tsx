@@ -355,7 +355,7 @@ it("no run yet names the gesture that fills the list", async () => {
   // vide n'arrive qu'avec la reponse. Mesure 2026-09-05 : sous une suite de 242
   // fichiers, l'assertion immediate lisait encore le chargement (2 runs sur 2),
   // seule 13/13. Meme attente que le test voisin de l'erreur.
-  await waitFor(() => expect(panel).toHaveTextContent(/Copy the recipe above/i));
+  await waitFor(() => expect(panel).toHaveTextContent(/The first run appears here once the recipe above is running/i));
 });
 
 // ---------------------------------------------------------------------------

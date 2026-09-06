@@ -230,6 +230,41 @@ _MIRROR_DDL = (
 #: compiled model -- its ladder runs verbatim.
 _CATALOG = re.compile(r'"[A-Za-z0-9_]+"\."(mirror|main_marts|main)"\."')
 
+#: A CTE that exists ONLY in the real ladder. See `_stand_up_relations`.
+_LADDER_MARKER = "tracked_countries"
+
+#: The mirror relations the model's absent-source guard asks about, DERIVED from the
+#: DDL above rather than listed a second time: a relation added to one and forgotten in
+#: the other is exactly how this fixture went silently vacuous.
+_MIRROR_SOURCES = frozenset(
+    re.search(r"CREATE TABLE mirror\.(\w+)", ddl).group(1)
+    for ddl in _MIRROR_DDL
+    if "CREATE TABLE mirror." in ddl
+)
+
+
+def _stand_up_relations(con) -> None:
+    """Create the relations the model reads, empty, in ``con``.
+
+    USED TWICE, AND THE SECOND USE IS THE ONE THAT WAS MISSING. `dbt compile` is
+    not a text substitution: since AI-314 (2026-08-24) this model opens with
+    ``toorow_absent_sources('mirror', [...])`` and ASKS THE WAREHOUSE whether its
+    five mirror relations are there, rendering `toorow_absent_source_stub` --
+    fourteen `CAST(NULL AS ...)` columns over ``FROM (SELECT 1) WHERE FALSE`` --
+    when any of them is not. The compile database this fixture hands dbt was a
+    brand-new empty DuckDB file, so all five were absent and the compiled twin
+    was the STUB. It executed happily against the seeded database and returned
+    zero rows, and fifteen tests read that as "the model dropped every scenario".
+
+    So the compile database gets the same relations as the execution database.
+    They stay empty there: the guard asks whether they EXIST, never what they
+    hold.
+    """
+    con.execute("CREATE SCHEMA IF NOT EXISTS mirror")
+    con.execute("CREATE SCHEMA IF NOT EXISTS main_marts")
+    for ddl in _MIRROR_DDL:
+        con.execute(ddl)
+
 
 @pytest.fixture(scope="module")
 def compiled_model(tmp_path_factory) -> str:
@@ -239,7 +274,14 @@ def compiled_model(tmp_path_factory) -> str:
     could predate the model, and a stale artifact reporting agreement is worse than no
     test. This costs ~6 s and cannot be stale.
     """
+    import duckdb
+
     tmp = tmp_path_factory.mktemp("bridge_agreement")
+    catalogue = duckdb.connect(str(tmp / "compile.duckdb"))
+    try:
+        _stand_up_relations(catalogue)
+    finally:
+        catalogue.close()
     target = tmp / "target"
     compiled = (
         target / "compiled" / "connector" / "models" / "marts"
@@ -274,7 +316,14 @@ def compiled_model(tmp_path_factory) -> str:
         f"STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
     )
     assert compiled.exists(), f"dbt compile produced no artifact at {compiled}"
-    return _CATALOG.sub(r'"\1"."', compiled.read_text(encoding="utf-8"))
+    rendered = _CATALOG.sub(r'"\1"."', compiled.read_text(encoding="utf-8"))
+    assert _LADDER_MARKER in rendered, (
+        "dbt rendered the absent-source stub instead of the ladder, so this file would "
+        "compare the Python engine against fourteen NULL columns and zero rows. The "
+        "compile database is missing one of the mirror relations the model guards on "
+        f"({', '.join(sorted(_MIRROR_SOURCES))}) -- see `_stand_up_relations`."
+    )
+    return rendered
 
 
 @pytest.fixture(scope="module")
@@ -283,10 +332,7 @@ def sql_verdicts(compiled_model: str, tmp_path_factory) -> dict[str, _Verdict]:
 
     con = duckdb.connect(str(tmp_path_factory.mktemp("bridge_db") / "test.duckdb"))
     try:
-        con.execute("CREATE SCHEMA mirror")
-        con.execute("CREATE SCHEMA main_marts")
-        for ddl in _MIRROR_DDL:
-            con.execute(ddl)
+        _stand_up_relations(con)
         con.execute(
             "CREATE TABLE main.dim_country AS SELECT * FROM read_csv_auto(?)",
             [str(_DBT_DIR / "seeds" / "dim_country.csv")],

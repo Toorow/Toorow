@@ -1,121 +1,156 @@
 ---
 title: Administration REST API Reference
-description: Complete REST API reference for toorow administration, datastreams, authentication, context events, and system management.
+description: The REST surface behind the toorow console — how it is authenticated, and the endpoint families you will reach first.
 ---
 
-In addition to the **FastMCP HTTP interface** for AI agents, **toorow** exposes a comprehensive **REST API** for system administration, project configuration, and custom integrations.
+Besides the **FastMCP HTTP interface** that AI agents speak, **toorow** serves a
+REST API. It is what the admin console itself calls, so anything the console can
+do is reachable from a script.
+
+<Note>
+  The server mounts **547 routes**. This page documents the families you reach
+  first, with their real paths and methods — it is not a listing of all of them.
+  The router is the reference that cannot fall behind, and every path named here
+  is checked against it by a conformance test.
+</Note>
 
 ---
 
-## 1. Authentication & Security
+## 1. Authentication
 
-All REST API requests require authentication depending on the configured `TOOROW_AUTH_MODE`:
-- **`oauth` (Production)**: Pass a Bearer JWT token in the `Authorization` header: `Authorization: Bearer <token>`.
-- **`static` (QA/Dev)**: Pass the static secret token: `Authorization: Bearer <TOOROW_STATIC_TOKEN>`.
+Every request authenticates according to `TOOROW_AUTH_MODE`:
+
+- **`oauth` (production)** — a Bearer JWT: `Authorization: Bearer <token>`.
+- **`static` (QA / dev)** — the shared secret: `Authorization: Bearer <TOOROW_STATIC_TOKEN>`.
+
+Reads are scoped by `project_id` and the scope is enforced server-side. An
+unscoped call fails; it does not fall back to a default.
 
 ---
 
-## 2. Core API Endpoints
+## 2. Datastreams and reports — `/api/flows`
 
-### Datastreams & Flow Management (`/api/flows`)
-Implemented in `server/core/flows_api.py`.
+Implemented in `server/core/flows_api.py`. A *flow* is a datastream or a report
+definition; `kind` distinguishes them.
 
 ```http
 GET /api/flows?project_id=default
 ```
-Returns all configured datastreams and report definitions for a project.
+Lists the datastreams and report definitions of a project.
 
 ```http
-POST /api/flows/upsert
+GET /api/flows/{kind}/{id}?project_id=default
+```
+Returns one definition.
+
+```http
+PUT /api/flows
 Content-Type: application/json
 
 {
   "project_id": "default",
-  "kind": "datastream",
-  "definition": {
-    "connection_ref_id": "ga4_main",
-    "provider": "google-analytics",
-    "cadence": "daily"
-  }
+  "definition": { }
 }
 ```
-Creates or updates a datastream configuration after validating schema constraints.
+Validates, then creates or updates. The answer is
+`{"kind", "id", "changed", "flow", "diff"}` — `diff` says what actually moved,
+so a no-op update is visible as one. Refusals are explicit: `400` on the body or
+the scope, `404` when the scope does not resolve, `409` on a name conflict,
+`422` on validation.
+
+```http
+POST /api/flows/validate
+```
+Checks a definition and writes nothing.
 
 ---
 
-### Inbound Credentials & Connectors (`/api/credentials`)
-Implemented in `server/core/inbound_credentials_api.py`.
+## 3. Business context — `/api/context-events`
+
+Implemented in `server/core/context_events_api.py`. A context event is what
+happened in the business on a date — a migration, a price change, an outage.
 
 ```http
-GET /api/credentials/list?project_id=default
+GET /api/context-events?project_id=default&start=2026-07-01&end=2026-07-31
 ```
-Lists active connector connection statuses and Nango integration links.
+Lists events over a window. Add `include_retired=true` to also see withdrawn
+ones.
 
 ```http
-POST /api/credentials/verify
+POST /api/context-events?project_id=default
 Content-Type: application/json
 
 {
-  "project_id": "default",
-  "provider": "meta-ads",
-  "connection_ref_id": "meta_prod"
+  "event_date": "2026-07-14",
+  "type": "checkout_migration",
+  "label": "Payment gateway update",
+  "description": "Checkout moved to the v2 payment API.",
+  "metric": "conversions"
 }
 ```
-Triggers an immediate OAuth token check and API connectivity test.
+`metric` is optional **on purpose**: an outage or a holiday concerns every
+metric, and an event with no metric stays admissible under every claim. Naming
+one narrows where the event is ever offered.
+
+```http
+PATCH /api/context-events/{event_id}?project_id=default
+```
+Corrects an event. The previous wording is **kept**: who changed it, when, and
+which fields are appended as a revision.
+
+```http
+GET /api/context-events/{event_id}/revisions?project_id=default
+```
+The correction history of one event.
+
+```http
+POST /api/context-events/{event_id}/retire?project_id=default
+```
+Withdraws an event. This is an audited transition, and it is not undone.
 
 ---
 
-### Business Context Events (`/api/context`)
-Implemented in `server/core/context_api.py`.
+## 4. Data quality — under the project
 
-```http
-GET /api/context/events?project_id=default
-```
-Lists registered business context events (promotional launches, site redesigns, checkout updates).
+Implemented in `server/core/controls_quality_api.py`. Quality is governed per
+project, so its addresses sit under the project rather than at the root.
 
-```http
-POST /api/context/events
-Content-Type: application/json
+| Endpoint | Methods | Purpose |
+| --- | --- | --- |
+| `/api/projects/{project_id}/governance/controls-quality/change-sets` | `POST` | Opens a governed change to the quality rules. |
+| `/api/projects/{project_id}/governance/controls-quality/change-sets/{change_set_id}` | `GET` | Reads one change set. |
+| `/api/projects/{project_id}/governance/controls-quality/change-sets/{change_set_id}/prepare` | `POST` | Prepares it, and returns the confirmation it will consume. |
+| `/api/projects/{project_id}/governance/controls-quality/change-sets/{change_set_id}/confirm` | `POST` | Applies it. Two steps, never one. |
+| `/api/projects/{project_id}/governance/controls-quality/dq-monitors/{monitor_id}/evaluations` | `POST` | Runs one monitor now instead of waiting for the night. |
+| `/api/projects/{project_id}/governance/controls-quality/rule-sets/{rule_set_id}/versions` | `GET`, `POST` | The versions of a rule set, and a new draft. |
+| `/api/projects/{project_id}/governance/controls-quality/rule-sets/{rule_set_id}/versions/{version_id}/publication` | `POST` | Publishes a version. |
+| `/api/projects/{project_id}/governance/controls-quality/rule-sets/{rule_set_id}/adoption` | `GET`, `POST` | Which datastreams have adopted it, and adopting one. |
 
-{
-  "project_id": "default",
-  "event_type": "checkout_migration",
-  "title": "Stripe API v2 Migration",
-  "description": "Upgraded checkout payment processing backend.",
-  "event_date": "2026-07-14"
-}
-```
-Registers a new context event for anomaly correlation.
+<Note>
+  **`/api/dq/*` is not served.** `/api/dq/status`, `/api/dq/alerts` and
+  `/api/dq/monitors/runs` were documented on this page and never existed;
+  `/api/dq/summary`, `/api/dq/evaluate` and `/api/dq/issues/{id}/acknowledge`
+  exist as route objects but the composed router does not mount them: story 49.4
+  unmounted the three, and `server/core/dq_api.py` now only supplies the
+  server-side helper `fetch_dq_report_data`. Measured 2026-09-06: the router
+  mounts 547 addresses, none of them under `/api/dq`.
+</Note>
 
----
-
-### Data Quality & Auditing (`/api/dq`)
-Implemented in `server/core/dq_api.py`.
-
-```http
-GET /api/dq/status?project_id=default
-```
-Retrieves system-wide data quality health metrics and monitor check ledgers.
+To *read* quality findings, an agent calls `get_data_quality_report` over MCP —
+see [Data Quality](/data-quality) for what each of the ten monitors watches.
 
 ---
 
-### Currency & FX Management (`/api/money`)
-Implemented in `server/core/money_api.py`.
+## 5. Organizations and access — `/api/organizations`
 
-```http
-GET /api/money/rates?base=EUR
-```
-Retrieves current exchange rates used for multi-currency ad spend harmonization.
-
----
-
-### Organization & Account Governance (`/api/org`)
-Implemented in `server/core/org_plan_api.py` and `server/core/super_admin.py`.
-
-```http
-GET /api/org/settings
-```
-Returns organization settings, entitlement limits, and member access roles.
+| Endpoint | Methods | Purpose |
+| --- | --- | --- |
+| `/api/organizations` | `GET`, `POST` | List, create. |
+| `/api/organizations/{org_id}` | `GET`, `PATCH`, `DELETE` | Read, rename, erase. |
+| `/api/organizations/{org_id}/authorizations` | `GET` | The source authorizations the organization holds. |
+| `/api/organizations/{org_id}/dataset-access` | `GET`, `POST` | Warehouse dataset grants. |
+| `/api/organizations/{org_id}/invitations` | `GET`, `POST` | Invite a person. |
+| `/api/organizations/{org_id}/deletion-preview` | `GET` | What an erasure would remove, before it removes it. |
 
 ---
 
@@ -123,9 +158,15 @@ Returns organization settings, entitlement limits, and member access roles.
 
 <CardGroup cols={2}>
   <Card title="FastMCP Agent Tools" icon="wrench" href="/agent-tools">
-    Inspect FastMCP tools exposed to AI agents.
+    The MCP surface an AI agent speaks, and the three profiles that gate it.
   </Card>
   <Card title="Data Quality" icon="shield-check" href="/data-quality">
-    Learn about automated DQ surveillance monitors.
+    What each of the ten monitors watches, and what its findings mean.
+  </Card>
+  <Card title="Agent Context" icon="database" href="/agent-context">
+    How context events are offered to an agent, and why never as causes.
+  </Card>
+  <Card title="Self-Hosting Guide" icon="server" href="/self-hosting">
+    Environment variables, including `TOOROW_AUTH_MODE`.
   </Card>
 </CardGroup>

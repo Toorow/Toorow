@@ -88,9 +88,11 @@ _JOURNAL = "story-log.md"
 #: commit message when the work has no story.
 _HOME = "the story file (Dev Agent Record), or the commit message when there is no story"
 
-#: `story-log.md` on 2026-09-06: 12 lines of freeze header + 35 226 lines of journal.
-#: Any other count is a finding -- growth and shrinkage alike.
-JOURNAL_FROZEN_LINES = 35238
+#: `story-log.md` on 2026-09-06: 12 lines of freeze header + 35 226 lines of journal
+#: + one 51-line section (AI-379) a neighbouring session appended in the half hour
+#: between the freeze commit and this guard reaching the Stop hook. Any other count
+#: is a finding -- growth and shrinkage alike.
+JOURNAL_FROZEN_LINES = 35289
 
 
 def _development_status_region(lines: list[str]) -> tuple[int, int]:

@@ -25,6 +25,7 @@ from pathlib import Path
 import pytest
 
 from tests.conftest import purge_fixture_project
+from tests.migration_ledger import apply_migrations_absent_from_the_ledger
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("TEST_POSTGRES_DSN"),
@@ -41,11 +42,23 @@ _MIGRATION_PATH = (
 
 
 def _apply_migration(conn):
-    """Appliquer migration 051 de maniere idempotente."""
-    sql = _MIGRATION_PATH.read_text(encoding="utf-8")
-    with conn.cursor() as cur:
-        cur.execute(sql)
-    conn.commit()
+    """N appliquer la 051 que si le ledger ne la porte pas -- voir `tests.migration_ledger`.
+
+    ELLE ETAIT REJOUEE A CHAQUE FOIS, et sur un cluster deja migre ce rejeu ne
+    peut pas aboutir : la 051 se termine par
+    un `ALTER TABLE` (DROP puis ADD CONSTRAINT) sur
+    la table `render_snapshots` du schema `app`, ordre reserve a son PROPRIETAIRE. En production le proprietaire est
+    `postgres` ; les suites tournent sous `connector`, qui ne l est pas. Les
+    quatre tests de ce fichier mouraient donc en ERROR de fixture sur
+    « doit etre le proprietaire de la table render_snapshots » -- une mesure de la
+    connexion, jamais du code. Le << IDEMPOTENT >> annonce en tete du fichier de
+    migration l est pour son proprietaire, pas pour un role applicatif.
+
+    Le helper ne rejoue rien quand le ledger porte deja le fichier, ce qui est le
+    cas de la base jetable comme de la production, et applique la chaine sur une
+    base nue -- le seul cas pour lequel ce rejeu avait ete ecrit.
+    """
+    apply_migrations_absent_from_the_ledger(conn, [_MIGRATION_PATH])
 
 
 def _seed_project(conn, project_id: str):

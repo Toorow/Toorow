@@ -998,9 +998,13 @@ function ProposalItemCard({ item, onOpenOwner }: {
   );
 }
 
-function ProposalReview({ proposal, onOpenOwner }: {
+function ProposalReview({ proposal, onOpenOwner, onCompile }: {
   proposal: DatastreamPreconfigurationProposal;
   onOpenOwner?: (owner: ProposalOwnerReference) => void;
+  /** The one gesture both refusals below name (76-4). Compiling again is what
+   *  replaces a stale proposal AND what a proposal missing its capabilities
+   *  section asks for, and only the step that owns the draft can perform it. */
+  onCompile: () => void;
 }) {
   const groups: Array<[string, Array<Record<string, unknown> | string>]> = [
     ["Existing", proposal.configuration_summary.existing],
@@ -1018,12 +1022,22 @@ function ProposalReview({ proposal, onOpenOwner }: {
         + "Compilation changed no active object."}
     />
     {proposal.is_stale && (
-      <Status as="block" tone="error" title="Proposal is stale">
+      <Status
+        as="block"
+        tone="error"
+        title="Proposal is stale"
+        action={<Button variant="secondary" onClick={onCompile}>Compile again</Button>}
+      >
         Compile a new proposal before continuing.
       </Status>
     )}
     {proposal.sections.some((section) => section.key === "capabilities") ? null : (
-      <Status as="block" tone="error" title={CAPABILITY_SECTION_UNREADABLE}>
+      <Status
+        as="block"
+        tone="error"
+        title={CAPABILITY_SECTION_UNREADABLE}
+        action={<Button variant="secondary" onClick={onCompile}>Compile again</Button>}
+      >
         Every compiled proposal carries a capabilities section. Compile again — a Project with no
         active capability is a state this screen can show, and this is not it.
       </Status>
@@ -3232,7 +3246,7 @@ export default function DatastreamSetupWizard({
             )}
           </>}
         </Panel>}
-        {proposal && <ProposalReview proposal={proposal} onOpenOwner={onOpenOwner} />}
+        {proposal && <ProposalReview proposal={proposal} onOpenOwner={onOpenOwner} onCompile={() => void compile()} />}
       </div>}
 
       {sectionVisible(SECTION_INDEX.preview_validate) && <div

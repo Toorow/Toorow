@@ -21,7 +21,7 @@ toorow orchestrates two distinct agent paradigms that operate in tandem across t
 |  |                                 |   |                                   |  |
 |  |  - Nightly Ingestion Evaluator  |   |  - FastMCP Streamable HTTP        |  |
 |  |  - Anomaly Surveillance Thread  |   |    endpoint (port 8000 / 8080)    |  |
-|  |  - Morning Briefing Synthesizer |   |  - Dual-Channel Response (Text +   |  |
+|  |  - Daily Insight Composer      |   |  - Dual-Channel Response (Text +   |  |
 |  |  - Quality & Provenance Auditor |   |    structuredContent UI Widgets)  |  |
 |  +---------------------------------+   +-----------------------------------+  |
 |                                  \       /                                    |
@@ -36,7 +36,7 @@ toorow orchestrates two distinct agent paradigms that operate in tandem across t
 toorow runs work when nobody is watching. In a managed deployment the clock is **Cloud Scheduler**, units of work are **Cloud Tasks**, and facts are broadcast on **Pub/Sub**; a self-hosted instance can instead run the same evaluators as in-process threads with `SCHEDULER_ENABLED=true`. Either way the same three evaluators run:
 - **Ingestion & dbt Evaluator**: Fetches active connector datastreams and runs dbt semantic models. **Each Datastream carries its own moment** — cadence, retrieval window and next run are edited on the Datastream itself, not fixed platform-wide. A Datastream that has never been given one falls back to the deployment default (`SCHEDULER_NIGHTLY_HOUR`, `SCHEDULER_TIMEZONE`).
 - **Anomaly Surveillance Thread**: Evaluates trailing rolling baselines (`anomalies_daily`) to detect performance spikes or drops exceeding z-score thresholds.
-- **Morning Briefing Synthesizer**: Compiles KPI deltas, anomaly flags, and active context events into structured briefing records.
+- **Daily Insight Composer**: Assembles KPI deltas, the anomalies that fired, and the active context events into a daily insight.
 
 ### Paradigm 2: External LLM Host Agents (FastMCP HTTP Clients)
 External agents are conversational or autonomous LLM clients (such as **Claude Desktop**, **Cursor**, **Google Antigravity**, or custom Python/TypeScript AI agents) that connect to toorow's FastMCP server over HTTP:
@@ -191,7 +191,7 @@ agent fills its context window with the whole Hub.
 
 <CardGroup cols={2}>
   <Card title="Agent Tools Reference" icon="wrench" href="/agent-tools">
-    Inspect exhaustive FastMCP tool definitions and parameter schemas.
+    The three profiles that gate the surface, and the tools you reach first.
   </Card>
   <Card title="MCP App Use Cases" icon="layer-group" href="/use-cases-library">
     Discover how agents trigger interactive MCP App UI widgets.

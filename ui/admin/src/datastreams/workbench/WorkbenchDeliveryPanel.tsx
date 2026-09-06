@@ -985,7 +985,12 @@ export default function WorkbenchDeliveryPanel({
         )}
 
         {loadError && (
-          <Status as="block" tone="error" title="Address state unreadable">
+          <Status
+            as="block"
+            tone="error"
+            title="Address state unreadable"
+            action={<Retry onClick={() => void reload()} />}
+          >
             {loadError} — this is not the same as having no address; nothing was
             issued or revoked.
           </Status>
@@ -1155,7 +1160,12 @@ export default function WorkbenchDeliveryPanel({
 
       <div className="grid gap-3 p-5">
         {receivedError && (
-          <Status as="block" tone="error" title="Delivery history unreadable">
+          <Status
+            as="block"
+            tone="error"
+            title="Delivery history unreadable"
+            action={<Retry onClick={() => void reload()} />}
+          >
             {receivedError} — this is not the same as having received nothing.
           </Status>
         )}

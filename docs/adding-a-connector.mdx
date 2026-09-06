@@ -39,7 +39,7 @@ Any connector that respects the contract inherits the following mechanisms witho
 | **Journaling** | `core/datastreams.py`, `core/audit.py` | Append-only ULID `pull_id` -- a run's provenance is written once and never rewritten -- plus `audit_log` rows and a daily ledger (ok/partial/failed/missing statuses). |
 | **Queue / Retry / Quota** | `core/queue.py`, `core/quota.py` | Worker with retry, dead-letter, deduplication, per-provider circuit-breaker; `RateLimitError` automatically handled. |
 | **Dictionary / Mappings** | `app.target_fields`, `app.datastream_mappings` | Auto-seeded from the manifest's `canonical_metric_mapping` + `canonical_dimension_mapping` on the first `backfill_datastreams()`. |
-| **Quality Monitors** | `core/dq_monitors.py` | 5 universal monitors (volume, timeliness, duplication, schema drift, date format). |
+| **Quality Monitors** | `core/dq_monitors.py` | 10 universal monitors — see [Data Quality](/data-quality). |
 | **MCP Flows** | `core/flows.py` | `flows_list/get/upsert/validate` — the agent and the admin UI edit your datastreams through the exact same interface. |
 | **Admin Screens** | `ui/` | Overview, Data model (used-by), extraction calendar, source→target mapping, Quality page. |
 

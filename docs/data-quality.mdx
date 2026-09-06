@@ -3,7 +3,7 @@ title: Data Quality Surveillance & Monitors
 description: Deep dive into toorow's 10 universal automated data quality monitors, baseline checks, and alert ledgers.
 ---
 
-Data quality is a first-class citizen in **toorow**. Every ingestion pull executed across built-in connectors or managed file feeds undergoes automated surveillance before metrics are exposed to semantic marts and AI agents.
+Every pull — from a connector or from a managed file feed — is checked before its rows reach a mart or an agent. Ten monitors run after each ingestion cycle; each one names what it saw and the gesture that repairs it, never a status code.
 
 ---
 
@@ -86,15 +86,24 @@ anything it published.
 
 ---
 
-## 2. Data Quality REST APIs
+## 2. Reading the findings
 
-Administrators and automated pipelines can inspect DQ status via dedicated REST endpoints (`server/core/dq_api.py`):
+An agent reads quality over MCP: `get_data_quality_report(project_id, connector)`
+returns the state of the ten monitors, and every Result carries the findings that
+applied to the data behind it.
 
-| Endpoint | Method | Description |
-|---|---|---|
-| `/api/dq/status` | `GET` | Overall data quality health score across all datastreams. |
-| `/api/dq/monitors/runs` | `GET` | Historical log of DQ monitor executions and findings. |
-| `/api/dq/alerts` | `GET` | List active open data quality alerts and anomalies. |
+The console reads and governs the rules through the project-scoped REST family
+`/api/projects/{project_id}/governance/controls-quality/…` — change sets, rule-set
+versions, adoption, and a `dq-monitors/{monitor_id}/evaluations` call that runs
+one monitor now instead of waiting for the night. See the
+[API Reference](/api-reference).
+
+<Note>
+  This page used to list `/api/dq/status`, `/api/dq/monitors/runs` and
+  `/api/dq/alerts`. None of the three has ever existed. Measured 2026-09-06: the
+  composed router mounts 547 addresses and not one of them begins with
+  `/api/dq`.
+</Note>
 
 ---
 

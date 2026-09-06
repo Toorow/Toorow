@@ -1,19 +1,19 @@
 ---
 title: Agentic Daily Insights & Briefings
-description: How toorow synthesizes morning briefings, context events, and narrative insights for AI agents via FastMCP.
+description: How toorow composes the daily insight, keeps business context beside the numbers, and answers an agent on two channels.
 ---
 
-**toorow** is designed from the ground up to empower AI agents with trustworthy, audited marketing insights. The **Agentic Daily Insights** framework provides automated morning briefings, context event annotations, and narrative summaries.
+Every night, toorow refreshes the data, runs its checks, and composes what is worth saying about the day. The result is a **daily insight**: a narrative that names the metrics that moved, the findings that fired, and the context the business registered — each one traceable to the pull it came from.
 
 ---
 
-## 1. Automated Morning Briefings
+## 1. The nightly run
 
 The nightly scheduler (`SCHEDULER_ENABLED=true`) triggers an automated evaluation loop at 02:00 local time:
 
 1. **Daily Ingestion & Mart Build**: Executes datastream pulls and runs dbt models to update canonical marts.
 2. **Quality & Anomaly Checks**: Evaluates data freshness, volume checks, and z-score anomaly detectors.
-3. **Briefing Synthesis**: Compiles daily KPI deltas, flagged anomalies, and active business context into a structured morning briefing.
+3. **Composition**: Assembles the KPI deltas, the anomalies that fired, and the active business context into a daily insight.
 
 An agent asks `get_daily_insight_readiness(project_id)` whether there is anything to say, composes the narrative with `preview_daily_insight(project_id, payload)`, and publishes it with `publish_daily_insights(project_id, insight_date)`. A published narrative is withdrawn with `retract_daily_insight` — an audited transition, never a deletion.
 
@@ -21,7 +21,7 @@ An agent asks `get_daily_insight_readiness(project_id)` whether there is anythin
 
 ## 2. Business Context Events
 
-Marketing performance fluctuations rarely occur in a vacuum. toorow allows teams to register **Context Events** (e.g., website redesigns, PR announcements, price changes, ad campaign launches).
+A metric rarely moves on its own. A team registers **context events** — a redesign, a price change, a campaign launch, an outage — and the platform keeps them beside the numbers.
 
 When an agent analyzes metric anomalies, toorow correlates performance shifts against registered context events, providing instant explanatory context (e.g., *"Conversions dropped 25% on July 14, coinciding with a scheduled checkout gateway migration"*).
 

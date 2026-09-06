@@ -260,6 +260,20 @@ export function EntityMatrix({
           description="Nothing has been hidden beyond them. Widen the role or the search above to see the rest of this Project's registry."
         />
       ) : asList || visibleDatastreams.length === 0 ? (
+        <>
+        {/* A MATRIX-WIDE FACT, SAID ONCE (76-4, second review). This was drawn
+            inside the per-entity `<li>`, so a Project with twelve tracked
+            entities and no compatible Datastream stacked twelve identical
+            blocks -- against the container rule the same story ratified:
+            `EmptyState` answers for a REGION. The entities below still list,
+            because they exist; what is absent is the axis they would be crossed
+            with, and that is one absence. */}
+        {visibleDatastreams.length === 0 && (
+          <EmptyState
+            title="No compatible Datastream"
+            description="No Datastream of this Project carries the fields these entities would be matched on, so no cell can be drawn. Each entity is listed below with its role, and nothing is claimed about its coverage."
+          />
+        )}
         <ul className="m-0 flex list-none flex-col gap-4 p-0" data-testid="entity-matrix-list">
           {visibleEntities.map((entity) => (
             <li key={entity.entity_id} className="flex flex-col gap-2">
@@ -267,12 +281,7 @@ export function EntityMatrix({
                 {entity.label}{" "}
                 <Badge tone="neutral">{roleLabel(entity.role)}</Badge>
               </p>
-              {visibleDatastreams.length === 0 ? (
-                <EmptyState
-                  title="No compatible Datastream"
-                  description="No Datastream of this Project carries the fields this entity would be matched on, so no cell can be drawn for it."
-                />
-              ) : (
+              {visibleDatastreams.length === 0 ? null : (
                 <ul className="m-0 flex list-none flex-col gap-1 p-0">
                   {visibleDatastreams.map((datastream) => {
                     const cell = cellFor(entity, datastream.datastream_id);
@@ -291,6 +300,7 @@ export function EntityMatrix({
             </li>
           ))}
         </ul>
+        </>
       ) : (
         <TableScroll label="Tracked entities by Datastream">
           <table

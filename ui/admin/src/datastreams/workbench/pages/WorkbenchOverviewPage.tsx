@@ -160,7 +160,7 @@ export default function WorkbenchOverviewPage({
   onOpenOwner?: (owner: OwnerReference) => void;
   /** Re-reads the Workbench header, for the capability panel's error block
    *  (76-4). Owned by the route, because the route made the read. */
-  onRetryCapabilities?: () => void;
+  onRetryCapabilities: () => void;
   onNavigateTab?: (tab: Tab) => void;
   onRepairMapping?: (rawImportId: string) => void;
 }) {

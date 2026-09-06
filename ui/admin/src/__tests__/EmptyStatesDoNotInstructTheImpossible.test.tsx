@@ -427,7 +427,8 @@ export function errorBlocks(source: string): Array<{ attrs: string; title: strin
     const attrs = openingTags(source.slice(from), "Status")[0] ?? "";
     if (!/as="block"/.test(attrs) || !/tone="error"/.test(attrs)) continue;
     const titleMatch = attrs.match(/\btitle=\{?(?:`([^`]*)`|"([^"]*)"|([^\s}]+))/);
-    const title = titleMatch ? (titleMatch[1] ?? titleMatch[2] ?? titleMatch[3] ?? "") : "";
+    const declared = titleMatch ? (titleMatch[1] ?? titleMatch[2] ?? titleMatch[3] ?? "") : "";
+    const title = declared ? resolveTitle(declared, source) : "";
     let body = "";
     if (!attrs.trimEnd().endsWith("/")) {
       const tagEnd = from + "<Status".length + attrs.length;

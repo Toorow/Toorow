@@ -1162,10 +1162,12 @@ export function BusinessDomainLinks({
 
   if (refs.length === 0) {
     return (
-      <EmptyState
-        title="No Business Domain is linked to this object"
-        description="A Business Domain is what makes this object findable beside the Knowledge, Skills and reporting views of the same area. Links are made in Context Hub."
-      />
+      <div data-testid="business-domain-links-empty">
+        <EmptyState
+          title="No Business Domain is linked to this object"
+          description="A Business Domain is what makes this object findable beside the Knowledge, Skills and reporting views of the same area. Links are made in Context Hub."
+        />
+      </div>
     );
   }
 
