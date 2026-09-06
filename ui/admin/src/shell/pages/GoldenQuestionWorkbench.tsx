@@ -28,7 +28,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ApiError } from "../../lib/apiFetch";
-import { Badge, Button, Cluster, EmptyState, Field, Input, Metric, NativeSelect, NavTabs, ObjectHeader, Panel, PanelHeader, SectionHeader, Stack, Status, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableScroll, Textarea, type NavTab, wireWord } from "../../ui";
+import { Badge, Button, Cluster, EmptyState, Failure, Field, formatCount, formatNumber, Input, Loading, Metric, NativeSelect, NavTabs, NO_VALUE, ObjectHeader, ObjectId, ObjectNotFound, Panel, PanelHeader, Retry, SectionHeader, Stack, stateLabel, stateTone, Status, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableScroll, Textarea, Timestamp, type NavTab, wireWord } from "../../ui";
 import { createGoldenQuestionVersion, definitionPayload, draftFromVersion, emptyPathNodeDraft, fetchGoldenQuestion, fetchGoldenQuestionCoverage, fetchGoldenQuestionOptions, refusalsOf, setGoldenQuestionLifecycle, type CreatedVersionReceipt, type DefinitionDraft, type GoldenQuestionCoverage, type GoldenQuestionDetail, type GoldenQuestionOptions, type GoldenQuestionVersion, type ProvenanceState, type Refusal } from "../../test/goldenQuestionClient";
 import V2ExpectedResultEditor from "../../test/V2ExpectedResultEditor";
 import { buildPath, useRoute } from "../router";
@@ -990,7 +990,7 @@ export function ExpectedAiPathTab({
                       <TableCell>
                         {(branch.required_nodes ?? [])
                           .map((node) => node.tool?.tool_name ?? node.key)
-                          .join(" → ") || "None"}
+                          .join(" → ") || NO_VALUE}
                       </TableCell>
                     </TableRow>
                   )),
@@ -1011,25 +1011,16 @@ export function ExpectedAiPathTab({
 function CoverageTab({ state, reload }: { state: CoverageState; reload: () => void }) {
   if (state.status === "loading" || state.status === "idle") {
     return (
-      <p role="status" className="text-body text-text-secondary">
-        Reading coverage…
-      </p>
+      <Loading label="coverage" />
     );
   }
   if (state.status === "error") {
     return (
-      <Status
-        as="block"
-        tone="error"
-        title="Coverage could not be read"
-        action={
-          <Button variant="secondary" onClick={reload}>
-            Retry
-          </Button>
-        }
-      >
-        {state.message}. No coverage figure has been substituted for it.
-      </Status>
+      <Failure
+        what="Coverage"
+        message={`${state.message}. No coverage figure has been substituted for it.`}
+        action={<Retry onClick={reload} />}
+      />
     );
   }
 
@@ -1042,29 +1033,32 @@ function CoverageTab({ state, reload }: { state: CoverageState; reload: () => vo
           description="Facts read from the current version, not a score."
         />
         <div className="grid gap-2 p-2 md:grid-cols-2 xl:grid-cols-4">
+          {/* 76-5 arbitrage 1: every KPI names the POPULATION it is drawn from.
+              These four counted the CURRENT VERSION and said so nowhere; two of
+              them put an identifier in the hint, where a person reads a sentence. */}
           <Metric
             label="Business Domain"
-            value={pinned.business_domain ? `v${pinned.business_domain.version_number}` : "Not pinned"}
-            hint={pinned.business_domain?.id ?? "No current version"}
+            value={pinned.business_domain ? `v${formatNumber(pinned.business_domain.version_number)}` : NO_VALUE}
+            hint="pinned by the current version"
           />
           <Metric
             label="Semantic View"
-            value={pinned.semantic_view?.role ?? "Not pinned"}
+            value={pinned.semantic_view?.role ? wireWord(pinned.semantic_view.role) : NO_VALUE}
             hint={
               viewVersion?.status
-                ? `Pinned version is ${viewVersion.status}`
-                : "Pinned version status unavailable"
+                ? `pinned by the current version · the pinned version is ${stateLabel(viewVersion.status).toLowerCase()}`
+                : "pinned by the current version · the pinned version sent no status"
             }
           />
           <Metric
             label="Typed assertions"
-            value={pinned.expected_assertion_count}
-            hint={`${pinned.required_provenance_count} required provenance link(s)`}
+            value={formatNumber(pinned.expected_assertion_count)}
+            hint={`in the current version · ${formatCount(pinned.required_provenance_count, "required provenance link")}`}
           />
           <Metric
             label="Reference paths"
-            value={pinned.reference_path_count}
-            hint={`${pinned.expected_required_node_count} expected path node(s)`}
+            value={formatNumber(pinned.reference_path_count)}
+            hint={`in the current version · ${formatCount(pinned.expected_required_node_count, "expected path node")}`}
           />
         </div>
       </Panel>
@@ -1072,7 +1066,7 @@ function CoverageTab({ state, reload }: { state: CoverageState; reload: () => vo
       <Panel flush>
         <PanelHeader
           title="Dimensions"
-          description="A dimension whose owner has not been delivered reports Unverifiable with its reason and the story that will lift it. It is never a pass and never a fail."
+          description="A dimension whose owner has not been delivered reports Unverifiable with its reason. It is never a pass and never a fail."
         />
         <TableScroll label="Coverage dimensions">
           <Table>
@@ -1081,7 +1075,6 @@ function CoverageTab({ state, reload }: { state: CoverageState; reload: () => vo
                 <TableHead>Dimension</TableHead>
                 <TableHead>Verdict</TableHead>
                 <TableHead>Reason</TableHead>
-                <TableHead>Owner</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1097,7 +1090,6 @@ function CoverageTab({ state, reload }: { state: CoverageState; reload: () => vo
                     <span className="text-technical">{dimension.reason_code}</span>
                     <span className="block text-caption text-text-secondary">{dimension.message}</span>
                   </TableCell>
-                  <TableCell>Story {dimension.owner_story}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -1150,7 +1142,7 @@ function VersionsTab({
             {versions.map((version) => (
               <TableRow key={version.id}>
                 <TableCell className="font-semibold text-text">
-                  v{version.version_number}
+                  v{formatNumber(version.version_number)}
                   {version.id === currentVersionId && (
                     <Badge tone="accent" className="ml-2">
                       current
@@ -1159,21 +1151,26 @@ function VersionsTab({
                 </TableCell>
                 <TableCell>{wireWord(version.result_type)}</TableCell>
                 <TableCell>{wireWord(version.severity)}</TableCell>
-                <TableCell className="text-technical break-all">{version.content_hash}</TableCell>
-                <TableCell className="text-technical break-all">
-                  {version.predecessor_version_id ?? "None (first version)"}
+                <TableCell><ObjectId value={version.content_hash} title="Content hash" /></TableCell>
+                <TableCell>
+                  {/* The first version has no predecessor. That is an absence, and
+                      an absence takes the console's one dash -- the parenthetical
+                      that explained it was a second vocabulary for `—`. */}
+                  {version.predecessor_version_id
+                    ? <ObjectId value={version.predecessor_version_id} title="Predecessor version" />
+                    : <span data-testid="no-predecessor">{NO_VALUE}</span>}
                 </TableCell>
                 <TableCell>
-                  {version.created_at ?? "Unavailable"}
+                  <Timestamp value={version.created_at} absentMeaning="No creation time recorded" />
                   <span className="block text-caption text-text-secondary">
-                    {version.created_by ?? "Unavailable"}
+                    {version.created_by ?? NO_VALUE}
                   </span>
                 </TableCell>
                 <TableCell>
                   {version.expected_render_ref === null ? (
                     <Status tone="neutral">Unverifiable</Status>
                   ) : (
-                    version.expected_render_ref
+                    <ObjectId value={version.expected_render_ref} title="Expected Render" />
                   )}
                 </TableCell>
               </TableRow>
@@ -1361,33 +1358,28 @@ export default function GoldenQuestionWorkbench({
 
   if (phase.status === "loading") {
     return (
-      <p role="status" className="text-body text-text-secondary">
-        Loading this Golden Question…
-      </p>
+      <Loading label="this Golden Question" />
     );
   }
   if (phase.status === "not-found") {
     return (
-      <Status as="block" tone="warning" title="This Golden Question was not opened">
-        No Golden Question with this identifier exists in this Project, or it is not available to
-        you. The two answer identically on purpose, and nothing else has been opened in its place.
-      </Status>
+      /* The two answers -- it does not exist, you may not see it -- stay one
+         answer on purpose. What the block gained is the way back. */
+      <ObjectNotFound
+        what="Golden Question"
+        collection="Golden Questions"
+        collectionHref="#/test/golden-questions"
+        detail="No Golden Question with this identifier exists in this Project, or it is not available to you. The two answer identically on purpose, and nothing else has been opened in its place."
+      />
     );
   }
   if (phase.status === "error") {
     return (
-      <Status
-        as="block"
-        tone="error"
-        title="This Golden Question could not be read"
-        action={
-          <Button variant="secondary" onClick={() => setReloadToken((token) => token + 1)}>
-            Retry
-          </Button>
-        }
-      >
-        {phase.message}. Nothing has been shown in its place.
-      </Status>
+      <Failure
+        what="This Golden Question"
+        message={`${phase.message}. Nothing has been shown in its place.`}
+        action={<Retry onClick={() => setReloadToken((token) => token + 1)} />}
+      />
     );
   }
 
@@ -1400,11 +1392,14 @@ export default function GoldenQuestionWorkbench({
           id belonged to neither and read as noise beside the question's title. */}
       <ObjectHeader name={detail.title} source="Golden Question" />
       <Cluster>
-        <Badge tone="neutral">{detail.lifecycle}</Badge>
+        {/* The lifecycle was the wire word under a hard-coded neutral, and the
+            buttons offered to "Move to deprecated" -- the stored token, in the
+            imperative. Both take the declared vocabulary now. */}
+        <Badge tone={stateTone(detail.lifecycle)}>{stateLabel(detail.lifecycle)}</Badge>
         <span className="text-caption text-text-secondary">Owner: {detail.owner}</span>
         {detail.lifecycle_transitions.map((next) => (
           <Button key={next} variant="secondary" size="sm" onClick={() => void changeLifecycle(next)}>
-            Move to {next}
+            Move to {stateLabel(next)}
           </Button>
         ))}
       </Cluster>
@@ -1412,15 +1407,15 @@ export default function GoldenQuestionWorkbench({
 
       {versionId && (
         <Status as="block" tone="neutral" title="Pinned immutable Golden Question version">
-          This address reads version <code className="text-technical">{versionId}</code>. It cannot
-          be rewritten or silently replaced by the current version.
+          This address reads version <ObjectId value={versionId} title="Golden Question version" />.
+          It cannot be rewritten or silently replaced by the current version.
         </Status>
       )}
 
       {receipt && (
-        <Status as="block" tone="success" title={`Version ${receipt.version_number} created`}>
+        <Status as="block" tone="success" title={`Version ${formatNumber(receipt.version_number)} created`}>
           The previous version was not modified. Content hash{" "}
-          <code className="text-technical">{receipt.content_hash}</code>.
+          <ObjectId value={receipt.content_hash} title="Content hash" />.
         </Status>
       )}
       {failure && (

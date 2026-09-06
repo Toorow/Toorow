@@ -21,8 +21,8 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { ApiError } from "../../lib/apiFetch";
-import { Badge, Button, Cluster, EmptyState, Field, Input, Metric, NativeSelect, ObjectId, PageHeader, Panel, PanelHeader, Stack, Status, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableScroll } from "../../ui";
-import { createGoldenQuestion, definitionPayload, emptyDefinitionDraft, fetchGoldenQuestionOptions, listGoldenQuestions, refusalsOf, type DefinitionDraft, type GoldenQuestionOptions, type GoldenQuestionSummary, type Refusal } from "../../test/goldenQuestionClient";
+import { Badge, Button, Cluster, EmptyState, Failure, Field, formatNumber, Input, Loading, Metric, NativeSelect, NO_VALUE, NoScope, ObjectId, PageHeader, Panel, PanelHeader, ProjectNotFound, Retry, Stack, stateLabel, stateTone, Status, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableScroll, wireWord } from "../../ui";
+import { createGoldenQuestion, definitionPayload, emptyDefinitionDraft, fetchGoldenQuestionOptions, listGoldenQuestions, refusalsOf, type BusinessDomainOption, type DefinitionDraft, type GoldenQuestionOptions, type GoldenQuestionSummary, type Refusal } from "../../test/goldenQuestionClient";
 import { DefinitionTab, ExpectedResultTab, RefusalList } from "./GoldenQuestionWorkbench";
 
 type Phase =
@@ -39,10 +39,25 @@ type Phase =
   | { status: "not-found" }
   | { status: "error"; message: string };
 
-function pinLabel(question: GoldenQuestionSummary): string {
+/** The Business Domain a question's current version pins, as a person reads it.
+ *
+ *  It used to be `${business_domain_id} v${n}` -- a ULID standing IN the position
+ *  of the name, which `console-presentation.md` §4 refuses ("an identifier is
+ *  shown in double -- human label, then `ObjectId` -- or not at all"). The name
+ *  is on the wire and always was: `options.business_domains` carries `{id, name}`
+ *  and this screen already holds it for its filter. Where the option list does
+ *  not carry the id -- an archived domain a live question still pins -- the id
+ *  stays, marked as the identifier it is, rather than a manufactured name. */
+function PinLabel({ question, domains }: { question: GoldenQuestionSummary; domains: BusinessDomainOption[] }) {
   const version = question.current_version;
-  if (!version) return "No current version";
-  return `${version.business_domain_id} v${version.business_domain_version_number}`;
+  if (!version) return <>{NO_VALUE}</>;
+  const named = domains.find((domain) => domain.id === version.business_domain_id);
+  return (
+    <>
+      <span className="block text-text">{named ? named.name : NO_VALUE} v{formatNumber(version.business_domain_version_number)}</span>
+      <ObjectId value={version.business_domain_id} title="Business Domain" />
+    </>
+  );
 }
 
 export default function GoldenQuestions({
@@ -165,10 +180,9 @@ export default function GoldenQuestions({
     return (
       <Stack>
         {header}
-        <Status as="block" tone="warning" title="Select a Project">
-          Golden Questions are Project-scoped. No collection has been read, and none from another
-          Project has been shown in its place.
-        </Status>
+        {/* The console's one wording for "no project chosen" (76-4). The switcher
+            that repairs it is in the shell's TopBar, on screen at this moment. */}
+        <NoScope what="Golden Questions" />
       </Stack>
     );
   }
@@ -176,9 +190,7 @@ export default function GoldenQuestions({
     return (
       <Stack>
         {header}
-        <p role="status" className="text-body text-text-secondary">
-          Loading the Golden Question collection…
-        </p>
+        <Loading label="the Golden Question collection" />
       </Stack>
     );
   }
@@ -186,10 +198,9 @@ export default function GoldenQuestions({
     return (
       <Stack>
         {header}
-        <Status as="block" tone="warning" title="This collection was not opened">
-          This Project has no Golden Question capability available to you, or the Project does not
-          exist. The two answer identically on purpose.
-        </Status>
+        {/* The two answers -- the Project does not exist, and you may not see it
+            -- stay one answer on purpose. What was missing was the way out. */}
+        <ProjectNotFound />
       </Stack>
     );
   }
@@ -197,18 +208,11 @@ export default function GoldenQuestions({
     return (
       <Stack>
         {header}
-        <Status
-          as="block"
-          tone="error"
-          title="The Golden Question collection could not be read"
-          action={
-            <Button variant="secondary" onClick={() => setReloadToken((token) => token + 1)}>
-              Retry
-            </Button>
-          }
-        >
-          {phase.message}. No question has been fabricated to fill the screen.
-        </Status>
+        <Failure
+          what="The Golden Question collection"
+          message={`${phase.message}. No question has been fabricated to fill the screen.`}
+          action={<Retry onClick={() => setReloadToken((token) => token + 1)} />}
+        />
       </Stack>
     );
   }
@@ -230,12 +234,26 @@ export default function GoldenQuestions({
       </Status>
 
       <Panel className="grid gap-2 p-2 md:grid-cols-3">
-        <Metric label="Matching questions" value={phase.total ?? "Unavailable"} hint="Server-owned total" />
-        <Metric label="Active on this page" value={active} hint={`Bound: ${phase.bound ?? "unavailable"}`} />
+        {/* 76-5 arbitrage 1: every KPI names its POPULATION. The three hints here
+            were definitions of the number ("Server-owned total", "Bound: 25",
+            "Non-compensating for a future gate") -- true statements about how the
+            number is computed, and none of them said what it counts or over what.
+            The collection carries no time window and the server sends none, so the
+            population is the filter, said out loud. */}
+        <Metric
+          label="Matching questions"
+          value={formatNumber(phase.total)}
+          hint="Golden Questions in this project matching the filters above"
+        />
+        <Metric
+          label="Active on this page"
+          value={formatNumber(active)}
+          hint={`of ${formatNumber(questions.length)} on this page · at most ${formatNumber(phase.bound)} per page`}
+        />
         <Metric
           label="Critical on this page"
-          value={critical}
-          hint="Non-compensating for a future gate"
+          value={formatNumber(critical)}
+          hint={`of ${formatNumber(questions.length)} on this page · severity as pinned by the current version`}
         />
       </Panel>
 
@@ -352,20 +370,25 @@ export default function GoldenQuestions({
                       <span className="block text-caption text-text-secondary"><ObjectId value={question.id} title="Golden Question" /></span>
                     </TableCell>
                     <TableCell>
-                      <Badge tone="neutral">{question.lifecycle}</Badge>
+                      {/* The lifecycle was the wire word under a HARD-CODED
+                          neutral: a badge that carries a tone but not a meaning
+                          is the grey badge §3 refuses, wearing a tone prop. */}
+                      <Badge tone={stateTone(question.lifecycle)}>{stateLabel(question.lifecycle)}</Badge>
                     </TableCell>
                     <TableCell>{question.owner}</TableCell>
-                    <TableCell>{pinLabel(question)}</TableCell>
-                    <TableCell className="text-technical break-all">
-                      {question.current_version?.semantic_view_version_id ?? "Unavailable"}
-                    </TableCell>
-                    <TableCell>{question.current_version?.result_type ?? "Unavailable"}</TableCell>
-                    <TableCell>{question.current_version?.severity ?? "Unavailable"}</TableCell>
+                    <TableCell><PinLabel question={question} domains={options.business_domains} /></TableCell>
                     <TableCell>
-                      {question.current_version?.capability_tags.join(", ") || "Unavailable"}
+                      {question.current_version
+                        ? <ObjectId value={question.current_version.semantic_view_version_id} title="Semantic View version" />
+                        : NO_VALUE}
+                    </TableCell>
+                    <TableCell>{question.current_version ? wireWord(question.current_version.result_type) : NO_VALUE}</TableCell>
+                    <TableCell>{question.current_version ? wireWord(question.current_version.severity) : NO_VALUE}</TableCell>
+                    <TableCell>
+                      {question.current_version?.capability_tags.join(", ") || NO_VALUE}
                     </TableCell>
                     <TableCell>
-                      {question.current_version ? `v${question.current_version.version_number}` : "None"}
+                      {question.current_version ? `v${formatNumber(question.current_version.version_number)}` : NO_VALUE}
                     </TableCell>
                   </TableRow>
                 ))}

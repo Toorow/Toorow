@@ -128,6 +128,15 @@ export const STATE_TONE: Readonly<Record<string, Tone>> = {
   // look at. Declared out of `DatastreamSetupWizard`'s completeness map.
   missing: "warning",
   needs_review: "warning",
+  // THE SIXTH WORD OF `ProposalItemStatus`, and the only one the union did not
+  // carry (story 76-6). `server/core/datastream_preconfiguration.py:46` declares
+  // `complete | missing | blocked | warning | not_applicable | needs_review`;
+  // five were already here, so `stateLabel("warning")` fell through to the
+  // `Unknown` fallback and the wizard printed « Classification · Unknown » over
+  // a section whose items each carried a named, acknowledgeable warning. An
+  // undeclared word does not lose its colour quietly — it loses its MEANING, and
+  // says a question went unanswered where the compiler in fact answered.
+  warning: "warning",
   // A preview whose Result no longer fits the Builder's plan, and one whose rows
   // were cut. Declared out of `analyze/builder/BuilderPreview`.
   truncated: "warning",
@@ -377,6 +386,11 @@ export const STATE_LABEL: Readonly<Record<string, string>> = {
   // once instead of for the one that happened to write it.
   disabled: "Turned off",
   needs_review: "Needs review",
+  // Not « Warning »: the tone already says that, and a label that repeats its
+  // own colour tells the reader nothing. What the compiler means by the word is
+  // that the item is usable and somebody has to accept it first — which is the
+  // gesture the Schedule step then asks for, one acknowledgement per warning.
+  warning: "Needs acknowledgement",
   rollback_available: "Rollback available",
   unset: "Never configured",
   verifying: "Never checked",

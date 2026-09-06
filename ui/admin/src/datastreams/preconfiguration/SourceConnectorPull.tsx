@@ -14,7 +14,7 @@
 import { useState } from "react";
 import { CheckIcon } from "lucide-react";
 import {
-  Badge, Button, ChoiceGroup, ConnectorMark, Field, Input, NativeSelect, Panel, PanelHeader, Status,
+  Badge, Button, ChoiceGroup, ConnectorMark, connectorName, Field, Input, NativeSelect, Panel, PanelHeader, Status,
   TONE_TEXT,
   wireWord,
 } from "../../ui";
@@ -583,8 +583,14 @@ export default function SourceConnectorPull({
         <div className={ANSWERED_ROW}>
           <span className="flex min-w-0 items-center gap-2.5">
             <ConnectorMark provider={chosenConnectorRef} size={24} />
+            {/* THE MARK'S OWN REGISTRY IS THE FALLBACK, not the slug (76-6).
+                The catalogue read can fail, and it did: the answered row then
+                printed `generic` / `google-analytics` — a wire key set in the
+                product's own type, next to a logo that already knew the vendor's
+                name. `connectorName` is the same managed registry the mark is
+                drawn from, so the two can never name different vendors. */}
             <span className="truncate text-ui text-text">
-              {connector?.display_name ?? chosenConnectorRef}
+              {connector?.display_name ?? connectorName(chosenConnectorRef)}
             </span>
             {isOpened(chosenConnectorRef) && <Badge tone="success">Authorized</Badge>}
           </span>

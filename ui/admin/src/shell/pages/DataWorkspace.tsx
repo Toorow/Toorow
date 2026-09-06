@@ -50,8 +50,8 @@
  * with its count.
  */
 import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { Button, ConfirmDialog, ConnectorMark, connectorName, EmptyState, formatClock, formatDate, formatNumber, formatRelative, formatTimestamp, NativeSelect, PageHeader, Panel, PanelHeader, Stack, Status, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableScroll } from "../../ui";
-import { toneForState } from "../../data/DataCollectionLayout";
+import { Button, ConfirmDialog, ConnectorMark, connectorName, EmptyState, formatClock, formatDate, formatNumber, formatRelative, formatTimestamp, NativeSelect, ObjectId, PageHeader, Panel, PanelHeader, Stack, Status, StatusLegend, type StatusLegendEntry, stateLabel, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableScroll, type Tone, wireWord } from "../../ui";
+import { DATA_STATE_MEANING, toneForState } from "../../data/DataCollectionLayout";
 import { type DataSurfaceItem, useDataSurface } from "../../data/dataSurface";
 import { discardDatastreamSetupDraft, listDatastreamSetupDrafts, type DatastreamSetupDraftListItem } from "../../datastreams/wizard/wizardApi";
 import { resolvableHref } from "../routeHref";
@@ -146,7 +146,12 @@ function clockTime(iso: string | null): string | null {
  *  of them at once (AI-217). */
 function cadenceSentence(cadence: string | null): string | null {
   if (!cadence) return null;
-  return cadence === "manual" ? "Runs on demand" : `Runs ${cadence.replaceAll("_", " ")}`;
+  // `wireWord` capitalises, and this word sits mid-sentence, so the case is put
+  // back. What is borrowed from it is the ONE de-snaking rule; the alternative
+  // was this file's fourth private copy of it.
+  if (cadence === "manual") return "Runs on demand";
+  const word = wireWord(cadence);
+  return `Runs ${word.charAt(0).toLowerCase()}${word.slice(1)}`;
 }
 
 /** The exception a person has to act on, named — never a colour alone.
@@ -158,14 +163,17 @@ function cadenceSentence(cadence: string | null): string | null {
  *  read the issue list showed such a row as merely `unavailable`. */
 function exceptionOf(item: DataSurfaceItem): string | null {
   const code = text(evidence(item, "latest_exception"));
-  if (code) return code.replaceAll("_", " ");
+  if (code) return wireWord(code);
   const issues = evidence(item, "validation_issues");
   if (Array.isArray(issues) && issues.length > 0) {
     const first = issues[0];
     const named = typeof first === "string" ? first : text((first as Record<string, unknown>)?.code);
-    if (named) return `${named.replaceAll("_", " ")}${issues.length > 1 ? ` +${issues.length - 1}` : ""}`;
+    if (named) return `${wireWord(named)}${issues.length > 1 ? ` +${issues.length - 1}` : ""}`;
   }
-  if ((item.states.validation ?? "").toLowerCase() === "blocked") return "blocked";
+  // A STATE, so the union spells it. It returned the stored word in lower case
+  // and the cell beside it, drawn by `stateLabel`, spelled the same word
+  // `Blocked` — one screen, one token, two spellings.
+  if ((item.states.validation ?? "").toLowerCase() === "blocked") return stateLabel("blocked");
   return null;
 }
 
@@ -207,6 +215,37 @@ function mappingReach(item: DataSurfaceItem): {
   };
 }
 
+/**
+ * THE KEY THIS SCREEN OWED ITS READER — `console-presentation.md` §3: « Any
+ * screen that shows three tones or more mounts it once, in its `PageHeader` ».
+ *
+ * Every other Data collection has had one since 76-2, because they all go
+ * through `DataCollectionLayout`. The fleet does not — it draws its own
+ * thirteen-column table — so it was the one screen of this workspace with six
+ * mark-bearing columns and nothing that said what a mark meant. That is the
+ * shape of the whole epic: not a screen that is wrong, a screen the fix did not
+ * reach because it took a different road to the same table.
+ *
+ * DERIVED FROM THE ROWS, per amendment 23: a fleet where everything is healthy
+ * must not explain the red. Six columns carry a tone and each is asked what it
+ * actually drew — the two state axes, the exception verdict, the mapping reach,
+ * and the two run marks — rather than a fixed list somebody would have to
+ * remember to update.
+ *
+ * The MEANINGS are the Data workspace's own, read from `DATA_STATE_MEANING`, so
+ * a person who has just come from Sources or Imports meets the same sentence
+ * for the same diamond.
+ */
+function fleetLegend(items: readonly DataSurfaceItem[]): StatusLegendEntry[] {
+  const shown = new Set<Tone>();
+  for (const item of items) {
+    shown.add(toneForState(item.states.lifecycle));
+    shown.add(exceptionOf(item) ? "warning" : toneForState(item.states.health));
+    shown.add(mappingReach(item).tone);
+  }
+  return [...shown].map((tone) => ({ tone, ...DATA_STATE_MEANING[tone] }));
+}
+
 function needsAttention(item: DataSurfaceItem): boolean {
   const health = (item.states.health ?? "").toLowerCase();
   const validation = (item.states.validation ?? "").toLowerCase();
@@ -221,7 +260,7 @@ function sourceKey(item: DataSurfaceItem): string {
 }
 
 function sourceLabel(key: string): string {
-  return connectorName(key).replaceAll("_", " ");
+  return wireWord(connectorName(key));
 }
 
 /** What the current plan selects, in the three shapes the data actually takes.
@@ -420,6 +459,7 @@ export default function DataWorkspace({ projectId, onOpenDatastream, onAddDatast
         title="Datastreams"
         description={"The Project fleet, from source to publication. Each row carries its own lifecycle, "
           + "cadence, freshness and exceptions."}
+        legend={<StatusLegend entries={fleetLegend(items)} label="What a Datastream mark means" />}
         actions={onAddDatastream ? (
           <span className="flex items-center gap-3">
             {resumeSetup && (
@@ -463,7 +503,15 @@ export default function DataWorkspace({ projectId, onOpenDatastream, onAddDatast
               title={`${attention.length} Datastream${attention.length > 1 ? "s need" : " needs"} attention`}
               data-testid="fleet-attention"
             >
-              {attention.map((item) => item.name ?? item.object_ref.id).join(" · ")}
+              {/* The same rule one block up: a Datastream nobody named is
+                  listed by its identifier, drawn as one. `join(" · ")` on a
+                  string built the id into a sentence. */}
+              {attention.map((item, index) => (
+                <span key={item.object_ref.id}>
+                  {index > 0 ? " · " : null}
+                  {item.name ?? <ObjectId value={item.object_ref.id} title="Datastream" />}
+                </span>
+              ))}
             </Status>
           )}
 
@@ -601,8 +649,14 @@ export default function DataWorkspace({ projectId, onOpenDatastream, onAddDatast
                             <div className="flex items-center gap-3">
                               <ConnectorMark provider={provider} />
                               <div className="min-w-0">
+                                {/* A NAMELESS ROW STILL HAS TO BE OPENABLE, and
+                                    its identifier is then the only thing it can
+                                    be called — which is exactly the case §4
+                                    rules on: it is rendered as an identifier,
+                                    through `ObjectId`, never set in the title
+                                    face as though somebody had named it that. */}
                                 <strong className="block min-w-0 truncate text-text">
-                                  {item.name ?? item.object_ref.id}
+                                  {item.name ?? <ObjectId value={item.object_ref.id} title="Datastream" />}
                                 </strong>
                                 {/* The mark alone identifies a vendor only to
                                     someone who already knows the logo. The name
@@ -628,8 +682,15 @@ export default function DataWorkspace({ projectId, onOpenDatastream, onAddDatast
                             <SourceAccountCell item={item} />
                           </TableCell>
                           <TableCell className="text-text-secondary">
-                            {item.source_kind?.replaceAll("_", " ")
-                              ?? (
+                            {/* `wireWord` and not a fourth de-snaker: the
+                                token's own spelling is the answer here, and
+                                only its punctuation and its case belonged to
+                                the base. It read `connector pull`, lowercase,
+                                one column away from the wizard's
+                                `Connector pull`. */}
+                            {item.source_kind
+                              ? wireWord(item.source_kind)
+                              : (
                                 <Absent why={"The row carries no source kind, so the ownership mode of this "
                                   + "Datastream is unknown to the read model."}>
                                   No mode
@@ -657,8 +718,19 @@ export default function DataWorkspace({ projectId, onOpenDatastream, onAddDatast
                             <CollectsCell item={item} />
                           </TableCell>
                           <TableCell>
+                            {/* THE CONSOLE'S WORD, NOT THE COLUMN'S (76-6).
+                                This cell de-snaked the stored token and printed
+                                it lowercase — `active`, `never run` — beside a
+                                mark whose colour already came from the union.
+                                Two answers to "what is this state called", and
+                                the one on screen was the base's. An ABSENT state
+                                also read `unavailable`, which claims the server
+                                stated an absence; amendment 16 of
+                                `console-presentation.md` says a state nobody
+                                sent is `Unknown`, in the warning colour, and
+                                `stateLabel` is where that decision lives. */}
                             <Status tone={toneForState(item.states.lifecycle)}>
-                              {(item.states.lifecycle ?? "unavailable").replaceAll("_", " ")}
+                              {stateLabel(item.states.lifecycle)}
                             </Status>
                           </TableCell>
                           <TableCell>
@@ -806,7 +878,7 @@ export default function DataWorkspace({ projectId, onOpenDatastream, onAddDatast
                           </TableCell>
                           <TableCell>
                             <Status tone={exception ? "warning" : toneForState(item.states.health)}>
-                              {exception ?? (item.states.health ?? "unavailable").replaceAll("_", " ")}
+                              {exception ?? stateLabel(item.states.health)}
                             </Status>
                           </TableCell>
                         </TableRow>

@@ -102,7 +102,10 @@ afterEach(() => {
 it("refuses to read anything without an exact Project scope", () => {
   const { fetchMock } = mockApi([]);
   render(<GoldenQuestions />);
-  expect(screen.getByText(/Golden Questions are Project-scoped/i)).toBeInTheDocument();
+  // 76-5: the screen's private "Select a Project" banner became the console's
+  // one `NoScope`, which names the switcher instead of repeating it.
+  expect(screen.getByText("No project selected")).toBeInTheDocument();
+  expect(screen.getByText(/Choose a project to see its Golden Questions/i)).toBeInTheDocument();
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
@@ -114,10 +117,16 @@ it("renders the ratified product object and no benchmark verdict", async () => {
   render(<GoldenQuestions projectId={PROJECT} />);
 
   expect(await screen.findByText(QUESTION.title)).toBeInTheDocument();
-  expect(screen.getByText("dom_EXAMPLE v3")).toBeInTheDocument();
+  // 76-5: the Business Domain column printed the ULID IN the position of the
+  // name. The name is on the wire (`options.business_domains`) and the id is
+  // beside it, as `console-presentation.md` §4 asks.
+  expect(screen.getByText("Media Performance v3")).toBeInTheDocument();
+  expect(screen.getByTitle("Business Domain: dom_EXAMPLE")).toHaveTextContent("dom_EXAMPLE");
   expect(screen.getByText("svv_EXAMPLE")).toBeInTheDocument();
-  expect(screen.getByText("breakdown")).toBeInTheDocument();
-  expect(screen.getByText("critical")).toBeInTheDocument();
+  // 76-5: `result_type` was the wire token raw in a cell. `wireWord` is the
+  // console's one repair for a stored word whose word IS the token.
+  expect(screen.getByText("Breakdown")).toBeInTheDocument();
+  expect(screen.getByText("Critical")).toBeInTheDocument();
 
   // The Epic 14 vestige columns are gone, and so is the invented pass rate: no
   // column reports a verdict and no cell renders a percentage.
@@ -165,7 +174,9 @@ it("names the cause when the collection cannot be read, and fabricates nothing",
 it("answers a foreign, denied or absent Project with one indistinguishable envelope", async () => {
   mockApi([[/\/golden-questions/, () => response({ code: "not_found", message: "Not found" }, 404)]]);
   render(<GoldenQuestions projectId={PROJECT} />);
-  expect(await screen.findByText(/answer identically on purpose/i)).toBeInTheDocument();
+  // 76-5: the two answers stay ONE answer -- what the block gained is a way out.
+  expect(await screen.findByText("Project not found")).toBeInTheDocument();
+  expect(screen.getByText(/project switcher at the top of the screen/i)).toBeInTheDocument();
 });
 
 it("shows the server's structured refusal and sends no Render pin", async () => {

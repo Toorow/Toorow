@@ -221,11 +221,18 @@ def test_minting_and_archiving_a_project_field_leave_a_journal(live_postgres):
         actor="owner@example.com",
     )
 
+    # LU SUR LE CHAMP QUE CE TEST VIENT DE MINTER, jamais sur l action entiere :
+    # `app.audit_log` est append-only (aucun `_no_platform_residue` ne peut le
+    # nettoyer) et d autres suites de ce repertoire y laissent leurs propres
+    # `canonical_field.declared` -- des `probe_dimension_*` d une base partagee.
+    # Compter toute l action mesurait l ordre des fichiers, pas l ecriture.
     with live_postgres.cursor() as cur:
         cur.execute(
             "SELECT identity, metadata->>'scope', metadata->>'canonical_name', "
             "       metadata->>'canonical_field_id', metadata->>'concept_kind' "
-            "  FROM app.audit_log WHERE action = 'canonical_field.declared'"
+            "  FROM app.audit_log WHERE action = 'canonical_field.declared' "
+            "   AND metadata->>'canonical_field_id' = %s",
+            (minted["id"],),
         )
         rows = cur.fetchall()
     assert rows == [
@@ -238,7 +245,9 @@ def test_minting_and_archiving_a_project_field_leave_a_journal(live_postgres):
     with live_postgres.cursor() as cur:
         cur.execute(
             "SELECT metadata->>'released_name', metadata->>'canonical_field_id' "
-            "  FROM app.audit_log WHERE action = 'canonical_field.archived'"
+            "  FROM app.audit_log WHERE action = 'canonical_field.archived' "
+            "   AND metadata->>'canonical_field_id' = %s",
+            (minted["id"],),
         )
         assert cur.fetchall() == [("episode_id", minted["id"])]
 
@@ -253,7 +262,7 @@ def test_a_refused_mint_writes_no_journal_line(live_postgres):
     from core.canonical_field_registry import CanonicalFieldError, declare_project_field
 
     project_id = "proj_EXAMPLE0000000000000000"
-    declare_project_field(
+    minted = declare_project_field(
         live_postgres,
         project_id=project_id,
         canonical_name="episode_id",
@@ -271,8 +280,16 @@ def test_a_refused_mint_writes_no_journal_line(live_postgres):
             actor="owner@example.com",
         )
 
+    # Meme raison qu au-dessus : la ligne comptee est celle du champ minte ici.
+    # Le refus ne peut pas en ecrire une deuxieme sous cet id, et il n a pas
+    # d id a lui -- c est exactement ce que dit "aucune trace".
     with live_postgres.cursor() as cur:
         cur.execute(
-            "SELECT count(*) FROM app.audit_log WHERE action = 'canonical_field.declared'"
+            "SELECT count(*) FROM app.audit_log "
+            " WHERE action = 'canonical_field.declared' "
+            "   AND metadata->>'project_id' = %s "
+            "   AND metadata->>'canonical_name' = 'episode_id'",
+            (project_id,),
         )
         assert cur.fetchone()[0] == 1, "le mint refuse a laisse une trace"
+    assert minted["canonical_name"] == "episode_id"

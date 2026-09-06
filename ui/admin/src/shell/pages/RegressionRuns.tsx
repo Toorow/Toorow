@@ -28,6 +28,13 @@ import { useCallback, useEffect, useState } from "react";
 
 import { ApiError } from "../../lib/apiFetch";
 import { stateLabel,
+  stateTone,
+  formatCount,
+  formatDate,
+  formatNumber,
+  Loading,
+  NO_VALUE,
+  Timestamp,
   ObjectId,
   Badge,
   Button,
@@ -187,17 +194,17 @@ function OfflineSection({
                           <TableCell>
                             <Badge tone="neutral">{evidenceModeLabel(profile.evidence_mode)}</Badge>
                           </TableCell>
-                          <TableCell className="text-technical break-all">
+                          <TableCell>
                             {baseline ? (
-                              baseline.run_id
+                              <ObjectId value={baseline.run_id} title="Baseline run" />
                             ) : (
                               <Status tone="neutral" data-testid={`baseline-${profile.id}`}>
                                 None approved
                               </Status>
                             )}
                           </TableCell>
-                          <TableCell>{baseline?.approved_by ?? "—"}</TableCell>
-                          <TableCell>{baseline?.approval_reason ?? "No approval has been recorded"}</TableCell>
+                          <TableCell>{baseline?.approved_by ?? NO_VALUE}</TableCell>
+                          <TableCell>{baseline?.approval_reason ?? NO_VALUE}</TableCell>
                         </TableRow>
                       );
                     })}
@@ -245,19 +252,24 @@ function OfflineSection({
                         </TableCell>
                         <TableCell>{run.run_profile}</TableCell>
                         <TableCell>
-                          <Badge tone="neutral">{run.lifecycle}</Badge>
+                          {/* The lifecycle was the wire word under a HARD-CODED
+                              neutral. `recording` and `finalized` are declared in
+                              `stateVocabulary.ts` since 76-5, with their tones. */}
+                          <Badge tone={stateTone(run.lifecycle)}>{stateLabel(run.lifecycle)}</Badge>
                         </TableCell>
-                        <TableCell>{run.as_of ?? "Unavailable"}</TableCell>
-                        <TableCell>{run.case_count}</TableCell>
+                        <TableCell>{formatDate(run.as_of)}</TableCell>
+                        <TableCell>{formatNumber(run.case_count)}</TableCell>
                         <TableCell>
                           {run.unresolved_pin_count > 0 ? (
-                            <Status tone="neutral">{run.unresolved_pin_count} declared</Status>
+                            <Status tone="warning">{formatCount(run.unresolved_pin_count, "declared pin")}</Status>
                           ) : (
-                            "None"
+                            NO_VALUE
                           )}
                         </TableCell>
-                        <TableCell className="text-technical break-all">
-                          {run.question_set_fingerprint ?? "Not fingerprinted until finalized"}
+                        <TableCell>
+                          {run.question_set_fingerprint
+                            ? <ObjectId value={run.question_set_fingerprint} title="Question set fingerprint" />
+                            : NO_VALUE}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -339,15 +351,17 @@ function CohortMembers({
                   <ObjectId value={member.ai_path_id} title="AI Path" />
                 )}
               </TableCell>
-              <TableCell>{member.observed_at ?? "Unavailable"}</TableCell>
+              <TableCell><Timestamp value={member.observed_at} absentMeaning="No observation time recorded" /></TableCell>
               <TableCell>{stateLabel(member.path_evidence_state)}</TableCell>
               <TableCell>
                 <Status tone={verdictTone(member.assessment.verdict)}>
                   {verdictLabel(member.assessment.verdict)}
                 </Status>
               </TableCell>
-              <TableCell className="text-technical break-all">
-                {member.query_result_id ?? "No Result pinned"}
+              <TableCell>
+                {member.query_result_id
+                  ? <ObjectId value={member.query_result_id} title="Result" />
+                  : NO_VALUE}
               </TableCell>
               <TableCell>
                 {/* The rendered artifact has no owner. Its pin is held NULL by the
@@ -458,16 +472,18 @@ function ObservedSection({
                         <span className="block text-caption text-text-secondary"><ObjectId value={cohort.id} title="Cohort" /></span>
                       </TableCell>
                       <TableCell>
-                        {cohort.window_start ?? "Unavailable"} → {cohort.window_end ?? "Unavailable"}
+                        {formatDate(cohort.window_start)} → {formatDate(cohort.window_end)}
                       </TableCell>
-                      <TableCell>{cohort.member_count}</TableCell>
+                      <TableCell>{formatNumber(cohort.member_count)}</TableCell>
                       <TableCell>
                         <Status tone="neutral" data-testid={`blocking-${cohort.id}`}>
                           {cohort.blocking ? "Blocking" : "Non-blocking"}
                         </Status>
                       </TableCell>
-                      <TableCell className="text-technical break-all">
-                        {cohort.filter_hash ?? "Unavailable"}
+                      <TableCell>
+                        {cohort.filter_hash
+                          ? <ObjectId value={cohort.filter_hash} title="Filter hash" />
+                          : NO_VALUE}
                       </TableCell>
                       <TableCell>
                         <Button
@@ -540,6 +556,23 @@ function ObservedSection({
 // the per-basis table below carries the totals, apart.
 // ---------------------------------------------------------------------------
 
+/** Is this payload the adherence overview this section knows how to draw?
+ *
+ *  It reads the two fields the render DEREFERENCES -- `window.days` and the two
+ *  bucket arrays -- and nothing else: a guard that re-typed the whole contract
+ *  would refuse a payload that gained a field, which is the opposite of what it
+ *  is for. What it stops is the render throwing, and a thrown render is a blank
+ *  page with no title, no error and no way back. */
+function isAdherenceOverview(value: unknown): value is AdherenceOverview {
+  if (!value || typeof value !== "object") return false;
+  const overview = value as Record<string, unknown>;
+  if (overview.empty_state) return true;
+  const window = overview.window as Record<string, unknown> | undefined;
+  return typeof window?.days === "number"
+    && Array.isArray(overview.by_basis)
+    && Array.isArray(overview.by_data_tool);
+}
+
 /** How each basis is named on screen. One place, so two tables cannot disagree. */
 const BASIS_LABEL: Record<AdherenceBasis, string> = {
   observed_session: "Observed exchange",
@@ -559,7 +592,7 @@ function OutOf({ adherent, observations }: { adherent: number; observations: num
   return (
     <>
       <span className="font-semibold text-text">
-        {adherent} of {observations}
+        {formatNumber(adherent)} of {formatNumber(observations)}
       </span>
       {observations > 0 && (
         <span className="block text-caption text-text-secondary">
@@ -579,9 +612,7 @@ function AdherenceSection({ state, retry }: { state: AdherenceState; retry: () =
       />
 
       {state.status === "loading" && (
-        <p role="status" className="text-body text-text-secondary">
-          Reading what the pre-query gate measured…
-        </p>
+        <Loading label="what the pre-query gate measured" />
       )}
       {state.status === "failed" && (
         <FailureNote what="The adherence measure" failure={state} retry={retry} />
@@ -597,8 +628,8 @@ function AdherenceSection({ state, retry }: { state: AdherenceState; retry: () =
       {state.status === "ready" && !state.overview.empty_state && (
         <Panel flush>
           <PanelHeader
-            title={`Last ${state.overview.window.days} days`}
-            description={`${state.overview.observations} question${state.overview.observations === 1 ? "" : "s"} measured. Two kinds of evidence, reported apart: one is known to be a single exchange, the other is an approximation. There is no combined figure — pooling them would let an inference read as a measure.`}
+            title={`Last ${formatCount(state.overview.window.days, "day")}`}
+            description={`${formatCount(state.overview.observations, "question")} measured. Two kinds of evidence, reported apart: one is known to be a single exchange, the other is an approximation. There is no combined figure — pooling them would let an inference read as a measure.`}
           />
           <TableScroll label="Context adherence by kind of evidence">
             <Table>
@@ -757,7 +788,25 @@ export default function RegressionRuns({
     setAdherence({ status: "loading" });
     fetchContextAdherence(projectId, undefined, { signal: controller.signal })
       .then((overview) => {
-        if (live) setAdherence({ status: "ready", overview });
+        // AN UNRECOGNISED PAYLOAD IS A FAILED READ, NEVER A WHITE PAGE.
+        // Measured 2026-09-06 in the screen sandbox: `TestRegressionRuns`
+        // rendered a blank document and the console said
+        // `Cannot read properties of undefined (reading 'days')` --
+        // `state.overview.window.days` below trusted a field the client types
+        // as required and the wire does not guarantee. A React render that
+        // throws takes the whole page with it, so the person sees nothing at
+        // all: no title, no error, no way back. `isAdherenceOverview` is the
+        // same seam `ProjectOverview.tsx` has had since `isEnvelope`.
+        if (!live) return;
+        if (!isAdherenceOverview(overview)) {
+          setAdherence({
+            status: "failed",
+            kind: "error",
+            message: "The adherence measure came back in a shape this screen does not recognise",
+          });
+          return;
+        }
+        setAdherence({ status: "ready", overview });
       })
       .catch((error: unknown) => {
         if (!live || controller.signal.aborted) return;
@@ -804,15 +853,20 @@ export default function RegressionRuns({
       </Status>
 
       <Panel className="grid gap-2 p-2 md:grid-cols-2">
+        {/* 76-5 arbitrages 1 and 2. `Unavailable` stood at 24 px in the number
+            typeface where a figure belongs, which reads as a measurement whose
+            value is a word; a value nobody could read is the dash. And the two
+            hints were definitions of the KIND of evidence, never of the
+            population: what a reader needs is what is counted and over what. */}
         <Metric
           label="Offline Evaluation Runs"
-          value={offline.status === "ready" ? offline.runs.length : "Unavailable"}
-          hint="Reproducible, eligible to block"
+          value={offline.status === "ready" ? formatNumber(offline.runs.length) : NO_VALUE}
+          hint="on this page · reproducible, eligible to block"
         />
         <Metric
           label="Observed Cohorts"
-          value={observed.status === "ready" ? observed.cohorts.length : "Unavailable"}
-          hint="Reference windows, never blocking"
+          value={observed.status === "ready" ? formatNumber(observed.cohorts.length) : NO_VALUE}
+          hint="on this page · reference windows, never blocking"
         />
       </Panel>
 

@@ -523,3 +523,51 @@ def test_the_monitor_count_a_published_page_gives_is_the_registry_count():
     assert not offenders, (
         f"pages annoncant un nombre de moniteurs different de {expected} : {offenders}"
     )
+
+
+def test_the_tool_counts_a_published_page_gives_are_the_registry_counts():
+    """Mesure du 2026-09-06 : la page etait juste la veille, fausse le lendemain.
+
+    Ecrite avec 131 outils et 54/43/34 par profil, elle annoncait encore ces
+    nombres apres que les amendements du 2026-09-05 eurent porte la surface a
+    147 (60/47/40) -- seize outils landes par les sessions voisines en un jour.
+    Un compte fige dans une page est la meme faute que le « 37 Built-in Modules »
+    du catalogue, et il se perime plus vite que tout le reste.
+
+    Les 52 `confirmed write` sont les declarations dont le `confirmation_mode`
+    est `human` ou `host` : `server` en est un quatrieme qui n'exige pas de
+    presence. Le nombre d'outils consommant une confirmation a usage unique
+    n'est PAS garde ici -- il se derive d'un census AST et la page ne l'annonce
+    donc pas en chiffre.
+    """
+    from core import main as core_main  # noqa: F401,PLC0415  (assemble la surface)
+    from core import mcp_profiles  # noqa: PLC0415
+
+    declarations = list(mcp_profiles.registered_declarations())
+    total = len(declarations)
+    per_profile: dict[str, int] = {}
+    for declaration in declarations:
+        per_profile[declaration.profile] = per_profile.get(declaration.profile, 0) + 1
+    confirmed_write = sum(
+        1
+        for declaration in declarations
+        if getattr(declaration, "confirmation_mode", "none") in {"human", "host"}
+    )
+
+    page = (_DOCS / "agent-tools.mdx").read_text(encoding="utf-8")
+
+    announced_totals = {int(n) for n in re.findall(r"all (\d+) tools", page)}
+    assert announced_totals == {total}, (
+        f"la page annonce {sorted(announced_totals)} outils, le registre en assemble {total}"
+    )
+
+    rows = dict(re.findall(r"^\| `(insights|operations|governance)` \| (\d+) \|", page, re.M))
+    assert {k: int(v) for k, v in rows.items()} == per_profile, (
+        f"comptes par profil sur la page {rows}, au registre {per_profile}"
+    )
+
+    announced_writes = {int(n) for n in re.findall(r"\*\*(\d+)\*\* tools are declared", page)}
+    assert announced_writes == {confirmed_write}, (
+        f"la page annonce {sorted(announced_writes)} confirmed write, le registre en declare "
+        f"{confirmed_write}"
+    )

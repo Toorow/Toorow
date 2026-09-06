@@ -563,7 +563,7 @@ def _adapter_result(*, execution_id, outcome, plan_id, mapping_id):
     """The verified candidate evidence the driver returns, same shape and hashes."""
     import hashlib
 
-    from core.raw_landing import landed_candidate_relations
+    from core.raw_landing import landed_candidate_columns, landed_candidate_relations
 
     row_count = int(outcome.get("landed_row_count") or 0)
     # The reference the driver now publishes: the relation the landing actually
@@ -608,6 +608,18 @@ def _adapter_result(*, execution_id, outcome, plan_id, mapping_id):
                 "utf-8"
             )
         ).hexdigest(),
+        # The TYPED COLUMN LIST, read from the relation the landing actually
+        # wrote -- `landed_candidate_columns`, the same call the driver makes
+        # (`inbound/adapters/datastream_activation_drivers.py:706`). Without it
+        # the promotion into the shared relation fails closed
+        # ("The published candidate carries no governed column list"), because a
+        # connector pull carries its shape in candidate evidence and nowhere
+        # else. Recomposing it from the mapping here would assert a shape the
+        # warehouse never saw.
+        "candidate_columns": [
+            {"name": name, "type": kind}
+            for name, kind in landed_candidate_columns(execution_id, artifact_ref)
+        ],
         "coverage": {"schema": "available", "values": "available" if row_count else "empty_file"},
     }
 
@@ -1210,71 +1222,25 @@ def test_published_output_version_carries_a_comparable_schema_hash(conn, warehou
     violation aborts the publish, which is exactly how the `grain_evidence`
     defect above kept the table empty.
 
-    This one composes the publication WITHOUT `_run_import`: the whole arming
-    harness is red on `file_source_confirmation_required` since the epic-22
-    confirmation contract landed (`e929073f`), and that block is upstream of
-    everything measured here. `create_execution` is the same function
-    `commit_publication` uses, so the candidate is real; only the file arrival
-    is left out.
+    IT NOW RUNS THROUGH THE ARMING HARNESS (AI-367). It used to compose the
+    publication by hand -- `create_execution` and no file arrival -- because the
+    harness was red on `file_source_confirmation_required` when it was written
+    (`e929073f`). That block is gone, and the shortcut became the defect:
+    publication PROMOTES the candidate, and `promote_candidate` refuses a
+    candidate that carries no governed column list, which is read from the
+    relation the landing actually wrote. With no arrival there is no relation and
+    no list, so the test died on
+    "The published candidate carries no governed column list" -- fail-closed
+    behaving exactly as designed, over a candidate that never existed.
+    `_arm_file_datastream` is the same sequence every neighbour uses.
     """
-    from core.datastream_activation import complete_candidate_from_adapter
-    from core.datastream_publication import create_execution
-
-    org_id, project_id, fields = _seed(conn)
-    template = _make_template(
-        conn,
-        project_id=project_id,
-        org_id=org_id,
-        contract=_contract(fields),
-        code=f"SCH_{project_id[-6:].upper()}",
-    )
-    contract = _compile(
-        fields=fields,
-        org_id=org_id,
-        channel="file_upload",
-        template_id=template["id"],
-        requested_mode="daily",
-    )
-    ds_id, _ = _insert_datastream(conn, project_id=project_id, org_id=org_id, contract=contract)
-    plan_id, mapping_id, projection = _versions(
-        conn, ds_id=ds_id, project_id=project_id, contract=contract
-    )
-    execution = create_execution(
-        ds_id,
-        project_id,
-        plan_id,
-        mapping_id,
-        projection,
-        "owner@example.com",
-        _id("idem_"),
-        conn,
-    )
-    conn.commit()
-    execution_id = execution["id"]
+    armed = _arm_file_datastream(conn)
+    execution_id = armed["execution_id"]
     adapter = _adapter_result(
         execution_id=execution_id,
-        outcome={"landed_row_count": 3, "rejected_count": 0},
-        plan_id=plan_id,
-        mapping_id=mapping_id,
-    )
-    ready = complete_candidate_from_adapter(
-        conn,
-        project_id=project_id,
-        datastream_id=ds_id,
-        execution_id=execution_id,
-        actor="owner@example.com",
-        adapter_result=adapter,
-    )
-    conn.commit()
-    _publish_and_activate(
-        conn,
-        project_id=project_id,
-        ds_id=ds_id,
-        ready={**ready, **adapter},
-        contract=contract,
-        plan_id=plan_id,
-        mapping_id=mapping_id,
-        projection=projection,
+        outcome=armed["outcome"],
+        plan_id=armed["plan_version_id"],
+        mapping_id=armed["mapping_version_id"],
     )
 
     with conn.cursor() as cur:
@@ -1340,11 +1306,10 @@ def test_a_run_that_lands_before_its_publication_still_carries_the_schema_hash(c
     identity exists", which is the state a Datastream is in from its first
     publication onwards -- not "a publication succeeded through this harness".
     Going through `_publish_and_activate` would bind this measurement to
-    `promote_candidate`'s governed column list, a different subject that is red
-    in this file today (`test_published_output_version_carries_a_comparable_schema_hash`
-    fails on `The published candidate carries no governed column list`), and a
-    test that cannot run is a test that measures nothing. The INSERT below is the
-    publication's own, copied from `publish_activate_mutation`.
+    `promote_candidate`'s governed column list, a different subject already
+    measured by `test_published_output_version_carries_a_comparable_schema_hash`.
+    The INSERT below is the publication's own, copied from
+    `publish_activate_mutation`.
     """
     import hashlib
 

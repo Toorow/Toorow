@@ -23,6 +23,7 @@ from pathlib import Path
 
 import pytest
 from core.datastream_progress_api import (
+    IDLE_FIELDS,
     IDLE_LAST_RUN_FAILED,
     IDLE_LAST_RUN_SUCCEEDED,
     IDLE_NEVER_RAN,
@@ -431,13 +432,13 @@ def test_a_flux_that_never_ran_is_a_third_sentence(two_running_fluxes) -> None:
         conn, project_id=first["project_id"], datastream_id=first["ds_id"]
     )
 
-    assert idle == {
-        "reason": IDLE_NEVER_RAN,
-        "execution_id": None,
-        "state": None,
-        "ended_at": None,
-        "error_code": None,
-    }
+    # Les champs sont lus dans `IDLE_FIELDS`, jamais recopies : la story 63.5 en
+    # a ajoute trois (`days_done`, `days_total`, `rows_written`) et une liste
+    # tenue a la main ici aurait fait echouer le seul test qui dit ce que
+    # `never_ran` porte. L'egalite reste STRICTE -- aucune cle en plus, aucune
+    # en moins, et toutes nulles sauf la phrase.
+    assert idle == {**{field: None for field in IDLE_FIELDS}, "reason": IDLE_NEVER_RAN}
+    assert tuple(idle) == IDLE_FIELDS
 
 
 @requires_postgres

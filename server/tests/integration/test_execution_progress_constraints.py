@@ -1102,8 +1102,11 @@ def test_the_track_reaches_the_runs_tab_over_real_rows(progress_db) -> None:
     assert steps["Map"]["duration_seconds"] is None
     # And the anomaly path exists and is empty, which is what it must say:
     # `app.dq_issues` holds 0 rows on both bases (migration 222 added the
-    # column, nothing has written one).
-    assert run["anomalies"] == {"anomalies": 0, "evaluations": 0}
+    # column, nothing has written one). The empty entry carries `issues` too --
+    # the counter and the list it counts are minted together
+    # (`core/datastream_workbench.py:1156`), so a run with no anomaly says
+    # "none, and here is the empty list" rather than omitting the list.
+    assert run["anomalies"] == {"anomalies": 0, "evaluations": 0, "issues": []}
 
 
 @requires_postgres

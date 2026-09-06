@@ -18,6 +18,8 @@ import uuid
 
 import pytest
 
+from tests.conftest import purge_fixture_project
+
 pytestmark = pytest.mark.skipif(
     not os.environ.get("TEST_POSTGRES_DSN"),
     reason="TEST_POSTGRES_DSN not set — live Postgres constraint test skipped",
@@ -52,8 +54,14 @@ def test_slug_unique_constraint(live_postgres):
         conn.rollback()
     finally:
         conn.rollback()
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM app.projects WHERE slug = %s", (slug,))
+        # Le demontage passe par `purge_fixture_project` et non par un DELETE
+        # ecrit ici : la migration 243 seme une ligne `project_capabilities`
+        # pour TOUT projet, en `ON DELETE RESTRICT`, donc le DELETE direct
+        # echouait sur `project_capabilities_project_id_fkey`. La liste des
+        # tables retenantes ne se tient pas a la main -- c'est le constat
+        # d'AI-291, et le chemin produit la connait.
+        purge_fixture_project(conn, pid1)
+        purge_fixture_project(conn, pid2)
         conn.commit()
 
 

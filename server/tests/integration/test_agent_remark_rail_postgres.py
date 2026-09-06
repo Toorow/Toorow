@@ -455,4 +455,11 @@ def test_the_fallback_predicate_is_exactly_the_unique_index_key(live_postgres):
     assert "COALESCE(project_id, ''" in indexdef
     assert "COALESCE(project_id, '')" in fallback
     assert "md5(note)" in indexdef and "md5(note)" in fallback
-    assert "status = 'open'" in fallback
+    # Le predicat d'ouverture n'est plus recopie dans la requete : il est RENDU
+    # par `open_status_predicate()`, une fois pour les trois requetes du module.
+    # On mesure donc l'appel dans le repli ET ce que l'appel rend, compare a ce
+    # que l'index porte -- chercher le litteral dans le texte du repli
+    # mesurerait une copie que le module a justement supprimee.
+    assert "open_status_predicate()" in fallback
+    assert context_review.open_status_predicate() == "status = 'open'"
+    assert context_review.open_status_predicate() in indexdef.replace("::text", "")

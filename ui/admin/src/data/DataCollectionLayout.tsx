@@ -88,8 +88,15 @@ export const labelForState = (state: string | undefined): string => stateLabel(s
  * this surface's — a warning here is a source that needs a gesture, and on Test
  * › Runs the same mark means an unresolved pin — which is why `StatusLegend`
  * takes them from the caller and holds none.
+ *
+ * EXPORTED because the Datastreams fleet is the one Data collection that does
+ * NOT go through this layout (`shell/pages/DataWorkspace.tsx` draws its own
+ * thirteen-column table) and it draws the same marks. Two sentences for one
+ * amber diamond inside one workspace is the defect this whole page exists to
+ * refuse; the fleet derives its own entries from its own rows, and reads the
+ * meanings from here.
  */
-const DATA_STATE_MEANING: Record<Tone, { label: string; meaning: string }> = {
+export const DATA_STATE_MEANING: Record<Tone, { label: string; meaning: string }> = {
   success: { label: "In place", meaning: "configured and working — nothing to do" },
   warning: { label: "Needs a gesture", meaning: "incomplete, held back, no longer fresh — or a state this console does not know" },
   error: { label: "Refused", meaning: "revoked, archived or failed — it cannot be read as it stands" },

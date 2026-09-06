@@ -4,10 +4,15 @@ import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger, Badge, Button, Checkbox, ChoiceGroup,
   Collapsible, CollapsibleContent, CollapsibleTrigger,
   ConfirmDialog,
-  Field, Input, NativeSelect, Panel, PanelHeader, SectionHeader, Status, Stepper, summarizeObject,
+  displayValue, EvidenceRows,
+  Field, formatCount, Input, NativeSelect, ObjectId, Panel, PanelHeader, SectionHeader, Status, Stepper,
+  summarizeObject,
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableScroll,
+  Timestamp,
   stateLabel,
   stateTone,
+  wireWord,
+  WIZARD_ASIDE_STICKY, WIZARD_GRID,
   Retry,
 } from "../../ui";
 import DiscoveredSchema from "./DiscoveredSchema";
@@ -290,6 +295,43 @@ const MODE_CHOICES: ReadonlyArray<{ value: Mode; label: string; hint: string; ic
   },
 ];
 
+/** THE FOUR CADENCES, AND THE ONE PLACE THEY ARE SPELLED — story 76-6,
+ *  arbitrage 3.
+ *
+ *  One setting was written three times on this screen and answered three ways:
+ *  the `Schedule and activate` select said `Every night (daily)`, the sticky
+ *  summary said `Daily` (`humanKey`, a fourth de-snaker), and the creation
+ *  dialog's evidence rows printed the WIRE TOKEN — `daily`, `manual` — into the
+ *  one place a person reads before an irreversible confirmation. Three
+ *  spellings of one answer, and the shortest of them was the database's.
+ *
+ *  So the choice list is the source, exactly as `MODE_CHOICES` already is for
+ *  the mode: the control renders it, the summary looks its label up in it, and
+ *  the confirmation reads the same function. `cadenceLabel()` is the only way
+ *  from a stored cadence to a word on this screen.
+ *
+ *  THE VALUES STAY THE PLAN'S. `manual / daily / weekly / hourly` is what
+ *  activation accepts (`datastream_activation.py` refuses `nightly` on this
+ *  path) and the labels match `SchedulePanel.tsx`, so the console says one thing
+ *  on the wizard and on the workbench. `weekly` was added by AI-217: it has been
+ *  legal since migration 204 and this step was the only door that could not say
+ *  it.
+ */
+const CADENCE_CHOICES: ReadonlyArray<{ value: Cadence; label: string }> = [
+  { value: "manual", label: "On demand only (manual)" },
+  { value: "daily", label: "Every night (daily)" },
+  { value: "weekly", label: "Once a week (weekly)" },
+  { value: "hourly", label: "Every hour (hourly)" },
+];
+
+/** The word for a stored cadence. An unknown one keeps its own spelling rather
+ *  than borrowing a neighbour's — a cadence this build does not know is a fact
+ *  about the deployment, and `wireWord` says it without inventing a meaning. */
+function cadenceWord(cadence: string | null | undefined): string | null {
+  if (!cadence) return null;
+  return CADENCE_CHOICES.find((choice) => choice.value === cadence)?.label ?? wireWord(cadence);
+}
+
 /** The same three choices WITHOUT the sentence: the compact card has no room
  *  for it, and the caption under the Mode row prints the selected one. */
 const MODE_CHOICES_COMPACT = MODE_CHOICES.map(({ hint: _hint, ...choice }) => choice);
@@ -350,10 +392,17 @@ function requestKey(prefix: string): string { return `${prefix}-${crypto.randomU
 // `AUTHORIZATION_UNNAMED_VALUE`, `authorizationValue`, `authorizationOptions`,
 // `shortRef`) MOVED to `sourceStepShared.ts` (57.12, T2b) with their comments;
 // this file imports the ones it still reads.
+/** Safe-metadata reads as itself, never as its braces (76-6).
+ *
+ *  The last branch was `JSON.stringify`, the defect `ui/Evidence.tsx` was
+ *  extracted to close and which `console-presentation.md` §4 refuses by name.
+ *  It survived here because it is a FUNCTION returning a string rather than a
+ *  `<pre>`, so `ScreensDoNotSpeakTheDatabase`'s grep could not see it: a quota
+ *  cost or a cadence object arriving as a record printed
+ *  `{"read_points":1}` into the discovery panel. `displayValue` is the library's
+ *  answer for all three shapes, including the list this used to join by hand. */
 function metadataText(value: unknown): string {
-  if (value == null) return "Unavailable";
-  if (Array.isArray(value)) return value.join(", ");
-  return typeof value === "object" ? JSON.stringify(value) : String(value);
+  return displayValue(value);
 }
 function csvValues(value: string): string[] { return value.split(",").map((item) => item.trim()).filter(Boolean); }
 
@@ -544,6 +593,11 @@ function displayProposalValue(value: unknown): string {
     && typeof (value as { object?: unknown }).object === "string") {
     return (value as { object: string }).object;
   }
+  // A LIST OF PROPOSED FIELDS IS A LIST (76-6). `summarizeObject` read an array
+  // as a record, so `classification.fields` — the field classifications the
+  // compiler proposes, which is the substance of step 3 — rendered as `0: …`.
+  // `displayValue` summarizes each member instead of the array's indices.
+  if (Array.isArray(value)) return displayValue(value);
   // `summarizeObject` reads a record field by field. The previous fallback was
   // `JSON.stringify`, which the library's own `Evidence` header names as a
   // defect already found twice in this codebase — a governed proposal printed as
@@ -552,10 +606,18 @@ function displayProposalValue(value: unknown): string {
   return String(value);
 }
 
-/** A machine key is not a label. `date_field` is not what a person calls it. */
+/** A machine key is not a label. `date_field` is not what a person calls it.
+ *
+ *  IT DE-SNAKES EACH SEGMENT (76-6). A proposal item is keyed `outputs.full_grain`
+ *  and this read it as one word, so the card was titled `Outputs.full grain` —
+ *  half repaired, which reads worse than the raw key because it looks
+ *  deliberate. The dot is a path separator and is drawn as one. */
 function humanKey(key: string): string {
-  const words = key.replaceAll("_", " ").trim();
-  return words.charAt(0).toUpperCase() + words.slice(1);
+  return key
+    .split(".")
+    .map((segment) => wireWord(segment))
+    .filter(Boolean)
+    .join(" · ");
 }
 
 // `EVIDENCE_SOURCE` MOVED to `sourceStepShared.ts` (57.12, T2b);
@@ -878,6 +940,24 @@ function withoutReferences(entry: Record<string, unknown>): Record<string, unkno
   return rest;
 }
 
+/** A blocker, a warning or an exception, in the reader's spelling (76-6).
+ *
+ *  `summarizeObject` prints a record's scalars verbatim, which is right for a
+ *  name or a sentence and wrong for the CODES this payload carries: the
+ *  classification warning read `Cause: operator_confirmation_required` on the
+ *  step where an operator is asked to confirm. Every string value here is a
+ *  server enum (`cause`, `code`, `reason`) — never free prose — so putting the
+ *  base's punctuation and case right is the whole repair, and `wireWord` is
+ *  where that decision lives. */
+function noteSentence(entry: Record<string, unknown>): string {
+  const spoken = Object.fromEntries(
+    Object.entries(withoutReferences(entry)).map(
+      ([key, value]) => [key, typeof value === "string" ? wireWord(value) : value],
+    ),
+  );
+  return summarizeObject(spoken);
+}
+
 function ProposalItemCard({ item, onOpenOwner }: {
   item: PreconfigurationProposalItem;
   onOpenOwner?: (owner: ProposalOwnerReference) => void;
@@ -918,7 +998,7 @@ function ProposalItemCard({ item, onOpenOwner }: {
       <div className="flex flex-wrap items-center gap-2 text-caption text-text-secondary">
         <Status tone={confidence}>{`${humanKey(item.confidence?.level ?? "none")} confidence`}</Status>
         {item.coverage?.state && (
-          <Status tone="neutral">{`Coverage: ${item.coverage.state.replaceAll("_", " ")}`}</Status>
+          <Status tone="neutral">{`Coverage: ${wireWord(item.coverage.state).toLowerCase()}`}</Status>
         )}
       </div>
       {item.confidence?.rationale && (
@@ -934,7 +1014,7 @@ function ProposalItemCard({ item, onOpenOwner }: {
             title={`${title}${entries.length > 1 ? ` (${entries.length})` : ""}`}
           >
             <ul className="m-0 grid gap-1 pl-5">
-              {entries.map((entry, index) => <li key={index}>{summarizeObject(withoutReferences(entry))}</li>)}
+              {entries.map((entry, index) => <li key={index}>{noteSentence(entry)}</li>)}
             </ul>
           </Status>
         ) : null,
@@ -954,9 +1034,22 @@ function ProposalItemCard({ item, onOpenOwner }: {
               key={`${ref.kind}-${ref.object_id}-${ref.version_id}`}
               className="grid gap-1 rounded-md bg-background-light p-3 text-caption text-text-secondary"
             >
-              <span className="text-text">{EVIDENCE_SOURCE[ref.kind] ?? ref.kind.replaceAll("_", " ")}</span>
-              <span>{ref.object_type} · version {ref.version_id}</span>
-              <span className="break-all font-mono">{ref.fingerprint.slice(0, 12)} · observed {ref.observed_at}</span>
+              {/* THREE THINGS THIS BLOCK PRINTED RAW (76-6): a fingerprint
+                  sliced to twelve characters in a bare `font-mono` span, a
+                  version reference beside it, and `observed
+                  2026-07-29T08:00:00Z` — a wire instant read by nobody.
+                  `ObjectId` is the console's one identifier rendering and keeps
+                  the whole value on the row rather than destroying it to save a
+                  line; `Timestamp` is the one instant. */}
+              <span className="text-text">{EVIDENCE_SOURCE[ref.kind] ?? wireWord(ref.kind)}</span>
+              <span className="flex flex-wrap items-baseline gap-x-1.5">
+                {wireWord(ref.object_type)} · version
+                {" "}<ObjectId value={ref.version_id} title="Contract version" />
+              </span>
+              <span className="flex flex-wrap items-baseline gap-x-1.5">
+                <ObjectId value={ref.fingerprint} title="Evidence fingerprint" />
+                {" "}· observed <Timestamp value={ref.observed_at} absentMeaning="Not observed" />
+              </span>
             </div>
           ))
         ) : (
@@ -1018,8 +1111,14 @@ function ProposalReview({ proposal, onOpenOwner, onCompile }: {
     <SectionHeader
       id="proposal-review-title"
       title="Review proposal"
-      description={`Evidence is pinned to proposal ${proposal.proposal_ref}. `
-        + "Compilation changed no active object."}
+      description={
+        // NOT THE REFERENCE IN THE SENTENCE (76-6). `Evidence is pinned to
+        // proposal dspp_2` reads an identifier aloud, and the reference is
+        // already on the row `Technical evidence` draws for it in the summary
+        // panel. What this line owes the reader is what compiling did and did
+        // not do.
+        "Evidence is pinned to this compilation. Compilation changed no active object."
+      }
     />
     {proposal.is_stale && (
       <Status
@@ -2408,7 +2507,13 @@ export default function DatastreamSetupWizard({
     },
     {
       label: "Schedule",
-      value: input?.schedule?.mode ? humanKey(input.schedule.mode) : null,
+      // THE SAME WORD THE CONTROL SHOWS. `humanKey` answered `Daily` where the
+      // select said `Every night (daily)` — and, on a draft carrying no
+      // schedule at all, this line named a gesture while the select below
+      // already displayed `On demand only (manual)`: the summary said the
+      // question was open and the step said it was answered. `manual` IS the
+      // wizard's default (`newInput`), so it is reported as the answer it is.
+      value: cadenceWord(input?.schedule?.mode ?? (input ? "manual" : null)),
       pending: "Choose a cadence at Schedule and activate",
     },
     ...(ARRIVAL_HOUR_CADENCES.includes(input?.schedule?.mode ?? "manual") ? [{
@@ -2447,10 +2552,18 @@ export default function DatastreamSetupWizard({
       stacks in one column (57.12, T6: said once, here, where the widths are
       declared). */}
   return <div
-    className="grid min-h-[680px] grid-cols-[210px_minmax(0,1fr)] gap-5 p-6
-      xl:grid-cols-[210px_minmax(0,1fr)_290px]"
+    /* THE THREE WIDTHS ARE DECLARED, NOT TYPED HERE — `console-presentation.md`
+       §6. `ui/layout.ts` holds them as the utility strings themselves, for the
+       reason written in that file: a width composed at runtime is a rule
+       Tailwind never emits. */
+    className={`grid min-h-[680px] gap-5 p-6 ${WIZARD_GRID}`}
   >
-    <aside aria-label="Datastream setup sections">
+    {/* THE RAIL STAYS ON SCREEN — `:31` calls the stepper **persistent**, and
+        four of the five stops are taller than a 1280px viewport, so « which step
+        am I on » scrolled away exactly where the step is long enough to need
+        asking. The summary next door has been sticky since it became a zone of
+        its own; the rail, which is the navigation, was not. */}
+    <aside aria-label="Datastream setup sections" className={WIZARD_ASIDE_STICKY}>
       <Stepper
         steps={SECTIONS.map((section, index) => ({
           label: section.label,
@@ -3345,19 +3458,11 @@ export default function DatastreamSetupWizard({
                     ),
                   })}
                 >
-                  {/* THE SERVER'S WORDS ON THE LABELS, the plan's vocabulary on
-                      the wire (57.12, T3). The values stay `manual / daily /
-                      weekly / hourly` because activation refuses `nightly` on
-                      this path; the labels match `SchedulePanel.tsx`, so the
-                      console says one thing in both places. */}
-                  <option value="manual">On demand only (manual)</option>
-                  <option value="daily">Every night (daily)</option>
-                  {/* AI-217: legal since migration 204, offered by the Workbench,
-                      the MCP tool and the REST seam, and dispatched by the
-                      once-a-period dispatcher. Absent here, this step was the
-                      only door that could not say it. */}
-                  <option value="weekly">Once a week (weekly)</option>
-                  <option value="hourly">Every hour (hourly)</option>
+                  {/* THE ONE LIST, read here and by the summary and by the
+                      creation dialog (76-6). Its header carries the reasons. */}
+                  {CADENCE_CHOICES.map((choice) => (
+                    <option key={choice.value} value={choice.value}>{choice.label}</option>
+                  ))}
                 </NativeSelect>
               )}
             </Field>
@@ -3447,8 +3552,16 @@ export default function DatastreamSetupWizard({
                     }}
                     aria-label={`Acknowledge ${warningId}`}
                   />
+                  {/* THE ITEM'S OWN WORDS FIRST, its key as an identifier
+                      second (76-6). `classification.fields` set in monospace
+                      inside a sentence is the base's vocabulary asked to stand
+                      in for the person's, and it is also an identifier rendered
+                      outside `ObjectId` — two `Incomplete if` lines at once. The
+                      key stays, because it is what the acknowledgement is
+                      recorded under. */}
                   <span>
-                    I reviewed and accept <span className="font-mono text-caption">{warningId}</span>.
+                    I reviewed and accept {humanKey(warningId.split(".").at(-1) ?? warningId)}{" "}
+                    <ObjectId value={warningId} title="Proposal item" />.
                   </span>
                 </label>
               ))}
@@ -3460,16 +3573,38 @@ export default function DatastreamSetupWizard({
               tone={finalReview.is_stale ? "error" : "success"}
               title="Review prepared"
             >
-              Review {finalReview.final_review_ref} binds proposal {finalReview.proposal_ref},
-              preview {finalReview.preview_ref}, exact schedule and
-              {" "}{finalReview.acknowledged_warning_ids.length} warning acknowledgement(s).
+              {/* FOUR IDENTIFIERS WERE READ ALOUD IN A SENTENCE (76-6), which is
+                  the exact shape §4 refuses: `Review dsfr_01K… binds proposal
+                  dspp_2, preview prv_01K…`. What the operator needs from this
+                  block is that the review is prepared and what it pins; the
+                  references are evidence, and evidence has a rendering. */}
+              <p className="m-0">
+                This review pins the proposal, the preview and the exact schedule, with{" "}
+                {formatCount(finalReview.acknowledged_warning_ids.length, "warning acknowledgement")}.
+              </p>
+              <EvidenceRows
+                className="mt-3"
+                label="What this review pins"
+                source={{
+                  final_review_ref: finalReview.final_review_ref,
+                  proposal_ref: finalReview.proposal_ref,
+                  preview_ref: finalReview.preview_ref,
+                }}
+                labels={{ final_review_ref: "Review", proposal_ref: "Proposal", preview_ref: "Preview" }}
+              />
             </Status>
           )}
           {draftConfirmation && (
             <Status as="block" tone="warning" title="Explicit confirmation required">
+              {/* A RAW WIRE INSTANT WAS PRINTED INTO A SENTENCE (76-6):
+                  `expires at 2026-07-29T09:12:44.271Z`. `Timestamp` is the one
+                  rendering of an instant in this console, and `relative` is the
+                  right grain for a deadline — what a person needs from an expiry
+                  is how long they have, not the hour it falls on. */}
               Creating the Draft will materialize immutable non-live versions and one isolated
-              candidate. It will not publish or start a recurring schedule. Confirmation expires at
-              {" "}{draftConfirmation.expires_at}.
+              candidate. It will not publish or start a recurring schedule. This confirmation
+              expires{" "}
+              <Timestamp value={draftConfirmation.expires_at} relative absentMeaning="No expiry stated" />.
             </Status>
           )}
           {/* THE SUCCESS LINK NO LONGER COMPOSES AN ADDRESS (57.5). It wrote
@@ -3562,7 +3697,7 @@ export default function DatastreamSetupWizard({
         auto-placed block would land in the stepper's. */}
     <aside
       aria-label="Configuration summary"
-      className="col-start-2 min-w-0 xl:col-start-3 xl:row-start-1 xl:self-start xl:sticky xl:top-6"
+      className={`col-start-2 min-w-0 xl:col-start-3 xl:row-start-1 ${WIZARD_ASIDE_STICKY}`}
     >
       <Panel className="grid gap-4 p-4">
         <PanelHeader
@@ -3598,26 +3733,50 @@ export default function DatastreamSetupWizard({
             Technical evidence
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <dl className="m-0 mt-3 grid gap-2" aria-label="Technical evidence">
-              {([
-                ["Draft", draft.draft_ref],
-                ["Revision", revision.current],
-                ["Observation", observation?.observation_ref ?? "Unavailable"],
-                ["Preview", safePreview?.preview_ref ?? previewJob?.state ?? "Unavailable"],
-                ["Candidate", materializationStatus?.candidate_state ?? "Not created"],
-              ] as Array<[string, ReactNode]>).map(([label, value]) => (
-                <div key={label} className="flex items-baseline justify-between gap-3">
-                  <dt className="text-caption text-text-secondary">{label}</dt>
-                  <dd className="m-0 min-w-0 truncate text-right text-caption text-text">{value}</dd>
-                </div>
-              ))}
-            </dl>
+            {/* THE LIBRARY'S EVIDENCE RENDERING, not a fifth hand-rolled `<dl>`
+                (76-6). Four of these five values are references — a draft, an
+                observation, a preview — and they were set as plain text in a
+                right-aligned cell, truncated with no way back to the full
+                value. `EvidenceRows` is the console's one answer to "show me
+                this record": it shortens an opaque id rather than clipping it,
+                keeps the whole of it on the row, and carries the stored key
+                beside the word. `console-presentation.md` §4: an identifier is
+                shown as one, or not at all.
+
+                The three that are NOT references keep their own words —
+                `Not created` is a state and not a missing value, which is the
+                distinction `displayValue`'s `Unavailable` would have erased. */}
+            <EvidenceRows
+              className="mt-3"
+              label="Technical evidence"
+              source={{
+                draft_ref: draft.draft_ref,
+                revision: revision.current,
+                observation_ref: observation?.observation_ref ?? null,
+                preview_ref: safePreview?.preview_ref ?? previewJob?.state ?? null,
+                candidate_state: materializationStatus?.candidate_state
+                  ?? "Not created",
+              }}
+              labels={{
+                draft_ref: "Draft",
+                revision: "Revision",
+                observation_ref: "Observation",
+                preview_ref: "Preview",
+                candidate_state: "Candidate",
+              }}
+            />
           </CollapsibleContent>
         </Collapsible>
       </Panel>
     </aside>
-    <footer className="col-start-2 flex items-center justify-between border-t border-divider-base pt-4">
-      <div className="flex items-center gap-3">
+    {/* IT WRAPS RATHER THAN OVERLAPS (76-6). Six controls sat in one
+        `justify-between` row with nothing allowed to give: measured at 1280px,
+        `Draft saved` broke onto two lines and ran into `Set up source access` on
+        all five steps. The row now wraps as a whole, the save state refuses to
+        break mid-phrase, and the step's own primary action stays last in the
+        reading order at every width. */}
+    <footer className="col-start-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-3 border-t border-divider-base pt-4">
+      <div className="flex min-w-0 items-center gap-3">
       <Button
         variant="ghost"
         disabled={activeSection === 0}
@@ -3628,9 +3787,11 @@ export default function DatastreamSetupWizard({
       {/* The save state lives in the footer: always visible, never a panel of
           its own. `warning` stays for actual warnings — an autosave in flight
           is ordinary. */}
-      <Status tone={saved ? "success" : "neutral"}>{saved ? "Draft saved" : "Saving valid edits"}</Status>
+      <span className="shrink-0 whitespace-nowrap">
+        <Status tone={saved ? "success" : "neutral"}>{saved ? "Draft saved" : "Saving valid edits"}</Status>
+      </span>
       </div>
-      <div className="flex gap-3">
+      <div className="flex flex-wrap items-center gap-3">
       <Button
         variant="secondary"
         onClick={() => input
@@ -3768,8 +3929,11 @@ export default function DatastreamSetupWizard({
       evidenceLabel="What this gesture creates"
       evidence={{
         Datastream: input?.name || "Unnamed",
+        // NEVER THE STORED TOKEN, and this was the worst of the three places it
+        // appeared: the evidence a person reads immediately before confirming an
+        // irreversible creation said `daily`.
         Schedule: [
-          input?.schedule?.mode ?? "manual",
+          cadenceWord(input?.schedule?.mode ?? "manual"),
           ARRIVAL_HOUR_CADENCES.includes(input?.schedule?.mode ?? "manual")
             ? `arrival ${arrivalHourLabel(input?.schedule?.arrival_hour)}`
             : null,

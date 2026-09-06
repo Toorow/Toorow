@@ -132,3 +132,164 @@ describe("the fleet list writes no state vocabulary of its own", () => {
     expect(source).not.toMatch(/RUN_STATE_LABELS?\s*[:=]/);
   });
 });
+
+/**
+ * ------------------------------------------------------------------ story 76-6
+ *
+ * The two things the fleet list owed its reader beyond the state WORDS above:
+ * a key to the marks it draws, and the console's one reading of an age.
+ */
+import { render, screen, within } from "@testing-library/react";
+import DataWorkspace from "../shell/pages/DataWorkspace";
+import { DATA_STATE_MEANING } from "../data/DataCollectionLayout";
+import * as dataSurface from "../data/dataSurface";
+
+/**
+ * WHY THIS IS A SOURCE RULE AND NOT ONLY A RENDER TEST.
+ *
+ * `formatRelative` is the console's one answer to "how long ago"
+ * (`console-presentation.md` §2 and its second amendment). Two files had built
+ * their own ladder — `<1h` / `26h` / `33d` — and one of them, `DataWorkspace#age`,
+ * was migrated by 76-1 and named in that amendment as migrated. Its twin in
+ * `WorkbenchOverviewPage#ageSince` was not, and the fleet list and the
+ * Datastream it opens printed the same publication two different ways for a
+ * month.
+ *
+ * Neither ladder calls `Intl` or `.toFixed(`, so `FormattingIsCentral` — which
+ * greps for both — could not see either. This is the shape a grep gate misses:
+ * a formatter written entirely in arithmetic and template strings. The ratchet
+ * starts at zero over the two trees this story owns, and the second test plants
+ * one so the first cannot pass by looking at nothing.
+ */
+const AGE_LADDER = /`\s*\$\{[^}]+\}\s*(?:h|d|m|min|s)\s*`|["'`]<\s*1\s*(?:h|m|s)["'`]/g;
+
+const TREE = import.meta.glob(
+  ["../shell/pages/Data*.tsx", "../data/**/*.tsx", "../datastreams/**/*.tsx"],
+  { eager: true, query: "?raw", import: "default" },
+) as Record<string, string>;
+
+function withoutComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^\s*\/\/.*$/gm, " ");
+}
+
+function ageLaddersIn(source: string): string[] {
+  return [...withoutComments(source).matchAll(AGE_LADDER)].map((match) => match[0]);
+}
+
+describe("an age has one reading in Data, and it is the console's", () => {
+  it("holds no private relative-time ladder in the Data or Datastream trees", () => {
+    const offenders: string[] = [];
+    for (const [path, source] of Object.entries(TREE)) {
+      for (const found of ageLaddersIn(source)) offenders.push(`${path}: ${found}`);
+    }
+    expect(
+      offenders,
+      `a second relative-time vocabulary is being built by hand: ${offenders.join(", ")}. `
+        + "Ask `formatRelative` — `console-presentation.md` §2, amendment 2.",
+    ).toEqual([]);
+    // Not vacuous: the glob must actually be reading the tree.
+    expect(Object.keys(TREE).length).toBeGreaterThan(20);
+  });
+
+  it("fires on a planted ladder, so the ratchet cannot pass by reading nothing", () => {
+    const planted = `
+      function age(hours: number) {
+        if (hours < 1) return "<1h";
+        if (hours < 48) return \`\${hours}h\`;
+        return \`\${Math.floor(hours / 24)}d\`;
+      }
+    `;
+    expect(ageLaddersIn(planted).length).toBeGreaterThanOrEqual(3);
+    // And a comment describing the defect is not the defect.
+    expect(ageLaddersIn('// it answered `${hours}h` and "<1h"')).toEqual([]);
+  });
+});
+
+/**
+ * THE KEY THE FLEET DREW SIX MARKS WITHOUT — `console-presentation.md` §3:
+ * « Any screen that shows three tones or more mounts it once, in its
+ * `PageHeader`. »
+ *
+ * Every other Data collection has had one since 76-2 because they all render
+ * through `DataCollectionLayout`. The fleet builds its own thirteen-column
+ * table, so the fix never reached it: it is the same screen family, the same
+ * marks, and no key. Amendment 23 adds the half that makes a key honest — the
+ * entries are DERIVED from the rows on the page, so a healthy fleet does not
+ * explain a red nobody can see.
+ */
+function fleetEnvelope(states: Array<Record<string, string>>) {
+  return {
+    status: "ready" as const,
+    refreshing: false,
+    envelope: {
+      schema_version: "data-datastreams.v1",
+      project_ref: { object_type: "project", id: "proj_EXAMPLE" },
+      generated_at: "2026-07-29T10:00:00Z",
+      evidence_as_of: "2026-07-29T09:45:00Z",
+      items: states.map((state, index) => ({
+        object_ref: { object_type: "datastream", id: `ds_EXAMPLE_${index}` },
+        name: `Fleet member ${index}`,
+        lens: "datastreams",
+        source_kind: "connector_pull",
+        connector_ref: { id: "google-analytics" },
+        states: state,
+        evidence: {},
+        links: {},
+      })),
+      unavailable_reasons: [],
+      allowed_actions: [],
+    },
+  };
+}
+
+function renderFleet(states: Array<Record<string, string>>) {
+  vi.spyOn(dataSurface, "useDataSurface").mockReturnValue({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the hook's
+    // envelope type is the wire shape; the fixture is that shape, narrowed.
+    state: fleetEnvelope(states) as any,
+    reload: vi.fn(),
+  });
+  return render(<DataWorkspace projectId="proj_EXAMPLE" />);
+}
+
+describe("the fleet says what its marks mean", () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it("mounts one key, and its entries are the tones the rows actually carry", async () => {
+    renderFleet([
+      { lifecycle: "active", health: "healthy" },
+      { lifecycle: "archived", health: "failed" },
+    ]);
+    const key = await screen.findByRole("list", { name: "What a Datastream mark means" });
+    const entries = within(key).getAllByRole("listitem");
+    const words = entries.map((entry) => entry.textContent ?? "");
+    // The two tones these rows draw, in the scale's order, with the Data
+    // workspace's own sentences — never a sentence written on this screen.
+    expect(words.some((word) => word.includes(DATA_STATE_MEANING.success.label))).toBe(true);
+    expect(words.some((word) => word.includes(DATA_STATE_MEANING.error.label))).toBe(true);
+    // And nothing about a mark no row carries.
+    expect(words.some((word) => word.includes(DATA_STATE_MEANING.info.label))).toBe(false);
+  });
+
+  it("spells a state with the union's word, never the stored token", async () => {
+    renderFleet([{ lifecycle: "active", health: "healthy" }]);
+    // `TableScroll` names the region; the `<table>` inside it carries no name.
+    const fleet = await screen.findByRole("region", { name: "Datastream fleet" });
+    const body = fleet.textContent ?? "";
+    expect(body).toContain("Active");
+    expect(body).not.toMatch(/(^|[^A-Za-z])active([^A-Za-z]|$)/);
+    // A mode is the wire's word with the base's punctuation taken off, not
+    // lower-cased prose: it read `connector pull` next to the wizard's
+    // `Connector pull`.
+    expect(body).toContain("Connector pull");
+    expect(body).not.toContain("connector pull");
+  });
+
+  it("says Unknown for a state nobody sent, not Unavailable", async () => {
+    // Amendment 16: `unavailable` asserts the server stated an absence. An
+    // empty cell asserts nothing, and this row's lifecycle is empty.
+    renderFleet([{ health: "healthy" }]);
+    const fleet = await screen.findByRole("region", { name: "Datastream fleet" });
+    expect(fleet.textContent ?? "").toContain("Unknown");
+  });
+});

@@ -44,14 +44,14 @@ External agents are conversational or autonomous LLM clients (such as **Claude D
   the host that serves the toorow server itself in production.
 
 <Warning>
-  **Point the host at the server, not at the console's domain.** If you put a
-  static host in front of the console, only the paths it is told to rewrite reach
-  the server. Measured 2026-09-06 on the maintainers' deployment: `/api/**`,
-  `/share`, `/share/**` and `/handoff` are rewritten, `/mcp` is not — so
-  `https://app.toorow.com/mcp` answers `200 text/html`, the console's own page. An
-  MCP host pointed there receives HTML where it expects JSON-RPC, and the failure
-  looks like a broken server rather than a routing rule. Either add `/mcp` to the
-  rewrites, or give the host the server's own address.
+  **If you front the server with a static host, `/mcp` must be rewritten to it.**
+  Only the paths a static host is told to forward reach the server; everything
+  else falls through to the console's own page. Measured 2026-09-06 on the
+  maintainers' deployment, before the rule was applied: `/mcp` answered
+  `200 text/html` — the console — so an MCP host pointed at it received HTML
+  where it expects JSON-RPC, and the failure looked like a broken server rather
+  than a routing rule. The paths that must cross are `/api/**`, `/mcp`,
+  `/mcp/**`, `/share`, `/share/**` and `/handoff`.
 </Warning>
 - **Dual-Channel Protocol**: External hosts receive a short LLM text summary for prompt insertion while rendering embedded **MCP App UI widgets (`ui/widgets/`)** directly inside client chat interfaces.
 

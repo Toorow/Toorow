@@ -61,7 +61,7 @@
  * draft would be a second activation authority telling a comfortable lie.
  */
 import { useEffect, useState } from "react";
-import { Badge, Button, Field, formatTimestamp, Input, NativeSelect, NO_VALUE, Panel, PanelHeader, Status } from "../../ui";
+import { Badge, Button, Field, formatCount, formatDayOffset, formatTimestamp, Input, NativeSelect, NO_VALUE, Panel, PanelHeader, Status } from "../../ui";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { apiFetch } from "../../lib/apiFetch";
 
@@ -729,7 +729,14 @@ export default function SchedulePanel({
 
         <Field
           label="Extraction offset (lag)"
-          hint="Days back from today where window ends (default 1 = yesterday; 3 = J-3 for delayed sources like GSC)."
+          /* THE CATCH-UP NOTATION, FROM THE ONE HELPER (76-6, arbitrage 2).
+             This hint carried « J-3 » — the last survivor of the epic's
+             « Nuit · J-3 » family, a French abbreviation with a hyphen for a
+             minus sign, on the one English screen that names the offset. And
+             `GSC` is a slug: `Search Console` is the product's word for it. */
+          hint={`Days back from today where the window ends — 1 is yesterday, and `
+            + `3 is ${formatDayOffset(3)}, which is what a delayed source such as Search `
+            + `Console needs.`}
         >
           {(props) => (
             <Input
@@ -838,8 +845,12 @@ export default function SchedulePanel({
               ? "Not set — cleared, runs at local midnight"
               : hourLabel(Number(arrivalHour))
             : "not applicable to this frequency",
-          history_fetched_each_run: `${windowDays} day(s)`,
-          extraction_offset: `${windowOffsetDays} day(s)`,
+          // `day(s)` IS NOT A PLURAL, and the console has a function for the
+          // one that is. The offset also reads in the notation the field above
+          // teaches, so the confirmation and the control say the same thing.
+          history_fetched_each_run: formatCount(Number(windowDays), "day"),
+          extraction_offset: `${formatDayOffset(Number(windowOffsetDays))} — `
+            + formatCount(Number(windowOffsetDays), "day"),
         }}
         evidenceLabel="What this write sets"
         confirmLabel="Save schedule"

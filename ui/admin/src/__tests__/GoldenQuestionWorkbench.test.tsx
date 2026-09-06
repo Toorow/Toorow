@@ -270,7 +270,7 @@ it("names every expected-path node in the observed vocabulary", async () => {
   expect(screen.getByText(/This is a pattern, not a trace/i)).toBeInTheDocument();
 });
 
-it("reports every undelivered owner as Unverifiable, with its reason and story", async () => {
+it("reports every undelivered owner as Unverifiable, with the reason a person can read", async () => {
   mockApi(HAPPY);
   mount("coverage");
   expect(await screen.findByTestId("verdict-render")).toHaveTextContent("Unverifiable");
@@ -280,8 +280,17 @@ it("reports every undelivered owner as Unverifiable, with its reason and story",
 
   expect(screen.getByText("render_owner_not_delivered")).toBeInTheDocument();
   expect(screen.getByText("evaluation_run_owner_not_delivered")).toBeInTheDocument();
-  expect(screen.getByText("Story 51.2")).toBeInTheDocument();
-  expect(screen.getByText("Story 49.6")).toBeInTheDocument();
+
+  // 76-5. THE STORY NUMBER LEFT THE SCREEN, and this assertion moved with it.
+  // `golden_questions.py:249` carries `owner_story` on every declared absence
+  // and the console served it in an "Owner" column -- "Story 51.2", "Story
+  // 49.6" -- to a person who has no tracker and cannot look either of them up.
+  // What a reader needs is the SENTENCE the same record already carries
+  // (`message`), and that is what the column beside the code now holds.
+  expect(screen.queryByText(/^Story \d+\.\d+$/)).not.toBeInTheDocument();
+  expect(screen.queryByRole("columnheader", { name: "Owner" })).not.toBeInTheDocument();
+  expect(screen.getByText(/no Evaluation Run owner exists/i)).toBeInTheDocument();
+  expect(screen.getByText(/no caller records an observed AI Path yet/i)).toBeInTheDocument();
 
   // Nothing on this tab may read as a result.
   expect(screen.queryByText(/^Pass$/i)).not.toBeInTheDocument();
@@ -292,7 +301,9 @@ it("lists the immutable history and shows the Render pin as Unverifiable", async
   mockApi(HAPPY);
   mount("versions");
   expect(await screen.findByText("a".repeat(64))).toBeInTheDocument();
-  expect(screen.getByText("None (first version)")).toBeInTheDocument();
+  // 76-5: the first version has no predecessor, and an absence takes the
+  // console's one dash. "None (first version)" was a private spelling of `—`.
+  expect(screen.getByTestId("no-predecessor")).toHaveTextContent("—");
   expect(screen.getByText(/refuses to change a stored one/i)).toBeInTheDocument();
   expect(screen.getByText("Unverifiable")).toBeInTheDocument();
 });

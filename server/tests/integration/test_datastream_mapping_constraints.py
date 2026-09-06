@@ -403,6 +403,14 @@ def test_live_postgres_mapping_binding_fk_rejects_unknown_registry_target() -> N
                 """,
                 (good_target,),
             )
+            # The registry census BEFORE the save path runs. The assertion at the
+            # end used to read `COUNT(*) == 1`, which is only true on a database
+            # nothing else ever touched: `app.mdm_canonical_fields` is PLATFORM
+            # scope and every suite of this directory that mints a canonical
+            # field adds to it (671 rows on the shared disposable base). The
+            # subject is "the save path wrote NOTHING", and that is a delta.
+            cur.execute("SELECT COUNT(*) FROM app.mdm_canonical_fields")
+            registry_before = cur.fetchone()[0]
         setup.commit()
 
     payload = {
@@ -477,7 +485,17 @@ def test_live_postgres_mapping_binding_fk_rejects_unknown_registry_target() -> N
     with psycopg.connect(dsn) as verify:
         with verify.cursor() as cur:
             cur.execute("SELECT COUNT(*) FROM app.mdm_canonical_fields")
-            assert cur.fetchone()[0] == 1
+            assert cur.fetchone()[0] == registry_before, (
+                "the save path minted a canonical field; binding RESOLVES a "
+                "registry target, it never creates one"
+            )
+            cur.execute(
+                "SELECT COUNT(*) FROM app.mdm_canonical_fields WHERE project_id = %s",
+                (proj_id,),
+            )
+            assert cur.fetchone()[0] == 0, (
+                "the save path minted a PROJECT-scope field for this Datastream"
+            )
 
 
 @requires_postgres

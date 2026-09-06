@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useDataSurface } from "../../data/dataSurface";
-import { Button, EmptyState, Metric, PageHeader, Panel, PanelHeader, Stack, Status } from "../../ui";
+import { Button, EmptyState, formatNumber, Metric, PageHeader, Panel, PanelHeader, Stack, Status, stateLabel, wireWord } from "../../ui";
+import { StateValue } from "../../data/DataCollectionLayout";
 
 const LENS_LABELS: Record<string, string> = {
   sources: "Source Accounts",
@@ -69,7 +70,20 @@ export default function DataOverview({ projectId }: { projectId: string }) {
             <PanelHeader title="Project coverage" description="Counts come from the canonical owner of each Data object." />
             <div className="grid divide-x divide-divider-base sm:grid-cols-2 xl:grid-cols-5">
               {state.envelope.items.map((item) => (
-                <Metric key={item.lens} label={LENS_LABELS[item.lens ?? ""] ?? item.lens} value={item.object_count ?? 0} hint={<Status tone={item.states.evidence === "available" ? "success" : "neutral"}>{item.states.evidence}</Status>} />
+                // THE CONSOLE'S WORD AND THE CONSOLE'S TONE (76-6). This tile
+                // printed `{item.states.evidence}` — the stored token, lower
+                // case — under a dot whose colour was decided by a ternary
+                // written here. `StateValue` is the one rendering every other
+                // Data screen uses, and it reads both halves from the union, so
+                // `Available` cannot be spelled two ways inside one workspace.
+                // A count nobody sent is NOT a zero: `??  0` claimed a
+                // measurement, and `formatNumber` answers the dash instead.
+                <Metric
+                  key={item.lens}
+                  label={LENS_LABELS[item.lens ?? ""] ?? wireWord(item.lens)}
+                  value={formatNumber(item.object_count)}
+                  hint={<StateValue value={item.states.evidence} />}
+                />
               ))}
             </div>
           </Panel>
@@ -83,18 +97,27 @@ export default function DataOverview({ projectId }: { projectId: string }) {
                   <div key={lens} className="relative rounded-control border border-divider-base p-4" data-testid={`data-overview-stage-${lens}`}>
                     <span className="text-caption font-semibold uppercase tracking-wide text-text-secondary">Stage {index + 1}</span>
                     <h3 className="mt-1 text-h3 font-h3 text-text">{LENS_LABELS[lens]}</h3>
-                    <p className="mt-2 font-numeric text-metric text-text">{item?.object_count ?? 0}</p>
-                    <Status tone={item?.states.evidence === "available" ? "success" : "neutral"}>{item?.states.evidence ?? "unavailable"}</Status>
+                    <p className="mt-2 font-numeric text-metric text-text">{formatNumber(item?.object_count)}</p>
+                    <StateValue value={item?.states.evidence} />
                     {breakdown ? (
                       <dl className="mt-3 flex flex-col gap-1.5" data-testid={`data-overview-breakdown-${lens}`}>
                         {breakdown.map(({ axis, counts }) => (
                           <div key={axis} className="flex flex-col gap-0.5">
-                            <dt className="text-caption uppercase tracking-wide text-text-secondary">{axis.replaceAll("_", " ")}</dt>
+                            {/* The axis is a wire NAME and the count is keyed
+                                by a wire STATE, and the two take different
+                                answers: `wireWord` puts a stored token's
+                                spelling right, `stateLabel` replaces a state
+                                word with the console's own. Both were
+                                `.replaceAll("_", " ")` — the same de-snaker for
+                                two different questions, and lower case for
+                                both, so a stage read `12 never run` under
+                                `installation`. */}
+                            <dt className="text-caption uppercase tracking-wide text-text-secondary">{wireWord(axis)}</dt>
                             <dd className="flex flex-wrap gap-x-3 gap-y-0.5 text-caption text-text">
                               {counts.map(({ value, n }) => (
                                 <span key={value}>
-                                  <span className="font-numeric font-semibold">{n}</span>{" "}
-                                  {value.replaceAll("_", " ")}
+                                  <span className="font-numeric font-semibold">{formatNumber(n)}</span>{" "}
+                                  {stateLabel(value)}
                                 </span>
                               ))}
                             </dd>
@@ -120,7 +143,7 @@ export default function DataOverview({ projectId }: { projectId: string }) {
             ) : (
               <div className="divide-y divide-divider-base">
                 {state.envelope.unavailable_reasons.map((reason) => (
-                  <Status key={reason.code} as="block" tone="warning" title={reason.code.replaceAll("_", " ")} className="rounded-none border-0">{reason.message}</Status>
+                  <Status key={reason.code} as="block" tone="warning" title={wireWord(reason.code)} className="rounded-none border-0">{reason.message}</Status>
                 ))}
               </div>
             )}

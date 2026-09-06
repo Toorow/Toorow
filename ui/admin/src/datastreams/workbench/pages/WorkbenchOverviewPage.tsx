@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, capabilityLabel, ConfirmDialog, formatNumber, formatPercent, Metric, ObjectId, Panel, PanelHeader, Status } from "../../../ui";
+import { Button, capabilityLabel, ConfirmDialog, formatNumber, formatPercent, formatRelative, formatTimestamp, Metric, ObjectId, Panel, PanelHeader, Status } from "../../../ui";
 import { dateTime, record, records, text, titleCase } from "../evidence";
 import type { Tab } from "../../../shell/pages/datastreamTabs";
 import WorkbenchCapabilityPanel, { capabilityProjection } from "../WorkbenchCapabilityPanel";
@@ -70,19 +70,36 @@ function mappingHealth(evidence: Record<string, unknown> | null): {
   return { state: "healthy", title: "", detail: "" };
 }
 
-/** `3h`, `2d` — the age a person reads freshness as. An absolute timestamp is
- *  the evidence, not the answer: "is this current?" is a duration question, and
- *  the mockup leads with `3h` for that reason. The timestamp stays as the hint,
- *  so nothing is lost. */
-function ageSince(value: string | null, now: Date = new Date()): string {
+/** The age a person reads freshness as. An absolute timestamp is the evidence,
+ *  not the answer: "is this current?" is a duration question, and the mockup
+ *  leads with the age for that reason. The timestamp stays as the hint, so
+ *  nothing is lost.
+ *
+ *  THIS WAS THE CONSOLE'S SECOND RELATIVE-TIME VOCABULARY (76-6, arbitrage 1).
+ *  It answered `<1h`, `26h`, `33d`; `formatRelative` answers `2 h ago`,
+ *  `33 d ago` — and the second amendment of `console-presentation.md` ratifies
+ *  that wording, in as many words, for exactly the range a Datastream's
+ *  publication sits in. The twin of this function, `DataWorkspace#age`, was
+ *  migrated by 76-1 and named in that amendment; this one survived because it
+ *  formats by ARITHMETIC and calls no `Intl`, so neither the first gate nor the
+ *  `.toFixed(` widening that followed could see it. The fleet list and the
+ *  Datastream it opens were printing the same publication two different ways.
+ *
+ *  Beyond seven days `formatRelative` answers the instant itself, which §2
+ *  ratifies and this tile keeps — no thirteenth wording is invented for the
+ *  case. What changes then is the HINT: it led with `Published <instant>`, and
+ *  the tile would be printing one instant twice. */
+function ageSince(value: string | null): string {
   if (!value) return "Unavailable";
-  const at = new Date(value);
-  if (Number.isNaN(at.getTime())) return "Unavailable";
-  const hours = Math.floor((now.getTime() - at.getTime()) / 3_600_000);
-  if (hours < 0) return "Unavailable";
-  if (hours < 1) return "<1h";
-  if (hours < 48) return `${hours}h`;
-  return `${Math.floor(hours / 24)}d`;
+  if (Number.isNaN(new Date(value).getTime())) return "Unavailable";
+  return formatRelative(value);
+}
+
+/** True while the tile's own value is a DURATION and not the instant itself —
+ *  the one case where the hint still owes the reader the publication date. */
+function ageIsRelative(value: string | null): boolean {
+  if (!value) return false;
+  return formatRelative(value) !== formatTimestamp(value);
 }
 
 /**
@@ -196,7 +213,11 @@ export default function WorkbenchOverviewPage({
    */
   const watermark = schedule?.last_committed_watermark ? dateTime(schedule.last_committed_watermark) : null;
   const freshnessHint = [
-    publishedAt ? `Published ${dateTime(publishedAt)}` : "Nothing published yet",
+    publishedAt
+      // Said once. Past seven days the tile's own value IS the publication
+      // instant, so repeating it here is the duplication §5 refuses.
+      ? (ageIsRelative(publishedAt) ? `Published ${dateTime(publishedAt)}` : null)
+      : "Nothing published yet",
     watermark ? `data collected through ${watermark}` : null,
   ].filter(Boolean).join(" · ");
   const successEvidence = record(payload.evidence.run_success) ?? {};

@@ -23,6 +23,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import DatastreamSetupWizard from "../datastreams/preconfiguration/DatastreamSetupWizard";
 import { parsePath } from "../shell/router";
+import { WIZARD_ASIDE_STICKY } from "../ui";
 import * as wizardApi from "../datastreams/wizard/wizardApi";
 
 vi.mock("../datastreams/wizard/wizardApi", async () => {
@@ -166,4 +167,52 @@ it("hands the created Datastream to the shell instead of writing its address", a
   const open = screen.getByRole("button", { name: "Open the Datastream" });
   open.click();
   expect(onCreated).toHaveBeenCalledWith("ds_created");
+});
+
+/**
+ * ----------------------------------------------------------------- story 76-6
+ *
+ * WHAT STAYS ON SCREEN WHEN THE STEP IS LONGER THAN THE VIEWPORT.
+ *
+ * `datastream-workbench-and-wizard.md:31` calls the left stepper
+ * **persistent**. Measured at 1280px on 2026-09-06, four of the five stops are
+ * taller than the viewport — `Classify and map` is 2707px — and the rail was an
+ * ordinary grid item, so "which step am I on, and how many are left" scrolled
+ * away exactly where the step is long enough for a person to need asking. The
+ * `Configuration summary` next door has been sticky since it became a zone of
+ * its own; the rail, which is the navigation, never was.
+ *
+ * jsdom lays nothing out, so the pixel proof is the capture
+ * (`scratch/screens/76-6/`). What is assertable here is the DECLARATION, and
+ * one thing better than a class string: that the two asides read the SAME
+ * declaration, so neither can be made to scroll while the other stays.
+ */
+it("keeps the rail on screen, from the same declaration the summary reads", async () => {
+  render(<DatastreamSetupWizard projectId="proj_1" />);
+  const rail = await screen.findByLabelText("Datastream setup sections");
+  const summary = screen.getByLabelText("Configuration summary");
+  expect(rail.className).toContain(WIZARD_ASIDE_STICKY);
+  expect(summary.className).toContain(WIZARD_ASIDE_STICKY);
+  // And the declaration is a sticky one — an assertion that two files agree
+  // proves nothing if they agree on the wrong thing.
+  expect(WIZARD_ASIDE_STICKY).toContain("sticky");
+  expect(WIZARD_ASIDE_STICKY).toContain("self-start");
+  // `self-start` is not decoration: a stretched grid item is as tall as its row
+  // and a sticky box that tall never moves.
+  expect(rail.className).toContain("self-start");
+});
+
+/** THE FOOTER WRAPS RATHER THAN OVERLAPPING (76-6). Six controls sat in one
+ *  `justify-between` row with nothing allowed to give, and at 1280px
+ *  `Draft saved` broke onto two lines and ran into `Set up source access` on
+ *  every step. Again the pixel proof is the capture; the declaration is that
+ *  the row may wrap and that the save state may not break mid-phrase. */
+it("lets the footer wrap, and keeps the save state on one line", async () => {
+  render(<DatastreamSetupWizard projectId="proj_1" />);
+  const saved = await screen.findByText("Draft saved");
+  const footer = saved.closest("footer") as HTMLElement;
+  expect(footer.className).toContain("flex-wrap");
+  const line = saved.closest("span.whitespace-nowrap");
+  expect(line, "the save state must not break mid-phrase").not.toBeNull();
+  expect(line!.className).toContain("shrink-0");
 });

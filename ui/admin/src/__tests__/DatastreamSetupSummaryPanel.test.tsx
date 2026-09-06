@@ -19,6 +19,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import DatastreamSetupWizard from "../datastreams/preconfiguration/DatastreamSetupWizard";
+import { WIZARD_ASIDE_STICKY, WIZARD_GRID } from "../ui";
 import * as wizardApi from "../datastreams/wizard/wizardApi";
 
 vi.mock("../datastreams/wizard/wizardApi", async () => {
@@ -192,10 +193,15 @@ it("declares the third zone of `:31` at desktop width, and puts the panel in it"
   expect(zone).toHaveAttribute("aria-label", "Configuration summary");
   expect(zone.className).toContain("xl:col-start-3");
   const root = zone.parentElement as HTMLElement;
-  expect(root.className).toContain("xl:grid-cols-[210px_minmax(0,1fr)_290px]");
+  // The three widths are DECLARED, not typed at the call site
+  // (`console-presentation.md` §6). The assertion reads the declaration rather
+  // than repeating its numbers, so moving a zone moves the test with it and a
+  // literal typed back into the JSX fails here.
+  expect(root.className).toContain(WIZARD_GRID);
+  expect(WIZARD_GRID).toContain("xl:grid-cols-[210px_minmax(0,1fr)_290px]");
   // Et sous 1280 px la grille n'a que deux pistes : le panneau suit la zone de
   // tâche, il ne tombe pas sous le rail de 210 px.
-  expect(root.className).toContain("grid-cols-[210px_minmax(0,1fr)]");
+  expect(WIZARD_GRID).toContain("grid-cols-[210px_minmax(0,1fr)]");
   expect(zone.className).toContain("col-start-2");
 });
 
@@ -230,4 +236,116 @@ it("reports the answers a resumed draft already carries, from the very first sec
   expect(within(await line("Role")).getByText("Spend")).toBeInTheDocument();
   // Et ce qui manque encore nomme toujours son geste.
   expect(within(await line("Output")).getByText("Not compiled")).toBeInTheDocument();
+});
+
+/**
+ * ONE ANSWER, ONE SOURCE — story 76-6, arbitrage 3.
+ *
+ * `console-presentation.md` §4: « Vocabulary of the user, not the base. » The
+ * sticky summary is where that rule is easiest to break, because it reports
+ * values it did not collect: it must therefore look their WORDS up where the
+ * control that collected them found them, and never spell them again.
+ *
+ * Two settings of this wizard are chosen from a closed list — the mode and the
+ * cadence — and both were spelled twice before this story. `Mode` already read
+ * `MODE_CHOICES`; `Schedule` read `humanKey(input.schedule.mode)`, so the
+ * control said `Every night (daily)` and the panel beside it said `Daily`. The
+ * assertion is therefore not "the panel says something readable" — it is that
+ * the panel says THE SAME STRING the control does, which is the only shape a
+ * second store cannot satisfy by accident.
+ */
+const STORED_TOKEN = /^[a-z0-9]+(?:_[a-z0-9]+)+$/;
+
+/** The wire words this wizard persists. None may reach a `<dd>`. */
+const WIRE_WORDS = [
+  "connector_pull", "external_bq", "managed_feed",
+  "manual", "daily", "weekly", "hourly",
+];
+
+it("spells the mode and the cadence exactly as the controls that collect them do", async () => {
+  const user = userEvent.setup();
+  render(<DatastreamSetupWizard projectId="proj_1" />);
+  expect(await screen.findByText("Draft saved")).toBeInTheDocument();
+
+  // The mode: the radio's accessible name IS the word, and the panel repeats it.
+  const modeRadio = screen.getByRole("radio", { name: "Connector pull" });
+  await user.click(modeRadio);
+  expect(within(await line("Mode")).getByText(modeRadio.getAttribute("aria-label")!))
+    .toBeInTheDocument();
+
+  // The cadence: `newInput` opens every mode on `manual`, so the answer exists
+  // from the moment a mode is picked and the panel must report it rather than
+  // name a gesture for a question the step below already shows answered.
+  const cadenceOnFirstStep = within(await line("Schedule")).queryByText(
+    "Choose a cadence at Schedule and activate",
+  );
+  expect(cadenceOnFirstStep).not.toBeInTheDocument();
+
+  // And it is the select's own option text, character for character.
+  await user.click(await screen.findByRole("radio", { name: "Generic Daily" }));
+  await user.selectOptions(await screen.findByLabelText(/Source Account/), "sacct_1");
+  await user.click(screen.getByRole("button", { name: "Discover source" }));
+  await user.type(await screen.findByLabelText(/Datastream name/), "Daily performance");
+  await user.selectOptions(await screen.findByLabelText(/Data role/), "Spend");
+  await user.click(await screen.findByRole("button", { name: "Continue to configure" }));
+  await user.click(screen.getByRole("button", { name: "Compile proposal" }));
+  await user.click(await screen.findByRole("button", { name: "Continue to classify and map" }));
+  await user.click(await screen.findByRole("button", { name: "Continue to preview" }));
+  await user.click(screen.getByRole("button", { name: "Create safe preview" }));
+  await user.click(await screen.findByRole("button", { name: "Review schedule" }));
+
+  const cadence = await screen.findByLabelText(/Cadence/);
+  const chosen = within(cadence).getByRole("option", { selected: true });
+  expect(within(await line("Schedule")).getByText(chosen.textContent!)).toBeInTheDocument();
+
+  // Changing it moves the panel with it — one source, not two that agree today.
+  await user.selectOptions(cadence, "weekly");
+  const weekly = within(cadence).getByRole("option", { selected: true });
+  expect(weekly.textContent).not.toBe(chosen.textContent);
+  expect(within(await line("Schedule")).getByText(weekly.textContent!)).toBeInTheDocument();
+});
+
+it("puts no stored token in any line of the panel, at any stop", async () => {
+  const user = userEvent.setup();
+  render(<DatastreamSetupWizard projectId="proj_1" />);
+  expect(await screen.findByText("Draft saved")).toBeInTheDocument();
+  await user.click(screen.getByRole("radio", { name: "Connector pull" }));
+  await user.click(await screen.findByRole("radio", { name: "Generic Daily" }));
+  await user.selectOptions(await screen.findByLabelText(/Source Account/), "sacct_1");
+  await user.click(screen.getByRole("button", { name: "Discover source" }));
+  await user.type(await screen.findByLabelText(/Datastream name/), "Daily performance");
+  await user.selectOptions(await screen.findByLabelText(/Data role/), "Spend");
+
+  const values = Array.from(
+    (await screen.findByTestId("config-summary")).querySelectorAll("dd"),
+  ).map((cell) => (cell.textContent ?? "").trim());
+  expect(values.length).toBeGreaterThan(5);
+  for (const value of values) {
+    expect(WIRE_WORDS, `the panel printed the stored word "${value}"`).not.toContain(value);
+    expect(STORED_TOKEN.test(value), `the panel printed a stored token: "${value}"`).toBe(false);
+  }
+});
+
+/** THE EVIDENCE OF THE ONE IRREVERSIBLE GESTURE (76-6). The creation dialog is
+ *  the last thing a person reads before a Datastream exists, and its `Schedule`
+ *  row printed `manual` — the wire word, in the one place on this screen where
+ *  a misread cannot be undone by scrolling back. It reads the same list as the
+ *  select and the panel. */
+it("confirms creation with the cadence spelled, never the token", async () => {
+  const user = userEvent.setup();
+  vi.mocked(wizardApi.createDatastreamSetupDraft).mockResolvedValueOnce({
+    ...draft,
+    operator_input: {
+      mode: "connector_pull",
+      name: "Daily performance",
+      data_role: "Spend",
+      schedule: { mode: "weekly" },
+      source: { source_account_ref: "sacct_1", connector_ref: "generic", connector_contract_version_ref: "ccv_1", report_ref: "daily" },
+      configure: { date_field: "date", metrics: "spend", dimensions: "date", date_window: "", filters: "", history_intent: "", grain: "date" },
+      wizard_state: { active_section_ref: "schedule_activate" },
+    },
+  });
+  render(<DatastreamSetupWizard projectId="proj_1" />);
+  expect(await screen.findByLabelText("Schedule and activate section")).toBeInTheDocument();
+  expect(within(await line("Schedule")).getByText("Once a week (weekly)")).toBeInTheDocument();
 });

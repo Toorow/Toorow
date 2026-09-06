@@ -10,7 +10,7 @@ that answers the call.
 
 <Note>
   This page describes the surface and documents the tools you will reach first.
-  It is **not** a listing of all 131 tools: the tool catalog a host receives at
+  It is **not** a listing of all 147 tools: the tool catalog a host receives at
   `tools/list` is generated from the server itself, and that catalog is the
   reference which cannot fall behind. Every tool named on this page is checked
   against the server registry by a conformance test.
@@ -20,20 +20,21 @@ that answers the call.
 
 ## 1. Three profiles, one surface
 
-A host does not see all 131 tools. It sees the profiles its session is entitled
+A host does not see all 147 tools. It sees the profiles its session is entitled
 to, and nothing else.
 
 | Profile | Tools | What it may do | Reached when |
 | --- | --- | --- | --- |
-| `insights` | 54 | Reads only. Never mutates. | Always — this is the floor, with no token and no proof of workspace |
-| `operations` | 43 | Runs, drafts, schedules, compositions | The session proves an endpoint and a workspace |
-| `governance` | 34 | Publishes definitions, capabilities and master data | The session proves an endpoint, a workspace, and verified interactive presence |
+| `insights` | 60 | Reads only. Never mutates. | Always — this is the floor, with no token and no proof of workspace |
+| `operations` | 47 | Runs, drafts, schedules, compositions | The session proves an endpoint and a workspace |
+| `governance` | 40 | Publishes definitions, capabilities and master data | The session proves an endpoint, a workspace, and verified interactive presence |
 
 A tool that writes cannot be declared `insights` — the server refuses to
-assemble a surface where one is. Forty-three tools are declared *confirmed
-write*: each is refused before it runs unless a person is verifiably present at
-the host, and five of those additionally consume a single-use confirmation
-issued by a preceding `prepare_*` call.
+assemble a surface where one is. **52** tools are declared *confirmed write*:
+each is refused before it runs unless a person is verifiably present at the host.
+Some of those additionally consume a single-use confirmation issued by a
+preceding `prepare_*` call, so the act and its authorisation cannot be the same
+request.
 
 ---
 

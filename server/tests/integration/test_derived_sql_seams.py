@@ -113,6 +113,10 @@ def _build_client():
 # ---------------------------------------------------------------------------
 
 
+#: L'identite que `_check_auth` rend a ces tests, et celle dont l'adhesion est semee.
+_LEDGER_IDENTITY = "test@test"
+
+
 def _seed_ledger_project(conn):
     """Seed one project + connection + datastream + 3 pull_jobs for ledger tests.
 
@@ -133,6 +137,19 @@ def _seed_ledger_project(conn):
             "INSERT INTO app.projects (id, name, slug, created_by, org_id) "
             "VALUES (%s,%s,%s,'test', 'org_test_fixture') ON CONFLICT DO NOTHING",
             (project_id, project_id, project_id),
+        )
+        # L'ADHESION EST SEMEE, EN PLUS DU PATCH. Les deux routes de ce fichier
+        # ne franchissent pas la meme porte : la chaine de rapport passe encore
+        # par `identity_can_read_project` (que le `patch` ci-dessous remplace),
+        # le registre du ledger passe par `resolve_strict_resource_access`, qui
+        # lit une adhesion ACTIVE dans `app.org_members` et qu'aucun patch
+        # n'atteignait -- d'ou le 404 "Flux de donnees introuvable". Une
+        # adhesion reelle mesure la porte reelle.
+        cur.execute(
+            "INSERT INTO app.org_members (id, org_id, identity, role, status, joined_at) "
+            "VALUES (%s, 'org_test_fixture', %s, 'owner', 'active', NOW()) "
+            "ON CONFLICT DO NOTHING",
+            (_uid("omem_"), _LEDGER_IDENTITY),
         )
         cur.execute(
             "INSERT INTO app.connection_ref "
